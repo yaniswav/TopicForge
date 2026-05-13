@@ -52,11 +52,36 @@ def build_app(
     mcp = FastMCP("topicforge")
     register_tools(mcp, inspector, health, telemetry)
 
+    pro_enabled = _try_register_pro(mcp)
+
     log.info(
-        "topicforge %s ready (mode=%s, adapter=%s, telemetry=%s)",
+        "topicforge %s ready (mode=%s, adapter=%s, telemetry=%s, pro=%s)",
         __version__,
         settings.effective_mode,
         adapter.name,
         "on" if telemetry.enabled else "off",
+        "on" if pro_enabled else "off",
     )
     return mcp
+
+
+def _try_register_pro(mcp: FastMCP) -> bool:
+    """Auto-detect `topicforge_pro` and let it register its tools.
+
+    The pro package is an optional paid add-on distributed separately. Its
+    `register` entrypoint is itself license-gated, so calling it with no
+    valid `TOPICFORGE_LICENSE_KEY` is a logged no-op. Returns True when
+    the package was found and called, False when not installed.
+    """
+    try:
+        import topicforge_pro
+    except ImportError:
+        return False
+
+    try:
+        topicforge_pro.register(mcp)
+    except Exception:
+        # A failure inside the pro plugin must never break the free MVP.
+        log.exception("topicforge-pro registration failed; continuing with core only")
+        return False
+    return True
