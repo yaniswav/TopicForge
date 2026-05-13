@@ -73,15 +73,19 @@ def test_get_topic_info_accepts_underscore_prefixed_segment(inspector: Inspector
 
 
 def test_sample_messages_default_count(inspector: Inspector) -> None:
-    samples = inspector.sample_messages("/cmd_vel")
-    assert 0 < len(samples) <= 5
+    result = inspector.sample_messages("/cmd_vel")
+    assert 0 < result.count <= 5
+    assert len(result.samples) == result.count
+    assert result.topic == "/cmd_vel"
+    assert result.mode_effective == "mock"
 
 
 def test_sample_messages_clamps_to_max(inspector: Inspector) -> None:
     # MAX_SAMPLE_COUNT is 50; the mock fixture has fewer than that, so we
     # confirm the clamp does not raise and returns at most MAX.
-    samples = inspector.sample_messages("/cmd_vel", 9999)
-    assert len(samples) <= 50
+    result = inspector.sample_messages("/cmd_vel", 9999)
+    assert result.count <= 50
+    assert result.mode_effective == "mock"
 
 
 def test_sample_messages_negative_raises(inspector: Inspector) -> None:

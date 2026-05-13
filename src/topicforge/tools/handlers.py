@@ -88,8 +88,10 @@ def register_tools(
     @mcp.tool(
         description=(
             "List all ROS2 topics known to the current graph (or the mock graph "
-            "if running in mock mode). Returns name, message type, and "
-            "publisher/subscriber counts for each topic."
+            "if running in mock mode). Returns name, message type, "
+            'publisher/subscriber counts, and `mode_effective` (`"live"` or '
+            '`"mock"`) for each topic — the latter so a downstream LLM '
+            "cannot confuse a real graph with the demo fixtures."
         )
     )
     @instrument(telemetry, "list_topics")
@@ -100,7 +102,9 @@ def register_tools(
         description=(
             "Return detailed info for a single ROS2 topic. `topic` must be a "
             "fully qualified topic name, e.g. `/cmd_vel`. Raises an MCP error "
-            "if the topic name is malformed or the topic is unknown."
+            "if the topic name is malformed or the topic is unknown. "
+            'Response carries `mode_effective` (`"live"` or `"mock"`) so '
+            "callers can distinguish a real-graph hit from a mock fixture."
         )
     )
     @instrument(telemetry, "get_topic_info")
@@ -115,8 +119,11 @@ def register_tools(
             "a fully qualified ROS2 name; see the `topic` parameter description "
             "for the exact accepted shape. `count` defaults to 5 and is silently "
             "clamped to 50 — request more and you receive at most 50 without "
-            "warning. Returns a `SampleResult` envelope `{topic, count, samples}` "
-            "where `count` is the actual number of samples returned (may be 0). "
+            "warning. Returns a `SampleResult` envelope "
+            "`{topic, count, samples, mode_effective}` where `count` is the "
+            "actual number of samples returned (may be 0) and `mode_effective` "
+            'is `"live"` or `"mock"` so a downstream LLM cannot confuse a '
+            "real graph with the demo fixtures. "
             "In live mode the MVP shells out to `ros2 topic echo --csv "
             "--once` with a short timeout, so the result is empty when no "
             "publisher is currently active. `samples[i].timestamp_ns` is "
@@ -136,16 +143,16 @@ def register_tools(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
     ) -> SampleResult:
-        samples = inspector.sample_messages(topic, count)
-        return SampleResult(topic=topic, count=len(samples), samples=samples)
+        return inspector.sample_messages(topic, count)
 
     @mcp.tool(
         description=(
             "Inspect a ROS2 bag at `path` and return a structured summary: "
-            "duration, message count, per-topic stats, and any detected "
-            "anomalies. Supports `.mcap`, `.db3`, and `.bag` paths via "
-            "`ros2 bag info` in live mode. Returns rich fixture data in mock "
-            "mode."
+            "duration, message count, per-topic stats, detected anomalies, "
+            'and `mode_effective` (`"live"` or `"mock"`) so callers can '
+            "tell a real bag analysis from a mock fixture. Supports `.mcap`, "
+            "`.db3`, and `.bag` paths via `ros2 bag info` in live mode. "
+            "Returns rich fixture data in mock mode."
         )
     )
     @instrument(telemetry, "analyze_bag")

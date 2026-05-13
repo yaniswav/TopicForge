@@ -19,6 +19,7 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         publisher_count=1,
         subscriber_count=1,
         qos_reliability="reliable",
+        mode_effective="mock",
     ),
     TopicInfo(
         name="/odom",
@@ -26,6 +27,7 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         publisher_count=1,
         subscriber_count=2,
         qos_reliability="reliable",
+        mode_effective="mock",
     ),
     TopicInfo(
         name="/scan",
@@ -33,6 +35,7 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         publisher_count=1,
         subscriber_count=1,
         qos_reliability="best_effort",
+        mode_effective="mock",
     ),
     TopicInfo(
         name="/tf",
@@ -40,6 +43,7 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         publisher_count=3,
         subscriber_count=2,
         qos_reliability="reliable",
+        mode_effective="mock",
     ),
     TopicInfo(
         name="/camera/image_raw",
@@ -47,6 +51,7 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         publisher_count=1,
         subscriber_count=1,
         qos_reliability="best_effort",
+        mode_effective="mock",
     ),
 )
 
@@ -169,4 +174,5 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
         "/scan: 3 frames dropped between t=10.1s and t=10.4s",
         "/tf: static transforms only — no dynamic updates during recording",
     ],
+    mode_effective="mock",
 )

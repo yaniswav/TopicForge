@@ -8,9 +8,18 @@ than silently propagating to clients.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 _CONFIG = ConfigDict(extra="forbid", frozen=True)
+
+_MODE_EFFECTIVE_DESC = (
+    "Runtime mode the adapter actually served this response in: `live` "
+    "(real ROS2 introspection) or `mock` (deterministic fixtures). Always "
+    "carried by the response so a downstream LLM can distinguish a real "
+    "graph from a demo one without re-reading `health_check`."
+)
 
 
 class TopicInfo(BaseModel):
@@ -26,6 +35,7 @@ class TopicInfo(BaseModel):
         default=None,
         description="QoS reliability policy if known: `reliable` or `best_effort`.",
     )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
 class MessageSample(BaseModel):
@@ -118,6 +128,7 @@ class BagAnalysis(BaseModel):
             "MVP populates this in mock mode; live anomaly detection is roadmap."
         ),
     )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
 class SampleResult(BaseModel):
@@ -139,6 +150,7 @@ class SampleResult(BaseModel):
     samples: list[MessageSample] = Field(
         description="The sampled messages, ordered as received from the backend."
     )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
 class HealthReport(BaseModel):

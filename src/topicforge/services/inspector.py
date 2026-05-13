@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, RosAdapter
-from topicforge.models import BagAnalysis, MessageSample, TopicInfo
+from topicforge.models import BagAnalysis, SampleResult, TopicInfo
 
 DEFAULT_SAMPLE_COUNT = 5
 MAX_SAMPLE_COUNT = 50
@@ -47,12 +47,18 @@ class Inspector:
         _validate_topic_name(topic)
         return self._adapter.get_topic_info(topic)
 
-    def sample_messages(self, topic: str, count: int | None = None) -> list[MessageSample]:
+    def sample_messages(self, topic: str, count: int | None = None) -> SampleResult:
         _validate_topic_name(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
-        return self._adapter.sample_messages(topic, min(n, MAX_SAMPLE_COUNT))
+        samples = self._adapter.sample_messages(topic, min(n, MAX_SAMPLE_COUNT))
+        return SampleResult(
+            topic=topic,
+            count=len(samples),
+            samples=samples,
+            mode_effective=self._adapter.effective_mode,
+        )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._adapter.analyze_bag(_validate_bag_path(path))

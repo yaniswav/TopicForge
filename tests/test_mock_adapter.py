@@ -12,16 +12,23 @@ def test_is_available_always_true() -> None:
     assert MockAdapter().is_available() is True
 
 
+def test_effective_mode_is_mock() -> None:
+    assert MockAdapter().effective_mode == "mock"
+
+
 def test_list_topics_includes_known_fixtures(mock_adapter: MockAdapter) -> None:
     topics = mock_adapter.list_topics()
     names = {t.name for t in topics}
     assert {"/cmd_vel", "/odom", "/scan", "/tf", "/camera/image_raw"} <= names
+    # Every listed TopicInfo carries the mock-mode marker.
+    assert all(t.mode_effective == "mock" for t in topics)
 
 
 def test_get_topic_info_returns_known_type(mock_adapter: MockAdapter) -> None:
     info = mock_adapter.get_topic_info("/cmd_vel")
     assert info.message_type == "geometry_msgs/msg/Twist"
     assert info.publisher_count == 1
+    assert info.mode_effective == "mock"
 
 
 def test_get_topic_info_unknown_raises(mock_adapter: MockAdapter) -> None:
@@ -57,6 +64,7 @@ def test_analyze_bag_returns_fixture_with_path(mock_adapter: MockAdapter) -> Non
     assert result.message_count > 0
     assert any(t.name == "/cmd_vel" for t in result.topics)
     assert result.anomalies  # mock fixture intentionally includes some
+    assert result.mode_effective == "mock"
 
 
 @pytest.mark.parametrize(
