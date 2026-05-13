@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Strategic
+
+- (2026-05-13) Repositioned to **safety-first read-only** as the primary product identity. README and `docs/product-plan.md §1` now lead with "read-only by architecture, not by configuration" framing; all docs cascading to align.
+- (2026-05-13) **MCP 02 reassigned to DdsForge** (safety-first read-only DDS observability across middleware vendors). DatasetForge (Vision Dataset Inspector) moves to MCP 03. Specs: `docs/projet-file/mcp-02-spec.md` (DdsForge), `docs/projet-file/mcp-03-spec.md` (DatasetForge).
+
 ## [0.1.2] - 2026-05-13
 
 ### Fixed
