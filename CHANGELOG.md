@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-13
+
+### Fixed
+
+- `sample_messages` now returns real publish-time timestamps in live mode for `Header`-stamped messages. The live adapter previously shelled out to `ros2 topic echo --once`, which does not emit timestamps, so `MessageSample.timestamp_ns` was always `0`. The invocation is now `ros2 topic echo --csv --once`, whose flattened CSV exposes `header.stamp.sec` and `header.stamp.nanosec` as the first two columns for any `Header`-stamped message; the new `parse_csv_echo` parser reconstructs `timestamp_ns = sec * 1_000_000_000 + nanosec` and strips those two columns out of the payload. **Headerless message types** (e.g. `std_msgs/String`, `geometry_msgs/Twist`) still return `timestamp_ns=0` — they carry no embedded timestamp. Surfacing the rmw **receive** timestamp (rather than the publish-time `header.stamp`) for arbitrary message types remains a roadmap item tied to the future `rclpy`-backed adapter.
+
+### Changed
+
+- **Schema (soft-breaking).** Every tool response now carries `mode_effective: Literal["mock", "live"]`. Field added to `TopicInfo`, `SampleResult`, and `BagAnalysis` (`HealthReport` already exposed effective mode under `mode`). A new `effective_mode` property on the `RosAdapter` protocol is the single source of truth; `Ros2CliAdapter` returns `"live"`, `MockAdapter` returns `"mock"`, services thread it through at result construction time. **Producer side**: Python code constructing these models directly (in tests, in downstream tools that import the schemas) must now supply `mode_effective` — the models are `frozen=True, extra="forbid"` and the field has no default. **Client side (over MCP)**: the change is additive — an MCP client consuming JSON sees one extra optional field per response and is unaffected unless it strictly validates payloads against the v0.1.1 schema with a no-extra-keys / required-keys-only assumption.
+- **Internal API.** `Inspector.sample_messages` now returns a `SampleResult` envelope (previously a `list[MessageSample]`). The MCP-facing tool handler is reduced to a thin pass-through. No effect on the tool's wire-level response shape (handlers already wrapped the list into `SampleResult`), but flagged here for anyone importing `Inspector` directly outside this repo.
+
+### Internal
+
+- Docstring fix in `parse_csv_echo`: the example output now shows post-strip payload keys as `col_0`, `col_1` (the parser re-indexes from `col_0` after dropping the two timestamp columns), matching the existing test in `tests/test_live_adapter_parse.py`.
+
 ## [0.1.1] - 2026-05-13
 
 ### Added
@@ -46,6 +61,7 @@ Initial MVP release of TopicForge — ROS Topic Inspector & Bag Analyzer MCP ser
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/yaniswav/TopicForge/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/yaniswav/TopicForge/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yaniswav/TopicForge/releases/tag/v0.1.0

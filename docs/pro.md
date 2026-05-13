@@ -71,7 +71,7 @@ If those terms don't fit your purchasing process, [let's talk](mailto:ethvignot.
 
 ## In the meantime
 
-- **Use the MVP.** TopicForge v0.1.1 is shipping on PyPI. Mock mode runs without ROS2; live mode wraps the `ros2` CLI. [GitHub repo](https://github.com/yaniswav/TopicForge).
+- **Use the MVP.** TopicForge v0.1.2 is shipping on PyPI. Mock mode runs without ROS2; live mode wraps the `ros2` CLI. [GitHub repo](https://github.com/yaniswav/TopicForge).
 - **Read the roadmap.** Full strategy and phase plan in [`docs/product-plan.md`](https://github.com/yaniswav/TopicForge/blob/main/docs/product-plan.md).
 - **File an issue** for any Pro tool you'd actually use — input shapes the build order.
 
