@@ -17,6 +17,11 @@ ResolvedMode = Literal["mock", "live"]
 
 _VALID_MODES: tuple[Mode, ...] = ("mock", "live", "auto")
 _VALID_LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
+# Telemetry is strict opt-in: any value other than the explicit on-set
+# resolves to off. We accept the common affirmatives so users can flip the
+# flag without consulting the docs, but anything ambiguous stays off.
+_TELEMETRY_ON_VALUES: frozenset[str] = frozenset({"on", "1", "true", "yes", "enabled"})
+_TELEMETRY_OFF_VALUES: frozenset[str] = frozenset({"", "off", "0", "false", "no", "disabled"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +31,7 @@ class Settings:
     mode: Mode
     log_level: str
     ros2_executable: str
+    telemetry_enabled: bool
 
     @property
     def effective_mode(self) -> ResolvedMode:
@@ -65,4 +71,19 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
 
     ros2_exe = src.get("TOPICFORGE_ROS2_BIN", "ros2").strip() or "ros2"
 
-    return Settings(mode=raw_mode, log_level=raw_log, ros2_executable=ros2_exe)
+    raw_telemetry = src.get("TOPICFORGE_TELEMETRY", "off").strip().lower()
+    if raw_telemetry in _TELEMETRY_ON_VALUES:
+        telemetry_enabled = True
+    elif raw_telemetry in _TELEMETRY_OFF_VALUES:
+        telemetry_enabled = False
+    else:
+        raise ValueError(
+            f"Invalid TOPICFORGE_TELEMETRY={raw_telemetry!r}; expected on/off (default off)"
+        )
+
+    return Settings(
+        mode=raw_mode,
+        log_level=raw_log,
+        ros2_executable=ros2_exe,
+        telemetry_enabled=telemetry_enabled,
+    )

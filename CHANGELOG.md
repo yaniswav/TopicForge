@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-13
+
+### Added
+
+- **Opt-in anonymous usage telemetry** behind `TOPICFORGE_TELEMETRY=on` (default: off). When enabled, each MCP tool call emits a single event with six fields only: `tool_name`, `latency_ms`, `mode`, `version`, `session_id` (random UUID per process, never persisted), and `success`. No topic names, message bodies, bag paths, hostnames, or environment data ever leave the process. See the README "Telemetry" section for the full payload contract and opt-out instructions.
+- `src/topicforge/telemetry/` module with `TelemetryClient`, `TelemetryEvent`, and an `instrument()` decorator that wraps tool handlers with timing + emit. When telemetry is off, `instrument()` is the identity function — zero overhead and zero possibility of a network call in the OFF code path.
+- Pluggable `Transport` callable; v0.1.1 ships a structured-log transport. A future S3-backed HTTP endpoint will plug in without touching tool handlers.
+- 29 telemetry tests covering: default-off behaviour, env var parsing (`on`/`1`/`true`/`yes`/`enabled` vs anything else), payload shape and key allowlist, payload privacy (user input never leaks), session id stability and per-process uniqueness, transport-exception isolation, decorator signature preservation, and end-to-end verification that the OFF code path never invokes the transport.
+
+### Changed
+
+- `Settings` gained a `telemetry_enabled: bool` field.
+- `build_app(...)` accepts optional `telemetry` and `telemetry_transport` parameters for test injection.
+- `register_tools(...)` now takes a `TelemetryClient`.
+- `.env.example` documents `TOPICFORGE_TELEMETRY`.
+- README adds a `Telemetry` section and updates the Security model note to reflect opt-in telemetry availability.
+
 ## [0.1.0] - 2026-05-12
 
 Initial MVP release of TopicForge — ROS Topic Inspector & Bag Analyzer MCP server.
@@ -29,5 +46,6 @@ Initial MVP release of TopicForge — ROS Topic Inspector & Bag Analyzer MCP ser
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/yaniswav/TopicForge/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yaniswav/TopicForge/releases/tag/v0.1.0

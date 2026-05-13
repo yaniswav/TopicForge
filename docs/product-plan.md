@@ -77,7 +77,7 @@ The strategic moat is *the MCP surface itself* — the right set of well-typed, 
 - `rclpy`-backed live adapter for richer and faster sampling
 - Robust bag parsing across `.bag`, `.mcap`, `.db3` (with native `.mcap` reader)
 - Streaming-friendly tool outputs (windowed echo, time-range sampling)
-- Opt-in usage telemetry (no payload data; tool name + latency only)
+- ~~Opt-in usage telemetry (no payload data; tool name + latency only)~~ — shipped in **v0.1.1** behind `TOPICFORGE_TELEMETRY=on`; default off; see README "Telemetry" section. Server-side endpoint still pending.
 - Hardening: better error messages, clearer mock/live boundary, performance budgets
 
 ### Phase 2 — Differentiated features (Pro tier candidates)
