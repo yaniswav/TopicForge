@@ -1,12 +1,14 @@
 # TopicForge
 
-> Stop asking Claude to invent topic names. TopicForge is the MCP server that grounds AI agents in your real ROS2 stack - or a faithful mock when you have no robot at hand.
+> **The safety-first read-only MCP for ROS2 robotics.** TopicForge lets AI agents inspect your ROS2 graph and bag files without ever publishing back to the bus — so your safety officer doesn't flinch when you wire Claude into your robot stack.
 
-TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents - such as Claude - inspect ROS2 topics and analyze ROS bag files through a clean, structured tool interface. It is designed for robotics developers, ML/CV engineers working with robot data, and teams that want their AI tooling to *understand* their robotics stack instead of guessing at it.
+TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents — such as Claude — inspect ROS2 topics and analyze ROS bag files through a clean, structured tool interface. It is read-only by **architecture**, not by configuration: there is no write path to misconfigure, no permission system to audit, no liability conversation to have. The MCP client can see the robot stack; it cannot touch it.
+
+This stance matters because the ROS-MCP space is no longer empty — general-purpose ROS-MCP servers exist that let an LLM publish topics, call services, and command robots. That shape is fine for demos; it is untenable for production fleets, defense systems, automotive AUTOSAR Adaptive surfaces, or anything safety-certified. TopicForge is the read-only alternative for those audiences, plus the robotics developers, ML/CV engineers, and teams that want their AI tooling to *understand* their robotics stack without commanding it.
 
 ## Why it exists
 
-LLM agents are good at reasoning over text, but ROS2 introspection lives in a CLI + DDS world they cannot directly reach. Without grounding, an LLM will hallucinate topic names, message types, and bag contents. TopicForge bridges that gap with a small, well-typed set of MCP tools:
+LLM agents are good at reasoning over text, but ROS2 introspection lives in a CLI + DDS world they cannot directly reach. Without grounding, an LLM will hallucinate topic names, message types, and bag contents. TopicForge bridges that gap with a small, well-typed set of MCP tools — all read-only, all returning frozen Pydantic schemas that a downstream agent can parse without ambiguity:
 
 | Tool              | Purpose                                                |
 | ----------------- | ------------------------------------------------------ |
