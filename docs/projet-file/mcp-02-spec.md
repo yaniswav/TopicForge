@@ -410,3 +410,26 @@ The right MCP 02 is DdsForge.
   MCP 03 starts.
 - `docs/projet-file/mcp-03-spec.md` — DatasetForge spec (the next pack
   MCP after DdsForge).
+
+---
+
+## Reviewer notes (2026-05-13)
+
+> This section was added by the spec-reviewer agent during the v0.1.2 prep
+> review. It does not modify the spec body. Issues listed below must be
+> resolved before or at implementation kickoff.
+
+### Issue 1 — Wrong section reference in §11 (Repo layout)
+
+**Location.** §11, "Repo layout" bullet, last sentence:
+> "shared conventions via the future pack-template extraction described in
+> `topicforge/docs/product-plan.md` **§13**"
+
+**Problem.** `product-plan.md §13` is titled "Maintenance of this document"
+and describes update cadence for the product-plan file itself. The
+pack-template / shared-infrastructure extraction concept lives in
+`product-plan.md` **§4** ("The first three MCPs are the rule-of-three
+trigger for extracting pack-shared infrastructure (telemetry, license,
+settings resolver) into a separate template repo.").
+
+**Suggested resolution.** Change `§13` to `§4` in the Repo layout bullet.
