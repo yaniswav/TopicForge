@@ -1,0 +1,11 @@
+# Normalize line endings: text files stored as LF in the repo,
+# native line endings in the working tree (Git handles conversion).
+* text=auto eol=lf
+
+# Explicit binaries (none right now but reserved for future bag samples)
+*.mcap binary
+*.bag binary
+*.db3 binary
+*.png binary
+*.jpg binary
+*.gif binary
