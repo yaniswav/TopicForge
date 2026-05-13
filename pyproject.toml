@@ -45,7 +45,7 @@ packages = ["src/topicforge"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/topicforge", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
-exclude = [".claude", "docs/projet-file", "CLAUDE.md", "*.pdf", ".pytest_cache", "pytest-cache-files-*"]
+exclude = [".claude", "docs/projet-file", "CLAUDE.md", "*.pdf", ".pytest_cache", "pytest-cache-files-*", "pro"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
