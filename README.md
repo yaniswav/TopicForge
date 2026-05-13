@@ -182,8 +182,53 @@ make check    # both, plus tests (CI bundle)
 | `TOPICFORGE_MODE`        | `auto`  | `mock`, `live`, or `auto`                                         |
 | `TOPICFORGE_LOG_LEVEL`   | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                               |
 | `TOPICFORGE_ROS2_BIN`    | `ros2`  | Name (or path) of the ROS2 CLI binary                             |
+| `TOPICFORGE_TELEMETRY`   | `off`   | Opt-in anonymous usage telemetry. See [Telemetry](#telemetry).    |
 
 See [`.env.example`](.env.example).
+
+## Telemetry
+
+TopicForge ships an **opt-in, anonymous, minimal** telemetry hook. It is **off by default** and the OFF code path performs **zero network calls** — pinned by a unit test (`tests/test_telemetry.py::test_build_app_off_makes_no_transport_calls`).
+
+### How to opt in
+
+```bash
+TOPICFORGE_TELEMETRY=on python -m topicforge
+# Windows PowerShell: $env:TOPICFORGE_TELEMETRY="on"; python -m topicforge
+```
+
+Accepted on-values: `on`, `1`, `true`, `yes`, `enabled` (case-insensitive). Anything else — including unset — keeps telemetry off.
+
+### How to opt out
+
+Unset the variable, set it to `off`, or just don't touch it. Opt-out is the default.
+
+### Exactly what is sent
+
+When telemetry is on, each MCP tool call emits a single event with **only** these six fields:
+
+| Field             | Example          | Notes                                                                  |
+| ----------------- | ---------------- | ---------------------------------------------------------------------- |
+| `tool_name`       | `"list_topics"`  | One of the five MVP tools — never argument values.                     |
+| `latency_ms`      | `12.34`          | Wall-clock duration of the handler, rounded to 2 decimals.             |
+| `mode`            | `"mock"`         | Effective runtime mode: `mock` or `live`.                              |
+| `version`         | `"0.1.1"`        | TopicForge server version.                                             |
+| `session_id`      | `"a1b2c3…"`      | Random UUID generated per process. Never persisted, never re-used.     |
+| `success`         | `true`           | Whether the handler returned (true) or raised (false).                 |
+
+### What is **never** sent
+
+- Topic names, message types, message payloads
+- Bag file paths or bag contents
+- Hostnames, usernames, IP addresses, ROS distro, environment variables
+- Stack traces, error messages, or any free-form text
+- Any persistent identifier — `session_id` is regenerated on every server start
+
+The payload shape is fenced by `tests/test_telemetry.py::test_payload_contains_only_whitelisted_keys`. Adding a field there requires a matching change in this section.
+
+### Where the code lives
+
+The complete telemetry implementation is in [`src/topicforge/telemetry/`](src/topicforge/telemetry/) — read it in under five minutes. In v0.1.1 the default transport is a structured log line (no HTTP endpoint yet); a future S3-backed endpoint will plug into the same `Transport` callable without touching tool handlers.
 
 ## Security model
 
@@ -192,7 +237,7 @@ TopicForge is designed for **local trust**: it runs as a subprocess of your MCP 
 - `TOPICFORGE_ROS2_BIN` accepts an arbitrary path - if you point it at a malicious binary, TopicForge will execute it. Treat the variable the way you treat `PATH`.
 - `analyze_bag` opens whatever path the MCP client passes (no workspace isolation, no symlink restriction). The threat model assumes the client is your trusted agent acting on your behalf.
 - All `ros2` CLI invocations use `subprocess.run` with an argument list - never `shell=True`. Topic names are validated against a strict allowlist (`^/[A-Za-z0-9_/]+$`) before being passed to the CLI.
-- No outbound network calls. No telemetry in v0.1.0 (opt-in usage metrics are on the Phase 1 roadmap).
+- No outbound network calls by default. Since v0.1.1, opt-in anonymous usage telemetry is available behind `TOPICFORGE_TELEMETRY=on` — see [Telemetry](#telemetry) for the exact payload and opt-out instructions. When off (the default), the OFF code path is a verified no-op.
 
 Before exposing TopicForge to *untrusted* MCP clients (hosted endpoints, shared environments), add path isolation and revisit the `TOPICFORGE_ROS2_BIN` policy.
 

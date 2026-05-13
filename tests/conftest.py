@@ -21,7 +21,7 @@ def inspector(mock_adapter: MockAdapter) -> Inspector:
 
 @pytest.fixture
 def mock_settings() -> Settings:
-    return Settings(mode="mock", log_level="INFO", ros2_executable="ros2")
+    return Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
 
 
 @pytest.fixture

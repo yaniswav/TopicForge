@@ -32,6 +32,7 @@ from topicforge.models import (
     TopicInfo,
 )
 from topicforge.services import HealthService, Inspector
+from topicforge.telemetry import TelemetryClient, instrument
 
 _TOPIC_PARAM_DESC = (
     "Fully qualified ROS2 topic name starting with `/`, e.g. `/cmd_vel` or "
@@ -64,8 +65,14 @@ def register_tools(
     mcp: FastMCP,
     inspector: Inspector,
     health: HealthService,
+    telemetry: TelemetryClient,
 ) -> None:
-    """Register the MVP tool set on `mcp`."""
+    """Register the MVP tool set on `mcp`.
+
+    `telemetry` is required but inert by default: when disabled (the
+    default), `instrument(...)` returns the handler unchanged, so opt-out
+    means zero overhead and zero network code paths in the call stack.
+    """
 
     @mcp.tool(
         description=(
@@ -74,6 +81,7 @@ def register_tools(
             "Always succeeds — call this first when something looks wrong."
         )
     )
+    @instrument(telemetry, "health_check")
     def health_check() -> HealthReport:
         return health.report()
 
@@ -84,6 +92,7 @@ def register_tools(
             "publisher/subscriber counts for each topic."
         )
     )
+    @instrument(telemetry, "list_topics")
     def list_topics() -> list[TopicInfo]:
         return inspector.list_topics()
 
@@ -94,6 +103,7 @@ def register_tools(
             "if the topic name is malformed or the topic is unknown."
         )
     )
+    @instrument(telemetry, "get_topic_info")
     def get_topic_info(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
     ) -> TopicInfo:
@@ -119,6 +129,7 @@ def register_tools(
             "(and no `_raw_text` key, since the payload is already structured)."
         )
     )
+    @instrument(telemetry, "sample_messages")
     def sample_messages(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
@@ -135,6 +146,7 @@ def register_tools(
             "mode."
         )
     )
+    @instrument(telemetry, "analyze_bag")
     def analyze_bag(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
     ) -> BagAnalysis:

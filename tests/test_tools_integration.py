@@ -23,7 +23,9 @@ MVP_TOOLS = {
 
 
 def _mock_app():
-    return build_app(Settings(mode="mock", log_level="INFO", ros2_executable="ros2"))
+    return build_app(
+        Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
+    )
 
 
 def test_build_app_succeeds() -> None:
