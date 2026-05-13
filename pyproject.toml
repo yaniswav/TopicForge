@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "topicforge"
+version = "0.1.0"
+description = "ROS Topic Inspector & Bag Analyzer MCP server for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Yanis ETHVIGNOT", email = "ethvignot.yanis@gmail.com" }]
+keywords = ["mcp", "ros2", "robotics", "ai", "claude", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+topicforge = "topicforge.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/yaniswav/TopicForge"
+Repository = "https://github.com/yaniswav/TopicForge"
+Issues = "https://github.com/yaniswav/TopicForge/issues"
+Changelog = "https://github.com/yaniswav/TopicForge/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/topicforge"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/topicforge", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+exclude = [".claude", "docs/projet-file", "CLAUDE.md", "*.pdf", ".pytest_cache", "pytest-cache-files-*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Note: TC (typing-only imports) rules are intentionally omitted — Pydantic
+# models and `@runtime_checkable` Protocols need runtime imports, and the
+# TYPE_CHECKING dance buys us nothing here.
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"

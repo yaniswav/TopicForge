@@ -1,0 +1,194 @@
+# =========================================================================
+# TopicForge — .gitignore
+#
+# Anything matched here is local-only: it must never appear in a clone,
+# a sdist, a wheel, or a screen share with a client. Add new patterns
+# above the matching section header so the rationale stays close.
+# =========================================================================
+
+
+# -------------------------------------------------------------------------
+# Python: bytecode, caches, packaging
+# -------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+
+# -------------------------------------------------------------------------
+# Virtual environments
+# -------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+
+# -------------------------------------------------------------------------
+# Build artifacts and packaging tooling
+# -------------------------------------------------------------------------
+build/
+dist/
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+pip-log.txt
+pip-delete-this-directory.txt
+.Python
+
+
+# -------------------------------------------------------------------------
+# Testing, coverage, profiling
+# -------------------------------------------------------------------------
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.nox/
+*.prof
+flamegraph.svg
+
+
+# -------------------------------------------------------------------------
+# Linters and type checkers
+# -------------------------------------------------------------------------
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.pytype/
+
+
+# -------------------------------------------------------------------------
+# Editors and IDEs (per-developer; never shared)
+# -------------------------------------------------------------------------
+.idea/
+.vscode/
+.vs/
+*.iml
+*.swp
+*.swo
+*~
+.history/
+.spyderproject
+.spyproject
+*.sublime-workspace
+*.sublime-project
+.project
+.classpath
+.settings/
+
+
+# -------------------------------------------------------------------------
+# OS metadata
+# -------------------------------------------------------------------------
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+
+# -------------------------------------------------------------------------
+# Secrets — NEVER commit
+# Use `.env.example` for documentation; real `.env` files stay local.
+# -------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+*.token
+secrets/
+secrets.yaml
+secrets.yml
+secrets.json
+credentials.json
+credentials.yaml
+.netrc
+.npmrc
+.pypirc
+
+# Cloud provider configs (often carry usable credentials)
+.aws/
+.gcp/
+.azure/
+
+
+# -------------------------------------------------------------------------
+# Logs, runtime state, dumps
+# -------------------------------------------------------------------------
+*.log
+logs/
+*.pid
+*.dump
+*.dmp
+dump.rdb
+*.sql
+*.sql.gz
+
+
+# -------------------------------------------------------------------------
+# Backup / scratch / editor-locks
+# -------------------------------------------------------------------------
+*.bak
+*.orig
+*.rej
+*.tmp
+*.temp
+.~lock.*
+
+
+# -------------------------------------------------------------------------
+# ROS / robotics recordings — often huge and frequently confidential
+# -------------------------------------------------------------------------
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+
+# -------------------------------------------------------------------------
+# Local notes and per-developer overrides
+# These are private to the contributor and must not ship with the repo.
+# -------------------------------------------------------------------------
+NOTES.md
+TODO.local.md
+SCRATCH.md
+notes/
+private/
+personal/
+
+
+# -------------------------------------------------------------------------
+# Claude Code internals
+# Operating manual, sub-agents, project skills, prompts, scripts, and
+# settings live entirely on the contributor's machine. They reveal
+# internal process and AI-assisted workflows that have no business
+# being in a client-facing repo. The sdist already excludes them via
+# `[tool.hatch.build.targets.sdist] exclude` in pyproject.toml; this
+# rule additionally hides them from the GitHub clone.
+# -------------------------------------------------------------------------
+.claude/
+CLAUDE*.md
+
+
+# -------------------------------------------------------------------------
+# Project-local docs and drafts kept out of the package / out of clients
+# -------------------------------------------------------------------------
+docs/projet-file/
+docs/assets/screencast-raw/
