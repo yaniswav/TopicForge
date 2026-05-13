@@ -22,6 +22,10 @@ _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
 class MockAdapter:
     name: AdapterName = "mock"
 
+    @property
+    def effective_mode(self) -> AdapterName:
+        return "mock"
+
     def is_available(self) -> bool:
         return True
 

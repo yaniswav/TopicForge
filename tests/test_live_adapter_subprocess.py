@@ -168,3 +168,59 @@ def test_list_topics_safe_counts_default_to_zero_on_failure(
     assert len(topics) == 1
     assert topics[0].publisher_count == 0
     assert topics[0].subscriber_count == 0
+    assert topics[0].mode_effective == "live"
+
+
+def test_effective_mode_is_live() -> None:
+    """The live adapter declares `effective_mode == "live"` regardless of
+    whether `ros2` is actually installed — the property is a static contract,
+    not a runtime probe."""
+    assert Ros2CliAdapter().effective_mode == "live"
+
+
+def test_get_topic_info_marks_response_as_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_which_resolves(monkeypatch)
+    info_stdout = "Type: geometry_msgs/msg/Twist\nPublisher count: 2\nSubscription count: 3\n"
+    _stub_run(
+        monkeypatch, lambda *_a, **_kw: SimpleNamespace(returncode=0, stdout=info_stdout, stderr="")
+    )
+
+    info = Ros2CliAdapter().get_topic_info("/cmd_vel")
+    assert info.message_type == "geometry_msgs/msg/Twist"
+    assert info.mode_effective == "live"
+
+
+def test_analyze_bag_marks_response_as_live(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    _stub_which_resolves(monkeypatch)
+    bag = tmp_path / "demo.mcap"
+    bag.write_bytes(b"")  # existence check only
+    bag_stdout = "Storage id: mcap\nDuration: 1.000s\nMessages: 3\n"
+    _stub_run(
+        monkeypatch, lambda *_a, **_kw: SimpleNamespace(returncode=0, stdout=bag_stdout, stderr="")
+    )
+
+    result = Ros2CliAdapter().analyze_bag(str(bag))
+    assert result.mode_effective == "live"
+
+
+def test_sample_messages_envelope_marks_response_as_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through the Inspector, sample_messages returns a SampleResult
+    envelope whose `mode_effective` matches the adapter's `effective_mode`."""
+    from topicforge.services import Inspector
+
+    _stub_which_resolves(monkeypatch)
+    info_stdout = "Type: sensor_msgs/msg/Imu\nPublisher count: 1\nSubscription count: 0\n"
+    csv_stdout = "1715600000,123456789,base_link,0.0,0.0,0.0,1.0\n"
+
+    def run_stub(cmd: list[str], **_kwargs: object) -> object:
+        if "info" in cmd:
+            return SimpleNamespace(returncode=0, stdout=info_stdout, stderr="")
+        return SimpleNamespace(returncode=0, stdout=csv_stdout, stderr="")
+
+    _stub_run(monkeypatch, run_stub)
+    result = Inspector(Ros2CliAdapter()).sample_messages("/imu", count=1)
+    assert result.mode_effective == "live"
+    assert result.count == 1
+    assert result.samples[0].message_type == "sensor_msgs/msg/Imu"

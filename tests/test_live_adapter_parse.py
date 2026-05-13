@@ -56,16 +56,19 @@ def test_parse_pub_sub_counts_missing_lines_default_to_zero() -> None:
 
 def test_parse_topic_info_full() -> None:
     sample = "Type: geometry_msgs/msg/Twist\nPublisher count: 1\nSubscription count: 1\n"
-    info = parse_topic_info(sample, fallback_name="/cmd_vel")
+    info = parse_topic_info(sample, fallback_name="/cmd_vel", mode_effective="live")
     assert info is not None
     assert info.name == "/cmd_vel"
     assert info.message_type == "geometry_msgs/msg/Twist"
     assert info.publisher_count == 1
     assert info.subscriber_count == 1
+    assert info.mode_effective == "live"
 
 
 def test_parse_topic_info_missing_type_returns_none() -> None:
-    assert parse_topic_info("Publisher count: 0\n", fallback_name="/x") is None
+    assert (
+        parse_topic_info("Publisher count: 0\n", fallback_name="/x", mode_effective="live") is None
+    )
 
 
 def test_parse_echo_yaml_captures_top_level_fields_and_raw_text() -> None:
@@ -115,10 +118,11 @@ def test_parse_bag_info_extracts_duration_and_topics() -> None:
         "  Topic: /cmd_vel | Type: geometry_msgs/msg/Twist | Count: 425 | Serialization Format: cdr\n"
         "  Topic: /scan | Type: sensor_msgs/msg/LaserScan | Count: 425 | Serialization Format: cdr\n"
     )
-    result = parse_bag_info(sample, fallback_path="/x/demo.mcap")
+    result = parse_bag_info(sample, fallback_path="/x/demo.mcap", mode_effective="live")
     assert result.duration_seconds == 42.5
     assert result.message_count == 1287
     assert result.storage_format == "mcap"
+    assert result.mode_effective == "live"
     assert len(result.topics) == 2
     cmd_vel = next(t for t in result.topics if t.name == "/cmd_vel")
     assert cmd_vel.message_type == "geometry_msgs/msg/Twist"
@@ -128,10 +132,11 @@ def test_parse_bag_info_extracts_duration_and_topics() -> None:
 
 def test_parse_bag_info_zero_duration_yields_no_frequency() -> None:
     sample = "Storage id: sqlite3\nDuration: 0.000s\nMessages: 0\n"
-    result = parse_bag_info(sample, fallback_path="/x/empty.db3")
+    result = parse_bag_info(sample, fallback_path="/x/empty.db3", mode_effective="live")
     assert result.duration_seconds == 0.0
     assert result.message_count == 0
     assert result.topics == []
+    assert result.mode_effective == "live"
 
 
 # ---------------------------------------------------------------------------

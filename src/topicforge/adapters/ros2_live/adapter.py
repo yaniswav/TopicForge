@@ -40,6 +40,10 @@ class Ros2CliAdapter:
     def __init__(self, executable: str = "ros2") -> None:
         self._exe = executable
 
+    @property
+    def effective_mode(self) -> AdapterName:
+        return "live"
+
     def is_available(self) -> bool:
         return shutil.which(self._exe) is not None
 
@@ -56,13 +60,14 @@ class Ros2CliAdapter:
                     message_type=msg_type,
                     publisher_count=pub_count,
                     subscriber_count=sub_count,
+                    mode_effective=self.effective_mode,
                 )
             )
         return topics
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         out = self._run([self._exe, "topic", "info", topic, "--verbose"])
-        info = parse_topic_info(out, fallback_name=topic)
+        info = parse_topic_info(out, fallback_name=topic, mode_effective=self.effective_mode)
         if info is None:
             raise AdapterError(f"Topic not found or empty info: {topic!r}")
         return info
@@ -114,7 +119,7 @@ class Ros2CliAdapter:
             raise AdapterError(f"Bag path does not exist: {path}")
 
         out = self._run([self._exe, "bag", "info", str(bag_path)])
-        return parse_bag_info(out, fallback_path=str(bag_path))
+        return parse_bag_info(out, fallback_path=str(bag_path), mode_effective=self.effective_mode)
 
     # ---------------------------- internals ------------------------------
 
@@ -205,11 +210,16 @@ def parse_pub_sub_counts(stdout: str) -> tuple[int, int]:
     return pub, sub
 
 
-def parse_topic_info(stdout: str, *, fallback_name: str) -> TopicInfo | None:
+def parse_topic_info(
+    stdout: str, *, fallback_name: str, mode_effective: AdapterName
+) -> TopicInfo | None:
     """Parse `ros2 topic info <topic> --verbose` output into a TopicInfo.
 
     Returns None if no message type was found, which the adapter treats as
     "topic not found".
+
+    `mode_effective` is kwarg-only and injected by the adapter (not parsed
+    from the CLI output) — same pattern as `fallback_name`.
     """
     msg_type: str | None = None
     pub = sub = 0
@@ -227,6 +237,7 @@ def parse_topic_info(stdout: str, *, fallback_name: str) -> TopicInfo | None:
         message_type=msg_type,
         publisher_count=pub,
         subscriber_count=sub,
+        mode_effective=mode_effective,
     )
 
 
@@ -325,8 +336,12 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
     return rows
 
 
-def parse_bag_info(stdout: str, *, fallback_path: str) -> BagAnalysis:
-    """Parse `ros2 bag info <path>` text output into a BagAnalysis."""
+def parse_bag_info(stdout: str, *, fallback_path: str, mode_effective: AdapterName) -> BagAnalysis:
+    """Parse `ros2 bag info <path>` text output into a BagAnalysis.
+
+    `mode_effective` is kwarg-only and injected by the adapter (not parsed
+    from the CLI output) — same pattern as `fallback_path`.
+    """
     duration = 0.0
     msg_count = 0
     storage: str | None = None
@@ -358,4 +373,5 @@ def parse_bag_info(stdout: str, *, fallback_path: str) -> BagAnalysis:
         message_count=msg_count,
         topics=topics,
         anomalies=[],
+        mode_effective=mode_effective,
     )

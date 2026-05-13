@@ -33,6 +33,18 @@ class RosAdapter(Protocol):
 
     name: AdapterName
 
+    @property
+    def effective_mode(self) -> AdapterName:
+        """Runtime mode this adapter serves responses in (`live` or `mock`).
+
+        Distinct from `name`: `name` identifies the adapter implementation
+        (today `mock` / `live`, tomorrow `rclpy_live`, `cyclonedds_live`,
+        ...). `effective_mode` collapses to the contract surface exposed to
+        MCP clients via `mode_effective` on every tool response, so a future
+        rclpy backend reports `effective_mode == "live"` while keeping a
+        distinct `name`.
+        """
+
     def is_available(self) -> bool: ...
 
     def list_topics(self) -> list[TopicInfo]: ...
