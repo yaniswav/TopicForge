@@ -304,8 +304,11 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
 
     Example input (`sensor_msgs/Imu`, single row):
         1715600000,123456789,base_link,0.0,0.0,0.0,1.0, ...
-    -> `[(1715600000123456789, {"col_2": "base_link", "col_3": "0.0", ...,
+    -> `[(1715600000123456789, {"col_0": "base_link", "col_1": "0.0", ...,
                                 "_raw_text": "..."})]`
+
+    The post-strip payload re-indexes from `col_0` after the two timestamp
+    columns are removed — see `tests/test_live_adapter_parse.py`.
     """
     rows: list[tuple[int, dict[str, object]]] = []
     for raw in stdout.splitlines():

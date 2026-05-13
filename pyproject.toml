@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "topicforge"
-version = "0.1.1"
+version = "0.1.2"
 description = "ROS Topic Inspector & Bag Analyzer MCP server for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"

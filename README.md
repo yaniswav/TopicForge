@@ -13,10 +13,10 @@ LLM agents are good at reasoning over text, but ROS2 introspection lives in a CL
 | `health_check`    | Environment & mode introspection                       |
 | `list_topics`     | Discover the ROS graph                                 |
 | `get_topic_info`  | Structured info for a single topic                     |
-| `sample_messages` | Peek recent messages on a topic                        |
+| `sample_messages` | Peek recent messages on a topic (publish-time timestamps for `Header`-stamped types) |
 | `analyze_bag`     | Summarize a `.mcap` / `.db3` / `.bag` recording        |
 
-Outputs are structured, JSON-serializable, and stable across runtime modes - they look the same whether the server is talking to a real robot or to its built-in mock fixtures.
+Outputs are structured, JSON-serializable, and stable across runtime modes - they look the same whether the server is talking to a real robot or to its built-in mock fixtures. Every response carries a `mode_effective` field (`"live"` or `"mock"`) so a downstream LLM can tell a real graph from the demo fixtures without re-reading `health_check`.
 
 ## 30-second demo without ROS2
 
@@ -212,7 +212,7 @@ When telemetry is on, each MCP tool call emits a single event with **only** thes
 | `tool_name`       | `"list_topics"`  | One of the five MVP tools — never argument values.                     |
 | `latency_ms`      | `12.34`          | Wall-clock duration of the handler, rounded to 2 decimals.             |
 | `mode`            | `"mock"`         | Effective runtime mode: `mock` or `live`.                              |
-| `version`         | `"0.1.1"`        | TopicForge server version.                                             |
+| `version`         | `"0.1.2"`        | TopicForge server version.                                             |
 | `session_id`      | `"a1b2c3…"`      | Random UUID generated per process. Never persisted, never re-used.     |
 | `success`         | `true`           | Whether the handler returned (true) or raised (false).                 |
 
@@ -228,7 +228,7 @@ The payload shape is fenced by `tests/test_telemetry.py::test_payload_contains_o
 
 ### Where the code lives
 
-The complete telemetry implementation is in [`src/topicforge/telemetry/`](src/topicforge/telemetry/) — read it in under five minutes. In v0.1.1 the default transport is a structured log line (no HTTP endpoint yet); a future S3-backed endpoint will plug into the same `Transport` callable without touching tool handlers.
+The complete telemetry implementation is in [`src/topicforge/telemetry/`](src/topicforge/telemetry/) — read it in under five minutes. The default transport is a structured log line (no HTTP endpoint yet); a future S3-backed endpoint will plug into the same `Transport` callable without touching tool handlers.
 
 ## Security model
 
@@ -243,7 +243,7 @@ Before exposing TopicForge to *untrusted* MCP clients (hosted endpoints, shared 
 
 ## MVP limitations
 
-- `sample_messages` in live mode uses `ros2 topic echo --once` with a short timeout; topics with no current publisher will return an empty sample.
+- `sample_messages` in live mode uses `ros2 topic echo --csv --once` with a short timeout; topics with no current publisher will return an empty sample. `MessageSample.timestamp_ns` is the message's `header.stamp` (publish time) for `Header`-stamped messages and `0` for headerless types (`std_msgs/String`, `geometry_msgs/Twist`, …); surfacing the rmw receive timestamp for arbitrary types waits on the future `rclpy`-backed adapter.
 - `sample_messages` silently clamps `count` to 50 to keep tool output bounded; requests for more than 50 messages return at most 50 (the `SampleResult.count` field reflects what was actually returned).
 - `analyze_bag` in live mode shells out to `ros2 bag info` and parses its text output. Deep anomaly detection is mock-only for now.
 - No streaming / push subscriptions in the MVP. Tools are strictly request/response.

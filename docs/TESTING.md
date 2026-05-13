@@ -40,7 +40,7 @@ source .venv/bin/activate          # Linux / macOS / WSL
 pip install topicforge
 
 # Sanity check
-python -m topicforge --version     # → topicforge 0.1.1
+python -m topicforge --version     # → topicforge 0.1.2
 python -m topicforge --help
 
 # Run the server (it blocks on stdio — that's normal, MCP clients spawn it)
@@ -115,7 +115,7 @@ sudo apt install -y python3-pip python3-venv
 python3 -m venv ~/topicforge-venv
 source ~/topicforge-venv/bin/activate
 pip install topicforge
-topicforge --version               # → topicforge 0.1.1
+topicforge --version               # → topicforge 0.1.2
 ```
 
 ### 2.4 Run live mode end-to-end
@@ -145,7 +145,7 @@ source ~/topicforge-venv/bin/activate
 TOPICFORGE_MODE=live python -m topicforge
 ```
 
-TopicForge will log `topicforge 0.1.1 ready (mode=live, adapter=live)`.
+TopicForge will log `topicforge 0.1.2 ready (mode=live, adapter=live)`.
 From here, an MCP client connected over stdio can call `list_topics`,
 `sample_messages /chatter`, etc., against the real graph.
 

@@ -188,10 +188,16 @@ CLAUDE*.md
 
 
 # -------------------------------------------------------------------------
-# Project-local docs and drafts kept out of the package / out of clients
+# Project-local docs and drafts kept out of the package / out of clients.
+# Allowlist exceptions: the folder README explains the convention, and
+# `*-spec.md` files are committable specs produced by pack-growth streams
+# (e.g. Stream C of a release plan). Everything else under projet-file/
+# stays local: PDFs, personal market briefs, raw strategy notes.
 # -------------------------------------------------------------------------
-docs/projet-file/
-docs/assets/screencast-raw/
+/docs/projet-file/**
+!/docs/projet-file/README.md
+!/docs/projet-file/*-spec.md
+/docs/assets/screencast-raw/
 
 
 # -------------------------------------------------------------------------
