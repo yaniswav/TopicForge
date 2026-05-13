@@ -7,15 +7,20 @@ adapter on machines (and CI) without ROS2.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from topicforge.adapters.ros2_live.adapter import (
     parse_bag_info,
+    parse_csv_echo,
     parse_echo_yaml,
     parse_pub_sub_counts,
     parse_topic_info,
     parse_topic_list,
 )
+
+_FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_parse_topic_list_basic() -> None:
@@ -127,3 +132,140 @@ def test_parse_bag_info_zero_duration_yields_no_frequency() -> None:
     assert result.duration_seconds == 0.0
     assert result.message_count == 0
     assert result.topics == []
+
+
+# ---------------------------------------------------------------------------
+# parse_csv_echo — covers the new `ros2 topic echo --csv --once` shape.
+# ---------------------------------------------------------------------------
+
+
+def test_parse_csv_echo_extracts_header_timestamp_from_fixture() -> None:
+    sample = (_FIXTURES / "csv_echo_imu.txt").read_text()
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, payload = rows[0]
+    # 1715600000 sec + 123456789 nsec -> 1715600000123456789 ns
+    assert ts_ns == 1715600000 * 1_000_000_000 + 123456789
+    # First payload column is the frame_id (timestamp columns are stripped).
+    assert payload["col_0"] == "base_link"
+    # Raw text is preserved (sans surrounding whitespace).
+    assert "1715600000,123456789,base_link" in str(payload["_raw_text"])
+
+
+def test_parse_csv_echo_multi_row_preserves_order_and_timestamps() -> None:
+    sample = (_FIXTURES / "csv_echo_pose_multi.txt").read_text()
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 2
+    ts0, payload0 = rows[0]
+    ts1, payload1 = rows[1]
+    assert ts0 == 1715600100 * 1_000_000_000 + 500000000
+    assert ts1 == 1715600101 * 1_000_000_000 + 750000000
+    # Order matches the file order; payloads differ.
+    assert payload0["col_0"] == "map"
+    assert payload0["col_1"] == "1.0"
+    assert payload1["col_1"] == "1.5"
+
+
+def test_parse_csv_echo_empty_input_returns_empty_list() -> None:
+    # No publisher / echo timed out before printing anything — adapter must
+    # be allowed to return an empty sample list, not crash.
+    assert parse_csv_echo("") == []
+
+
+def test_parse_csv_echo_inline_single_row() -> None:
+    # Compact inline case — sensor_msgs/Imu-shaped, three trailing columns
+    # to confirm column indexing past the timestamp.
+    sample = "1715600000,1,base_link,0.5,-0.5\n"
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, payload = rows[0]
+    assert ts_ns == 1715600000 * 1_000_000_000 + 1
+    assert payload["col_0"] == "base_link"
+    assert payload["col_1"] == "0.5"
+    assert payload["col_2"] == "-0.5"
+
+
+def test_parse_csv_echo_headerless_row_has_zero_timestamp() -> None:
+    # std_msgs/String -> a single column with the string data; no Header
+    # means no timestamp columns. Leading column "hello" doesn't parse as
+    # an int, so the parser keeps all columns in the payload and reports
+    # timestamp_ns == 0 (documented schema behavior).
+    sample = "hello,world\n"
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, payload = rows[0]
+    assert ts_ns == 0
+    assert payload["col_0"] == "hello"
+    assert payload["col_1"] == "world"
+
+
+def test_parse_csv_echo_skips_blank_and_comment_lines() -> None:
+    sample = (
+        "# comment header from a custom user wrapper\n"
+        "\n"
+        "1715600000,42,frame\n"
+        "   \n"
+        "# trailing comment\n"
+    )
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, _payload = rows[0]
+    assert ts_ns == 1715600000 * 1_000_000_000 + 42
+
+
+def test_parse_csv_echo_skips_single_column_rows() -> None:
+    # A degenerate one-column row can't be a Header-stamped sample and
+    # isn't a useful payload; the parser drops it rather than emitting a
+    # confusing `timestamp_ns=0, payload={"col_0": ...}` entry.
+    sample = "just_one_field\n"
+    assert parse_csv_echo(sample) == []
+
+
+def test_parse_csv_echo_garbage_interleaved_does_not_crash() -> None:
+    # Garbage rows still have >= 2 columns so they survive as
+    # zero-timestamp payloads — the parser is intentionally tolerant. The
+    # contract is "don't crash", not "filter every weird shape".
+    sample = "totally,not,a,timestamp,row\n1715600000,7,frame_a\n,,empty,fields\n"
+    rows = parse_csv_echo(sample)
+    # Three rows survive; the middle one has the real timestamp.
+    assert len(rows) == 3
+    assert rows[1][0] == 1715600000 * 1_000_000_000 + 7
+
+
+def test_parse_csv_echo_rejects_out_of_range_nanosec() -> None:
+    # `nanosec` must be < 1e9. A row where the second column is >= 1e9
+    # cannot be a real Header timestamp, so the parser treats both leading
+    # columns as ordinary payload fields.
+    sample = "1715600000,1500000000,frame\n"
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, payload = rows[0]
+    assert ts_ns == 0
+    # Both "timestamp-looking" columns survive in the payload.
+    assert payload["col_0"] == "1715600000"
+    assert payload["col_1"] == "1500000000"
+    assert payload["col_2"] == "frame"
+
+
+def test_parse_csv_echo_rejects_sec_outside_plausible_epoch_window() -> None:
+    # A `sec` value of 1 (e.g. an `int32` field that happens to look like
+    # a small integer) is not a plausible 2000-2100 epoch second and must
+    # be left in the payload — otherwise headerless integer-leading
+    # messages would get a fake timestamp of `~1 ns past the epoch`.
+    sample = "1,2,3\n"
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, payload = rows[0]
+    assert ts_ns == 0
+    assert payload["col_0"] == "1"
+    assert payload["col_1"] == "2"
+    assert payload["col_2"] == "3"
+
+
+def test_parse_csv_echo_handles_negative_sec_gracefully() -> None:
+    # Negative leading column can't be a valid epoch second; payload-only.
+    sample = "-5,100,frame\n"
+    rows = parse_csv_echo(sample)
+    assert len(rows) == 1
+    ts_ns, _payload = rows[0]
+    assert ts_ns == 0

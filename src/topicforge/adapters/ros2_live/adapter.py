@@ -70,7 +70,17 @@ class Ros2CliAdapter:
     def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
         # `ros2 topic echo` blocks indefinitely; --once + bounded timeout is the
         # safe MVP shape. Richer windowed sampling is a roadmap item.
+        #
+        # We invoke `--csv --once`: ros2cli's `message_to_csv` flattens the
+        # message in declaration order, so for any `Header`-stamped message
+        # the first two columns are `header.stamp.sec` and
+        # `header.stamp.nanosec`. That gives a real publish-time timestamp
+        # without depending on rclpy. Headerless messages (e.g.
+        # `std_msgs/String`, `geometry_msgs/Twist`) have no embedded
+        # timestamp and the parser returns 0 for those rows — documented in
+        # the `MessageSample.timestamp_ns` schema.
         # TODO(roadmap): rclpy-backed adapter — windowed echo, time-range,
+        # access to rmw receive timestamps (vs publish-time from Header),
         # better deserialization of complex message payloads.
         if count <= 0:
             return []
@@ -78,20 +88,22 @@ class Ros2CliAdapter:
         info = self.get_topic_info(topic)
         try:
             out = self._run(
-                [self._exe, "topic", "echo", "--once", topic],
+                [self._exe, "topic", "echo", "--csv", "--once", topic],
                 timeout=_SAMPLE_TIMEOUT_SEC,
             )
         except AdapterError as exc:
             log.info("sample_messages on %s returned no data: %s", topic, exc)
             return []
 
+        rows = parse_csv_echo(out)
         return [
             MessageSample(
                 topic=topic,
                 message_type=info.message_type,
-                timestamp_ns=0,
-                payload=parse_echo_yaml(out),
+                timestamp_ns=ts_ns,
+                payload=payload,
             )
+            for ts_ns, payload in rows
         ]
 
     # ------------------------------ bag ----------------------------------
@@ -245,6 +257,72 @@ def parse_echo_yaml(stdout: str) -> dict[str, object]:
             flat[key.strip()] = value.strip()
     flat["_raw_text"] = stdout
     return flat
+
+
+# Plausible bounds for a ROS2 Header timestamp in `sec, nanosec` form.
+# `sec` is seconds since the epoch; we accept anything from year 2000 to
+# year 2100 as "clearly an epoch second". `nanosec` is the sub-second
+# remainder and is strictly < 1e9. These bounds let the parser decide
+# whether the leading two CSV columns look like a real timestamp or are
+# just the first two scalar fields of a headerless message.
+_TS_SEC_MIN = 946_684_800  # 2000-01-01 UTC
+_TS_SEC_MAX = 4_102_444_800  # 2100-01-01 UTC
+_TS_NSEC_MAX = 1_000_000_000
+
+
+def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
+    """Parse `ros2 topic echo --csv [--once]` output.
+
+    Returns a list of `(timestamp_ns, payload)` tuples — one per CSV row.
+
+    `ros2cli`'s `message_to_csv` flattens the message in declaration order,
+    so for any message whose first field is a `std_msgs/Header` the first
+    two columns are `header.stamp.sec` and `header.stamp.nanosec`. We
+    detect that shape by checking whether the leading two columns parse as
+    a plausible epoch-second / nanosec pair (`2000-01-01` ≤ sec <
+    `2100-01-01`, `0` ≤ nanosec < `1e9`). When they do, `timestamp_ns` is
+    `sec * 1_000_000_000 + nanosec` and those two columns are dropped from
+    the payload. When they don't, the row is a headerless message and
+    `timestamp_ns` is 0 (documented behavior in
+    `MessageSample.timestamp_ns`).
+
+    Tolerant to blank lines and comment lines starting with `#` — both are
+    skipped. Rows with fewer than two columns are skipped silently (no
+    raise), matching the convention of the other parsers in this module:
+    a malformed CLI artifact must not break the whole sample call.
+
+    Example input (`sensor_msgs/Imu`, single row):
+        1715600000,123456789,base_link,0.0,0.0,0.0,1.0, ...
+    -> `[(1715600000123456789, {"col_2": "base_link", "col_3": "0.0", ...,
+                                "_raw_text": "..."})]`
+    """
+    rows: list[tuple[int, dict[str, object]]] = []
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2:
+            # Single-column rows can't carry a Header timestamp and aren't
+            # useful payloads either — skip rather than emit a degenerate
+            # sample.
+            continue
+
+        ts_ns = 0
+        value_parts = parts
+        try:
+            sec = int(parts[0])
+            nsec = int(parts[1])
+        except ValueError:
+            sec = nsec = -1
+        if _TS_SEC_MIN <= sec < _TS_SEC_MAX and 0 <= nsec < _TS_NSEC_MAX:
+            ts_ns = sec * 1_000_000_000 + nsec
+            value_parts = parts[2:]
+
+        payload: dict[str, object] = {f"col_{i}": value for i, value in enumerate(value_parts)}
+        payload["_raw_text"] = line
+        rows.append((ts_ns, payload))
+    return rows
 
 
 def parse_bag_info(stdout: str, *, fallback_path: str) -> BagAnalysis:
