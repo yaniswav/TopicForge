@@ -7,20 +7,21 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
-### Strategic
-
-- (2026-05-13) Repositioned to **safety-first read-only** as the primary product identity. README and `docs/product-plan.md §1` now lead with "read-only by architecture, not by configuration" framing; all docs cascading to align.
-- (2026-05-13) **MCP 02 reassigned to DdsForge** (safety-first read-only DDS observability across middleware vendors). DatasetForge (Vision Dataset Inspector) moves to MCP 03. Specs: `docs/projet-file/mcp-02-spec.md` (DdsForge), `docs/projet-file/mcp-03-spec.md` (DatasetForge).
-
 ## [0.1.2] - 2026-05-13
 
 ### Fixed
 
 - `sample_messages` now returns real publish-time timestamps in live mode for `Header`-stamped messages. The live adapter previously shelled out to `ros2 topic echo --once`, which does not emit timestamps, so `MessageSample.timestamp_ns` was always `0`. The invocation is now `ros2 topic echo --csv --once`, whose flattened CSV exposes `header.stamp.sec` and `header.stamp.nanosec` as the first two columns for any `Header`-stamped message; the new `parse_csv_echo` parser reconstructs `timestamp_ns = sec * 1_000_000_000 + nanosec` and strips those two columns out of the payload. **Headerless message types** (e.g. `std_msgs/String`, `geometry_msgs/Twist`) still return `timestamp_ns=0` — they carry no embedded timestamp. Surfacing the rmw **receive** timestamp (rather than the publish-time `header.stamp`) for arbitrary message types remains a roadmap item tied to the future `rclpy`-backed adapter.
 
+### Added
+
+- **`mode_effective` on every tool response (schema, soft-breaking additive).** `TopicInfo`, `SampleResult`, and `BagAnalysis` now carry a required `mode_effective: Literal["mock", "live"]` field. A new `effective_mode` property on the `RosAdapter` protocol is the single source of truth; `Ros2CliAdapter` returns `"live"`, `MockAdapter` returns `"mock"`, services thread it through at result construction time. **Producer side**: Python code constructing these models directly must now supply `mode_effective` — models are `frozen=True, extra="forbid"` with no default. **Client side (over MCP)**: additive — an MCP client consuming JSON sees one extra key per response and is unaffected unless it strictly validates against the v0.1.1 schema with a no-extra-keys assumption.
+- **DdsForge spec** (`docs/projet-file/mcp-02-spec.md`). Strategic draft for MCP 02: safety-first read-only DDS observability across middleware vendors (CycloneDDS OSS, RTI Connext Pro tier). Five tools, `MiddlewareAdapter` protocol, mock + cyclone + rti + auto modes. Reviewer notes appended (2026-05-13): wrong cross-reference in §11 flagged.
+- **DatasetForge spec** (`docs/projet-file/mcp-03-spec.md`). Vision Dataset Inspector spec, re-slotted to MCP 03 after competitive-landscape audit that surfaced zero non-ROS DDS-MCP projects and made DdsForge the stronger MCP 02 candidate. Reviewer notes appended (2026-05-13): contradictory §11 phrasing and two implicitly-resolved open questions flagged.
+
 ### Changed
 
-- **Schema (soft-breaking).** Every tool response now carries `mode_effective: Literal["mock", "live"]`. Field added to `TopicInfo`, `SampleResult`, and `BagAnalysis` (`HealthReport` already exposed effective mode under `mode`). A new `effective_mode` property on the `RosAdapter` protocol is the single source of truth; `Ros2CliAdapter` returns `"live"`, `MockAdapter` returns `"mock"`, services thread it through at result construction time. **Producer side**: Python code constructing these models directly (in tests, in downstream tools that import the schemas) must now supply `mode_effective` — the models are `frozen=True, extra="forbid"` and the field has no default. **Client side (over MCP)**: the change is additive — an MCP client consuming JSON sees one extra optional field per response and is unaffected unless it strictly validates payloads against the v0.1.1 schema with a no-extra-keys / required-keys-only assumption.
+- **Safety-first read-only repositioning.** README and `docs/product-plan.md §1` now lead with "read-only by architecture, not by configuration" as the primary identity. Pack candidate list updated: MCP 02 is now DdsForge (non-ROS DDS observability, zero-competition niche); DatasetForge slides to MCP 03. Strategic context in `docs/product-plan.md §4` and §8 (DDS-complete horizon).
 - **Internal API.** `Inspector.sample_messages` now returns a `SampleResult` envelope (previously a `list[MessageSample]`). The MCP-facing tool handler is reduced to a thin pass-through. No effect on the tool's wire-level response shape (handlers already wrapped the list into `SampleResult`), but flagged here for anyone importing `Inspector` directly outside this repo.
 
 ### Internal
