@@ -41,22 +41,30 @@ class MessageSample(BaseModel):
     )
     timestamp_ns: int = Field(
         description=(
-            "Receive timestamp in nanoseconds since epoch. **Always 0 in the MVP "
-            "live adapter** (which shells out to `ros2 topic echo --once` and has "
-            "no access to the original receive time); a future rclpy-backed "
-            "adapter will populate this. Mock mode emits monotonically "
-            "increasing values for deterministic ordering."
+            "Timestamp in nanoseconds since epoch. In live mode this is the "
+            "`header.stamp` of the sampled message when present — the live "
+            "adapter invokes `ros2 topic echo --csv --once`, whose flattened "
+            "CSV exposes `header.stamp.sec`/`nanosec` as the first two "
+            "columns for any `Header`-stamped message. **Headerless message "
+            "types** (e.g. `std_msgs/String`, `geometry_msgs/Twist`) carry "
+            "no embedded timestamp, and `timestamp_ns` falls back to 0; an "
+            "rclpy-backed adapter will eventually expose rmw receive times "
+            "for those. Mock mode emits monotonically increasing values for "
+            "deterministic ordering."
         )
     )
     payload: dict[str, object] = Field(
         default_factory=dict,
         description=(
-            "Structured message payload. **In live mode the MVP parser only "
-            "extracts top-level keys**; nested fields and the full YAML text "
-            "are preserved verbatim under the reserved `_raw_text` key for the "
-            "client to handle. In mock mode the payload is fully structured "
-            "and `_raw_text` is absent. Large messages (e.g. images) may be "
-            "summarized to keep tool output bounded."
+            "Structured message payload. **In live mode the MVP parser "
+            "exposes the message fields as positional CSV columns** keyed "
+            "as `col_0`, `col_1`, ... (`header.stamp.sec`/`nanosec` are "
+            "stripped out into `timestamp_ns` when detected). The raw CSV "
+            "row is preserved verbatim under the reserved `_raw_text` key "
+            "so clients can re-parse against the message's IDL when needed. "
+            "In mock mode the payload is fully structured and `_raw_text` "
+            "is absent. Large messages (e.g. images) may be summarized to "
+            "keep tool output bounded."
         ),
     )
 

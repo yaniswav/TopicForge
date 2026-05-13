@@ -1,0 +1,9 @@
+# Synthesized sample of `ros2 topic echo --csv` for a Header-stamped pose
+# topic, two consecutive rows. Used to verify multi-row parsing — in
+# practice `--once` returns a single row, but a future windowed sampler
+# (rclpy backend) will emit many. The parser must already handle both.
+#
+# Columns: header.stamp.sec, header.stamp.nanosec, header.frame_id,
+#          pose.position.{x,y,z}, pose.orientation.{x,y,z,w}
+1715600100,500000000,map,1.0,2.0,0.0,0.0,0.0,0.0,1.0
+1715600101,750000000,map,1.5,2.1,0.0,0.0,0.0,0.0,1.0

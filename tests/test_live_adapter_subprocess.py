@@ -110,6 +110,42 @@ def test_sample_messages_swallows_echo_timeout_and_returns_empty(
     assert adapter.sample_messages("/cmd_vel", count=5) == []
 
 
+def test_sample_messages_invokes_csv_echo_and_extracts_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`sample_messages` must shell out with `--csv --once` and surface the
+    `header.stamp`-derived `timestamp_ns` from the parser."""
+    _stub_which_resolves(monkeypatch)
+
+    info_stdout = "Type: sensor_msgs/msg/Imu\nPublisher count: 1\nSubscription count: 0\n"
+    csv_stdout = "1715600000,123456789,base_link,0.0,0.0,0.0,1.0\n"
+    captured_cmds: list[list[str]] = []
+
+    def run_stub(cmd: list[str], **_kwargs: object) -> object:
+        captured_cmds.append(list(cmd))
+        if "info" in cmd:
+            return SimpleNamespace(returncode=0, stdout=info_stdout, stderr="")
+        return SimpleNamespace(returncode=0, stdout=csv_stdout, stderr="")
+
+    _stub_run(monkeypatch, run_stub)
+    adapter = Ros2CliAdapter()
+    samples = adapter.sample_messages("/imu", count=1)
+
+    # The echo invocation carries `--csv --once` in that order (per adapter
+    # wiring); flipping it would still work with ros2cli, but the assertion
+    # pins the deliberate shape so a future refactor doesn't silently drop
+    # the flag that makes timestamps available.
+    echo_cmd = next(c for c in captured_cmds if "echo" in c)
+    assert "--csv" in echo_cmd
+    assert "--once" in echo_cmd
+    assert echo_cmd[echo_cmd.index("--csv") + 1] == "--once"
+
+    assert len(samples) == 1
+    assert samples[0].timestamp_ns == 1715600000 * 1_000_000_000 + 123456789
+    assert samples[0].message_type == "sensor_msgs/msg/Imu"
+    assert samples[0].payload["col_0"] == "base_link"
+
+
 def test_list_topics_safe_counts_default_to_zero_on_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
