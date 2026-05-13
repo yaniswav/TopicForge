@@ -6,11 +6,13 @@
 
 ## 1. Identity
 
-TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents inspect ROS2 topics and analyze ROS bag files through a small, well-typed tool surface. Today it exposes five read-only tools — `health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag` — backed by either a deterministic mock adapter (no ROS2 required) or a `ros2` CLI wrapper (full live introspection). Outputs are structured Pydantic schemas, stable across runtime modes.
+TopicForge is **the safety-first read-only MCP for ROS2 robotics**. Where general-purpose ROS-MCP servers let an LLM publish topics, call services, and command robots — useful for demos, untenable for production fleets, defense systems, or anything safety-certified — TopicForge is read-only by **architecture**, not by configuration. There is no write path to misconfigure, no permission system to audit, no liability conversation to have. The MCP client can see the robot stack; it cannot touch it.
 
-The product is **read-only by design**. The write path — publishing topics, commanding robots — is intentionally out of scope and will remain so unless an explicit per-tool opt-in and auth path lands later. Safety, trust, and liability win over convenience.
+Concretely, the server exposes five typed tools today — `health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag` — backed by either a deterministic mock adapter (no ROS2 required) or a `ros2` CLI wrapper (full live introspection). Outputs are frozen Pydantic schemas, stable across runtime modes. Telemetry is opt-in, six fields, zero user payload.
 
-TopicForge is also **MCP 01 of a planned robotics/CV pack** of three to five MCPs (candidate set: Vision Dataset Inspector, Synthetic Data Pipeline Controller, URDF Generator/Validator, Robotics Trajectory Visualizer). The conventions established here — Pydantic schemas with `extra="forbid"` and `frozen=True`, adapter protocol, mock-first development, opt-in telemetry — are the template for the rest of the pack.
+The ROS-MCP category is no longer empty (see §11 Risk register for the competitive landscape as of 2026-05-13). What TopicForge defends, and the rest of the pack will inherit, is the read-only-by-architecture stance and the production-quality engineering envelope around it — frozen schemas, mock-first development, telemetry contract pinned by tests, Windows-first cross-platform, no shell injection, deterministic outputs.
+
+TopicForge is also **MCP 01 of a planned robotics/CV pack** of three to five MCPs (candidate set: Vision Dataset Inspector, Synthetic Data Pipeline Controller, URDF Generator/Validator, Robotics Trajectory Visualizer). All inherit the read-only-by-architecture rule. The conventions established here — Pydantic schemas with `extra="forbid"` and `frozen=True`, adapter protocol, mock-first development, opt-in telemetry — are the template for the rest of the pack.
 
 ---
 
@@ -24,28 +26,29 @@ The window is real. MCP adoption is growing in 2026 (Claude Desktop, Claude Code
 
 ## 3. Target users
 
-Three concentric circles:
+Three concentric circles, ranked by strategic priority rather than acquisition cost.
 
-**Core.** Individual ROS2 developers and robotics ML/CV engineers who already use Claude Desktop or Claude Code daily. They want their assistant to stop hallucinating topic names and start answering from the actual graph or bag. Free tier captures them. They are the audience for the GitHub README, Reddit launches (r/ROS, r/ClaudeAI, r/robotics), and the 30-second mock-mode demo.
+**Strategic core.** Safety-conscious robotics teams: industrial integrators, automotive (AUTOSAR Adaptive surfaces overlap with ROS2 in dev/sim), aerospace simulation, naval, and defense teams that already evaluate AI tooling but cannot accept a write path into a production robot. The read-only-by-architecture stance is a sales asset — it short-circuits the security review that kills hosted control servers. Free tier captures the developer inside the team; Pro tier and the future DDS expansion (§8) target the team-level buyer. This audience is explicitly the strategic anchor of the product, and the reason hook B over hook A or C (see decision log).
 
-**Adjacent.** Small robotics teams (3 to 20 engineers) where the lead is a Claude power user and wants the team's AI tooling to share a grounded view of the stack. Pro tier (URDF inspection, bag anomaly detection, multi-bag diff) targets this segment first, at a price point ($12 early / $19/month standard) that fits an individual line item rather than a procurement cycle.
+**Tactical adjacent.** Small robotics and ML/CV teams (3 to 20 engineers) where the lead is a Claude power user and wants the team's AI tooling to share a grounded view of the stack — without the OSS-control servers being the default answer because of their write-path implications. Pro tier (URDF inspection, bag anomaly detection, multi-bag diff) targets this segment first, at a price point ($12 early / $19/month standard) that fits an individual line item rather than a procurement cycle.
 
-**Future (post-Phase 2).** Defense, aerospace, automotive AUTOSAR Adaptive, and naval teams running DDS-based stacks beyond ROS2. The conversion path is the same abstraction — the `RosAdapter` generalizes into a `DdsAdapter` family — but the sales motion is enterprise (RFPs, security review, export controls). This circle is explicitly **not** targeted in Phase 1 or Phase 2. See §8.
+**Individual developer (free tier funnel).** Solo ROS2 developers and robotics ML/CV engineers who already use Claude Desktop or Claude Code daily. They want grounded introspection without bringing up a full rosbridge stack. Free tier captures them. They are the audience for the GitHub README, Reddit launches (r/ROS, r/ClaudeAI, r/robotics), and the 30-second mock-mode demo. Volume on this circle drives discoverability for the other two.
 
 ---
 
 ## 4. The pack vision
 
-The strategic bet is **pack breadth over single-MCP depth**. Five focused MCPs serving the same robotics/CV audience compound: one user installs one tool, returns for the next, and after three the user is locked into the ecosystem. The alternative — driving TopicForge to feature parity with an `rclpy` SDK — is more familiar engineering work but loses to the bigger story.
+The strategic bet is **pack breadth over single-MCP depth**. Three to five focused MCPs serving overlapping robotics, middleware, and CV audiences compound: one user installs one tool, returns for the next, and after three the user is locked into the ecosystem. The alternative — driving TopicForge to feature parity with an `rclpy` SDK — is more familiar engineering work but loses to the bigger story and runs straight into the crowded ROS-MCP space (§11 competitive landscape).
 
-MCP 01 — TopicForge — is shipping. MCP 02 candidate set (decided per Stream C of the v0.1.2 action plan):
+MCP 01 — TopicForge — is shipping (read-only ROS2 introspection).
 
-- **Vision Dataset Inspector.** Read images/COCO/YOLO/HF-Datasets directories, return structured statistics, class balance, sample previews. Closest persona to TopicForge.
-- **Synthetic Data Pipeline Controller.** Read-only over Blender / Gazebo / Isaac Sim scene files and render queues. Builds on the user's existing Blender expertise.
-- **URDF Generator / Validator.** Parse `.urdf` / `.xacro`, surface kinematic issues, generate scaffolds. Overlaps with the Pro tier of TopicForge; a candidate for repositioning rather than a separate MCP.
-- **Robotics Trajectory Visualizer.** Read trajectory CSVs / bags, return geometric summaries and anomalies. Adjacent but smaller audience.
+**MCP 02 — DdsForge.** Locked 2026-05-13. Safety-first read-only DDS observability across middleware vendors (CycloneDDS in OSS, RTI Connext in Pro tier). Five tools: `health_check`, `list_participants`, `list_topics`, `detect_qos_mismatches`, `peek_samples`. Targets the DDS-native audience (defense, aerospace, automotive AUTOSAR Adaptive, naval, industrial) that the ROS-MCP competitive set does not address. Full spec lives in `docs/projet-file/mcp-02-spec.md`. The `RosAdapter` protocol generalizes to `MiddlewareAdapter` cleanly — co-development cost with TopicForge is low.
 
-Final MCP 02 ranking lives in `docs/projet-file/mcp-02-spec.md` (produced by Stream C of v0.1.2).
+**MCP 03 — DatasetForge.** Vision Dataset Inspector. Read images + annotations (COCO at MVP; YOLO / HF Datasets on roadmap) and answer structured questions about class balance, split coherence, annotation quality. Targets the ML/CV audience overlapping with TopicForge but distinct from DdsForge. Full spec preserved verbatim in `docs/projet-file/mcp-03-spec.md` (this spec was authored as MCP 02 before the competitive audit reassigned the slot).
+
+**MCP 04 / 05 candidates (unranked).** URDF Generator / Validator, Synthetic Data Pipeline Controller (Blender / Gazebo / Isaac Sim), Robotics Trajectory Visualizer. Ranking and selection deferred until DdsForge ships and the pack-shared infrastructure extraction (per `MCP 03 §11` open questions) is done.
+
+The pack is sequenced so each MCP attacks an uncrowded segment and inherits the layer separation, mock-first development, opt-in telemetry, and read-only-by-architecture commitments from TopicForge. The first three MCPs are the rule-of-three trigger for extracting pack-shared infrastructure (telemetry, license, settings resolver) into a separate template repo.
 
 ---
 
@@ -97,11 +100,15 @@ Phase 3 starts when at least one Pro feature has shipped and the pack has three 
 
 ---
 
-## 8. Horizons (post-Phase 1)
+## 8. Horizons — the DDS-complete expansion
 
-**DDS-complete market (long-term).** Generalize the `RosAdapter` abstraction into a `DdsAdapter` family. Ship `CycloneDdsAdapter` in open-source v0.x to address non-ROS DDS users (aerospace, automotive AUTOSAR Adaptive, naval, simulation). Reserve commercial DDS implementations (RTI Connext, Fast DDS Pro) for the `topicforge_pro` tier with BYO-license, aligned with the existing license-gated Pro architecture. OpenSplice is EOL — not pursued. Defense / aerospace verticals are interested but require enterprise sales motion (RFPs, security review, export controls); pursue only after three or more open-source logos validate positioning.
+With the safety-first positioning (§1, §3 strategic core), the DDS expansion is **less a horizon and more a strategic continuation**. The read-only-by-architecture stance is exactly what makes TopicForge legible to defense, aerospace, automotive AUTOSAR Adaptive, and naval stacks — none of which would accept a rosbridge-style write path through an LLM. The marketing should stay quiet until Phase 2 has shipped (no enterprise pricing page, no defense-flavored landing), but the **architecture and persona work can begin during Phase 1**.
 
-This horizon is an anchor, not a roadmap item. It exists so that architectural choices today (adapter abstraction, mode resolution, license-gated Pro detection) remain compatible with it. Do not capitalize on it in marketing or pricing until Phase 2 has shipped.
+**Plan.** Generalize the `RosAdapter` abstraction into a `DdsAdapter` family. Ship `CycloneDdsAdapter` in open-source v0.x to address non-ROS DDS users. Reserve commercial DDS implementations (RTI Connext, Fast DDS Pro) for the `topicforge_pro` tier with BYO-license, aligned with the existing license-gated Pro architecture. OpenSplice is EOL — not pursued.
+
+**Phasing.** Phase 1 keeps the abstraction layer compatible (this is already true — the `RosAdapter` protocol generalizes cleanly to a `DdsAdapter` superset). Phase 2 introduces the `DdsAdapter` protocol as a parallel to `RosAdapter` and ships `CycloneDdsAdapter` if at least one non-ROS user has asked. Phase 3 — and only Phase 3 — surfaces this in marketing and pricing.
+
+**Enterprise sales caveat.** Defense and aerospace are interested but require enterprise motion (RFPs, security review, export controls). Pursue only after three or more open-source logos in the broader DDS user base (non-ROS) validate the positioning. Do not approach defense primes cold; let the open-source CycloneDDS traction surface the inbound.
 
 ---
 
@@ -132,15 +139,23 @@ Channels, in order of priority:
 
 ## 11. Risk register
 
-The risks worth tracking explicitly:
+The risks worth tracking explicitly. Updated 2026-05-13 with the competitive landscape audit.
 
+- **Competitive landscape (NEW, 2026-05-13).** The ROS-MCP category is no longer empty. Known projects, by relevance:
+  - `robotmcp/ros-mcp-server` (1.2k stars, Apache 2.0, on PyPI as `ros-mcp`, v3.0.1): rosbridge-based, **write path**, topics/services/actions/parameters, ROS 1+2, viral demos (Isaac Sim, Unitree). The incumbent and the one we are not.
+  - "ROSBag MCP Server" (arXiv 2511.03497, Nov 2025): wraps `ros2 bag list` / `ros2 bag info`, analyzes trajectories, scans, transforms, time series. Academic credibility; bag analysis is *not* an empty niche.
+  - `araitaiga/rosout_mcp`, `TakanariShimbo/rosbridge-mcp-server`, `lpigeon/ros_mcp_server`, kakimochi's ROS 2 MCP: smaller projects covering overlapping ground.
+  - Open Robotics Cloud Robotics WG has discussed ROSBag MCP publicly (2025-09-24).
+
+  Mitigation: TopicForge's defensible angle is **read-only by architecture** (no write path that even *can* misconfigure), and the safety-first positioning that follows from it (§1, §3 strategic core). Bag analysis remains useful in the tool surface but is not the headline. The DDS expansion (§8) is the long-term moat the competitors cannot easily match.
+
+- **Positioning collapse.** The biggest non-technical risk: shipping with a hook that is feature-parity-with-robotmcp-minus-write-path. That looks worse than them and competes on volume we will lose. Mitigation: the README and product-plan §1 must lead with safety-first, not with "ground truth for ROS". Audit every release for hook drift.
 - **MCP standard churn.** Mitigation: pin `mcp >= 1.0.0` and follow the FastMCP API. Major MCP version bumps will require coordinated releases; CHANGELOG signals breaking changes.
 - **ROS2 CLI output drift across distros.** Pure parsers exist precisely so a new distro is a parser tweak, not an adapter rewrite. `.claude/skills/topicforge/write-pure-parser/SKILL.md` codifies the convention. `parse_echo_yaml` in particular is brittle and is the parser most likely to regress on Iron / Kilted.
 - **Insufficient Pro tier demand.** Mitigation: no Pro feature ships until ten teams sign up (terms in `docs/pro.md`). If demand stalls, the MVP stays the product. No sunk cost on unshipped paywall features.
-- **A faster competitor.** Robotics + LLM + MCP is a triple intersection — small population today, but a single well-funded entrant could change that. Mitigation: pack breadth, not deeper-than-needed single-MCP feature work. A user who installs three MCPs from one author is harder to displace than one who installs the best-in-class for one capability.
 - **Cross-platform regressions on Windows.** TopicForge's primary developer environment is Windows. The Makefile uses POSIX shell syntax; users on plain PowerShell need the documented escape hatches. Mitigation: tested directly in CI on `ubuntu-latest` only today; Windows coverage is documented in `docs/TESTING.md` and exercised manually before each release.
 - **Telemetry trust.** Even opt-in telemetry can damage trust if the payload contract drifts. Mitigation: `tests/test_telemetry.py::test_payload_contains_only_whitelisted_keys` pins the six allowed keys. Any change requires a CHANGELOG entry and a README Telemetry section update in the same PR.
-- **Time / focus dilution.** A solo maintainer trying to drive five MCPs, a Pro tier, marketing, and a future DDS pivot is the realistic risk. Mitigation: explicit phase gates (do not start Phase 2 until Phase 1 is shipped, do not act on the DDS horizon until Phase 2 has shipped).
+- **Time / focus dilution.** A solo maintainer trying to drive five MCPs, a Pro tier, marketing, and a future DDS pivot is the realistic risk. Mitigation: explicit phase gates (do not start Phase 2 until Phase 1 is shipped, do not act on the DDS horizon until Phase 2 has shipped) — though §8 now allows architectural prep for DDS during Phase 1.
 
 ---
 
