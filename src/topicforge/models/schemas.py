@@ -153,6 +153,6 @@ class HealthReport(BaseModel):
             "Server-side cap on the number of samples returned per "
             "`sample_messages` call. Requests above this limit are silently "
             "clamped; the value is exposed here so a client can size its "
-            "requests proactively. Constant in v0.1.0."
+            "requests proactively. Constant within a given server version."
         ),
     )

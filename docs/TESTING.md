@@ -6,7 +6,7 @@ This document is the single source of truth for "how do I actually try
 this thing"; the top-level `README.md` only covers the basics.
 
 If you find a step that doesn't work, please [open an issue](https://github.com/yaniswav/TopicForge/issues)
-— that's the highest-signal feedback for v0.1.0.
+— that's the highest-signal feedback for the current release.
 
 ---
 
@@ -40,7 +40,7 @@ source .venv/bin/activate          # Linux / macOS / WSL
 pip install topicforge
 
 # Sanity check
-python -m topicforge --version     # → topicforge 0.1.0
+python -m topicforge --version     # → topicforge 0.1.1
 python -m topicforge --help
 
 # Run the server (it blocks on stdio — that's normal, MCP clients spawn it)
@@ -115,7 +115,7 @@ sudo apt install -y python3-pip python3-venv
 python3 -m venv ~/topicforge-venv
 source ~/topicforge-venv/bin/activate
 pip install topicforge
-topicforge --version               # → topicforge 0.1.0
+topicforge --version               # → topicforge 0.1.1
 ```
 
 ### 2.4 Run live mode end-to-end
@@ -145,7 +145,7 @@ source ~/topicforge-venv/bin/activate
 TOPICFORGE_MODE=live python -m topicforge
 ```
 
-TopicForge will log `topicforge 0.1.0 ready (mode=live, adapter=live)`.
+TopicForge will log `topicforge 0.1.1 ready (mode=live, adapter=live)`.
 From here, an MCP client connected over stdio can call `list_topics`,
 `sample_messages /chatter`, etc., against the real graph.
 
@@ -378,7 +378,7 @@ The first call to a `list_topics` in live mode shells out to
 ## What's intentionally missing
 
 - **No write path**. Publishing or commanding robots is out of scope by
-  design. v0.1.0 is read-only and there is no roadmap to change that
+  design. TopicForge is read-only and there is no roadmap to change that
   without explicit per-tool opt-in and auth.
 - **No `rclpy`-backed adapter yet**. Live mode uses the `ros2` CLI, which
   is portable across distros but loses the per-message timestamp and
@@ -392,8 +392,8 @@ The first call to a `list_topics` in live mode shells out to
 
 ## Feedback
 
-If you got here, you already invested 15 minutes in evaluating an
-unreleased v0.1.0. The two highest-value things you can do next:
+If you got here, you already invested 15 minutes in evaluating
+TopicForge. The two highest-value things you can do next:
 
 1. Try it against your own ROS2 graph and tell me which tool's output
    was useful, useless, or wrong on your stack — via [GitHub
