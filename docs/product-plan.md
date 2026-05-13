@@ -12,7 +12,7 @@ Concretely, the server exposes five typed tools today — `health_check`, `list_
 
 The ROS-MCP category is no longer empty (see §11 Risk register for the competitive landscape as of 2026-05-13). What TopicForge defends, and the rest of the pack will inherit, is the read-only-by-architecture stance and the production-quality engineering envelope around it — frozen schemas, mock-first development, telemetry contract pinned by tests, Windows-first cross-platform, no shell injection, deterministic outputs.
 
-TopicForge is also **MCP 01 of a planned robotics/CV pack** of three to five MCPs (candidate set: Vision Dataset Inspector, Synthetic Data Pipeline Controller, URDF Generator/Validator, Robotics Trajectory Visualizer). All inherit the read-only-by-architecture rule. The conventions established here — Pydantic schemas with `extra="forbid"` and `frozen=True`, adapter protocol, mock-first development, opt-in telemetry — are the template for the rest of the pack.
+TopicForge is also **MCP 01 of a planned robotics/CV pack** of three to five MCPs (next: DdsForge; then DatasetForge; candidates: Synthetic Data Pipeline Controller, URDF Generator/Validator, Robotics Trajectory Visualizer). All inherit the read-only-by-architecture rule. The conventions established here — Pydantic schemas with `extra="forbid"` and `frozen=True`, adapter protocol, mock-first development, opt-in telemetry — are the template for the rest of the pack.
 
 ---
 
@@ -58,7 +58,7 @@ The pack is sequenced so each MCP attacks an uncrowded segment and inherits the 
 
 - v0.1.0 (2026-05-12) — MVP shipped on PyPI. Five MCP tools, mock + live CLI adapters, full Pydantic schemas, ruff + pytest, CI on Python 3.11 + 3.12, GitHub Action publishing on tag `v*`.
 - v0.1.1 (2026-05-13) — Opt-in anonymous telemetry behind `TOPICFORGE_TELEMETRY=on`. Six-field event payload (`tool_name`, `latency_ms`, `mode`, `version`, `session_id`, `success`), pluggable transport, structured-log default, OFF-means-no-network pinned by unit test.
-- v0.1.2 (2026-05-13) — `sample_messages` in live mode returns real publish-time timestamps for `Header`-stamped messages via `ros2 topic echo --csv --once` and the new `parse_csv_echo` pure parser; headerless types still return `0` (rmw receive timestamps remain a roadmap item tied to the `rclpy`-backed adapter). Every tool response now carries `mode_effective: Literal["mock", "live"]` (`TopicInfo`, `SampleResult`, `BagAnalysis`), backed by a new `effective_mode` property on the `RosAdapter` protocol — soft-breaking on the producer side, additive over the wire. MCP 02 spec drafted at `docs/projet-file/mcp-02-spec.md` (Vision Dataset Inspector / DatasetForge).
+- v0.1.2 (2026-05-13) — `sample_messages` in live mode returns real publish-time timestamps for `Header`-stamped messages via `ros2 topic echo --csv --once` and the new `parse_csv_echo` pure parser; headerless types still return `0` (rmw receive timestamps remain a roadmap item tied to the `rclpy`-backed adapter). Every tool response now carries `mode_effective: Literal["mock", "live"]` (`TopicInfo`, `SampleResult`, `BagAnalysis`), backed by a new `effective_mode` property on the `RosAdapter` protocol — soft-breaking on the producer side, additive over the wire. DdsForge (MCP 02) spec drafted at `docs/projet-file/mcp-02-spec.md`; DatasetForge (MCP 03) spec at `docs/projet-file/mcp-03-spec.md`.
 - Live mode validated end-to-end against ROS2 Jazzy on a developer workstation.
 
 **Remaining for Phase 1:**
