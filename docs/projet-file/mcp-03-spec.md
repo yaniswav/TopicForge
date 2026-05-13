@@ -280,3 +280,55 @@ Deliberate gaps for the maintainer — not roadmap items.
   `write-pure-parser`, `update-mock-fixtures`, `release-checklist` apply
   near-verbatim. Fork-and-tweak at MVP; lift to a shared template when
   MCP 03 starts.
+
+---
+
+## Reviewer notes (2026-05-13)
+
+> This section was added by the spec-reviewer agent during the v0.1.2 prep
+> review. It does not modify the spec body. Issues listed below must be
+> resolved before or at implementation kickoff.
+
+### Issue 1 — Contradictory phrasing in §11 (Pack-shared infrastructure)
+
+**Location.** §11, "Pack-shared infrastructure" bullet:
+> "Phase 1 of DatasetForge duplicates TopicForge's telemetry / license /
+> settings resolver. MCP 03 must not. Lift to a `pack-template/` repo when
+> MCP 03 starts, not before."
+
+**Problem.** The first sentence says Phase 1 of DatasetForge *will* duplicate
+the infrastructure. The second sentence says MCP 03 *must not* duplicate it.
+This is self-contradictory and leaves the implementer without a clear
+sequence. The intent (per `mcp-02-spec.md §11`) is that DatasetForge, as the
+third user of the pattern, triggers the extraction *before* its own Phase 1
+implementation begins — so DatasetForge Phase 1 builds on the shared template
+rather than duplicating it again. The current phrasing inverts this.
+
+**Suggested resolution.** Rewrite to: "DatasetForge is the third user of the
+pattern — the rule-of-three trigger for extraction. Lift the telemetry /
+license / settings resolver to a `pack-template/` repo at DatasetForge
+kickoff, before Phase 1 implementation. DatasetForge Phase 1 then builds on
+the shared template rather than duplicating it."
+
+### Issue 2 — Two open questions implicitly resolved by product-plan.md §4
+
+**Location.** §11, "Naming" and "First live adapter" bullets.
+
+**Problem.**
+
+- **Naming.** `product-plan.md §4` already uses "DatasetForge" as the
+  canonical name throughout ("MCP 03 — DatasetForge", "DatasetForge becomes
+  MCP 03 in the pack"). The §11 open question asks for a decision between
+  `DatasetForge` and `VisionForge`, but the strategic plan has already
+  committed to `DatasetForge`. This question is implicitly resolved and
+  should be formally closed to avoid confusion at kickoff.
+
+- **First live adapter.** `product-plan.md §4` states "Read images +
+  annotations (COCO at MVP; YOLO / HF Datasets on roadmap)" — COCO is locked
+  as the first live adapter at the strategic level. The §11 gate ("Block on
+  signal from 3 robotics MLE DMs") contradicts this commitment, implying the
+  decision is still open when the product plan has already closed it.
+
+**Suggested resolution.** Mark both bullets as resolved in §11 (or remove
+them), noting that `product-plan.md §4` is the authority: DatasetForge is the
+locked name, COCO is the locked first live adapter.
