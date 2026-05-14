@@ -212,6 +212,11 @@ CLAUDE*.md
 # decisions are bisectable per release.
 !/docs/projet-file/*-audit-*.md
 !/docs/projet-file/audit-*.md
+# External reference material (OMG interop reports, third-party specs
+# snapshots) the maintainer wants pinned in git so strategy decisions
+# remain reproducible. Tracked, not part of sdist.
+!/docs/projet-file/references/
+!/docs/projet-file/references/**
 /docs/assets/screencast-raw/
 
 
