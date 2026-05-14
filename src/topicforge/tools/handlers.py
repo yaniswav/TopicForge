@@ -78,9 +78,14 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "Report TopicForge's effective runtime mode, whether ROS2 tooling is "
-            "available, the server version, and the server-side sample cap. "
-            "Always succeeds — call this first when something looks wrong."
+            "Report TopicForge environment state — effective runtime mode "
+            '(`"live"` or `"mock"`), whether the `ros2` CLI is on PATH, '
+            "`ROS_DISTRO`, the server version, the server-side sample cap, "
+            "the active DDS backend (`mock`/`cyclone`/`rti`/`none`), and "
+            "the observed DDS domain id when applicable. Returns a "
+            "`HealthReport`. **Always succeeds** — call this first when "
+            "something looks wrong, since every other tool may raise. "
+            "Read-only ; no side effects."
         )
     )
     @instrument(telemetry, "health_check")
@@ -89,11 +94,13 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "List all ROS2 topics known to the current graph (or the mock graph "
-            "if running in mock mode). Returns name, message type, "
-            'publisher/subscriber counts, and `mode_effective` (`"live"` or '
-            '`"mock"`) for each topic — the latter so a downstream LLM '
-            "cannot confuse a real graph with the demo fixtures."
+            "List every ROS2 topic on the current graph (or the deterministic "
+            "mock graph in mock mode). Returns `list[TopicInfo]` — each entry "
+            "carries `name`, `message_type`, `publisher_count`, "
+            '`subscriber_count`, `qos_reliability`, and `mode_effective` (`"live"` '
+            'or `"mock"`) so a downstream LLM can distinguish a real graph from '
+            "demo fixtures. **Empty list** when the graph has no topics or "
+            "when live discovery times out. Read-only ; no side effects."
         )
     )
     @instrument(telemetry, "list_topics")
@@ -103,10 +110,11 @@ def register_tools(
     @mcp.tool(
         description=(
             "Return detailed info for a single ROS2 topic. `topic` must be a "
-            "fully qualified topic name, e.g. `/cmd_vel`. Raises an MCP error "
-            "if the topic name is malformed or the topic is unknown. "
-            'Response carries `mode_effective` (`"live"` or `"mock"`) so '
-            "callers can distinguish a real-graph hit from a mock fixture."
+            "fully qualified topic name, e.g. `/cmd_vel`. Returns a `TopicInfo` "
+            'carrying `mode_effective` (`"live"` or `"mock"`) so callers can '
+            "distinguish a real-graph hit from a mock fixture. **Raises an MCP "
+            "error** (isError=true) if the topic name is malformed or the topic "
+            "is unknown to the active graph. Read-only ; no side effects."
         )
     )
     @instrument(telemetry, "get_topic_info")
@@ -117,27 +125,28 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "Return up to `count` recent messages from `topic`. `topic` must be "
-            "a fully qualified ROS2 name; see the `topic` parameter description "
-            "for the exact accepted shape. `count` defaults to 5 and is silently "
-            "clamped to 50 — request more and you receive at most 50 without "
-            "warning. Returns a `SampleResult` envelope "
+            "Peek up to `count` recent ROS2 messages from `topic`, sampled "
+            "from the runtime graph. `topic` must be a fully qualified name "
+            "(see the `topic` parameter description). `count` defaults to 5 "
+            "and is silently clamped to 50 — request more and you receive at "
+            "most 50 without warning. Returns a `SampleResult` envelope "
             "`{topic, count, samples, mode_effective}` where `count` is the "
             "actual number of samples returned (may be 0) and `mode_effective` "
-            'is `"live"` or `"mock"` so a downstream LLM cannot confuse a '
-            "real graph with the demo fixtures. "
-            "In live mode the MVP shells out to `ros2 topic echo --csv "
-            "--once` with a short timeout, so the result is empty when no "
-            "publisher is currently active. `samples[i].timestamp_ns` is "
-            "the message's `header.stamp` (publish time) when the message "
-            "is `Header`-stamped, and 0 for headerless types (e.g. "
-            "`std_msgs/String`). The live parser exposes message fields as "
-            "positional CSV columns under `samples[i].payload` keys "
-            "`col_0`, `col_1`, ..., with the verbatim CSV row under the "
-            "reserved `_raw_text` key. In mock mode returns deterministic "
-            "samples with monotonically increasing timestamps for the "
-            "fictional demo robot (and no `_raw_text` key, since the "
-            "payload is already structured)."
+            'is `"live"` or `"mock"`. '
+            "**Live mode** shells out to `ros2 topic echo --csv --once` with "
+            "a short timeout, so the result is empty when no publisher is "
+            "currently active. `samples[i].timestamp_ns` is the message's "
+            "`header.stamp` (publish time) when the message is `Header`-stamped, "
+            "and 0 for headerless types (e.g. `std_msgs/String`). The live "
+            "parser exposes fields as positional CSV columns under "
+            "`samples[i].payload` keys `col_0`, `col_1`, ..., with the verbatim "
+            "CSV row under the reserved `_raw_text` key. **Mock mode** returns "
+            "deterministic samples with monotonically increasing timestamps "
+            "for the fictional demo robot (and no `_raw_text` key, since the "
+            "payload is already structured). "
+            "Read-only ; never publishes to the bus. **Distinct from "
+            "`peek_dds_samples`** — that tool reads the raw DDS layer ; this "
+            "one reads the ROS2 graph."
         )
     )
     @instrument(telemetry, "sample_messages")
@@ -149,12 +158,17 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "Inspect a ROS2 bag at `path` and return a structured summary: "
-            "duration, message count, per-topic stats, detected anomalies, "
-            'and `mode_effective` (`"live"` or `"mock"`) so callers can '
-            "tell a real bag analysis from a mock fixture. Supports `.mcap`, "
-            "`.db3`, and `.bag` paths via `ros2 bag info` in live mode. "
-            "Returns rich fixture data in mock mode."
+            "Summarize a ROS2 bag at `path`. Returns a `BagAnalysis` carrying "
+            "storage format, total duration, message count, per-topic stats, "
+            "detected anomalies, and `mode_effective` "
+            '(`"live"` or `"mock"`) so callers can tell a real bag analysis '
+            "from a mock fixture. **Live mode** shells out to `ros2 bag info` "
+            "and accepts `.mcap`, `.db3`, and `.bag` files plus `rosbag2_*` "
+            "directories ; **mock mode** returns rich fixture data regardless "
+            "of path suffix (except blatantly non-bag extensions). "
+            "**Raises an MCP error** if the path is malformed, missing in live "
+            "mode, or unparseable. Deep anomaly detection is mock-only at MVP. "
+            "Read-only ; no side effects."
         )
     )
     @instrument(telemetry, "analyze_bag")
@@ -172,16 +186,21 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "List DDS participants observed on a domain. Returns each "
-            "participant's GUID, vendor (`cyclone`, `rti`, `mock`, "
-            "`unknown`), optional hostname, and `mode_effective` "
-            "(`live`/`mock`). **Distinct from ROS2 graph nodes** — this "
-            "operates at the raw DDS layer beneath ROS, useful for "
-            "non-ROS DDS stacks (Cyclone-only, RTI-only) or for "
+            "List DDS participants observed on a domain. Returns "
+            "`list[ParticipantInfo]` — each entry carries `guid`, `vendor` "
+            "(`cyclone`/`rti`/`mock`/`unknown`), optional `hostname`, "
+            '`domain_id`, and `mode_effective` (`"live"`/`"mock"`). '
+            "**Distinct from ROS2 graph nodes** — operates at the raw DDS "
+            "layer beneath ROS, useful for non-ROS DDS stacks or for "
             "diagnosing why a participant isn't seen by the ROS graph. "
-            "Returns an MCP error when no DDS module is active "
+            "**Read-only by architecture** — the underlying "
+            "`MiddlewareAdapter` protocol does not expose a write method, "
+            "so this tool cannot publish, modify QoS, or alter the bus. "
+            "**Raises an MCP error** when no DDS module is active "
             "(install `pip install topicforge[dds]` and set "
-            "`TOPICFORGE_DDS_BACKEND=cyclone`)."
+            "`TOPICFORGE_DDS_BACKEND=cyclone`). With the v0.2.0 "
+            "`CycloneDdsAdapter` stub, also raises with a v0.2.x roadmap "
+            "pointer ; mock backend returns deterministic fixtures."
         )
     )
     @instrument(telemetry, "list_participants")
@@ -204,16 +223,22 @@ def register_tools(
     @mcp.tool(
         description=(
             "Detect DDS QoS incompatibilities between reader and writer "
-            "endpoints on the bus. Returns one `MismatchReport` per "
-            "incompatible (reader, writer) pair, listing the policies "
-            "that block (or risk degrading) communication: "
-            "Reliability, Durability, History, Deadline. Each report "
-            "carries `severity` (`incompatible` strictly blocks ; "
-            "`risky` may degrade) and `mode_effective` (`live`/`mock`). "
-            "Pass `topic` to scope to a single topic, omit for an "
-            "exhaustive scan. **Use this when** an LLM is debugging "
-            'why a "subscriber doesn\'t receive". Returns an MCP error '
-            "when no DDS module is active."
+            "endpoints on the bus. Returns `list[MismatchReport]` — one "
+            "entry per incompatible (reader, writer) pair, listing the "
+            "policies that block or risk degrading communication "
+            "(Reliability, Durability, History, Deadline at MVP). Each "
+            "report carries `severity` (`incompatible` strictly blocks "
+            "communication per the DDS spec ; `risky` may degrade but "
+            'is not strictly blocked) and `mode_effective` (`"live"`/'
+            '`"mock"`). Pass `topic` to scope to a single topic ; omit '
+            "for an exhaustive scan. **Use this when** an LLM is "
+            "debugging why a subscriber doesn't receive. **Read-only "
+            "by architecture** — the analyzer compares observed QoS "
+            "profiles ; no method on this tool can rewrite QoS or "
+            "alter the bus. **Raises an MCP error** when no DDS module "
+            "is active or, in v0.2.0, when the `CycloneDdsAdapter` "
+            "stub is active ; mock backend returns deterministic "
+            "fixtures."
         )
     )
     @instrument(telemetry, "detect_qos_mismatches")
@@ -234,18 +259,23 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "Peek recent samples on a raw DDS topic. **Distinct from "
-            "`sample_messages`** — `sample_messages` operates on the "
-            "ROS2 graph (via `ros2 topic echo`), while this tool reads "
-            "directly from the DDS layer (Cyclone / RTI / mock). Use "
-            "this for non-ROS DDS topics or when the ROS2 CLI is not "
-            "available. Returns a `SampleResult` envelope identical in "
-            "shape to `sample_messages` (`{topic, count, samples, "
-            "mode_effective}`). Sample payload format depends on the "
-            "backend — mock returns structured dicts ; live backends "
-            "return best-effort serialized representations of the DDS "
-            "samples. `count` defaults to 5, silently clamped to 50. "
-            "Returns an MCP error when no DDS module is active."
+            "Peek up to `count` recent samples on a raw DDS topic. "
+            "**Distinct from `sample_messages`** — `sample_messages` "
+            "operates on the ROS2 graph via `ros2 topic echo` ; this "
+            "tool reads directly from the DDS layer (Cyclone / RTI / "
+            "mock). Use this for non-ROS DDS topics or when the ROS2 "
+            "CLI is not available. Returns a `SampleResult` envelope "
+            "`{topic, count, samples, mode_effective}` — identical "
+            "shape to `sample_messages`. `count` defaults to 5 and is "
+            "silently clamped to 50. Sample payload format depends on "
+            "the backend — mock returns structured dicts ; live "
+            "backends return best-effort serialized representations of "
+            "the DDS samples. **Read-only by architecture** — the "
+            "underlying `MiddlewareAdapter` protocol does not expose a "
+            "write method, so this tool cannot publish back to the "
+            "topic. **Raises an MCP error** when no DDS module is "
+            "active or, in v0.2.0, when the `CycloneDdsAdapter` stub "
+            "is active ; mock backend returns deterministic fixtures."
         )
     )
     @instrument(telemetry, "peek_dds_samples")
