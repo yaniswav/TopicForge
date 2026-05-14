@@ -7,6 +7,7 @@ keeping that decision in one place avoids drift between callers.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 from dataclasses import dataclass
@@ -15,13 +16,20 @@ from typing import Literal
 Mode = Literal["mock", "live", "auto"]
 ResolvedMode = Literal["mock", "live"]
 
+DdsBackend = Literal["mock", "cyclone", "rti", "auto"]
+ResolvedDdsBackend = Literal["mock", "cyclone", "rti"]
+
 _VALID_MODES: tuple[Mode, ...] = ("mock", "live", "auto")
+_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "rti", "auto")
 _VALID_LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Telemetry is strict opt-in: any value other than the explicit on-set
 # resolves to off. We accept the common affirmatives so users can flip the
 # flag without consulting the docs, but anything ambiguous stays off.
 _TELEMETRY_ON_VALUES: frozenset[str] = frozenset({"on", "1", "true", "yes", "enabled"})
 _TELEMETRY_OFF_VALUES: frozenset[str] = frozenset({"", "off", "0", "false", "no", "disabled"})
+
+_DDS_DOMAIN_MIN = 0
+_DDS_DOMAIN_MAX = 232
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +40,10 @@ class Settings:
     log_level: str
     ros2_executable: str
     telemetry_enabled: bool
+    # DDS module knobs — added in v0.2.0. Defaults keep backward-compat
+    # with code constructing `Settings(...)` positionally before v0.2.0.
+    dds_backend: DdsBackend = "mock"
+    dds_domain_id: int = 0
 
     @property
     def effective_mode(self) -> ResolvedMode:
@@ -49,6 +61,30 @@ class Settings:
         if self.mode == "auto":
             return "live" if shutil.which(self.ros2_executable) else "mock"
         return self.mode
+
+    @property
+    def effective_dds_backend(self) -> ResolvedDdsBackend:
+        """Resolve the DDS backend against the current environment.
+
+        - If global `TOPICFORGE_MODE` resolves to `mock`, force the DDS
+          backend to `mock` as well — mock global mode means no live
+          access of any kind.
+        - `mock`, `cyclone`, `rti` are returned as-is when global mode
+          permits.
+        - `auto` resolves to `cyclone` when `cyclonedds` is importable,
+          else `mock`. (`rti` requires the Pro tier + license, never
+          auto-selected.)
+
+        Predictive resolution only. The factory may still fall back to
+        mock if the chosen backend cannot actually instantiate.
+        """
+        if self.effective_mode == "mock":
+            return "mock"
+        if self.dds_backend == "auto":
+            if importlib.util.find_spec("cyclonedds") is not None:
+                return "cyclone"
+            return "mock"
+        return self.dds_backend
 
 
 def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Settings:
@@ -81,9 +117,31 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
             f"Invalid TOPICFORGE_TELEMETRY={raw_telemetry!r}; expected on/off (default off)"
         )
 
+    raw_dds_backend = src.get("TOPICFORGE_DDS_BACKEND", "mock").strip().lower()
+    if raw_dds_backend not in _VALID_DDS_BACKENDS:
+        raise ValueError(
+            f"Invalid TOPICFORGE_DDS_BACKEND={raw_dds_backend!r}; "
+            f"expected one of {_VALID_DDS_BACKENDS}"
+        )
+
+    raw_dds_domain = src.get("TOPICFORGE_DDS_DOMAIN_ID", "0").strip()
+    try:
+        dds_domain = int(raw_dds_domain)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid TOPICFORGE_DDS_DOMAIN_ID={raw_dds_domain!r}; expected integer"
+        ) from exc
+    if dds_domain < _DDS_DOMAIN_MIN or dds_domain > _DDS_DOMAIN_MAX:
+        raise ValueError(
+            f"Invalid TOPICFORGE_DDS_DOMAIN_ID={dds_domain}; "
+            f"expected {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}"
+        )
+
     return Settings(
         mode=raw_mode,
         log_level=raw_log,
         ros2_executable=ros2_exe,
         telemetry_enabled=telemetry_enabled,
+        dds_backend=raw_dds_backend,
+        dds_domain_id=dds_domain,
     )

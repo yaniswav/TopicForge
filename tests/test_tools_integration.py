@@ -14,11 +14,16 @@ from topicforge.config import Settings
 from topicforge.server import build_app
 
 MVP_TOOLS = {
+    # ROS2 graph tools (v0.1.x)
     "health_check",
     "list_topics",
     "get_topic_info",
     "sample_messages",
     "analyze_bag",
+    # DDS module tools (v0.2.0)
+    "list_participants",
+    "detect_qos_mismatches",
+    "peek_dds_samples",
 }
 
 
@@ -57,6 +62,8 @@ _EXPECTED_OUTPUT_TITLES = {
     "get_topic_info": "TopicInfo",
     "sample_messages": "SampleResult",
     "analyze_bag": "BagAnalysis",
+    # DDS module tools (v0.2.0)
+    "peek_dds_samples": "SampleResult",
 }
 
 

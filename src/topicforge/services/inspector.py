@@ -9,11 +9,19 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from topicforge.adapters.base import AdapterError, AdapterName, RosAdapter
-from topicforge.models import BagAnalysis, SampleResult, TopicInfo
+from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
+from topicforge.models import (
+    BagAnalysis,
+    MismatchReport,
+    ParticipantInfo,
+    SampleResult,
+    TopicInfo,
+)
 
 DEFAULT_SAMPLE_COUNT = 5
 MAX_SAMPLE_COUNT = 50
+_DDS_DOMAIN_MIN = 0
+_DDS_DOMAIN_MAX = 232
 
 # Strict allowlist mirroring ROS2 topic-name conventions:
 #   * must start with `/`
@@ -33,7 +41,7 @@ class Inspector:
     surface symmetric — every tool goes through the same gate.
     """
 
-    def __init__(self, adapter: RosAdapter) -> None:
+    def __init__(self, adapter: MiddlewareAdapter) -> None:
         self._adapter = adapter
 
     @property
@@ -62,6 +70,33 @@ class Inspector:
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._adapter.analyze_bag(_validate_bag_path(path))
+
+    # ---------------------------- DDS module ------------------------------
+
+    def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
+        _validate_dds_domain(domain_id)
+        return self._adapter.list_participants(domain_id)
+
+    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+        if topic is not None:
+            _validate_topic_name(topic)
+        return self._adapter.detect_qos_mismatches(topic)
+
+    def peek_dds_samples(self, topic: str, count: int | None = None) -> SampleResult:
+        _validate_topic_name(topic)
+        n = DEFAULT_SAMPLE_COUNT if count is None else count
+        if n < 0:
+            raise AdapterError("count must be >= 0")
+        return self._adapter.peek_dds_samples(topic, min(n, MAX_SAMPLE_COUNT))
+
+
+def _validate_dds_domain(domain_id: int) -> None:
+    if not isinstance(domain_id, int) or isinstance(domain_id, bool):
+        raise AdapterError(f"domain_id must be an int, got {type(domain_id).__name__}")
+    if domain_id < _DDS_DOMAIN_MIN or domain_id > _DDS_DOMAIN_MAX:
+        raise AdapterError(
+            f"domain_id must be in {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}, got {domain_id}"
+        )
 
 
 def _validate_topic_name(topic: str) -> None:
