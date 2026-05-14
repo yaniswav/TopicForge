@@ -184,3 +184,47 @@ def test_participant_events_invalid_lookback_raises(mock_adapter: MockAdapter) -
         mock_adapter.participant_events(domain_id=0, lookback_seconds=0)
     with pytest.raises(AdapterError, match="lookback_seconds"):
         mock_adapter.participant_events(domain_id=0, lookback_seconds=86401)
+
+
+# ---------------------------------------------------------------------------
+# peek_dds_samples on user-defined topics (v0.4.0 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def test_peek_dds_samples_user_topic_full_decode(mock_adapter: MockAdapter) -> None:
+    result = mock_adapter.peek_dds_samples("/dds/ddsforge/example", count=3)
+    assert result.count == 3
+    for sample in result.samples:
+        assert sample.payload["_decode_status"] == "full"
+        # Decoded IDL fields are at the top level of the payload.
+        assert "seq" in sample.payload
+        assert "status" in sample.payload
+        assert "battery_pct" in sample.payload
+        # `full` status never carries raw bytes.
+        assert "_raw_bytes_hex" not in sample.payload
+
+
+def test_peek_dds_samples_user_topic_raw_fallback(mock_adapter: MockAdapter) -> None:
+    result = mock_adapter.peek_dds_samples("/dds/ddsforge/opaque", count=5)
+    assert result.count == 1  # fixture only emits one sample
+    sample = result.samples[0]
+    assert sample.payload["_decode_status"] == "raw"
+    assert "_decode_note" in sample.payload
+    # Raw fallback always carries `_raw_bytes_hex`.
+    assert sample.payload["_raw_bytes_hex"] == "deadbeefcafebabe"
+
+
+def test_peek_dds_samples_known_topics_unchanged_payload_shape(
+    mock_adapter: MockAdapter,
+) -> None:
+    """The two v0.3.0 fixture topics must NOT grow `_decode_status` —
+    that would be a wire-breaking change for v0.3.0 clients pinned on
+    the old payload shape.
+    """
+    well = mock_adapter.peek_dds_samples("/dds/well_matched", count=3)
+    for sample in well.samples:
+        assert "_decode_status" not in sample.payload
+
+    mismatch = mock_adapter.peek_dds_samples("/dds/qos_mismatch", count=1)
+    for sample in mismatch.samples:
+        assert "_decode_status" not in sample.payload

@@ -38,6 +38,7 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     LifecycleBuffer,
+    annotate_raw,
     canonicalize_vendor_id,
     detect_mismatches,
     format_guid,
@@ -61,11 +62,12 @@ _MAX_ENDPOINTS = 1024
 
 _BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
 
-_USER_TOPIC_ROADMAP_MSG = (
-    "peek_dds_samples on arbitrary user topics requires IDL/XTypes "
-    "discovery, which is a TopicForge v0.3.x roadmap item. The builtin "
-    "DCPS snapshots (DCPSParticipant, DCPSSubscription, DCPSPublication) "
-    "work today. See docs/projet-file/mcp-02-spec.md §7."
+_USER_TOPIC_FALLBACK_MSG = (
+    "peek_dds_samples could not decode user topic via fastdds dynamic XTypes. "
+    "Fast DDS 2.6.x Python bindings expose DynamicType/DynamicData but "
+    "remote TypeObject lookup is partial ; v0.4.0 Phase 1 surfaces the "
+    "topic as best-effort raw bytes ; a Phase 1+ patch will extend the "
+    "dynamic decode path."
 )
 
 
@@ -299,17 +301,22 @@ class FastDdsAdapter:
         return reports
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
-        """v0.3.0 scope: builtin DCPS snapshots only.
+        """v0.4.0 Phase 1: builtin DCPS snapshots + user-topic raw fallback.
 
-        Arbitrary user topics require XTypes/IDL discovery — raise
-        with a v0.3.x roadmap pointer rather than returning silent
-        empty results.
+        Builtin DCPS topics keep their v0.3.0 structured-payload shape.
+        User topics that have been discovered on the bus return
+        `_decode_status="raw"` payloads (Fast DDS 2.6.x dynamic XTypes
+        is partial). Unknown topics raise `AdapterError`.
         """
-        if topic not in _BUILTIN_DCPS_TOPICS:
-            raise AdapterError(_USER_TOPIC_ROADMAP_MSG)
         if count < 0:
             raise AdapterError("count must be >= 0")
 
+        if topic in _BUILTIN_DCPS_TOPICS:
+            return self._peek_builtin(topic, count)
+
+        return self._peek_user_topic(topic, count)
+
+    def _peek_builtin(self, topic: str, count: int) -> SampleResult:
         if topic == "DCPSParticipant":
             raw = self._listener.snapshot_participants()
         elif topic == "DCPSSubscription":
@@ -337,6 +344,45 @@ class FastDdsAdapter:
             samples=samples,
             mode_effective="live",
         )
+
+    def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
+        """Raw-bytes fallback for user-defined topics discovered on the bus."""
+        if not self._is_topic_on_bus(topic):
+            raise AdapterError(
+                f"DDS topic {topic!r} not discovered on domain {self._domain_id}. "
+                "Confirm a publisher is alive and reachable, or call "
+                "list_participants / detect_qos_mismatches first to inspect "
+                "current bus state."
+            )
+
+        fallback_samples: list[MessageSample] = []
+        if count > 0:
+            fallback_samples.append(
+                MessageSample(
+                    topic=topic,
+                    message_type="dds/unknown",
+                    timestamp_ns=0,
+                    payload=annotate_raw(
+                        b"",
+                        note=_USER_TOPIC_FALLBACK_MSG,
+                    ),
+                )
+            )
+        return SampleResult(
+            topic=topic,
+            count=len(fallback_samples),
+            samples=fallback_samples,
+            mode_effective="live",
+        )
+
+    def _is_topic_on_bus(self, topic: str) -> bool:
+        """True iff `topic` appears in any subscription or publication."""
+        for sample in (
+            self._listener.snapshot_subscriptions() + self._listener.snapshot_publications()
+        ):
+            if _extract_topic_name(sample) == topic:
+                return True
+        return False
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300

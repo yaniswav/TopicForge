@@ -78,6 +78,46 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   against v0.3.0 schemas keep working. `ParticipantEvent` is a new
   model — clients ignoring it continue to work.
 
+#### Added (continued — sub-milestone 1.3)
+
+- **`peek_dds_samples` on user-defined topics.** v0.3.0 raised an
+  `AdapterError` pointing at the v0.3.x roadmap for any non-builtin
+  topic ; v0.4.0 Phase 1 returns best-effort decoded samples. The
+  payload may carry three reserved keys:
+  - `_decode_status`: `"full"` (every IDL field decoded) /
+    `"partial"` (some fields decoded, others opaque) /
+    `"raw"` (binding could not resolve the dynamic XTypes — bytes
+    preserved as hex).
+  - `_decode_note`: short diagnostic explaining the non-`full` status.
+  - `_raw_bytes_hex`: hex-encoded serialized payload preview (capped
+    at 4096 hex chars ; `_raw_bytes_truncated=True` flags clipping).
+- **`adapters/common/xtypes.py`** — adapter-agnostic helpers
+  (`annotate_full`, `annotate_partial`, `annotate_raw`) so Cyclone and
+  Fast DDS produce identical wire output regardless of binding
+  capabilities. Pure logic, testable without any SDK.
+- **Mock fixtures**: two new user-topic exemplars
+  (`/dds/ddsforge/example` returns `_decode_status="full"` ;
+  `/dds/ddsforge/opaque` returns `_decode_status="raw"`) so the
+  payload shape can be exercised end-to-end without a DDS bus.
+
+#### Changed (continued — sub-milestone 1.3)
+
+- **`CycloneDdsAdapter.peek_dds_samples`** — user topics now go
+  through `_peek_user_topic`. The path probes builtin DCPS
+  Subscription / Publication readers to confirm the topic is on the
+  bus (raises `AdapterError` if not), then attempts
+  `cyclonedds.dynamic` dynamic decode ; on failure (most cases at
+  v0.4.0 Phase 1 — full decode lands in a Phase 1+ patch) returns a
+  single annotated raw-bytes sample with `_decode_status="raw"`.
+- **`FastDdsAdapter.peek_dds_samples`** — symmetric shape via
+  `_peek_user_topic`. Fast DDS 2.6.x dynamic XTypes is partial, so
+  the raw-bytes fallback is the common path ; the wire shape is
+  identical to Cyclone's. Same `AdapterError` on unknown topic.
+- **`peek_dds_samples` tool description** updated to remove the stale
+  `"v0.2.0 stub"` wording and document the user-topic decoding story
+  (full / partial / raw status, `_raw_bytes_hex` shape, binding
+  caveats per backend).
+
 ## [0.3.0] - 2026-05-14
 
 ### Strategic

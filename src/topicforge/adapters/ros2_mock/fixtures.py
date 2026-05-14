@@ -253,7 +253,19 @@ def mock_participant_events_for(domain_id: int, lookback_seconds: int) -> list[P
     return filtered
 
 
-MOCK_DDS_TOPICS: tuple[str, ...] = ("/dds/well_matched", "/dds/qos_mismatch")
+# MOCK_DDS_TOPICS — v0.4.0 Phase 1 adds two user-topic fixtures
+# exercising the XTypes/IDL decode paths in `peek_dds_samples`:
+#   * `/dds/ddsforge/example`     — `_decode_status="full"` path
+#   * `/dds/ddsforge/opaque`      — `_decode_status="raw"` fallback path
+# The two existing topics (well_matched / qos_mismatch) keep the v0.3.0
+# builtin-style payload (no `_decode_status` key) so backward
+# compatibility with the v0.3.0 wire contract is preserved.
+MOCK_DDS_TOPICS: tuple[str, ...] = (
+    "/dds/well_matched",
+    "/dds/qos_mismatch",
+    "/dds/ddsforge/example",
+    "/dds/ddsforge/opaque",
+)
 
 _MOCK_MISMATCHES: tuple[MismatchReport, ...] = (
     MismatchReport(
@@ -310,6 +322,46 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
                 message_type="dds/Heartbeat",
                 timestamp_ns=_BASE_TS_NS,
                 payload={"seq": 0, "vendor": "cyclone", "qos_note": "writer is BEST_EFFORT"},
+            )
+        ][:count]
+    elif topic == "/dds/ddsforge/example":
+        # v0.4.0 Phase 1 — user topic with `_decode_status="full"`. The
+        # IDL is synthetic: a struct{ uint32 seq; string status; float32
+        # battery_pct; } resolved cleanly by `cyclonedds.dynamic` /
+        # `fastdds.DynamicData` (in the real adapters).
+        from topicforge.adapters.common.xtypes import annotate_full
+
+        samples = [
+            MessageSample(
+                topic=topic,
+                message_type="ddsforge/Example",
+                timestamp_ns=_BASE_TS_NS + i * 200_000_000,
+                payload=annotate_full(
+                    {
+                        "seq": i,
+                        "status": f"ok-{i}",
+                        "battery_pct": 92.5 - i * 1.5,
+                    }
+                ),
+            )
+            for i in range(min(count, 3))
+        ]
+    elif topic == "/dds/ddsforge/opaque":
+        # v0.4.0 Phase 1 — user topic with `_decode_status="raw"`. Models
+        # the binding-XTypes-unavailable fallback path: payload bytes
+        # preserved as hex with a short diagnostic note.
+        from topicforge.adapters.common.xtypes import annotate_raw
+
+        synthetic_bytes = bytes.fromhex("deadbeefcafebabe")
+        samples = [
+            MessageSample(
+                topic=topic,
+                message_type="ddsforge/Opaque",
+                timestamp_ns=_BASE_TS_NS,
+                payload=annotate_raw(
+                    synthetic_bytes,
+                    note="binding XTypes unavailable (mock fallback fixture)",
+                ),
             )
         ][:count]
     else:
