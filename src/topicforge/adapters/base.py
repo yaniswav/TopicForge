@@ -19,11 +19,13 @@ from topicforge.models import (
     TopicInfo,
 )
 
-AdapterName = Literal["mock", "ros2_cli", "cyclone", "rti"]
+AdapterName = Literal["mock", "ros2_cli", "cyclone", "fast", "rti"]
 """Implementation tag for the active adapter.
 
 Internal — used by factory wiring and logging. Distinct from
 `EffectiveMode`, which is the MCP wire contract surfaced to clients.
+`"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; `"rti"`
+stays reserved for the v0.4.0+ Pro adapter.
 """
 
 EffectiveMode = Literal["mock", "live"]

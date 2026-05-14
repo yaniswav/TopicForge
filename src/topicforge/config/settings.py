@@ -16,11 +16,11 @@ from typing import Literal
 Mode = Literal["mock", "live", "auto"]
 ResolvedMode = Literal["mock", "live"]
 
-DdsBackend = Literal["mock", "cyclone", "rti", "auto"]
-ResolvedDdsBackend = Literal["mock", "cyclone", "rti"]
+DdsBackend = Literal["mock", "cyclone", "fast", "rti", "auto"]
+ResolvedDdsBackend = Literal["mock", "cyclone", "fast", "rti"]
 
 _VALID_MODES: tuple[Mode, ...] = ("mock", "live", "auto")
-_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "rti", "auto")
+_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "fast", "rti", "auto")
 _VALID_LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Telemetry is strict opt-in: any value other than the explicit on-set
 # resolves to off. We accept the common affirmatives so users can flip the
