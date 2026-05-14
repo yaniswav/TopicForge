@@ -49,6 +49,8 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     LifecycleBuffer,
+    annotate_full,
+    annotate_partial,
     annotate_raw,
     canonicalize_vendor_id,
     detect_mismatches,
@@ -87,49 +89,231 @@ _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
 def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[MessageSample] | None:
     """Best-effort dynamic decode of `topic` via `cyclonedds.dynamic`.
 
-    Returns `None` when no decoded samples could be produced (lets the
-    caller fall back to annotated raw bytes). Returns a list (possibly
-    empty when the topic is announced but no sample is in the reader
-    cache yet) on success.
+    v0.4.0 Phase 1.5 attempts an actual decode pipeline:
 
-    The binding's exact entry point varies by version
-    (`get_types_for_typeid`, `get_type_for_endpoint`, …). We try a
-    short list of attribute names and shortcut-return on the first
-    one that yields a usable decoder. Any binding error short-circuits
-    to `None` — the live adapter then surfaces an empty SampleResult
-    rather than crashing the tool call.
+      1. Discover an endpoint for `topic` via the DCPSPublication builtin
+         reader and extract its type identifier.
+      2. Resolve the TypeObject via `cyclonedds.dynamic.get_types_for_typeid`
+         (or fallback entry points across binding versions).
+      3. Build a typed Topic + DataReader against the resolved type.
+      4. Take up to `count` samples.
+      5. Decode each sample field-by-field via reflection on the dynamic
+         type. Per-sample try/except so a single bad sample falls back
+         to `annotate_raw` without breaking the whole list.
+      6. Per-field try/except. Fields that decode cleanly land at the
+         top level of the payload ; fields that raise an exception (union
+         variants, optional fields, recursive types the binding cannot
+         resolve) trigger `annotate_partial` with a short note.
+
+    Returns `None` when the binding doesn't expose any of the known
+    dynamic entry points, when no endpoint announces a type id, or when
+    every step before sample collection fails. The caller then surfaces
+    the existing annotated raw fallback.
     """
     try:
         from cyclonedds import dynamic as cyclone_dynamic  # type: ignore[import-not-found]
     except ImportError:
         return None
 
-    # The dynamic-IDL surface in `cyclonedds.dynamic` is a moving target ;
-    # rather than committing TopicForge to a specific entry point that
-    # might be renamed across binding versions, we probe for the most
-    # commonly cited symbols and bail to `None` if none match. On match,
-    # the actual sample construction lives behind a generic try/except
-    # so a decode that hits an unsupported IDL construct (union,
-    # optional, recursive type) does not break the whole tool call —
-    # the caller then surfaces the annotated raw fallback.
-    for _attr in ("get_types_for_typeid", "get_type_for_endpoint", "get_type"):
-        if hasattr(cyclone_dynamic, _attr):
-            log.debug(
-                "cyclonedds.dynamic exposes %s ; user-topic decode probe "
-                "for %r (v0.4.0 Phase 1 plumbing — real decode shipping "
-                "in a Phase 1+ patch once we collect bus feedback)",
-                _attr,
-                topic,
+    type_resolver = _find_dynamic_resolver(cyclone_dynamic)
+    if type_resolver is None:
+        log.debug(
+            "cyclonedds.dynamic exposes no known resolver entry point ; "
+            "user-topic %r falls back to raw bytes annotation",
+            topic,
+        )
+        return None
+
+    type_id = _discover_type_id_for_topic(dp, topic)
+    if type_id is None:
+        log.debug(
+            "no type id discovered for topic %r in DCPSPublication ; "
+            "falls back to raw bytes annotation",
+            topic,
+        )
+        return None
+
+    try:
+        type_object = type_resolver(type_id)
+    except Exception:  # pragma: no cover — binding-side error
+        log.debug("dynamic type resolution failed for topic %r", topic, exc_info=True)
+        return None
+    if type_object is None:
+        return None
+
+    samples_raw = _collect_dynamic_samples(dp, topic, type_object, count)
+    if samples_raw is None:
+        return None  # binding could not build the reader
+
+    samples: list[MessageSample] = []
+    for raw in samples_raw:
+        payload = _decode_dynamic_sample(raw)
+        samples.append(
+            MessageSample(
+                topic=topic,
+                message_type=_dynamic_type_name(type_object),
+                timestamp_ns=0,
+                payload=payload,
             )
-            return None  # plumbing in place ; real decode is follow-up
+        )
+    return samples
+
+
+def _find_dynamic_resolver(cyclone_dynamic: Any) -> Any | None:
+    """Return the first callable resolver on `cyclonedds.dynamic`.
+
+    The dynamic-IDL entry point has been renamed across CycloneDDS
+    Python binding versions. We probe the cited names in order and
+    return the first attribute that is callable.
+    """
+    for attr in ("get_types_for_typeid", "get_type_for_endpoint", "get_type"):
+        candidate = getattr(cyclone_dynamic, attr, None)
+        if callable(candidate):
+            return candidate
     return None
+
+
+def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:
+    """Pull a type identifier off the first DCPSPublication sample for `topic`.
+
+    Returns `None` when no publication for `topic` is in the discovery
+    cache, or when the binding does not expose a `type_id` / `type_info`
+    attribute on the sample.
+    """
+    try:
+        reader = BuiltinDataReader(dp, BuiltinTopicDcpsPublication)
+        for sample in reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)):
+            if _extract_topic_name(sample) != topic:
+                continue
+            for attr in ("type_id", "type_identifier", "type_info"):
+                tid = getattr(sample, attr, None)
+                if tid is not None:
+                    return tid
+    except Exception:  # pragma: no cover — defensive
+        log.debug("type-id discovery probe failed for topic %r", topic, exc_info=True)
+    return None
+
+
+def _collect_dynamic_samples(dp: Any, topic: str, type_object: Any, count: int) -> list[Any] | None:
+    """Build a typed reader against the resolved `type_object` and take samples.
+
+    Returns a list of raw sample objects (the binding's typed
+    representation) on success, `None` when the typed reader could not
+    be constructed. Bounded by `count` and by `_SAMPLE_TIMEOUT_SEC`.
+    """
+    try:
+        from cyclonedds.sub import DataReader as DynamicDataReader  # type: ignore[import-not-found]
+        from cyclonedds.topic import Topic as DynamicTopic  # type: ignore[import-not-found]
+
+        dynamic_topic = DynamicTopic(dp, topic, type_object)
+        reader = DynamicDataReader(dp, dynamic_topic)
+        return list(reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[:count]
+    except Exception:  # pragma: no cover — binding-side error
+        log.debug("typed reader construction failed for topic %r", topic, exc_info=True)
+        return None
+
+
+def _decode_dynamic_sample(sample: Any) -> dict[str, object]:
+    """Decode `sample` field-by-field into a payload dict.
+
+    Strategy:
+      * Iterate the sample's declared fields (via `__dataclass_fields__`,
+        `__fields__`, or `__slots__` — whichever the binding chose).
+      * For each field, attempt `getattr` + recursive decode of nested
+        structs / sequences / primitives.
+      * Per-field exception → mark the field as undecoded ; surface the
+        whole sample as `annotate_partial` with a comma-joined list of
+        failed field names in `_decode_note`.
+      * If no fields could be decoded → `annotate_raw` with the sample's
+        repr captured in the note.
+    """
+    decoded: dict[str, object] = {}
+    failed_fields: list[str] = []
+
+    for field_name in _iter_field_names(sample):
+        try:
+            value = getattr(sample, field_name)
+            decoded[field_name] = _decode_field_value(value)
+        except Exception:  # pragma: no cover — per-field defense
+            failed_fields.append(field_name)
+
+    if not decoded:
+        return annotate_raw(
+            b"",
+            note=(
+                "cyclonedds.dynamic sample exposed no decodable fields ; "
+                f"sample repr: {type(sample).__name__}"
+            ),
+        )
+    if failed_fields:
+        return annotate_partial(
+            decoded,
+            note=f"undecoded fields: {', '.join(failed_fields)}",
+            raw_bytes=None,
+        )
+    return annotate_full(decoded)
+
+
+def _iter_field_names(sample: Any) -> list[str]:
+    """Best-effort list of field names on a dynamic-type sample."""
+    fields = getattr(sample, "__dataclass_fields__", None)
+    if fields:
+        return list(fields)
+    fields = getattr(sample, "__fields__", None)
+    if fields:
+        return list(fields)
+    slots = getattr(sample, "__slots__", None)
+    if slots:
+        return list(slots)
+    return (
+        [name for name in vars(sample) if not name.startswith("_")]
+        if hasattr(sample, "__dict__")
+        else []
+    )
+
+
+def _decode_field_value(value: Any) -> object:
+    """Recursive decode of a single dynamic-type field value.
+
+    Primitives and strings pass through. Sequences (list / tuple) are
+    decoded element-wise. Nested struct-like objects recurse via the
+    same field-iteration logic. Unsupported types (bytes, custom
+    classes that resist iteration) collapse to their `repr()` so the
+    payload remains JSON-serializable.
+    """
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_decode_field_value(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _decode_field_value(v) for k, v in value.items()}
+    # Nested struct — recurse.
+    if any(hasattr(value, attr) for attr in ("__dataclass_fields__", "__fields__", "__slots__")):
+        nested: dict[str, object] = {}
+        for field_name in _iter_field_names(value):
+            try:
+                nested[field_name] = _decode_field_value(getattr(value, field_name))
+            except Exception:  # pragma: no cover
+                nested[field_name] = f"<undecoded {type(value).__name__}.{field_name}>"
+        return nested
+    return repr(value)
+
+
+def _dynamic_type_name(type_object: Any) -> str:
+    """Best-effort message-type name from a resolved TypeObject."""
+    for attr in ("type_name", "name", "__name__"):
+        v = getattr(type_object, attr, None)
+        if isinstance(v, str) and v:
+            return v
+    return "dds/dynamic"
 
 
 _USER_TOPIC_ROADMAP_MSG = (
     "peek_dds_samples could not decode user topic via cyclonedds.dynamic. "
-    "v0.4.0 Phase 1 surfaces the topic as best-effort raw bytes when the "
-    "binding cannot resolve the IDL ; a Phase 1+ patch will extend the "
-    "dynamic decode path."
+    "v0.4.0 Phase 1.5 attempts a typed-reader decode pipeline ; on miss "
+    "(binding version without dynamic XTypes support, type id missing, "
+    "or per-sample decode failures) we surface raw bytes annotation. "
+    "Real Cyclone bus feedback will refine the decode branch."
 )
 
 
