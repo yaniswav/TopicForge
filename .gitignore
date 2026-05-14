@@ -197,6 +197,16 @@ CLAUDE*.md
 /docs/projet-file/**
 !/docs/projet-file/README.md
 !/docs/projet-file/*-spec.md
+# Traction snapshots are versioned: weekly JSON + summary + folder README.
+# This is the historical curve that informs decision gates G1/G2/G3
+# (product-plan §12). Numeric history must survive across machines.
+!/docs/projet-file/traction/
+!/docs/projet-file/traction/**
+# Launch-post drafts (Reddit, LinkedIn, X). Versioned so the maintainer
+# can diff drafts across releases and keep marketing history auditable.
+# Drafts, not production copy — never the public README.
+!/docs/projet-file/launch-posts/
+!/docs/projet-file/launch-posts/**
 /docs/assets/screencast-raw/
 
 
