@@ -14,6 +14,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -84,6 +85,15 @@ class MockAdapter:
             )
         clamped = min(count, _MAX_SAMPLE_COUNT)
         return fixtures.mock_dds_samples_for(topic, clamped)
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        if domain_id < 0 or domain_id > 232:
+            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        if lookback_seconds < 1 or lookback_seconds > 86400:
+            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        return fixtures.mock_participant_events_for(domain_id, lookback_seconds)
 
 
 def _reject_non_bag_path(path: str) -> None:

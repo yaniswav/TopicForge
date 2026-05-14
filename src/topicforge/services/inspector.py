@@ -13,6 +13,7 @@ from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapte
 from topicforge.models import (
     BagAnalysis,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -20,8 +21,11 @@ from topicforge.models import (
 from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 DEFAULT_SAMPLE_COUNT = 5
+DEFAULT_LOOKBACK_SECONDS = 300
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
+_LOOKBACK_MIN = 1
+_LOOKBACK_MAX = 86400
 
 # Re-export for backward-compatibility with v0.1.x code that imports
 # `MAX_SAMPLE_COUNT` from `topicforge.services.inspector`. The canonical
@@ -110,6 +114,14 @@ class Inspector:
             raise AdapterError("count must be >= 0")
         return self._adapter.peek_dds_samples(topic, min(n, MAX_SAMPLE_COUNT))
 
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int | None = None
+    ) -> list[ParticipantEvent]:
+        _validate_dds_domain(domain_id)
+        seconds = DEFAULT_LOOKBACK_SECONDS if lookback_seconds is None else lookback_seconds
+        _validate_lookback_seconds(seconds)
+        return self._adapter.participant_events(domain_id, seconds)
+
 
 def _validate_dds_domain(domain_id: int) -> None:
     if not isinstance(domain_id, int) or isinstance(domain_id, bool):
@@ -117,6 +129,15 @@ def _validate_dds_domain(domain_id: int) -> None:
     if domain_id < _DDS_DOMAIN_MIN or domain_id > _DDS_DOMAIN_MAX:
         raise AdapterError(
             f"domain_id must be in {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}, got {domain_id}"
+        )
+
+
+def _validate_lookback_seconds(seconds: int) -> None:
+    if not isinstance(seconds, int) or isinstance(seconds, bool):
+        raise AdapterError(f"lookback_seconds must be an int, got {type(seconds).__name__}")
+    if seconds < _LOOKBACK_MIN or seconds > _LOOKBACK_MAX:
+        raise AdapterError(
+            f"lookback_seconds must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}"
         )
 
 

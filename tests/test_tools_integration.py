@@ -24,6 +24,9 @@ MVP_TOOLS = {
     "list_participants",
     "detect_qos_mismatches",
     "peek_dds_samples",
+    # DDS lifecycle tool (v0.4.0 Phase 1) — the 9th tool, breaks the
+    # 8-tool ceiling documented in docs/projet-file/mcp-02-spec.md §2.
+    "participant_events",
 }
 
 

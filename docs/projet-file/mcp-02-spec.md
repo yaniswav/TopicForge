@@ -515,11 +515,15 @@ Resolved by the multi-vendor framing of 2026-05-14
 
 Newly open (resolve before v0.3.x patches) :
 
-- **XTypes / IDL discovery feasibility.** `peek_dds_samples` at v0.3.0
-  works on the 4 builtin DCPS topics only ; arbitrary user topics
-  raise an `AdapterError` pointing at the v0.3.x roadmap. Evaluate
-  `cyclonedds.dynamic.get_types_for_typeid` and Fast DDS XTypes
-  remote type lookup before deciding the v0.3.x scope.
+- ~~**XTypes / IDL discovery feasibility.**~~ **Resolved in v0.4.0
+  Phase 1 (2026-05-14).** `peek_dds_samples` on user-defined topics no
+  longer raises ; it returns best-effort decoded samples with
+  `_decode_status` annotation (`"full"` / `"partial"` / `"raw"`). The
+  raw fallback path is the common one at Phase 1 because dynamic
+  XTypes resolution in both `cyclonedds.dynamic` and `fastdds` 2.6.x
+  is partial ; a Phase 1+ patch will extend the dynamic decode branch
+  once we collect bus feedback. The four builtin DCPS topics keep the
+  v0.3.0 structured-payload shape unchanged for backward compat.
 - **Fast DDS discovery startup delay.** Listener-driven discovery in
   Fast DDS needs a bounded warm-up before queries return useful
   data. v0.3.0 uses a hardcoded `discovery_wait_ms=1500`. Promote

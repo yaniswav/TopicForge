@@ -37,6 +37,8 @@ import fastdds
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
+    LifecycleBuffer,
+    annotate_raw,
     canonicalize_vendor_id,
     detect_mismatches,
     format_guid,
@@ -45,6 +47,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     QosProfile,
     SampleResult,
@@ -59,11 +62,12 @@ _MAX_ENDPOINTS = 1024
 
 _BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
 
-_USER_TOPIC_ROADMAP_MSG = (
-    "peek_dds_samples on arbitrary user topics requires IDL/XTypes "
-    "discovery, which is a TopicForge v0.3.x roadmap item. The builtin "
-    "DCPS snapshots (DCPSParticipant, DCPSSubscription, DCPSPublication) "
-    "work today. See docs/projet-file/mcp-02-spec.md §7."
+_USER_TOPIC_FALLBACK_MSG = (
+    "peek_dds_samples could not decode user topic via fastdds dynamic XTypes. "
+    "Fast DDS 2.6.x Python bindings expose DynamicType/DynamicData but "
+    "remote TypeObject lookup is partial ; v0.4.0 Phase 1 surfaces the "
+    "topic as best-effort raw bytes ; a Phase 1+ patch will extend the "
+    "dynamic decode path."
 )
 
 
@@ -78,22 +82,46 @@ class _DiscoveryListener:
     signatures is bound via `create_participant(..., listener, mask)`.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, lifecycle: LifecycleBuffer | None = None, domain_id: int = 0) -> None:
         self._lock = threading.RLock()
         self._participants: dict[str, Any] = {}
         self._subscriptions: dict[str, Any] = {}
         self._publications: dict[str, Any] = {}
+        # v0.4.0 Phase 1: listener callbacks feed the lifecycle buffer
+        # directly (no polling reconciliation needed — Fast DDS gives us
+        # arrival AND removal events). `lifecycle=None` keeps the
+        # listener usable in isolation for tests that don't care.
+        self._lifecycle = lifecycle
+        self._domain_id = domain_id
 
     def on_participant_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
         try:
             status = getattr(info, "status", None)
             data = getattr(info, "info", None) or getattr(info, "participant_data", None) or info
             guid = format_guid(_extract_guid(data))
+            removed = _is_removal(status)
             with self._lock:
-                if _is_removal(status):
+                if removed:
                     self._participants.pop(guid, None)
                 else:
                     self._participants[guid] = data
+            if self._lifecycle is not None:
+                if removed:
+                    self._lifecycle.record_lost(
+                        guid=guid,
+                        vendor=canonicalize_vendor_id(_extract_vendor_id(data)),
+                        hostname=_extract_hostname(data),
+                        domain_id=self._domain_id,
+                        mode_effective="live",
+                    )
+                else:
+                    self._lifecycle.record_seen(
+                        guid=guid,
+                        vendor=canonicalize_vendor_id(_extract_vendor_id(data)),
+                        hostname=_extract_hostname(data),
+                        domain_id=self._domain_id,
+                        mode_effective="live",
+                    )
         except Exception:  # pragma: no cover — defensive
             log.exception("on_participant_discovery callback failed")
 
@@ -150,7 +178,9 @@ class FastDdsAdapter:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         self._domain_id = domain_id
-        self._listener = _DiscoveryListener()
+        # v0.4.0 Phase 1: lifecycle buffer fed by listener callbacks.
+        self._lifecycle = LifecycleBuffer()
+        self._listener = _DiscoveryListener(lifecycle=self._lifecycle, domain_id=domain_id)
         self._participant: Any | None = None
         self._factory: Any | None = None
         try:
@@ -214,18 +244,15 @@ class FastDdsAdapter:
     # ----- DDS surface (v0.3.0) -----
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
-        """Snapshot of discovered participants from the listener state."""
-        samples = self._listener.snapshot_participants()
-        return [
-            ParticipantInfo(
-                guid=format_guid(_extract_guid(s)),
-                vendor=canonicalize_vendor_id(_extract_vendor_id(s)),
-                hostname=_extract_hostname(s),
-                domain_id=self._domain_id,
-                mode_effective="live",
-            )
-            for s in samples
-        ]
+        """Snapshot of discovered participants from the lifecycle buffer.
+
+        v0.4.0 Phase 1: the listener callbacks have already populated
+        the buffer with lifecycle fields. We read the snapshot from the
+        buffer rather than rebuilding `ParticipantInfo` from the raw
+        listener cache so `first_seen_ns`, `last_seen_ns`, `status`,
+        and `seen_count` are exposed.
+        """
+        return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
         subs = self._listener.snapshot_subscriptions()
@@ -274,17 +301,22 @@ class FastDdsAdapter:
         return reports
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
-        """v0.3.0 scope: builtin DCPS snapshots only.
+        """v0.4.0 Phase 1: builtin DCPS snapshots + user-topic raw fallback.
 
-        Arbitrary user topics require XTypes/IDL discovery — raise
-        with a v0.3.x roadmap pointer rather than returning silent
-        empty results.
+        Builtin DCPS topics keep their v0.3.0 structured-payload shape.
+        User topics that have been discovered on the bus return
+        `_decode_status="raw"` payloads (Fast DDS 2.6.x dynamic XTypes
+        is partial). Unknown topics raise `AdapterError`.
         """
-        if topic not in _BUILTIN_DCPS_TOPICS:
-            raise AdapterError(_USER_TOPIC_ROADMAP_MSG)
         if count < 0:
             raise AdapterError("count must be >= 0")
 
+        if topic in _BUILTIN_DCPS_TOPICS:
+            return self._peek_builtin(topic, count)
+
+        return self._peek_user_topic(topic, count)
+
+    def _peek_builtin(self, topic: str, count: int) -> SampleResult:
         if topic == "DCPSParticipant":
             raw = self._listener.snapshot_participants()
         elif topic == "DCPSSubscription":
@@ -311,6 +343,60 @@ class FastDdsAdapter:
             count=len(samples),
             samples=samples,
             mode_effective="live",
+        )
+
+    def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
+        """Raw-bytes fallback for user-defined topics discovered on the bus."""
+        if not self._is_topic_on_bus(topic):
+            raise AdapterError(
+                f"DDS topic {topic!r} not discovered on domain {self._domain_id}. "
+                "Confirm a publisher is alive and reachable, or call "
+                "list_participants / detect_qos_mismatches first to inspect "
+                "current bus state."
+            )
+
+        fallback_samples: list[MessageSample] = []
+        if count > 0:
+            fallback_samples.append(
+                MessageSample(
+                    topic=topic,
+                    message_type="dds/unknown",
+                    timestamp_ns=0,
+                    payload=annotate_raw(
+                        b"",
+                        note=_USER_TOPIC_FALLBACK_MSG,
+                    ),
+                )
+            )
+        return SampleResult(
+            topic=topic,
+            count=len(fallback_samples),
+            samples=fallback_samples,
+            mode_effective="live",
+        )
+
+    def _is_topic_on_bus(self, topic: str) -> bool:
+        """True iff `topic` appears in any subscription or publication."""
+        for sample in (
+            self._listener.snapshot_subscriptions() + self._listener.snapshot_publications()
+        ):
+            if _extract_topic_name(sample) == topic:
+                return True
+        return False
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        """Return lifecycle events captured by the listener callbacks.
+
+        Fast DDS' listener fires on its worker thread ; the lifecycle
+        buffer's RLock serializes writes against this method's read.
+        """
+        if lookback_seconds < 1 or lookback_seconds > 86400:
+            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        return self._lifecycle.events_since(
+            lookback_seconds=lookback_seconds,
+            domain_id=self._domain_id,
         )
 
 
