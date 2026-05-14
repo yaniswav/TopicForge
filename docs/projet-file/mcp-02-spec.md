@@ -416,20 +416,32 @@ scope creep within the umbrella) inherit from
 ## 9. Monetization — folded into TopicForge Pro
 
 Same three-tier model as `topicforge/docs/product-plan.md §9`. The
-DDS module folds into the existing tiers without introducing new
-billing :
+DDS module folds into the existing tiers, with the v0.4.0 Phase 1.5
+tier framing locking in the **OSS = community DDS / Pro = commercial
+DDS** split :
 
-- **Free (MIT).** `MockMiddlewareAdapter` + `CycloneDdsAdapter`
-  (CycloneDDS is BSD-licensed, redistribution is clean). Shipped
-  via `pip install topicforge[dds]`. Single line at the README bottom
-  pointing to Pro.
-- **Pro (commercial license).** `RtiConnextAdapter` and Pro-only DDS
-  analyzers live in the existing `topicforge_pro` package. **Same
-  license key, same pricing** as the existing ROS2-side Pro :
-  `TOPICFORGE_LICENSE_KEY` unlocks both. $12/month for the first ten
-  early-access customers, $19/month after, annual invoice for
-  procurement-bound customers. No Pro feature ships until 10
-  early-access slots are reserved (pack-wide rule).
+- **Free (MIT).** `MockMiddlewareAdapter` + the four community DDS
+  adapters — `CycloneDdsAdapter` (Eclipse, BSD), `FastDdsAdapter`
+  (eProsima, Apache 2.0), `OpenDdsAdapter` (stub awaiting upstream
+  Python binding maintenance), `DustDdsAdapter` (stub for Rust-native
+  Dust DDS). Shipped via `pip install topicforge[dds]` (Cyclone +
+  Fast) or `topicforge[dds-all-oss]` (with the stubs). Single line at
+  the README bottom pointing to Pro.
+- **Pro (commercial license).** The four **commercial DDS adapters**
+  live in the existing `topicforge_pro` package : `RtiConnextAdapter`
+  (Real-Time Innovations Connext DDS — priority Pro deliverable),
+  `OpenSpliceAdapter` (ADLink, EOL upstream ; legacy support stub
+  only), `CoreDxAdapter` (Twin Oaks Computing), `InterComAdapter`
+  (TechSoft Gurum line). Plus the advanced diagnostic features
+  (URDF Inspector, Bag Anomaly Detector, Multi-bag Diff) that sit
+  above the adapter layer. **Same license key, same pricing** as the
+  pack-wide Pro : `TOPICFORGE_LICENSE_KEY` unlocks both the
+  commercial adapters and the advanced tools. $12/month for the
+  first ten early-access customers, $19/month after, annual invoice
+  for procurement-bound customers. No Pro feature ships until 10
+  early-access slots are reserved (pack-wide rule). Users bring
+  their own vendor SDK license per commercial adapter — TopicForge
+  Pro does not redistribute vendor SDKs.
 - **Enterprise (future, Phase 3+).** Hosted endpoint with auth,
   multi-vendor BYO license, security-review-friendly deployment
   artifacts, support SLA. Defense / aerospace enterprise motion.
@@ -438,6 +450,15 @@ billing :
 The DDS audience has higher willingness to pay than ROS2 hobbyists,
 but the absolute volume is smaller. The umbrella decision means one
 funnel feeds both — no separate Pro page for DDS.
+
+**Tier-defining axis.** What separates Free from Pro is the
+**license shape of the vendor's Python binding**, not the size of the
+feature surface. BSD / Apache bindings (Cyclone, Fast, future
+pyopendds, future dust-dds-python) live in OSS — TopicForge can ship
+them under MIT without legal friction. Commercial bindings (RTI,
+OpenSplice, CoreDX, InterCOM) require their own per-vendor licensing
+that the deployer holds ; TopicForge Pro provides the adapter glue and
+the diagnostic tools that build on top.
 
 ---
 

@@ -26,18 +26,30 @@ AdapterName = Literal[
     "cyclone",
     "fast",
     "rti",
+    "opensplice",
+    "coredx",
+    "intercom",
+    "opendds",
+    "dust",
     "ros2_cli+cyclone",
     "ros2_cli+fast",
+    "ros2_cli+rti",
+    "ros2_cli+opensplice",
+    "ros2_cli+coredx",
+    "ros2_cli+intercom",
+    "ros2_cli+opendds",
+    "ros2_cli+dust",
 ]
 """Implementation tag for the active adapter.
 
 Internal — used by factory wiring and logging. Distinct from
 `EffectiveMode`, which is the MCP wire contract surfaced to clients.
-`"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; `"rti"`
-stays reserved for the v0.4.0+ Pro adapter. The hyphenated forms
-(`"ros2_cli+cyclone"`, `"ros2_cli+fast"`) are emitted by the
-v0.4.0 `CompositeAdapter` when ROS2 CLI and a DDS backend serve
-the bus simultaneously.
+`"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; the Pro tier
+vendor names (`"rti"`, `"opensplice"`, `"coredx"`, `"intercom"`) and
+the OSS stubs (`"opendds"`, `"dust"`) joined in v0.4.0 Phase 1.5 to
+support the 8-vendor auto-detect chain. The hyphenated forms are
+emitted by the `CompositeAdapter` when ROS2 CLI and a DDS backend
+serve the bus simultaneously.
 """
 
 EffectiveMode = Literal["mock", "live"]

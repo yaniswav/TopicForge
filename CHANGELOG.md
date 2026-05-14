@@ -118,6 +118,97 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   (full / partial / raw status, `_raw_bytes_hex` shape, binding
   caveats per backend).
 
+### Sprint v0.4.0 — Phase 1.5 (auto-detect + OSS expansion + Pro framing)
+
+> Same `[Unreleased]` line. Phase 1.5 is the bridge between Phase 1 (DDS
+> observability core) and Phase 2 (Pro tier launch). Branch
+> `feat/v0.4.0-phase15-auto-detect-and-oss-expansion`. No version bump.
+
+#### Added (sub-milestone 1.5.1 — auto-detect + XTypes push)
+
+- **8-vendor DDS auto-detect chain** in `Settings.effective_dds_backend`.
+  Priority order: `rti > opensplice > coredx > intercom (Pro) > opendds
+  > fast > cyclone > dust (OSS) > mock`. The chain probes each vendor's
+  Python module via `importlib.util.find_spec` and returns the first
+  hit. Pro vendors are probed against `topicforge_pro.adapters.<vendor>`
+  rather than the upstream SDK directly — the OSS core never imports a
+  commercial vendor binding.
+- **`DdsBackend` / `ResolvedDdsBackend` Literals widened** with 5 new
+  vendor values: `opensplice`, `coredx`, `intercom`, `opendds`, `dust`.
+- **`HealthReport.dds_backend` Literal widened** symmetrically. Soft-
+  breaking on the producer side ; strict JSON-schema clients pinned to
+  v0.3.0 will reject the new values unless their schema regenerates.
+- **`AdapterName` Literal widened** with the 5 new vendor tags and 6
+  new composite tags (`ros2_cli+rti`, `ros2_cli+opensplice`, etc.).
+- **Cyclone XTypes pipeline**. `_try_dynamic_decode_cyclone` no longer
+  always returns None — it probes `cyclonedds.dynamic` entry points,
+  resolves a type id via `DCPSPublication`, builds a typed reader, and
+  decodes samples field-by-field with per-construct granularity.
+  Fallback to `annotate_raw` when any step fails. Real-bus validation
+  awaits user feedback ; the v0.4.0 Phase 1 plumbing is now a
+  best-effort path rather than always-fallback.
+- **Fast DDS `TypeObjectFactory` probe** in `_try_dynamic_decode_fast`.
+  The Fast DDS 2.6.x dynamic XTypes Python surface is incomplete, so
+  the probe currently returns None and the raw-bytes fallback fires ;
+  the structural change makes the v0.5 decode patch a small follow-up.
+
+#### Added (sub-milestone 1.5.2 — OSS adapter expansion)
+
+- **`OpenDdsAdapter`** (`adapters/dds_opendds/`) — stub. Probes
+  `pyopendds` via `find_spec` ; `is_available()` reports False when the
+  binding is absent (always, in 2026-05-14, since the package is not on
+  PyPI). All 8 protocol methods raise `AdapterError(_OPENDDS_ROADMAP_MSG)`.
+- **`DustDdsAdapter`** (`adapters/dds_dust/`) — even thinner stub.
+  `is_available()` always False ; Dust DDS is Rust-native with no
+  maintained Python binding.
+- **`[dds-opendds]` and `[dds-dust]` pyproject extras** as placeholder
+  pins (`pyopendds>=0.1`, `dust-dds-python>=0.1`). Neither package is
+  on PyPI today ; the extras anchor the auto-detect probe and will
+  resolve cleanly when upstream releases.
+- **`[dds-all-oss]` union extra** — `topicforge[dds] + dds-opendds +
+  dds-dust` for users explicitly opting into the stubs.
+- **New pytest markers** `requires_opendds`, `requires_dust` — auto-skip
+  when bindings are absent (same convention as `requires_cyclonedds`).
+
+#### Added (sub-milestone 1.5.3 — pro/ scaffold + docs)
+
+- **`tests/test_pro_hook.py`** — exercises `_try_register_pro` with a
+  fake `topicforge_pro` module injected via `sys.modules`. Three test
+  cases: package absent → False, package present + register succeeds →
+  True + side-effect captured, register raises → False + error logged.
+  Locks in the OSS-side contract that the Pro plugin must implement.
+- **`docs/pro.md` rewritten** with the corrected tier framing: OSS =
+  community DDS adapters (Cyclone, Fast — OpenDDS / Dust stubs) + base
+  ROS2 introspection ; Pro = commercial DDS adapters (RTI Connext,
+  OpenSplice [legacy], CoreDX, InterCOM) + URDF / Bag Anomaly /
+  Multi-bag Diff diagnostics. Pricing terms preserved at $12/$19.
+
+#### Changed (sub-milestone 1.5.3)
+
+- **README.md install section** enriched. Documents the 8-vendor auto-
+  detect chain and the OSS/Pro tier split. Removed the stale "v0.3.0
+  limitation — single adapter at a time" — Phase 1 shipped the
+  composite adapter ; the README now describes the actual behavior.
+
+#### Notes
+
+- **Pro tier scaffold lives in `pro/` (gitignored).** The Phase 1.5
+  branch ships RtiConnextAdapter + OpenSplice stub + license skeleton
+  + register.py in the working tree under `pro/`, but `.gitignore`
+  excludes the folder entirely — none of those files are committed.
+  The maintainer copies them to a private backup repo before launching
+  the `topicforge-pro` PyPI package.
+- **Backward compatibility**: zero v0.3.0 + Phase 1 test regressions.
+  `TOPICFORGE_DDS_BACKEND=mock | cyclone | fast | rti | auto` continue
+  to resolve as before ; the 5 new vendor values are additive.
+- **No 10th MCP tool.** Phase 1.5 is structural / docs only — the
+  9-tool surface (8 v0.3.0 + `participant_events` from Phase 1) is
+  preserved exactly.
+- **Pyopendds and dust-dds-python pins are placeholders.** A user
+  running `pip install topicforge[dds-opendds]` today will see an
+  install failure ; this is expected and the extras exist to anchor
+  the auto-detect framework for the day the upstream packages ship.
+
 ## [0.3.0] - 2026-05-14
 
 ### Strategic

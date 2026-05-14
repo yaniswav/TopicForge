@@ -9,15 +9,25 @@ from typing import Literal
 
 from topicforge import __version__
 from topicforge.config import Settings
-from topicforge.models import HealthReport
-from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 # Map effective DDS backend → the Python module the adapter imports lazily.
 # Used to decide `middleware_available` without actually constructing the
 # adapter — a separate concern from the factory's instantiation fallback.
-_DDS_BACKEND_MODULE = {
-    "cyclone": "cyclonedds",
-    "fast": "fastdds",
+#
+# Imports the canonical table from `config.settings` so the lookup cannot
+# drift between the auto-detect chain and the health report. The health
+# check uses the SAME module name a `find_spec` probe targets — for Pro
+# vendors that means the `topicforge_pro.adapters.<vendor>` plugin, not
+# the underlying commercial SDK module (which the OSS core never imports
+# directly). For RTI specifically, we also probe the upstream
+# `rti.connextdds` module so a user who has RTI installed but no
+# `topicforge-pro` package still sees `middleware_available=True` —
+# they just need the Pro package to actually use it.
+from topicforge.config.settings import _DDS_BACKEND_MODULES
+from topicforge.models import HealthReport
+from topicforge.services.constants import MAX_SAMPLE_COUNT
+
+_HEALTH_FALLBACK_MODULES: dict[str, str] = {
     "rti": "rti.connextdds",
 }
 
@@ -55,17 +65,21 @@ class HealthService:
 def _middleware_available(backend: str) -> bool:
     """True if the DDS backend's Python bindings are importable on this host.
 
-    Mock is always available (no middleware needed). The other backends are
-    checked via `importlib.util.find_spec` — purely predictive, no actual
-    import. The factory may still fall back at instantiation time, but the
-    health check reports the intent.
+    Mock is always available (no middleware needed). Other backends are
+    checked via `importlib.util.find_spec` against the canonical module
+    table shared with the auto-detect chain (`_DDS_BACKEND_MODULES`).
+    For Pro vendors, a fallback probe against the upstream SDK module
+    (e.g. `rti.connextdds`) reports True when the SDK is installed but
+    the `topicforge-pro` plugin is not — making the missing piece visible
+    to the user.
     """
     if backend == "mock":
         return True
-    module = _DDS_BACKEND_MODULE.get(backend)
-    if module is None:
-        return False
-    return importlib.util.find_spec(module) is not None
+    candidates = [
+        _DDS_BACKEND_MODULES.get(backend),
+        _HEALTH_FALLBACK_MODULES.get(backend),
+    ]
+    return any(c is not None and importlib.util.find_spec(c) is not None for c in candidates)
 
 
 def _ros_backend(settings: Settings, ros2_path: str | None) -> Literal["mock", "ros2_cli", "none"]:
