@@ -57,9 +57,7 @@ _DEFAULT_DISCOVERY_WAIT_MS = 1500
 _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
 
-_BUILTIN_DCPS_TOPICS = frozenset(
-    {"DCPSParticipant", "DCPSSubscription", "DCPSPublication"}
-)
+_BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
 
 _USER_TOPIC_ROADMAP_MSG = (
     "peek_dds_samples on arbitrary user topics requires IDL/XTypes "
@@ -86,16 +84,10 @@ class _DiscoveryListener:
         self._subscriptions: dict[str, Any] = {}
         self._publications: dict[str, Any] = {}
 
-    def on_participant_discovery(
-        self, dp: Any, info: Any, should_be_ignored: Any = None
-    ) -> None:
+    def on_participant_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
         try:
             status = getattr(info, "status", None)
-            data = (
-                getattr(info, "info", None)
-                or getattr(info, "participant_data", None)
-                or info
-            )
+            data = getattr(info, "info", None) or getattr(info, "participant_data", None) or info
             guid = format_guid(_extract_guid(data))
             with self._lock:
                 if _is_removal(status):
@@ -105,9 +97,7 @@ class _DiscoveryListener:
         except Exception:  # pragma: no cover — defensive
             log.exception("on_participant_discovery callback failed")
 
-    def on_data_reader_discovery(
-        self, dp: Any, info: Any, should_be_ignored: Any = None
-    ) -> None:
+    def on_data_reader_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
         try:
             status = getattr(info, "status", None)
             data = getattr(info, "info", None) or info
@@ -120,9 +110,7 @@ class _DiscoveryListener:
         except Exception:  # pragma: no cover — defensive
             log.exception("on_data_reader_discovery callback failed")
 
-    def on_data_writer_discovery(
-        self, dp: Any, info: Any, should_be_ignored: Any = None
-    ) -> None:
+    def on_data_writer_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
         try:
             status = getattr(info, "status", None)
             data = getattr(info, "info", None) or info
@@ -173,9 +161,7 @@ class FastDdsAdapter:
             with contextlib.suppress(Exception):
                 factory.get_default_participant_qos(qos)
             mask = fastdds.StatusMask.all()
-            self._participant = factory.create_participant(
-                domain_id, qos, self._listener, mask
-            )
+            self._participant = factory.create_participant(domain_id, qos, self._listener, mask)
             if self._participant is None:
                 raise AdapterError("DomainParticipantFactory.create_participant returned None")
             self._factory = factory
@@ -183,8 +169,7 @@ class FastDdsAdapter:
             raise
         except Exception as exc:
             raise AdapterError(
-                f"Failed to create Fast DDS DomainParticipant on "
-                f"domain {domain_id}: {exc}"
+                f"Failed to create Fast DDS DomainParticipant on domain {domain_id}: {exc}"
             ) from exc
         # Bounded warm-up — discovery callbacks fire asynchronously after
         # the participant joins.

@@ -95,9 +95,7 @@ def test_format_guid_none_returns_unknown() -> None:
 def test_format_guid_short_bytes_zero_padded() -> None:
     """A 4-byte input pads with zeros instead of raising — defensive against
     edge-case bindings that return partial GUIDs."""
-    assert format_guid(b"\x01\x02\x03\x04") == (
-        "01020304.00000000.00000000.00000000"
-    )
+    assert format_guid(b"\x01\x02\x03\x04") == ("01020304.00000000.00000000.00000000")
 
 
 def test_format_guid_truncates_long_bytes() -> None:
