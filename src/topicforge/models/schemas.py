@@ -80,7 +80,12 @@ class QosProfile(BaseModel):
 
 
 class ParticipantInfo(BaseModel):
-    """DDS participant discovered on the configured domain."""
+    """DDS participant discovered on the configured domain.
+
+    v0.4.0 Phase 1 adds lifecycle fields (`first_seen_ns`, `last_seen_ns`,
+    `status`, `seen_count`). All four are optional with safe defaults so
+    v0.3.0 producers and fixtures keep working unchanged.
+    """
 
     model_config = _CONFIG
 
@@ -111,6 +116,97 @@ class ParticipantInfo(BaseModel):
         ge=0,
         le=232,
         description="DDS domain id the participant is bound to.",
+    )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    first_seen_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Wall-clock timestamp (nanoseconds since epoch) of the **first** "
+            "discovery sample TopicForge observed for this participant. "
+            "`None` when the adapter does not track lifecycle (v0.3.0 "
+            "callers or mock fixtures missing the field). v0.4.0+ live "
+            "adapters populate it."
+        ),
+    )
+    last_seen_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Wall-clock timestamp (nanoseconds since epoch) of the **most "
+            "recent** discovery sample observed. Used by `participant_events` "
+            "to distinguish currently-active participants from those that "
+            "left the bus. `None` when the adapter does not track lifecycle."
+        ),
+    )
+    status: Literal["active", "left", "unknown"] = Field(
+        default="unknown",
+        description=(
+            "Lifecycle status. `active` means TopicForge has a recent "
+            "discovery sample for this GUID and the bus has not signalled "
+            "removal. `left` means the participant was observed earlier "
+            "but has since disappeared (a Fast DDS `REMOVED` callback or a "
+            "Cyclone polling delta). `unknown` is the safe default for "
+            "v0.3.0 callers and fixtures missing the field."
+        ),
+    )
+    seen_count: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Number of distinct discovery samples observed for this "
+            "participant across all calls to `list_participants` during "
+            "this server's lifetime. `1` is the safe default ; v0.4.0+ "
+            "live adapters increment on each observation."
+        ),
+    )
+
+
+class ParticipantEvent(BaseModel):
+    """A single lifecycle event for a DDS participant — discovered or lost.
+
+    Distinct from `ParticipantInfo` because events carry intrinsic time
+    + type semantics (point-in-time facts), while `ParticipantInfo` is a
+    snapshot of current state. Returned by the `participant_events`
+    MCP tool added in v0.4.0 Phase 1.
+    """
+
+    model_config = _CONFIG
+
+    guid: str = Field(description="DDS Global Unique Identifier of the participant involved.")
+    event_type: Literal["discovered", "lost"] = Field(
+        description=(
+            "`discovered` when the participant first joined the bus (or "
+            "rejoined after leaving). `lost` when TopicForge observed a "
+            "`REMOVED` callback (Fast DDS) or a polling delta where the "
+            "GUID no longer appears in the DCPSParticipant builtin reader "
+            "snapshot (Cyclone). The transition is reported once per "
+            "state change."
+        )
+    )
+    vendor: Literal["cyclone", "fast", "rti", "mock", "unknown"] = Field(
+        description=(
+            "DDS implementation tag for the participant involved, decoded "
+            "the same way as `ParticipantInfo.vendor`."
+        )
+    )
+    timestamp_ns: int = Field(
+        ge=0,
+        description=(
+            "Wall-clock timestamp (nanoseconds since epoch) when TopicForge "
+            "captured the event. For Fast DDS this is when the listener "
+            "callback ran ; for Cyclone this is when the polling delta was "
+            "computed ; for mock fixtures this is a deterministic anchor."
+        ),
+    )
+    hostname: str | None = Field(
+        default=None,
+        description="Hostname announced by the participant when known, else `None`.",
+    )
+    domain_id: int = Field(
+        ge=0,
+        le=232,
+        description="DDS domain id the event occurred on.",
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
@@ -365,5 +461,18 @@ class HealthReport(BaseModel):
             "Whether the configured DDS backend is importable. False when "
             "the DDS module is inactive (`dds_backend == 'none'`) or when "
             "the backend's Python bindings are not installed."
+        ),
+    )
+    ros_backend: Literal["mock", "ros2_cli", "none"] = Field(
+        default="none",
+        description=(
+            "Active ROS2 backend. `ros2_cli` when the `ros2` CLI is on "
+            "PATH and live mode resolves to a Ros2CliAdapter (alone or "
+            "as the ROS half of a composite). `mock` when MockAdapter "
+            "serves the ROS surface. `none` when no ROS2 backend is "
+            "active (e.g. DDS-only live install with no `ros2` CLI). "
+            "Added in v0.4.0 Phase 1 alongside the composite adapter so "
+            "clients can distinguish the ROS2 and DDS halves of a "
+            "composed runtime."
         ),
     )

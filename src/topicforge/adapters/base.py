@@ -14,18 +14,30 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
 )
 
-AdapterName = Literal["mock", "ros2_cli", "cyclone", "fast", "rti"]
+AdapterName = Literal[
+    "mock",
+    "ros2_cli",
+    "cyclone",
+    "fast",
+    "rti",
+    "ros2_cli+cyclone",
+    "ros2_cli+fast",
+]
 """Implementation tag for the active adapter.
 
 Internal — used by factory wiring and logging. Distinct from
 `EffectiveMode`, which is the MCP wire contract surfaced to clients.
 `"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; `"rti"`
-stays reserved for the v0.4.0+ Pro adapter.
+stays reserved for the v0.4.0+ Pro adapter. The hyphenated forms
+(`"ros2_cli+cyclone"`, `"ros2_cli+fast"`) are emitted by the
+v0.4.0 `CompositeAdapter` when ROS2 CLI and a DDS backend serve
+the bus simultaneously.
 """
 
 EffectiveMode = Literal["mock", "live"]
@@ -98,6 +110,10 @@ class MiddlewareAdapter(Protocol):
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]: ...
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult: ...
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]: ...
 
 
 # Backward-compat alias. External code importing `RosAdapter` continues

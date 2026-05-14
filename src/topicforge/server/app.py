@@ -55,10 +55,11 @@ def build_app(
     pro_enabled = _try_register_pro(mcp)
 
     log.info(
-        "topicforge %s ready (mode=%s, adapter=%s, telemetry=%s, pro=%s)",
+        "topicforge %s ready (mode=%s, adapter=%s, dds_backend=%s, telemetry=%s, pro=%s)",
         __version__,
         settings.effective_mode,
         adapter.name,
+        settings.effective_dds_backend,
         "on" if telemetry.enabled else "off",
         "on" if pro_enabled else "off",
     )

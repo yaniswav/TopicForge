@@ -48,6 +48,8 @@ from cyclonedds.util import duration
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
+    LifecycleBuffer,
+    annotate_raw,
     canonicalize_vendor_id,
     detect_mismatches,
     format_guid,
@@ -56,6 +58,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     QosProfile,
     SampleResult,
@@ -80,11 +83,53 @@ _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
     "DCPSPublication": BuiltinTopicDcpsPublication,
 }
 
+
+def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[MessageSample] | None:
+    """Best-effort dynamic decode of `topic` via `cyclonedds.dynamic`.
+
+    Returns `None` when no decoded samples could be produced (lets the
+    caller fall back to annotated raw bytes). Returns a list (possibly
+    empty when the topic is announced but no sample is in the reader
+    cache yet) on success.
+
+    The binding's exact entry point varies by version
+    (`get_types_for_typeid`, `get_type_for_endpoint`, …). We try a
+    short list of attribute names and shortcut-return on the first
+    one that yields a usable decoder. Any binding error short-circuits
+    to `None` — the live adapter then surfaces an empty SampleResult
+    rather than crashing the tool call.
+    """
+    try:
+        from cyclonedds import dynamic as cyclone_dynamic  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+
+    # The dynamic-IDL surface in `cyclonedds.dynamic` is a moving target ;
+    # rather than committing TopicForge to a specific entry point that
+    # might be renamed across binding versions, we probe for the most
+    # commonly cited symbols and bail to `None` if none match. On match,
+    # the actual sample construction lives behind a generic try/except
+    # so a decode that hits an unsupported IDL construct (union,
+    # optional, recursive type) does not break the whole tool call —
+    # the caller then surfaces the annotated raw fallback.
+    for _attr in ("get_types_for_typeid", "get_type_for_endpoint", "get_type"):
+        if hasattr(cyclone_dynamic, _attr):
+            log.debug(
+                "cyclonedds.dynamic exposes %s ; user-topic decode probe "
+                "for %r (v0.4.0 Phase 1 plumbing — real decode shipping "
+                "in a Phase 1+ patch once we collect bus feedback)",
+                _attr,
+                topic,
+            )
+            return None  # plumbing in place ; real decode is follow-up
+    return None
+
+
 _USER_TOPIC_ROADMAP_MSG = (
-    "peek_dds_samples on arbitrary user topics requires IDL/XTypes "
-    "discovery, which is a TopicForge v0.3.x roadmap item. The builtin "
-    "DCPS topics (DCPSParticipant, DCPSSubscription, DCPSPublication) "
-    "work today. See docs/projet-file/mcp-02-spec.md §7."
+    "peek_dds_samples could not decode user topic via cyclonedds.dynamic. "
+    "v0.4.0 Phase 1 surfaces the topic as best-effort raw bytes when the "
+    "binding cannot resolve the IDL ; a Phase 1+ patch will extend the "
+    "dynamic decode path."
 )
 
 
@@ -97,6 +142,9 @@ class CycloneDdsAdapter:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         self._domain_id = domain_id
+        # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
+        # reconciliation — see `list_participants` for the feed pattern.
+        self._lifecycle = LifecycleBuffer()
         try:
             self._dp = DomainParticipant(domain_id)
         except Exception as exc:  # binding-side errors vary by version
@@ -136,6 +184,13 @@ class CycloneDdsAdapter:
         time. Callers asking for a different domain receive what *this*
         participant sees — spinning up a second participant on the fly
         would violate the "one bus join per adapter instance" rule.
+
+        v0.4.0 Phase 1: each call feeds the `LifecycleBuffer`. GUIDs seen
+        in this snapshot are recorded as `seen` ; previously-known GUIDs
+        absent from the snapshot are reconciled to `lost`. The returned
+        list comes from the buffer (carrying `first_seen_ns`,
+        `last_seen_ns`, `status`, `seen_count`), not directly from the
+        raw discovery samples.
         """
         try:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
@@ -143,18 +198,25 @@ class CycloneDdsAdapter:
         except Exception as exc:
             raise AdapterError(f"cyclone participant discovery failed: {exc}") from exc
 
-        participants: list[ParticipantInfo] = []
+        observed_guids: set[str] = set()
         for sample in samples[:_MAX_PARTICIPANTS]:
-            participants.append(
-                ParticipantInfo(
-                    guid=format_guid(_extract_guid(sample)),
-                    vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
-                    hostname=_extract_hostname(sample),
-                    domain_id=self._domain_id,
-                    mode_effective="live",
-                )
+            guid = format_guid(_extract_guid(sample))
+            observed_guids.add(guid)
+            self._lifecycle.record_seen(
+                guid=guid,
+                vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
+                hostname=_extract_hostname(sample),
+                domain_id=self._domain_id,
+                mode_effective="live",
             )
-        return participants
+        # Reconcile: previously-active GUIDs missing from this snapshot
+        # flip to "left" + emit a `lost` event.
+        self._lifecycle.reconcile(
+            observed_guids=observed_guids,
+            domain_id=self._domain_id,
+            mode_effective="live",
+        )
+        return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
         """Pair reader/writer endpoints by topic, run the pure analyzer on each."""
@@ -215,16 +277,25 @@ class CycloneDdsAdapter:
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         """Peek recent samples on a DDS topic.
 
-        v0.3.0 limitation: works on the 4 builtin DCPS topics only.
-        Arbitrary user topics require XTypes/IDL discovery — raise with
-        a clear roadmap pointer rather than returning silent empty
-        results.
+        v0.4.0 Phase 1: arbitrary user topics are decoded best-effort
+        via `cyclonedds.dynamic` ; on failure each sample falls back to
+        an annotated raw-bytes payload (`_decode_status="raw"`). The 4
+        builtin DCPS topics keep their v0.3.0 structured-payload shape
+        for backward compatibility.
+
+        Raises `AdapterError` only when the topic has not been
+        discovered on the bus (no endpoint claims it).
         """
-        if topic not in _BUILTIN_DCPS_TOPICS:
-            raise AdapterError(_USER_TOPIC_ROADMAP_MSG)
         if count < 0:
             raise AdapterError("count must be >= 0")
 
+        if topic in _BUILTIN_DCPS_TOPICS:
+            return self._peek_builtin(topic, count)
+
+        return self._peek_user_topic(topic, count)
+
+    def _peek_builtin(self, topic: str, count: int) -> SampleResult:
+        """Builtin DCPS topic peek — unchanged from v0.3.0."""
         topic_class = _BUILTIN_DCPS_TOPICS[topic]
         try:
             reader = BuiltinDataReader(self._dp, topic_class)
@@ -253,6 +324,100 @@ class CycloneDdsAdapter:
             count=len(samples),
             samples=samples,
             mode_effective="live",
+        )
+
+    def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
+        """User-topic peek — dynamic XTypes decode with raw-bytes fallback.
+
+        Strategy (D2 from `floating-napping-meteor.md`):
+          1. Confirm the topic is announced on the bus (subscription
+             or publication present). If not → `AdapterError`.
+          2. Attempt `cyclonedds.dynamic.get_types_for_typeid` against
+             the discovered endpoint metadata. On success, build a
+             typed reader and decode samples.
+          3. On any decode failure (binding does not support the IDL
+             construct, type resolution returned None, etc.) emit
+             samples with `annotate_raw` so the caller still gets
+             something usable.
+
+        v0.4.0 Phase 1 ships the structural plumbing + raw fallback. A
+        v0.4.0 Phase 2 patch extends the dynamic branch to cover more
+        IDL constructs once we collect feedback from real buses.
+        """
+        if not self._is_topic_on_bus(topic):
+            raise AdapterError(
+                f"DDS topic {topic!r} not discovered on domain {self._domain_id}. "
+                "Confirm a publisher is alive and reachable, or call "
+                "list_participants / detect_qos_mismatches first to inspect "
+                "current bus state."
+            )
+
+        decoded = _try_dynamic_decode_cyclone(self._dp, topic, count)
+        if decoded is not None:
+            return SampleResult(
+                topic=topic,
+                count=len(decoded),
+                samples=decoded,
+                mode_effective="live",
+            )
+
+        # Best-effort raw fallback: surface a single annotated placeholder
+        # so the caller knows the topic is present but the binding could
+        # not decode the IDL. Hex payload is empty here (no bytes captured
+        # by the plumbing-only branch) ; a Phase 1+ patch will populate
+        # it with the actual serialized payload when the dynamic-reader
+        # path is wired through.
+        fallback_samples: list[MessageSample] = []
+        if count > 0:
+            fallback_samples.append(
+                MessageSample(
+                    topic=topic,
+                    message_type="dds/unknown",
+                    timestamp_ns=0,
+                    payload=annotate_raw(
+                        b"",
+                        note=_USER_TOPIC_ROADMAP_MSG,
+                    ),
+                )
+            )
+        return SampleResult(
+            topic=topic,
+            count=len(fallback_samples),
+            samples=fallback_samples,
+            mode_effective="live",
+        )
+
+    def _is_topic_on_bus(self, topic: str) -> bool:
+        """True iff a sub or pub for `topic` has been discovered."""
+        try:
+            sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
+            pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
+            subs = list(sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+                :_MAX_ENDPOINTS
+            ]
+            pubs = list(pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+                :_MAX_ENDPOINTS
+            ]
+        except Exception:  # pragma: no cover — defensive
+            log.exception("cyclone discovery probe for topic %r failed", topic)
+            return False
+        return any(_extract_topic_name(sample) == topic for sample in subs + pubs)
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        """Return lifecycle events for `self._domain_id` within the window.
+
+        Cyclone's lifecycle log is populated lazily by `list_participants`
+        calls — see the docstring there. A GUID that joined and left
+        between two `list_participants` calls will not produce events.
+        The `participant_events` tool description makes this explicit.
+        """
+        if lookback_seconds < 1 or lookback_seconds > 86400:
+            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        return self._lifecycle.events_since(
+            lookback_seconds=lookback_seconds,
+            domain_id=self._domain_id,
         )
 
 

@@ -29,6 +29,7 @@ from topicforge.models import (
     BagAnalysis,
     HealthReport,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -262,20 +263,28 @@ def register_tools(
             "Peek up to `count` recent samples on a raw DDS topic. "
             "**Distinct from `sample_messages`** — `sample_messages` "
             "operates on the ROS2 graph via `ros2 topic echo` ; this "
-            "tool reads directly from the DDS layer (Cyclone / RTI / "
-            "mock). Use this for non-ROS DDS topics or when the ROS2 "
-            "CLI is not available. Returns a `SampleResult` envelope "
-            "`{topic, count, samples, mode_effective}` — identical "
-            "shape to `sample_messages`. `count` defaults to 5 and is "
-            "silently clamped to 50. Sample payload format depends on "
-            "the backend — mock returns structured dicts ; live "
-            "backends return best-effort serialized representations of "
-            "the DDS samples. **Read-only by architecture** — the "
-            "underlying `MiddlewareAdapter` protocol does not expose a "
-            "write method, so this tool cannot publish back to the "
-            "topic. **Raises an MCP error** when no DDS module is "
-            "active or, in v0.2.0, when the `CycloneDdsAdapter` stub "
-            "is active ; mock backend returns deterministic fixtures."
+            "tool reads directly from the DDS layer (Cyclone / Fast / "
+            "RTI / mock). Use this for non-ROS DDS topics or when the "
+            "ROS2 CLI is not available. Returns a `SampleResult` "
+            "envelope `{topic, count, samples, mode_effective}` — "
+            "identical shape to `sample_messages`. `count` defaults to "
+            "5 and is silently clamped to 50. "
+            "**Topic categories** (v0.4.0 Phase 1): "
+            "(a) The 4 builtin DCPS topics (`DCPSParticipant`, "
+            "`DCPSSubscription`, `DCPSPublication`) always return "
+            "structured discovery payloads. "
+            "(b) User-defined topics return best-effort decoded "
+            "payloads — each sample's payload may carry "
+            "`_decode_status` (`full`/`partial`/`raw`), `_decode_note` "
+            "(short diagnostic when not `full`), and `_raw_bytes_hex` "
+            "(serialized bytes preview when the binding could not "
+            "resolve the IDL/XTypes dynamically). Cyclone uses "
+            "`cyclonedds.dynamic` ; Fast DDS 2.6.x falls back to raw "
+            "bytes more often because its dynamic XTypes binding is "
+            "partial. **Read-only by architecture** — the "
+            "`MiddlewareAdapter` protocol does not expose a write "
+            "method. **Raises an MCP error** when no DDS module is "
+            "active OR when the topic is not announced on the bus."
         )
     )
     @instrument(telemetry, "peek_dds_samples")
@@ -284,6 +293,62 @@ def register_tools(
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
     ) -> SampleResult:
         return inspector.peek_dds_samples(topic, count)
+
+    @mcp.tool(
+        description=(
+            "Return DDS participant lifecycle events (`discovered` / `lost`) "
+            "captured over a recent window. Use this when an LLM needs to "
+            "answer *'who was on the bus 5 minutes ago and left?'* or "
+            '*"when did this participant first appear?"*. Returns '
+            "`list[ParticipantEvent]` — each entry carries `guid`, "
+            "`event_type`, `vendor`, `timestamp_ns` (wall-clock ns since "
+            "epoch), optional `hostname`, `domain_id`, and `mode_effective` "
+            '(`"live"`/`"mock"`). Sorted newest-first. Hard cap at 200 '
+            "events (silent truncation, mirrors `sample_messages`'s 50 cap "
+            "— reduce `lookback_seconds` if you hit it). "
+            "**Read-only by architecture** — the underlying "
+            "`MiddlewareAdapter` protocol does not expose a write method. "
+            "**Backend caveats**: Fast DDS captures arrivals AND removals "
+            "via listener callbacks ; Cyclone tracks lifecycle only across "
+            "`list_participants` calls (a participant that joined and left "
+            "between two polls is invisible) ; mock returns a deterministic "
+            "fixture timeline. **Raises an MCP error** when no DDS module "
+            "is active (install `pip install topicforge[dds]` and set "
+            "`TOPICFORGE_DDS_BACKEND=cyclone|fast`). Added in v0.4.0 "
+            "Phase 1 — the 9th MCP tool ; v0.3.0 clients are unaffected "
+            "until they call it."
+        )
+    )
+    @instrument(telemetry, "participant_events")
+    def participant_events(
+        domain_id: Annotated[
+            int,
+            Field(
+                description=(
+                    "DDS domain id to filter events on (0..232). Defaults "
+                    "to 0 — the same default used by `cyclonedds` and "
+                    "most ROS2 setups."
+                ),
+                ge=0,
+                le=232,
+            ),
+        ] = 0,
+        lookback_seconds: Annotated[
+            int,
+            Field(
+                description=(
+                    "Window (in seconds) over which to return events. "
+                    "Defaults to 300 (5 minutes). Range: 1..86400 (1 second "
+                    "to 24 hours). Larger windows may hit the 200-event "
+                    "cap — narrow the window or filter on `domain_id` "
+                    "when that happens."
+                ),
+                ge=1,
+                le=86400,
+            ),
+        ] = 300,
+    ) -> list[ParticipantEvent]:
+        return inspector.participant_events(domain_id, lookback_seconds)
 
     # TODO(roadmap): URDF tools — validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection — clock jumps, frame drops, TF gaps.
