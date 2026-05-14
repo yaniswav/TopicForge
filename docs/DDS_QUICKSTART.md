@@ -1,6 +1,8 @@
-# DDS quickstart — TopicForge v0.2.0+
+# DDS quickstart — TopicForge v0.3.0+
 
-A 5-minute tour of TopicForge's DDS observability module. Same safety-first read-only contract as the ROS2 tools — the `MiddlewareAdapter` protocol does not expose a write method, so the MCP client can observe the bus but never publish to it.
+A 5-minute tour of TopicForge's multi-vendor DDS observability module. Both backends — Eclipse CycloneDDS and eProsima Fast DDS — join the bus as **read-only DDS-RTPS participants** and observe every conformant vendor on the wire via the OMG protocol guarantee. The `MiddlewareAdapter` protocol does not expose a write method, so the MCP client cannot publish back to the bus on any backend.
+
+See [`docs/dds-interop-matrix.md`](dds-interop-matrix.md) for the canonical multi-vendor positioning and the [OMG May 2025 interop reference](projet-file/references/omg-dds-interop-2025-05-08.xlsx).
 
 This guide does **not** assume you have ROS2 installed.
 
@@ -17,7 +19,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 
 In the spawned MCP client (Claude Desktop, Claude Code, Cursor, ...), the 3 DDS tools are now available alongside the 5 ROS2 tools:
 
-- `list_participants(domain_id=0)` → returns 2 mock participants on domain 0 (vendor `cyclone`, hostnames `mock-robot` and `mock-laptop`).
+- `list_participants(domain_id=0)` → returns 3 mock participants on domain 0 — two CycloneDDS (`mock-robot`, `mock-laptop`) and one Fast DDS (`mock-aerospace-node`). The multi-vendor mock exercises the canonical vendor enum (`cyclone`, `fast`, `rti`, `mock`, `unknown`).
 - `detect_qos_mismatches(topic=None)` → returns 1 `MismatchReport` for `/dds/qos_mismatch` (deliberate Reliability incompatibility — RELIABLE reader vs BEST_EFFORT writer).
 - `peek_dds_samples(topic="/dds/well_matched", count=3)` → returns 3 deterministic samples ; `peek_dds_samples(topic="/dds/qos_mismatch", count=1)` returns 1 sample with a `qos_note` field annotating the mismatch.
 
@@ -25,30 +27,54 @@ Mock fixtures are stable across runs — you can write integration tests against
 
 ---
 
-## 2. Live mode with CycloneDDS
+## 2. Live mode — choose your backend
 
-Install the DDS extras and select the Cyclone backend:
+v0.3.0 ships two OSS Python adapters. Pick one (or install both) :
+
+### 2.a Eclipse CycloneDDS
 
 ```bash
-pip install topicforge[dds]
+pip install topicforge[dds-cyclone]
 TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `rti` (Pro tier, not shipped in v0.2.0), or `auto` (resolves to `cyclone` when `cyclonedds` is importable, else `mock`).
+The CycloneDDS adapter uses `cyclonedds.builtin.BuiltinDataReader` for polling-style discovery on the DCPS builtin topics. QoS policies are introspected via `Policy.*` class names. Bounded `take_iter` timeouts keep tool calls under 2 seconds.
 
-`TOPICFORGE_DDS_DOMAIN_ID` selects the DDS domain (`0..232`, default `0`).
+### 2.b eProsima Fast DDS
 
-### v0.2.0 stub limitation
+```bash
+pip install topicforge[dds-fast]
+TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=fast python -m topicforge
+```
 
-The v0.2.0 `CycloneDdsAdapter` ships as a **protocol-compliant stub**: the lazy import, `is_available()`, and factory routing all work, but the 3 DDS tools raise an `AdapterError` with a v0.2.x roadmap pointer when invoked. The real CycloneDDS discovery (builtin topics, QoS pair extraction, typed reader for samples) lands in a v0.2.x patch.
+The Fast DDS adapter attaches a `DomainParticipantListener`-shaped object to a freshly created participant and accumulates discovery callbacks under an RLock. A bounded `discovery_wait_ms=1500` warm-up after participant creation gives the listener time to populate before the first tool call.
 
-In the meantime, use `TOPICFORGE_DDS_BACKEND=mock` for end-to-end tool testing.
+### 2.c Both backends + auto resolution
+
+```bash
+pip install topicforge[dds]                                # both Cyclone and Fast
+TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=auto python -m topicforge
+```
+
+`auto` resolves to the first available OSS backend in this order: `fast` > `cyclone` > `mock`. The order reflects the OMG May 2025 interop matrix where Fast DDS is validated against all five other vendors on 47/47 pairs. v0.2.0 users with only `cyclonedds` installed remain unchanged — Fast is unimportable on their host so the chain falls through to Cyclone.
+
+### Domain selection
+
+```bash
+TOPICFORGE_DDS_DOMAIN_ID=42 python -m topicforge
+```
+
+Accepts `0..232` (DDS spec range). Default is `0` — the same default used by most ROS2 setups.
+
+### Pro tier — RTI Connext
+
+`TOPICFORGE_DDS_BACKEND=rti` is reserved for the v0.4.0+ Pro tier (BYO RTI Connext license). Selecting it in the OSS core falls back to the ROS2 CLI adapter with a logged warning.
 
 ---
 
 ## 3. The QoS mismatch scenario
 
-Mock fixtures encode the canonical "subscriber doesn't receive" debugging case. From an MCP client:
+Both real backends and the mock fixtures encode the canonical "subscriber doesn't receive" debugging case. From an MCP client:
 
 ```
 > Detect QoS mismatches on the current bus.
@@ -58,8 +84,8 @@ Mock fixtures encode the canonical "subscriber doesn't receive" debugging case. 
 [
   {
     "topic": "/dds/qos_mismatch",
-    "reader_guid": "010f1c2a-3b4c-5d6e-7f80-000000000001",
-    "writer_guid": "010f1c2a-3b4c-5d6e-7f80-000000000002",
+    "reader_guid": "010f1c2a.3b4c5d6e.7f800000.00000001",
+    "writer_guid": "010f1c2a.3b4c5d6e.7f800000.00000002",
     "incompatible_policies": ["Reliability"],
     "severity": "incompatible",
     "mode_effective": "mock"
@@ -67,45 +93,64 @@ Mock fixtures encode the canonical "subscriber doesn't receive" debugging case. 
 ]
 ```
 
-An LLM reading this output has enough information to suggest a concrete fix ("the writer is BEST_EFFORT but the reader requires RELIABLE — either relax the reader or upgrade the writer"). That is the diagnostic loop the DDS module is designed to support.
+An LLM reading this output has enough information to suggest a concrete fix ("the writer is BEST_EFFORT but the reader requires RELIABLE — either relax the reader or upgrade the writer"). That is the diagnostic loop the DDS module is designed to support — and it works identically regardless of which backend produced the discovery samples, because the vendor-neutral pure analyzer at `src/topicforge/adapters/common/qos_analyzer.py` operates on canonical `QosProfile` Pydantic models.
 
-The pure analyzer behind `detect_qos_mismatches` lives in `src/topicforge/adapters/common/qos_analyzer.py` and covers the four MVP policies that explain the bulk of real-world mismatch cases: **Reliability**, **Durability**, **History**, **Deadline**.
-
----
-
-## 4. Single-adapter limitation (v0.2.0)
-
-TopicForge v0.2.0 selects **one adapter at a time** based on `TOPICFORGE_MODE` + `TOPICFORGE_DDS_BACKEND`:
-
-| `TOPICFORGE_MODE` | `TOPICFORGE_DDS_BACKEND` | Active adapter | ROS2 tools | DDS tools |
-| ----------------- | ------------------------ | -------------- | ---------- | --------- |
-| `mock`            | (any)                    | `MockAdapter`  | work (fixtures) | work (fixtures) |
-| `live` / `auto`   | `mock` (default)         | `Ros2CliAdapter` | work | raise with remediation pointer |
-| `live` / `auto`   | `cyclone`                | `CycloneDdsAdapter` (stub) | raise with remediation pointer | raise with v0.2.x roadmap pointer |
-| `live` / `auto`   | `rti`                    | falls back to `Ros2CliAdapter` (Pro not shipped in v0.2.0) | work | raise |
-
-A composite adapter that delegates per-tool category (ROS2 graph vs DDS layer) is on the v0.2.x roadmap — see `docs/projet-file/mcp-02-spec.md §7`. For now, restart the server with a different `TOPICFORGE_DDS_BACKEND` to switch sides.
-
-The error message from the unselected side is explicit and points at the remediation path — no silent failures.
+The analyzer covers the four MVP policies — **Reliability**, **Durability**, **History**, **Deadline** — that explain the bulk of real-world mismatch cases. Liveliness, Ownership, Partition, TimeBasedFilter, and LatencyBudget are v0.3.x patches.
 
 ---
 
-## 5. What's next
+## 4. Single-adapter limitation (v0.3.0)
 
-- **v0.2.x** — Replace the `CycloneDdsAdapter` stub with real CycloneDDS discovery (`BuiltinTopicDcpsParticipant` for participants, `BuiltinTopicDcpsSubscription`/`Publication` for QoS pair extraction, typed reader on builtin topics first then arbitrary user topics).
-- **v0.2.x** — Composite adapter routing ROS2 tools to `Ros2CliAdapter` and DDS tools to `CycloneDdsAdapter` so both surfaces are usable simultaneously.
-- **v0.3.0+** — `RtiConnextAdapter` in the Pro tier (BYO RTI Connext license, gated by `TOPICFORGE_LICENSE_KEY`).
-- **v0.3.0+** — Extended QoS mismatch coverage (Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget).
+TopicForge v0.3.0 still selects **one adapter at a time** based on `TOPICFORGE_MODE` + `TOPICFORGE_DDS_BACKEND` :
 
-Full strategic roadmap lives in `docs/product-plan.md §5` (Phase 1 remaining) and `docs/projet-file/mcp-02-spec.md §7` (DDS module phasing).
+| `TOPICFORGE_MODE` | `TOPICFORGE_DDS_BACKEND` | Active adapter             | ROS2 tools                | DDS tools                  |
+| ----------------- | ------------------------ | -------------------------- | ------------------------- | -------------------------- |
+| `mock`            | (any)                    | `MockAdapter`              | work (fixtures)           | work (fixtures)            |
+| `live` / `auto`   | `mock` (default)         | `Ros2CliAdapter`           | work                      | raise with remediation     |
+| `live` / `auto`   | `cyclone`                | `CycloneDdsAdapter`        | raise (DDS-only adapter)  | work (real CycloneDDS)     |
+| `live` / `auto`   | `fast`                   | `FastDdsAdapter`           | raise (DDS-only adapter)  | work (real Fast DDS)       |
+| `live` / `auto`   | `rti`                    | falls back to ROS2 CLI     | work (CLI)                | raise (v0.4.0+ Pro tier)   |
+
+A composite adapter that delegates per-tool category (ROS2 graph vs DDS layer) is on the v0.3.x roadmap. For now, restart the server with a different `TOPICFORGE_DDS_BACKEND` to switch sides.
+
+Error messages on the unselected side are explicit and point at the remediation path — no silent failures.
 
 ---
 
-## 6. Troubleshooting
+## 5. v0.3.0 scope of `peek_dds_samples`
 
-- **`pip install topicforge[dds]` fails on Windows / macOS Python 3.13+** — `cyclonedds` wheels are typically published for Python 3.8 to 3.12. Pin Python 3.11 or 3.12 for the install host.
-- **`pip install topicforge[dds]` fails with `CYCLONEDDS_HOME`** — pip is trying to build `cyclonedds` from source because no wheel matches your platform/Python combination. Either switch to a supported Python (3.11/3.12) or install the native CycloneDDS C library first (see Eclipse CycloneDDS releases).
-- **DDS tool returns "v0.2.0 stub" error** — expected with `TOPICFORGE_DDS_BACKEND=cyclone` in v0.2.0. Use `TOPICFORGE_DDS_BACKEND=mock` for end-to-end testing until the v0.2.x patch lands.
-- **DDS tool returns "DDS module is not active" error** — your `TOPICFORGE_DDS_BACKEND` resolves to neither `cyclone` nor `mock` (likely you're in `live` mode with the default backend). Set `TOPICFORGE_DDS_BACKEND=cyclone` or `=mock` explicitly.
+`peek_dds_samples` is full-fidelity on the 4 builtin DCPS topics with both backends :
+
+```
+peek_dds_samples(topic="DCPSParticipant", count=5)
+peek_dds_samples(topic="DCPSSubscription", count=10)
+peek_dds_samples(topic="DCPSPublication", count=10)
+```
+
+Arbitrary user topics raise an `AdapterError` pointing at the v0.3.x roadmap — XTypes/IDL discovery (`cyclonedds.dynamic.get_types_for_typeid` on Cyclone, XTypes remote-type lookup on Fast DDS) is the missing piece for arbitrary user-topic peek.
+
+The other two DDS tools — `list_participants` and `detect_qos_mismatches` — work end-to-end on any user-topic deployment ; they don't depend on payload deserialization.
+
+---
+
+## 6. What's next
+
+- **v0.3.x patch** — XTypes/IDL discovery to extend `peek_dds_samples` to arbitrary user topics on both backends.
+- **v0.3.x patch** — Extended QoS coverage : Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget.
+- **v0.3.x patch** — Composite adapter routing ROS2 graph tools to `Ros2CliAdapter` and DDS tools to the selected DDS adapter, so both surfaces are usable simultaneously.
+- **v0.4.0+** — `RtiConnextAdapter` in the Pro tier (BYO RTI Connext license, gated by `TOPICFORGE_LICENSE_KEY`).
+
+Full strategic roadmap lives in [`docs/product-plan.md`](product-plan.md) and the DDS module spec at [`docs/projet-file/mcp-02-spec.md`](projet-file/mcp-02-spec.md).
+
+---
+
+## 7. Troubleshooting
+
+- **`pip install topicforge[dds-cyclone]` fails on Windows / macOS Python 3.13+** — `cyclonedds` wheels are typically published for Python 3.8 to 3.12. Pin Python 3.11 or 3.12 for the install host.
+- **`pip install topicforge[dds-cyclone]` fails with `CYCLONEDDS_HOME`** — pip is trying to build `cyclonedds` from source because no wheel matches your platform/Python combination. Either switch to a supported Python (3.11/3.12) or install the native CycloneDDS C library first (see Eclipse CycloneDDS releases).
+- **`pip install topicforge[dds-fast]` fails** — eProsima Fast DDS Python bindings (`fastdds>=2.6.1,<3`) currently ship wheels for Linux first. Windows wheels lag ; consult fast-dds.docs.eprosima.com for the current matrix.
+- **DDS tool returns "v0.3.x roadmap" error** — you called `peek_dds_samples` on an arbitrary user topic. The 4 builtin DCPS topics work today ; arbitrary user-topic peek is a v0.3.x patch (XTypes/IDL discovery).
+- **DDS tool returns "DDS module is not active" error** — your `TOPICFORGE_DDS_BACKEND` is `mock` while `TOPICFORGE_MODE` is `live` (the ROS2 CLI adapter is selected). Set `TOPICFORGE_DDS_BACKEND=cyclone` or `=fast` explicitly to enable the DDS adapters.
+- **`auto` selects the wrong backend** — `auto` prefers Fast > Cyclone > Mock. If you want Cyclone explicitly, set `TOPICFORGE_DDS_BACKEND=cyclone` rather than relying on `auto`.
 
 Report issues at https://github.com/yaniswav/TopicForge/issues.

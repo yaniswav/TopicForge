@@ -90,11 +90,17 @@ class ParticipantInfo(BaseModel):
             "stable across discovery events within a single deployment."
         )
     )
-    vendor: Literal["cyclone", "rti", "mock", "unknown"] = Field(
+    vendor: Literal["cyclone", "fast", "rti", "mock", "unknown"] = Field(
         description=(
-            "DDS implementation that announced this participant. `mock` "
-            "for synthetic fixtures ; `unknown` when the live adapter could "
-            "not identify the vendor from discovery metadata."
+            "DDS implementation that announced this participant, decoded "
+            "from the OMG-RTPS `vendor_id` field on the discovery sample. "
+            "`cyclone` (Eclipse Foundation), `fast` (eProsima), `rti` "
+            "(Real-Time Innovations). `mock` is reserved for synthetic "
+            "fixtures ; `unknown` when the live adapter could not map "
+            "the observed vendor_id to a known tag. Vendor-neutral: "
+            "TopicForge observes every conformant DDS-RTPS participant "
+            "on the bus via the OMG protocol guarantee — see "
+            "`docs/dds-interop-matrix.md`."
         )
     )
     hostname: str | None = Field(
@@ -335,13 +341,16 @@ class HealthReport(BaseModel):
             "requests proactively. Constant within a given server version."
         ),
     )
-    dds_backend: Literal["mock", "cyclone", "rti", "none"] = Field(
+    dds_backend: Literal["mock", "cyclone", "fast", "rti", "none"] = Field(
         default="none",
         description=(
             "Active DDS module backend. `none` when the DDS module is not "
             "active (default for ROS2-only installs). `mock` for synthetic "
-            "fixtures. `cyclone` requires `pip install topicforge[dds]` ; "
-            "`rti` requires the Pro tier and a valid RTI Connext license."
+            "fixtures. `cyclone` requires `pip install topicforge[dds-cyclone]` "
+            "(Eclipse CycloneDDS) ; `fast` requires "
+            "`pip install topicforge[dds-fast]` (eProsima Fast DDS) ; "
+            "`rti` requires the Pro tier and a valid RTI Connext license "
+            "(v0.4.0+ roadmap)."
         ),
     )
     dds_domain_id: int | None = Field(
