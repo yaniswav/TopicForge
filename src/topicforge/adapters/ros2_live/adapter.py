@@ -42,9 +42,12 @@ _SAMPLE_TIMEOUT_SEC = 3.0
 _DDS_MODULE_INACTIVE_MSG = (
     "DDS module is not active in this configuration. The `ros2` CLI "
     "adapter can introspect the ROS2 graph but does not have direct "
-    "DDS-layer access. Install the DDS extras and select a DDS backend: "
-    "`pip install topicforge[dds]` then set `TOPICFORGE_DDS_BACKEND=cyclone` "
-    "(or `rti` with a valid Pro license)."
+    "DDS-layer access. Install one of the DDS extras and select a "
+    "backend: `pip install topicforge[dds-cyclone]` + "
+    "`TOPICFORGE_DDS_BACKEND=cyclone` (Eclipse CycloneDDS), or "
+    "`pip install topicforge[dds-fast]` + `TOPICFORGE_DDS_BACKEND=fast` "
+    "(eProsima Fast DDS), or `pip install topicforge[dds]` for both "
+    "OSS backends. RTI Connext is v0.4.0+ Pro tier (BYO license)."
 )
 
 
