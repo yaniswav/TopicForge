@@ -17,11 +17,17 @@ from topicforge.models import (
     SampleResult,
     TopicInfo,
 )
+from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 DEFAULT_SAMPLE_COUNT = 5
-MAX_SAMPLE_COUNT = 50
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
+
+# Re-export for backward-compatibility with v0.1.x code that imports
+# `MAX_SAMPLE_COUNT` from `topicforge.services.inspector`. The canonical
+# home is now `topicforge.services.constants` ; new code should import
+# from there.
+__all__ = ["DEFAULT_SAMPLE_COUNT", "MAX_SAMPLE_COUNT", "Inspector"]
 
 # Strict allowlist mirroring ROS2 topic-name conventions:
 #   * must start with `/`
@@ -29,6 +35,10 @@ _DDS_DOMAIN_MAX = 232
 #   * each segment starts with a letter or underscore, then [A-Za-z0-9_]*
 # This rejects `//`, trailing `/`, digit-leading segments, dashes, dots, and
 # every shell metacharacter before any value reaches the `ros2` CLI.
+# TODO(roadmap, audit-2026-05-14): DDS topic names can carry `::` and other
+# separators that this regex rejects. When the real CycloneDdsAdapter lands
+# in v0.2.x, either dispatch the validator per backend or relax the rule.
+# See architecture audit "Refactor opportunities" #5.
 _TOPIC_NAME_RE = re.compile(r"^/[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
@@ -49,6 +59,11 @@ class Inspector:
         return self._adapter.name
 
     def list_topics(self) -> list[TopicInfo]:
+        # TODO(roadmap, audit-2026-05-14): validation symmetry — list_topics
+        # is a pass-through with no input to validate, while peer methods
+        # like get_topic_info validate. The "symmetric gate" docstring
+        # justifies it today, but revisit if new tools land that take args
+        # this method does not. See architecture audit "Refactor" #7.
         return self._adapter.list_topics()
 
     def get_topic_info(self, topic: str) -> TopicInfo:

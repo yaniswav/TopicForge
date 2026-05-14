@@ -67,6 +67,21 @@ The umbrella commits TopicForge to a slightly broader scope (cap: 5 ROS2 tools t
 - Server-side telemetry endpoint. The `Transport` callable is already pluggable; this is the day Fly.io / S3 lands.
 - Hardening pass: improved error messages, performance budgets, additional cross-distro parser robustness (`parse_topic_list` etc. on Iron / Kilted).
 
+**Audit-driven v0.3 candidates (from 2026-05-14 audits).** Sourced from `docs/projet-file/audit-followup-triage-v0.2.0.md`. Each item is a B-classified follow-up from the v0.1.2 security or architecture audit ; bundled here so the v0.3+ plan has the full picture in one place.
+
+- **Security hardening (deferred ; all hosted-context-only or future-adapter-only).**
+  - `TOPICFORGE_ROS2_BIN` allowlist for hosted multi-tenant contexts (security audit "Hardening" #1).
+  - Scrubbed `subprocess.run(env=...)` instead of inheriting the full parent env (security audit "Hardening" #2).
+  - `analyze_bag` workspace-root sandbox with `--workspace-root` allowlist (security audit "Hardening" #3).
+  - `_validate_bag_path` Path.resolve traversal rejection, bundled with the workspace-root work (security audit "Hardening" #4).
+  - Stricter `stderr_tail` sanitization once a user-supplied-command adapter is on the table (security audit "Hardening" #5).
+  - Security audit's "Roadmap v0.3+" section — 5 additional items covering sandboxed `analyze_bag`, the `TOPICFORGE_ROS2_BIN_ALLOWLIST` env, env-scrub for subprocess, and signed `topicforge_pro` plugin entry point.
+- **Architecture refactors (deferred ; design or wire-contract decisions).**
+  - Collapse `Mode` / `ResolvedMode` / `AdapterName` into a unified `RuntimeMode` hierarchy (architecture audit "Refactor" #3).
+  - Tighten `HealthReport.mode` / `requested_mode` from `str` to `Literal` (architecture audit "Refactor" #4 ; wire soft-breaking, plan with v0.3 contract review).
+  - DDS topic-name regex relaxation to accept `::` separators and DDS-native shapes — couples with the real `CycloneDdsAdapter` implementation in v0.2.x (architecture audit "Refactor" #5 ; inline `TODO(roadmap, audit-2026-05-14)` in `services/inspector.py`).
+  - Inspector validation symmetry across pass-through tools — review when new tools land (architecture audit "Refactor" #7 ; inline `TODO(roadmap, audit-2026-05-14)` in `services/inspector.py`).
+
 Each Phase 1 item retires its matching `# TODO(roadmap):` marker in the code when it ships.
 
 ---

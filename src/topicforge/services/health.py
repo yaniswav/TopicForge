@@ -8,7 +8,7 @@ import shutil
 from topicforge import __version__
 from topicforge.config import Settings
 from topicforge.models import HealthReport
-from topicforge.services.inspector import MAX_SAMPLE_COUNT
+from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 
 class HealthService:
