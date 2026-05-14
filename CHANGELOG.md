@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Sprint v0.4.0 — Phase 1 (DDS observability core)
+
+> Internal-only ; the branch `feat/v0.4.0-phase1-observability-core` is
+> merging to `main` between v0.3.0 and v0.4.0. **No version bump in
+> this section** — `pyproject.toml`/`__version__` stay at `0.3.0` until
+> Phase 3 closes.
+
+#### Added
+
+- **`CompositeAdapter` (`adapters/composite.py`).** New wrapper that
+  routes the 4 ROS2 protocol methods to a `Ros2CliAdapter` and the 3
+  DDS methods (+ `participant_events`) to a DDS adapter, so a single
+  process serves all 9 tools when `TOPICFORGE_MODE=live` and
+  `TOPICFORGE_DDS_BACKEND=cyclone|fast` are configured together. The
+  `name` collapses to `"ros2_cli+cyclone"` or `"ros2_cli+fast"` ;
+  `effective_mode` reports `"live"` when either half is live.
+- **Participant lifecycle tracking.** `ParticipantInfo` gains four
+  additive optional fields: `first_seen_ns`, `last_seen_ns`, `status`
+  (`active`/`left`/`unknown`), `seen_count`. v0.3.0 producers and
+  fixtures remain valid because every new field has a safe default.
+- **`LifecycleBuffer`** (`adapters/common/lifecycle.py`) — RLock-protected
+  ring buffer (cap 200 events, drop-oldest) shared by Cyclone (polling
+  reconciliation) and Fast DDS (listener callbacks). Pure logic, no DDS
+  dependency ; testable without any SDK installed.
+- **`participant_events` MCP tool (the 9th).** New read-only tool that
+  returns DDS participant `discovered`/`lost` events over a configurable
+  window (default 300s, range 1..86400, hard cap 200 events, newest
+  first). Breaks the 8-tool ceiling documented in
+  `docs/projet-file/mcp-02-spec.md §2` ; acknowledged in this Phase 1
+  scope.
+- **`HealthReport.ros_backend`** (`Literal["mock","ros2_cli","none"]`,
+  default `"none"`). Symmetric to the existing `dds_backend` ; lets
+  clients distinguish the ROS and DDS halves of a composed runtime.
+
+#### Changed
+
+- **Factory decision tree** (`services/factory.py`). Live mode now
+  attempts to build both a ROS2 CLI adapter and a DDS adapter and
+  wraps them in a `CompositeAdapter` when both succeed. Graceful
+  degradation paths preserved: DDS missing → ROS2 CLI alone (v0.3.0
+  behavior) ; ROS2 CLI missing → DDS-only adapter ; neither
+  available → MockAdapter.
+- **`MiddlewareAdapter` protocol** (`adapters/base.py`). Gains
+  `participant_events(domain_id, lookback_seconds)`. All adapters
+  implement it: Mock returns deterministic fixtures, Cyclone and Fast
+  read from their `LifecycleBuffer`, Ros2CliAdapter raises
+  `AdapterError(_DDS_MODULE_INACTIVE_MSG)`. `AdapterName` Literal
+  widened with the two composite tags.
+- **`CycloneDdsAdapter.list_participants`** now feeds the
+  `LifecycleBuffer` (polling delta reconciliation per call) and
+  returns enriched `ParticipantInfo` snapshots with lifecycle fields.
+  Discovery-sample mapping unchanged ; the returned shape is a
+  superset of v0.3.0.
+- **`FastDdsAdapter._DiscoveryListener`** now feeds the
+  `LifecycleBuffer` from `on_participant_discovery` callbacks
+  (arrival AND removal events captured natively, no polling
+  reconciliation needed).
+
+#### Notes
+
+- **Cyclone lifecycle caveat.** Cyclone's lifecycle log is updated only
+  when `list_participants` (or any internal poll of the
+  `DCPSParticipant` builtin reader) is called. A participant that
+  joined and left between two tool calls is invisible. The
+  `participant_events` tool description makes this explicit.
+- **Backward compatibility.** Zero v0.3.0 tests regress. Pydantic
+  `extra="forbid"` is preserved on every model ; the four new
+  `ParticipantInfo` fields have safe defaults so producers built
+  against v0.3.0 schemas keep working. `ParticipantEvent` is a new
+  model — clients ignoring it continue to work.
+
 ## [0.3.0] - 2026-05-14
 
 ### Strategic

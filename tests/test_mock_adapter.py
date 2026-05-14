@@ -128,3 +128,59 @@ def test_no_orphan_mock_samples() -> None:
             f"`_MOCK_SAMPLES[{sample_topic!r}]` has no matching MOCK_TOPICS "
             "entry. Either add the topic to MOCK_TOPICS or drop the samples."
         )
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle fields + participant_events (v0.4.0 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def test_list_participants_carries_lifecycle_fields(mock_adapter: MockAdapter) -> None:
+    participants = mock_adapter.list_participants()
+    assert participants  # fixture is non-empty
+    for p in participants:
+        assert p.first_seen_ns is not None and p.first_seen_ns > 0
+        assert p.last_seen_ns is not None and p.last_seen_ns >= p.first_seen_ns
+        assert p.status == "active"
+        assert p.seen_count >= 1
+
+
+def test_participant_events_default_window_returns_all_mock_events(
+    mock_adapter: MockAdapter,
+) -> None:
+    events = mock_adapter.participant_events(domain_id=0, lookback_seconds=300)
+    assert len(events) == 3
+    assert all(e.event_type == "discovered" for e in events)
+    assert all(e.domain_id == 0 for e in events)
+    # Newest first by timestamp.
+    timestamps = [e.timestamp_ns for e in events]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+
+def test_participant_events_short_lookback_filters_old_events(
+    mock_adapter: MockAdapter,
+) -> None:
+    # Mock anchor is `now = base + 120s`. A 60s lookback drops events
+    # older than `now - 60s = base + 60s` — the fixture only places
+    # discovery events at base..base+10s, so all three drop out.
+    events = mock_adapter.participant_events(domain_id=0, lookback_seconds=60)
+    assert events == []
+
+
+def test_participant_events_unknown_domain_returns_empty(mock_adapter: MockAdapter) -> None:
+    events = mock_adapter.participant_events(domain_id=42, lookback_seconds=300)
+    assert events == []
+
+
+def test_participant_events_invalid_domain_raises(mock_adapter: MockAdapter) -> None:
+    with pytest.raises(AdapterError, match="domain_id"):
+        mock_adapter.participant_events(domain_id=-1, lookback_seconds=300)
+    with pytest.raises(AdapterError, match="domain_id"):
+        mock_adapter.participant_events(domain_id=233, lookback_seconds=300)
+
+
+def test_participant_events_invalid_lookback_raises(mock_adapter: MockAdapter) -> None:
+    with pytest.raises(AdapterError, match="lookback_seconds"):
+        mock_adapter.participant_events(domain_id=0, lookback_seconds=0)
+    with pytest.raises(AdapterError, match="lookback_seconds"):
+        mock_adapter.participant_events(domain_id=0, lookback_seconds=86401)

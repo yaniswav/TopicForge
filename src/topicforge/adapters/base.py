@@ -14,6 +14,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -109,6 +110,10 @@ class MiddlewareAdapter(Protocol):
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]: ...
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult: ...
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]: ...
 
 
 # Backward-compat alias. External code importing `RosAdapter` continues

@@ -30,6 +30,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -87,6 +88,11 @@ class _StubDdsAdapter:
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         return SampleResult(topic=topic, count=0, samples=[], mode_effective="live")
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        return []
 
 
 # ---------------------------------------------------------------------------
