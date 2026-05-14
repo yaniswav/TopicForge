@@ -207,6 +207,11 @@ CLAUDE*.md
 # Drafts, not production copy — never the public README.
 !/docs/projet-file/launch-posts/
 !/docs/projet-file/launch-posts/**
+# Audit reports (security, architecture) + audit-followup triage docs.
+# Versioned so audit trails survive across machines and the triage
+# decisions are bisectable per release.
+!/docs/projet-file/*-audit-*.md
+!/docs/projet-file/audit-*.md
 /docs/assets/screencast-raw/
 
 
