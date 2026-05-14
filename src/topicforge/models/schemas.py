@@ -21,6 +21,14 @@ _MODE_EFFECTIVE_DESC = (
     "graph from a demo one without re-reading `health_check`."
 )
 
+# `mode_effective` is carried on `TopicInfo`, `SampleResult`, `BagAnalysis`,
+# `ParticipantInfo`, and `MismatchReport` — every tool's primary response
+# carrier — but **not** on `HealthReport` (which surfaces mode via its
+# dedicated `mode`/`requested_mode` fields) or `MessageSample` (which
+# nests inside `SampleResult`, whose envelope already carries the field).
+# This asymmetry is deliberate ; do not add `mode_effective` to either
+# without reviewing the wire contract.
+
 
 class QosProfile(BaseModel):
     """DDS QoS profile snapshot for a single endpoint (reader or writer).
