@@ -5,15 +5,20 @@
 > `RosAdapter`. Working name internally: **DDS module**. Filename retained
 > as `mcp-02-spec.md` for historical continuity with the earlier pack draft.
 
-> **Status.** Reframed 2026-05-14. Authored 2026-05-13 as a standalone
-> MCP 02 spec (working name DdsForge) ; reframed the next day to a
-> module-internal-to-TopicForge spec after the mono-MCP pivot. Tool
-> surface, protocol shape, and architectural decisions are intact ;
-> positioning is now *"module of TopicForge umbrella"* instead of
-> *"separate product DdsForge"*. The audit motif: solo-maintenance cost
-> of running two repos in parallel was the binding constraint, and
-> ROS2 / DDS are the same problem shape (typed pub/sub graph
-> introspection on a `MiddlewareAdapter` superset).
+> **Status.** Reframed twice on 2026-05-14. Authored 2026-05-13 as a
+> standalone MCP 02 spec (working name DdsForge) ; reframed the next
+> day to a module-internal-to-TopicForge spec after the mono-MCP
+> pivot, then reframed again the same day around OMG-DDS-RTPS
+> multi-vendor positioning when `docs/dds-interop-matrix.md` was
+> published and the v0.3.0 sprint scope locked. Tool surface, protocol
+> shape, and architectural decisions are intact ; positioning evolved
+> from *"standalone DdsForge"* → *"module of TopicForge umbrella"* →
+> *"multi-vendor OMG-DDS-RTPS module of TopicForge umbrella"*. The
+> binding constraint of the first reframe was solo-maintenance cost
+> of two parallel repos ; the binding constraint of the second was
+> the unique strategic angle — no other ROS-MCP project covers
+> non-ROS DDS, and the OMG protocol guarantee means one adapter set
+> reaches every conformant vendor on the bus.
 
 This is a strategic-internal document (`docs/projet-file/`), not a
 user-facing README. Conventions reuse TopicForge verbatim ; only genuine
@@ -25,8 +30,19 @@ do not re-invent.
 
 ## 1. Identity
 
-The TopicForge DDS module — *Safety-first read-only DDS observability
-inside the TopicForge umbrella.*
+The TopicForge DDS module — *Safety-first read-only **OMG DDS-RTPS**
+observability inside the TopicForge umbrella — multi-vendor by protocol.*
+
+**OMG-DDS-RTPS conformant.** The DDS module joins the bus as a read-only
+DDS-RTPS participant via one of two OSS Python bindings — Eclipse
+CycloneDDS or eProsima Fast DDS — and observes every other conformant
+participant on the domain regardless of vendor (RTI Connext, OpenDDS,
+CoreDX, Dust DDS in Rust, etc.) or host language (C, C++11/14/17/20,
+Rust, Java, .NET, Python, Ada, anything with a DDS-RTPS binding). This
+is the OMG-DDS promise: interoperability at the wire level. See
+`topicforge/docs/dds-interop-matrix.md` for the canonical multi-vendor
+positioning and `topicforge/docs/projet-file/references/omg-dds-interop-2025-05-08.xlsx`
+for the OMG May 2025 interop reference snapshot.
 
 Where DDS users today reach for vendor-specific tools (RTI Admin Console,
 Cyclone DDS CLI, `rtiddsspy`) to inspect a live bus, the DDS module
@@ -156,22 +172,36 @@ field on every response carrier and applies to DDS payloads identically.
 Adapter implementations at module MVP:
 
 - **`MockMiddlewareAdapter`** — deterministic fixtures modeling a
-  two-participant scenario with one well-matched topic (reader+writer
-  compatible) and one mismatched topic (deliberate QoS incompatibility,
-  to exercise `detect_qos_mismatches`). Always available. The mock
-  fixture is the demo asset and the test substrate.
-- **`CycloneDdsAdapter`** (OSS, default live for the DDS module) —
-  built on the `cyclonedds` Python bindings (BSD-licensed, available
-  via pip on Windows / Linux / macOS). Pulled in by an extras install:
+  multi-participant scenario across vendors (`cyclone`, `fast`, plus
+  one fallback entry to exercise the `"unknown"` enum tag). One
+  well-matched topic and one mismatched topic exercise
+  `detect_qos_mismatches`. Always available. The mock fixture is the
+  demo asset and the test substrate.
+- **`CycloneDdsAdapter`** (OSS, Eclipse CycloneDDS) — built on the
+  `cyclonedds` Python bindings (BSD-licensed). Joins the bus as a
+  read-only DDS-RTPS participant. Polling-style discovery via
+  `cyclonedds.builtin.BuiltinDataReader` on the DCPS builtin topics.
+  Pulled in by `pip install topicforge[dds-cyclone]` or the union
   `pip install topicforge[dds]`.
-- **`RtiConnextAdapter`** (Pro tier, optional add-on inside
-  `topicforge_pro`) — uses RTI's `rti.connextdds` bindings or the
-  older `rticonnextdds-connector`. Auto-detected at runtime via the
+- **`FastDdsAdapter`** (OSS, eProsima Fast DDS) — built on the
+  `fastdds` Python bindings (BSD-licensed). Joins the bus as a
+  read-only DDS-RTPS participant. Listener-driven discovery via
+  `DomainParticipantListener` callbacks with RLock-protected state.
+  Pulled in by `pip install topicforge[dds-fast]` or the union
+  `pip install topicforge[dds]`.
+- **`RtiConnextAdapter`** (Pro tier, v0.4.0+ roadmap) — uses RTI's
+  `rti.connextdds` bindings. Auto-detected at runtime via the
   existing `_try_register_pro(mcp)` in `server/app.py` and gated by
   the existing `TOPICFORGE_LICENSE_KEY` (the same key that unlocks
   ROS2 Pro features will unlock RTI ; one key, one umbrella).
 
-OpenSplice is EOL and explicitly not pursued.
+OpenSplice is EOL and explicitly not pursued. The two OSS Python
+participants (CycloneDDS, Fast DDS) and one Pro participant (RTI
+Connext) cover the practical multi-vendor footprint TopicForge needs ;
+they observe every other DDS-RTPS conformant vendor on the bus via the
+OMG protocol guarantee — adding direct adapter support for additional
+vendors requires explicit demand documented in
+`topicforge/docs/product-plan.md §11`.
 
 **Pure analyzers live module-level.** `detect_mismatches(reader_qos,
 writer_qos) -> list[MismatchReason]` is a pure function called by
@@ -239,10 +269,16 @@ Same as `topicforge/CLAUDE.md §5`:
 DDS-specific additions (declared as optional extras in `pyproject.toml`,
 not hard deps):
 
-- **`cyclonedds`** — Python bindings, BSD-licensed, installable via
-  `pip install topicforge[dds]` on Windows / Linux / macOS. Lazy-imported
-  by `CycloneDdsAdapter` ; absence keeps the umbrella green in mock-only
-  installs.
+- **`cyclonedds`** — Python bindings, BSD-licensed, Eclipse Foundation,
+  installable via `pip install topicforge[dds-cyclone]`. Lazy-imported
+  by `CycloneDdsAdapter` ; absence keeps the umbrella green in
+  mock-only or Fast-only installs.
+- **`fastdds`** — Python bindings, BSD-licensed, eProsima, installable
+  via `pip install topicforge[dds-fast]`. Lazy-imported by
+  `FastDdsAdapter`. SWIG-generated bindings ; pinned as
+  `fastdds>=2.6.1,<3` to absorb the upstream 2.x ABI line.
+- **`pip install topicforge[dds]`** — union alias pulling both
+  CycloneDDS and Fast DDS, for users who want either-or-both at runtime.
 - **`rti.connextdds`** — pinned by the Pro package only, never by the
   OSS core. Absence does not break the install.
 
@@ -276,30 +312,45 @@ Module versioning is **not independent** of TopicForge. The DDS module
 ships in TopicForge releases, in this order:
 
 - **TopicForge v0.2.0 — protocol generalization + DDS stub + 3 tools.**
-  Generalize `RosAdapter` into `MiddlewareAdapter` in `adapters/base.py`
-  with `RosAdapter` retained as a backward-compat alias. Ship
-  `MockAdapter` extended with DDS fixtures (2 participants, well-matched
-  and mismatched topics), `CycloneDdsAdapter` as a protocol-compliant
-  stub (lazy import + is_available + DDS methods raise with a v0.2.x
-  roadmap pointer), 3 new MCP tools (`list_participants`,
-  `detect_qos_mismatches`, `peek_dds_samples`), `pyproject.toml` extras
-  (`[dds]` pulls `cyclonedds>=0.10`). Soft-breaking schema changes to
-  `TopicInfo` and `HealthReport` (additive optional fields). The 8-tool
-  ceiling activates.
-- **TopicForge v0.2.x patch — real `CycloneDdsAdapter` implementation.**
-  Replace the v0.2.0 stub with the actual CycloneDDS discovery (builtin
-  topics for participants, reader/writer endpoint collection, typed
-  reader for samples on builtin topics first, arbitrary user topics
-  next). Same tool surface ; the stub-to-real swap is invisible from the
-  MCP client's POV.
-- **TopicForge v0.3.0+ — `RtiConnextAdapter` in Pro tier.** Same
-  `_try_register_pro(mcp)` pattern. BYO RTI license. No new MCP tools
-  ; same 3 DDS tools, new backend.
+  ✓ Shipped 2026-05-14. `RosAdapter` generalized into `MiddlewareAdapter`
+  in `adapters/base.py` with `RosAdapter` retained as a backward-compat
+  alias. `MockAdapter` extended with DDS fixtures, `CycloneDdsAdapter`
+  as a protocol-compliant stub (lazy import + is_available + DDS
+  methods raise with a roadmap pointer), 3 new MCP tools
+  (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`),
+  `pyproject.toml` extra `[dds]` pulling `cyclonedds>=0.10`.
+  Soft-breaking schema changes to `TopicInfo` and `HealthReport`
+  (additive optional fields). The 8-tool ceiling activates.
+- **TopicForge v0.3.0 — real Cyclone + real Fast DDS + multi-vendor
+  framing (current sprint).** Replace the v0.2.0 Cyclone stub with the
+  actual CycloneDDS discovery (builtin DCPS readers for participants
+  and endpoints, QoS pair extraction, typed reader for samples on
+  builtin DCPS topics first ; arbitrary user-topic peek defers to a
+  v0.3.x patch). Ship `FastDdsAdapter` as a parallel OSS backend on
+  `fastdds` (listener-driven discovery via
+  `DomainParticipantListener`, RLock-protected state, bounded
+  discovery startup delay). Pyproject extras refactor:
+  `dds-cyclone`, `dds-fast`, `dds` (union). Reframe DDS module
+  positioning around OMG-DDS-RTPS multi-vendor — see
+  `topicforge/docs/dds-interop-matrix.md` for the canonical
+  statement and the OMG May 2025 interop reference. Same 3 MCP
+  tools ; vendor-neutral wire contract. Soft-breaking
+  `ParticipantInfo.vendor` Literal expansion to include `"fast"`.
+- **TopicForge v0.3.x patches.** IDL/XTypes discovery to extend
+  `peek_dds_samples` to arbitrary user topics (today: builtin DCPS
+  topics only). Extended QoS coverage (Liveliness, Ownership,
+  Partition, TimeBasedFilter, LatencyBudget). Composite adapter
+  delegating per-tool category so users can run ROS2 + DDS surfaces
+  simultaneously.
+- **TopicForge v0.4.0+ — `RtiConnextAdapter` in Pro tier.** Same
+  `_try_register_pro(mcp)` pattern. BYO RTI license. No new MCP
+  tools ; same 3 DDS tools, new backend.
 
-This collapses the earlier v0.2.0 / v0.3.0 split (proposed before the
-mono-MCP pivot of 2026-05-14) into a single v0.2.0 ship + a v0.2.x
-hardening patch. The user-facing surface lands all at once ; the
-Cyclone-side implementation depth grows in patches.
+The earlier v0.2.0 / v0.3.0 split (proposed before the mono-MCP pivot
+of 2026-05-14 and further refined by the multi-vendor framing when
+`docs/dds-interop-matrix.md` was published) is collapsed into the
+phasing above: stub ships at v0.2.0, multi-vendor OSS ships at v0.3.0
+together, RTI Pro defers to v0.4.0+.
 
 When a Phase 1 item ships, retire the matching `# TODO(roadmap):` tag
 in code and the corresponding entry in
@@ -313,11 +364,25 @@ Pack-wide risks (MCP churn, time dilution, competitive landscape,
 scope creep within the umbrella) inherit from
 `topicforge/docs/product-plan.md §11`. DDS-module-specific risks:
 
-- **Vendor binding instability.** `cyclonedds` Python bindings have
+- **Cyclone binding stability.** `cyclonedds` Python bindings have
   evolved since 2023 ; pin a major version and run smoke tests on
   every release. Mitigation: keep Cyclone-specific code behind the
   `MiddlewareAdapter` protocol so a binding rev is an adapter patch,
   not a TopicForge rewrite.
+- **Fast DDS binding stability.** `fastdds` Python bindings are
+  SWIG-generated and version-coupled to the C++ Fast DDS major line.
+  Pin `fastdds>=2.6.1,<3` ; defer Fast DDS 3.x bindings until upstream
+  cuts stable wheels for Python 3.11+ on Windows / Linux. Same
+  mitigation as Cyclone: vendor-specific code stays behind the
+  `MiddlewareAdapter` protocol.
+- **Cross-vendor wire interop assumption.** The multi-vendor framing
+  relies on the OMG DDS-RTPS interoperability promise (see
+  `docs/dds-interop-matrix.md` and the May 2025 OMG matrix). Edge
+  cases at the application layer between specific implementations
+  (e.g. Dust DDS ↔ OpenDDS partial interop in the OMG report) do
+  not affect what TopicForge sees — its participant is conformant
+  — but the user-facing language must not claim TopicForge can
+  bridge inter-vendor application-level traffic problems.
 - **RTI licensing complexity.** Pro tier customers must bring their
   own RTI Connext license. This is a procurement conversation, not a
   self-serve flow. Mitigation: Pro tier is intentionally low-volume /
@@ -433,6 +498,34 @@ questions) :
 - ~~Pack-shared infrastructure.~~ Non-decision at 2 products ;
   fork-and-tweak to DatasetForge is acceptable.
 
+Resolved by the multi-vendor framing of 2026-05-14
+(`docs/dds-interop-matrix.md`) :
+
+- ~~OSS vendor count.~~ Two OSS Python adapters ship at v0.3.0
+  (CycloneDDS, Fast DDS). RTI is Pro v0.4.0+. OpenSplice (EOL),
+  CoreDX (closed-source), Dust DDS (Rust, no Python binding) are
+  out of scope for the OSS core but are observed via the OMG
+  protocol guarantee like every other conformant vendor on the bus.
+- ~~Auto-resolution order.~~ Fast > Cyclone > Mock — Fast DDS is
+  OMG May 2025 interop-validated on 47/47 pairs ; Cyclone is the
+  long-standing default. v0.2.0 users with only `cyclonedds`
+  installed keep the same effective behavior since Fast is not
+  importable on their host ; the new ordering only matters when
+  both SDKs are installed.
+
+Newly open (resolve before v0.3.x patches) :
+
+- **XTypes / IDL discovery feasibility.** `peek_dds_samples` at v0.3.0
+  works on the 4 builtin DCPS topics only ; arbitrary user topics
+  raise an `AdapterError` pointing at the v0.3.x roadmap. Evaluate
+  `cyclonedds.dynamic.get_types_for_typeid` and Fast DDS XTypes
+  remote type lookup before deciding the v0.3.x scope.
+- **Fast DDS discovery startup delay.** Listener-driven discovery in
+  Fast DDS needs a bounded warm-up before queries return useful
+  data. v0.3.0 uses a hardcoded `discovery_wait_ms=1500`. Promote
+  to a constructor argument or env var if real-world deployments
+  need to tune this.
+
 ---
 
 ## 12. Why this is now a TopicForge module (decision log)
@@ -493,6 +586,15 @@ support is the next module of TopicForge itself.
 - `topicforge/docs/product-plan.md` — pack vision (§4), DDS module
   roadmap (§8), monetization (§9), risk register (§11), decision
   gates G2 / G3 (§12).
+- `topicforge/docs/dds-interop-matrix.md` — canonical multi-vendor
+  positioning, derived from the OMG May 2025 interop matrix. This
+  is the source-of-truth doc for the OMG-DDS-RTPS framing of the
+  module ; user-facing copy in README / launch posts cites it
+  rather than reinventing the language.
+- `topicforge/docs/projet-file/references/omg-dds-interop-2025-05-08.xlsx`
+  — OMG May 2025 interop snapshot (in-repo reference copy ; see
+  `topicforge/docs/projet-file/references/README.md` for the
+  convention).
 - `topicforge/docs/pro.md` — pricing terms reused for the Pro tier.
 - `topicforge/.claude/skills/topicforge/` — `add-mcp-tool`,
   `write-pure-parser`, `update-mock-fixtures`, `release-checklist`
