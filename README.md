@@ -132,6 +132,29 @@ TOPICFORGE_MODE=live python -m topicforge
 
 TopicForge invokes the `ros2` CLI under the hood, so it does **not** require `rclpy` to be importable. This keeps the live adapter portable across ROS2 distros.
 
+### DDS support (v0.2.0+)
+
+Beyond ROS2 graph introspection, TopicForge can also observe a raw DDS bus directly — useful for non-ROS DDS stacks (defense, aerospace, automotive AUTOSAR Adaptive, industrial integration) and for diagnosing why a ROS2 subscriber isn't receiving when the graph says it should. Same safety-first contract : read-only by **architecture**, never publishes back to the bus.
+
+Install the optional DDS extras and select a backend :
+
+```bash
+pip install topicforge[dds]
+TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
+```
+
+Three new MCP tools (in addition to the five ROS2 tools above) :
+
+| Tool                    | Purpose                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `list_participants`     | DDS participants discovered on a domain, with vendor and hostname                |
+| `detect_qos_mismatches` | Reader/writer QoS incompatibilities preventing communication on a topic          |
+| `peek_dds_samples`      | Recent samples on a raw DDS topic (distinct from `sample_messages` on ROS2 graph)|
+
+**v0.2.0 limitation.** TopicForge selects one adapter at a time. With `TOPICFORGE_DDS_BACKEND=cyclone`, the 3 DDS tools work and the 5 ROS2 tools raise a clear `AdapterError` — and vice versa with the default `TOPICFORGE_DDS_BACKEND=mock`. The mock backend exposes all 8 tools against deterministic fixtures for local development and tests. Real CycloneDDS discovery (builtin topics, QoS pair extraction, typed reader for samples) ships as a v0.2.x patch ; the v0.2.0 `CycloneDdsAdapter` is a protocol-compliant stub that raises a clear roadmap message. A composite adapter delegating per-tool is a v0.2.x roadmap item.
+
+`RTI Connext` and additional vendors will be available in the Pro tier (see `docs/pro.md`).
+
 ### Configure with Claude Desktop
 
 Add to your `claude_desktop_config.json`:
@@ -179,12 +202,14 @@ make check    # both, plus tests (CI bundle)
 
 ## Configuration reference
 
-| Variable                 | Default | Description                                                       |
-| ------------------------ | ------- | ----------------------------------------------------------------- |
-| `TOPICFORGE_MODE`        | `auto`  | `mock`, `live`, or `auto`                                         |
-| `TOPICFORGE_LOG_LEVEL`   | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                               |
-| `TOPICFORGE_ROS2_BIN`    | `ros2`  | Name (or path) of the ROS2 CLI binary                             |
-| `TOPICFORGE_TELEMETRY`   | `off`   | Opt-in anonymous usage telemetry. See [Telemetry](#telemetry).    |
+| Variable                    | Default | Description                                                                   |
+| --------------------------- | ------- | ----------------------------------------------------------------------------- |
+| `TOPICFORGE_MODE`           | `auto`  | `mock`, `live`, or `auto`                                                     |
+| `TOPICFORGE_LOG_LEVEL`      | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                                           |
+| `TOPICFORGE_ROS2_BIN`       | `ros2`  | Name (or path) of the ROS2 CLI binary                                         |
+| `TOPICFORGE_TELEMETRY`      | `off`   | Opt-in anonymous usage telemetry. See [Telemetry](#telemetry).                |
+| `TOPICFORGE_DDS_BACKEND`    | `mock`  | DDS module backend: `mock`, `cyclone`, `rti`, or `auto`. See [DDS support](#dds-support-v020). |
+| `TOPICFORGE_DDS_DOMAIN_ID`  | `0`     | DDS domain id observed (0..232) when a DDS backend is active.                 |
 
 See [`.env.example`](.env.example).
 

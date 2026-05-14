@@ -8,9 +8,16 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath, PureWindowsPath
 
-from topicforge.adapters.base import AdapterError, AdapterName
+from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.ros2_mock import fixtures
-from topicforge.models import BagAnalysis, MessageSample, TopicInfo
+from topicforge.models import (
+    BagAnalysis,
+    MessageSample,
+    MismatchReport,
+    ParticipantInfo,
+    SampleResult,
+    TopicInfo,
+)
 
 # Extensions the live `ros2 bag info` accepts. The mock mirrors this list so
 # a test that passes `/tmp/demo.txt` fails in mock the same way it would in
@@ -18,12 +25,14 @@ from topicforge.models import BagAnalysis, MessageSample, TopicInfo
 # first ROS2 install.
 _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
 
+_MAX_SAMPLE_COUNT = 50
+
 
 class MockAdapter:
     name: AdapterName = "mock"
 
     @property
-    def effective_mode(self) -> AdapterName:
+    def effective_mode(self) -> EffectiveMode:
         return "mock"
 
     def is_available(self) -> bool:
@@ -49,6 +58,32 @@ class MockAdapter:
         _reject_non_bag_path(path)
         # The fixture is frozen; produce a copy with the caller's path.
         return fixtures.MOCK_BAG_ANALYSIS.model_copy(update={"path": path})
+
+    # ---------------------------- DDS module ------------------------------
+
+    def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
+        if domain_id < 0 or domain_id > 232:
+            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        return [p for p in fixtures.MOCK_PARTICIPANTS if p.domain_id == domain_id]
+
+    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+        if topic is not None and topic not in fixtures.MOCK_DDS_TOPICS:
+            raise AdapterError(
+                f"Unknown DDS topic: {topic!r}. Known mock DDS topics: "
+                f"{list(fixtures.MOCK_DDS_TOPICS)}"
+            )
+        return fixtures.mock_mismatches_for(topic)
+
+    def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
+        if count < 0:
+            raise AdapterError("count must be >= 0")
+        if topic not in fixtures.MOCK_DDS_TOPICS:
+            raise AdapterError(
+                f"Unknown DDS topic: {topic!r}. Known mock DDS topics: "
+                f"{list(fixtures.MOCK_DDS_TOPICS)}"
+            )
+        clamped = min(count, _MAX_SAMPLE_COUNT)
+        return fixtures.mock_dds_samples_for(topic, clamped)
 
 
 def _reject_non_bag_path(path: str) -> None:

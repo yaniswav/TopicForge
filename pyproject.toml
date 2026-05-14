@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "topicforge"
-version = "0.1.2"
+version = "0.2.0"
 description = "ROS Topic Inspector & Bag Analyzer MCP server for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,12 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
+dds = [
+    "cyclonedds>=0.10",
+]
+all = [
+    "topicforge[dds]",
+]
 
 [project.scripts]
 topicforge = "topicforge.__main__:main"
@@ -51,6 +57,9 @@ exclude = [".claude", "docs/projet-file/**", "docs/projet-file", "CLAUDE.md", "*
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 pythonpath = ["src"]
+markers = [
+    "requires_cyclonedds: tests needing the `cyclonedds` Python bindings; auto-skip without them",
+]
 
 [tool.ruff]
 line-length = 100
@@ -66,6 +75,9 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
+# test_cyclone_adapter.py gates its imports behind `pytest.importorskip`
+# at module top, so adapter imports must come after — E402 is intentional.
+"tests/test_cyclone_adapter.py" = ["B011", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"

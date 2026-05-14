@@ -22,8 +22,123 @@ _MODE_EFFECTIVE_DESC = (
 )
 
 
+class QosProfile(BaseModel):
+    """DDS QoS profile snapshot for a single endpoint (reader or writer).
+
+    MVP covers the four policies that explain over 80% of real-world
+    "subscriber doesn't receive" cases. Vendor-specific extensions are
+    intentionally ignored at MVP — `detect_qos_mismatches` compares against
+    canonical DDS spec values only.
+    """
+
+    model_config = _CONFIG
+
+    reliability: Literal["RELIABLE", "BEST_EFFORT"] = Field(
+        description=(
+            "DDS Reliability QoS. `RELIABLE` retries lost samples ; "
+            "`BEST_EFFORT` does not. A `RELIABLE` reader cannot match a "
+            "`BEST_EFFORT` writer."
+        )
+    )
+    durability: Literal["VOLATILE", "TRANSIENT_LOCAL", "TRANSIENT", "PERSISTENT"] = Field(
+        description=(
+            "DDS Durability QoS. `VOLATILE` writers do not retain samples "
+            "for late joiners ; `TRANSIENT_LOCAL` writers do. A "
+            "`TRANSIENT_LOCAL` reader cannot match a `VOLATILE` writer."
+        )
+    )
+    history: Literal["KEEP_LAST", "KEEP_ALL"] = Field(
+        description=(
+            "DDS History QoS. `KEEP_LAST` keeps a bounded ring buffer "
+            "of size `history_depth` ; `KEEP_ALL` keeps every sample "
+            "(memory permitting). Mixed `KEEP_ALL` reader with "
+            "`KEEP_LAST` writer is risky but not strictly incompatible."
+        )
+    )
+    history_depth: int | None = Field(
+        default=None,
+        ge=0,
+        description="Depth for `KEEP_LAST`. `None` when policy is `KEEP_ALL`.",
+    )
+    deadline_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Deadline QoS in nanoseconds. `None` means no deadline. "
+            "A reader deadline tighter (smaller) than a writer deadline is "
+            "incompatible — the writer cannot guarantee the reader's promise."
+        ),
+    )
+
+
+class ParticipantInfo(BaseModel):
+    """DDS participant discovered on the configured domain."""
+
+    model_config = _CONFIG
+
+    guid: str = Field(
+        description=(
+            "DDS Global Unique Identifier of the participant — hex string, "
+            "stable across discovery events within a single deployment."
+        )
+    )
+    vendor: Literal["cyclone", "rti", "mock", "unknown"] = Field(
+        description=(
+            "DDS implementation that announced this participant. `mock` "
+            "for synthetic fixtures ; `unknown` when the live adapter could "
+            "not identify the vendor from discovery metadata."
+        )
+    )
+    hostname: str | None = Field(
+        default=None,
+        description="Hostname announced by the participant, if available.",
+    )
+    domain_id: int = Field(
+        ge=0,
+        le=232,
+        description="DDS domain id the participant is bound to.",
+    )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+
+
+class MismatchReport(BaseModel):
+    """A single reader/writer QoS incompatibility detected on a topic."""
+
+    model_config = _CONFIG
+
+    topic: str = Field(description="Topic name where the mismatch was detected.")
+    reader_guid: str | None = Field(
+        default=None,
+        description="GUID of the reader endpoint involved in the mismatch, if known.",
+    )
+    writer_guid: str | None = Field(
+        default=None,
+        description="GUID of the writer endpoint involved in the mismatch, if known.",
+    )
+    incompatible_policies: list[str] = Field(
+        description=(
+            "Names of the QoS policies that block communication or risk "
+            "degradation. Drawn from the MVP set: `Reliability`, "
+            "`Durability`, `History`, `Deadline`."
+        )
+    )
+    severity: Literal["incompatible", "risky"] = Field(
+        description=(
+            "`incompatible` means communication is definitely blocked ; "
+            "`risky` means it may degrade but is not strictly blocked by "
+            "the DDS spec. Useful for an LLM to triage user-facing advice."
+        )
+    )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+
+
 class TopicInfo(BaseModel):
-    """Description of a single ROS2 topic."""
+    """Description of a single ROS2 topic.
+
+    Carries optional DDS-side enrichment fields when the active middleware
+    backend can resolve them (CycloneDDS / RTI). The ROS2 CLI adapter and
+    the mock ROS2 path leave them `None`.
+    """
 
     model_config = _CONFIG
 
@@ -34,6 +149,33 @@ class TopicInfo(BaseModel):
     qos_reliability: str | None = Field(
         default=None,
         description="QoS reliability policy if known: `reliable` or `best_effort`.",
+    )
+    reader_count: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "DDS reader-endpoint count when the active backend can resolve "
+            "endpoint-level info (Cyclone / RTI). `None` from the ROS2 CLI "
+            "adapter or when the DDS module is inactive."
+        ),
+    )
+    writer_count: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "DDS writer-endpoint count when the active backend can resolve "
+            "endpoint-level info. `None` from the ROS2 CLI adapter or when "
+            "the DDS module is inactive."
+        ),
+    )
+    qos_profile: QosProfile | None = Field(
+        default=None,
+        description=(
+            "Effective DDS QoS profile for this topic when resolvable. "
+            "`None` from the ROS2 CLI adapter or when the DDS module is "
+            "inactive. The DDS module populates this on a best-effort basis "
+            "(picks one representative endpoint if reader/writer QoS differ)."
+        ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
@@ -174,5 +316,28 @@ class HealthReport(BaseModel):
             "`sample_messages` call. Requests above this limit are silently "
             "clamped; the value is exposed here so a client can size its "
             "requests proactively. Constant within a given server version."
+        ),
+    )
+    dds_backend: Literal["mock", "cyclone", "rti", "none"] = Field(
+        default="none",
+        description=(
+            "Active DDS module backend. `none` when the DDS module is not "
+            "active (default for ROS2-only installs). `mock` for synthetic "
+            "fixtures. `cyclone` requires `pip install topicforge[dds]` ; "
+            "`rti` requires the Pro tier and a valid RTI Connext license."
+        ),
+    )
+    dds_domain_id: int | None = Field(
+        default=None,
+        ge=0,
+        le=232,
+        description="DDS domain id observed when the DDS module is active.",
+    )
+    middleware_available: bool = Field(
+        default=False,
+        description=(
+            "Whether the configured DDS backend is importable. False when "
+            "the DDS module is inactive (`dds_backend == 'none'`) or when "
+            "the backend's Python bindings are not installed."
         ),
     )
