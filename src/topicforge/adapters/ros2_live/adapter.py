@@ -271,8 +271,17 @@ def parse_topic_info(
     )
 
 
-# TODO(roadmap): rclpy-backed adapter will return native typed payloads
-# and make this parser obsolete. See docs/product-plan.md Phase 1.
+# Status, post-v0.1.2: this parser is **no longer called by the live
+# adapter** — `sample_messages` switched to `parse_csv_echo` against
+# `ros2 topic echo --csv --once`, which exposes Header timestamps cleanly
+# (see `parse_csv_echo` below). `parse_echo_yaml` is kept for two reasons:
+#   1. Its test coverage in `tests/test_live_adapter_parse.py` documents
+#      the YAML-ish shape ROS2's plain echo produces — useful reference if
+#      we ever need to fall back from CSV.
+#   2. An rclpy-backed adapter will eventually return native typed payloads
+#      and obsolete both parsers (see `docs/product-plan.md` Phase 1).
+# Removal is a v0.3+ candidate ; the audit's recommendation to "either
+# remove it or document why it stays" is satisfied by this comment.
 def parse_echo_yaml(stdout: str) -> dict[str, object]:
     """Best-effort parse of `ros2 topic echo --once` YAML-ish output.
 
