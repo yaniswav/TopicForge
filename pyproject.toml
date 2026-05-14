@@ -33,15 +33,38 @@ dev = [
 # v0.3.0: split DDS extras per vendor. `[dds]` (the union) pulls both
 # OSS Python participants ; granular `[dds-cyclone]` / `[dds-fast]`
 # install only one when disk space or install time matters.
+#
+# v0.4.0 Phase 1.5: added `[dds-opendds]` and `[dds-dust]` for the OSS
+# stubs. **The pyopendds / dust-dds-python packages are placeholder
+# pins** — they are not yet maintained on PyPI as of 2026-05-14. A
+# user running `pip install topicforge[dds-opendds]` today will get an
+# install failure with a clear error message ; the extra exists so the
+# auto-detect framework has a known module name to probe and so a future
+# upstream release lands cleanly without re-touching pyproject.
+#
+# The union `[dds]` extra remains Cyclone + Fast for deterministic
+# install behavior. Users who explicitly want OpenDDS/Dust slotted in
+# (when the bindings ship) opt into `[dds-all-oss]`.
 dds-cyclone = [
     "cyclonedds>=0.10",
 ]
 dds-fast = [
     "fastdds>=2.6.1,<3",
 ]
+dds-opendds = [
+    "pyopendds>=0.1",
+]
+dds-dust = [
+    "dust-dds-python>=0.1",
+]
 dds = [
     "cyclonedds>=0.10",
     "fastdds>=2.6.1,<3",
+]
+dds-all-oss = [
+    "topicforge[dds]",
+    "topicforge[dds-opendds]",
+    "topicforge[dds-dust]",
 ]
 all = [
     "topicforge[dds]",
@@ -70,6 +93,8 @@ pythonpath = ["src"]
 markers = [
     "requires_cyclonedds: tests needing the `cyclonedds` Python bindings; auto-skip without them",
     "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
+    "requires_opendds: tests needing the `pyopendds` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
+    "requires_dust: tests needing the `dust_dds_python` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
 ]
 
 [tool.ruff]
