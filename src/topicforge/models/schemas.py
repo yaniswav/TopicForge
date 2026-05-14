@@ -90,11 +90,17 @@ class ParticipantInfo(BaseModel):
             "stable across discovery events within a single deployment."
         )
     )
-    vendor: Literal["cyclone", "rti", "mock", "unknown"] = Field(
+    vendor: Literal["cyclone", "fast", "rti", "mock", "unknown"] = Field(
         description=(
-            "DDS implementation that announced this participant. `mock` "
-            "for synthetic fixtures ; `unknown` when the live adapter could "
-            "not identify the vendor from discovery metadata."
+            "DDS implementation that announced this participant, decoded "
+            "from the OMG-RTPS `vendor_id` field on the discovery sample. "
+            "`cyclone` (Eclipse Foundation), `fast` (eProsima), `rti` "
+            "(Real-Time Innovations). `mock` is reserved for synthetic "
+            "fixtures ; `unknown` when the live adapter could not map "
+            "the observed vendor_id to a known tag. Vendor-neutral: "
+            "TopicForge observes every conformant DDS-RTPS participant "
+            "on the bus via the OMG protocol guarantee — see "
+            "`docs/dds-interop-matrix.md`."
         )
     )
     hostname: str | None = Field(
