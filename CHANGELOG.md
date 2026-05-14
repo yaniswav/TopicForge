@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Strategic
+
+- (2026-05-14) **Mono-MCP pivot.** The 3-to-5-MCP pack draft is collapsed into a 2-product strategy: TopicForge umbrella (this product — covers ROS2 today and will grow a DDS observability module via a generalized `MiddlewareAdapter` protocol in v0.2.0+), and **DatasetForge** (Vision Dataset Inspector, the standalone second product). DdsForge as a standalone repo is cancelled — its spec is reframed as the TopicForge DDS module spec at `docs/projet-file/mcp-02-spec.md`. Motif: solo-maintenance cost of two parallel repos was the binding constraint, and ROS2 / DDS are the same problem shape (typed pub/sub graph introspection) under the same `MiddlewareAdapter` superset. No code change in this release ; documentary pivot only.
+
 ## [0.1.2] - 2026-05-13
 
 ### Fixed

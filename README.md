@@ -258,6 +258,7 @@ See [`docs/product-plan.md`](docs/product-plan.md) for the full product trajecto
 Near-term additions on the bench:
 
 - `rclpy`-backed live adapter for faster & richer sampling
+- DDS observability module (Cyclone DDS first as an `extras` install — `pip install topicforge[dds]` —, RTI Connext later in the Pro tier). Generalizes the existing `RosAdapter` to a `MiddlewareAdapter` protocol. Same safety-first read-only contract.
 - URDF inspector / validator MCP tools
 - Bag anomaly detection (clock jumps, gaps, dropped frames, TF tree health)
 - Dataset export helpers (rosbag → COCO / HF Datasets)
