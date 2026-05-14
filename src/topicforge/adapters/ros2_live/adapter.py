@@ -23,29 +23,59 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from topicforge.adapters.base import AdapterError, AdapterName
-from topicforge.models import BagAnalysis, BagTopicStats, MessageSample, TopicInfo
+from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.models import (
+    BagAnalysis,
+    BagTopicStats,
+    MessageSample,
+    MismatchReport,
+    ParticipantInfo,
+    SampleResult,
+    TopicInfo,
+)
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SEC = 8.0
 _SAMPLE_TIMEOUT_SEC = 3.0
 
+_DDS_MODULE_INACTIVE_MSG = (
+    "DDS module is not active in this configuration. The `ros2` CLI "
+    "adapter can introspect the ROS2 graph but does not have direct "
+    "DDS-layer access. Install the DDS extras and select a DDS backend: "
+    "`pip install topicforge[dds]` then set `TOPICFORGE_DDS_BACKEND=cyclone` "
+    "(or `rti` with a valid Pro license)."
+)
+
 
 class Ros2CliAdapter:
     """Adapter that shells out to the `ros2` CLI."""
 
-    name: AdapterName = "live"
+    name: AdapterName = "ros2_cli"
 
     def __init__(self, executable: str = "ros2") -> None:
         self._exe = executable
 
     @property
-    def effective_mode(self) -> AdapterName:
+    def effective_mode(self) -> EffectiveMode:
         return "live"
 
     def is_available(self) -> bool:
         return shutil.which(self._exe) is not None
+
+    # ---------------------------- DDS module ------------------------------
+    # The ROS2 CLI cannot reach the DDS layer directly. The 3 DDS methods
+    # below raise AdapterError with a clear remediation path. This is the
+    # MVP D6 limitation, documented in CHANGELOG and README.
+
+    def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
+        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+
+    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+
+    def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
+        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
     # ----------------------------- topics --------------------------------
 
@@ -211,7 +241,7 @@ def parse_pub_sub_counts(stdout: str) -> tuple[int, int]:
 
 
 def parse_topic_info(
-    stdout: str, *, fallback_name: str, mode_effective: AdapterName
+    stdout: str, *, fallback_name: str, mode_effective: EffectiveMode
 ) -> TopicInfo | None:
     """Parse `ros2 topic info <topic> --verbose` output into a TopicInfo.
 
@@ -339,7 +369,9 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
     return rows
 
 
-def parse_bag_info(stdout: str, *, fallback_path: str, mode_effective: AdapterName) -> BagAnalysis:
+def parse_bag_info(
+    stdout: str, *, fallback_path: str, mode_effective: EffectiveMode
+) -> BagAnalysis:
     """Parse `ros2 bag info <path>` text output into a BagAnalysis.
 
     `mode_effective` is kwarg-only and injected by the adapter (not parsed
