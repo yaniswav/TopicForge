@@ -59,6 +59,7 @@ addopts = "-ra --strict-markers"
 pythonpath = ["src"]
 markers = [
     "requires_cyclonedds: tests needing the `cyclonedds` Python bindings; auto-skip without them",
+    "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
 ]
 
 [tool.ruff]
@@ -75,9 +76,11 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
-# test_cyclone_adapter.py gates its imports behind `pytest.importorskip`
-# at module top, so adapter imports must come after — E402 is intentional.
+# test_cyclone_adapter.py and test_fast_adapter.py gate their imports
+# behind `pytest.importorskip` at module top, so adapter imports must
+# come after — E402 is intentional.
 "tests/test_cyclone_adapter.py" = ["B011", "E402"]
+"tests/test_fast_adapter.py" = ["B011", "E402"]
 
 [tool.ruff.format]
 quote-style = "double"
