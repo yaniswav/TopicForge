@@ -1,8 +1,13 @@
 # TopicForge
 
-> **The safety-first read-only MCP for ROS2 robotics.** TopicForge lets AI agents inspect your ROS2 graph and bag files without ever publishing back to the bus — so your safety officer doesn't flinch when you wire Claude into your robot stack.
+[![PyPI version](https://img.shields.io/pypi/v/topicforge.svg)](https://pypi.org/project/topicforge/)
+[![Python versions](https://img.shields.io/pypi/pyversions/topicforge.svg)](https://pypi.org/project/topicforge/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/yaniswav/TopicForge/blob/main/LICENSE)
+[![Read-only by architecture](https://img.shields.io/badge/safety-read--only_by_architecture-2563eb)](https://github.com/yaniswav/TopicForge#security-model)
 
-TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents — such as Claude — inspect ROS2 topics and analyze ROS bag files through a clean, structured tool interface. It is read-only by **architecture**, not by configuration: there is no write path to misconfigure, no permission system to audit, no liability conversation to have. The MCP client can see the robot stack; it cannot touch it.
+> **The safety-first read-only MCP for ROS2 robotics — now with a DDS observability module (v0.2.0).** TopicForge lets AI agents inspect your ROS2 graph, ROS bag files, and (since v0.2.0) the raw DDS layer beneath ROS, without ever publishing back to the bus. The MCP client can see the stack ; it cannot touch it.
+
+TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents — such as Claude — inspect ROS2 topics, analyze ROS bag files, and (since v0.2.0) observe the raw DDS layer through a clean, structured tool interface. It is read-only by **architecture**, not by configuration: there is no write path to misconfigure, no permission system to audit, no liability conversation to have. The MCP client can see the robot stack; it cannot touch it.
 
 This stance matters because the ROS-MCP space is no longer empty — general-purpose ROS-MCP servers exist that let an LLM publish topics, call services, and command robots. That shape is fine for demos; it is untenable for production fleets, defense systems, automotive AUTOSAR Adaptive surfaces, or anything safety-certified. TopicForge is the read-only alternative for those audiences, plus the robotics developers, ML/CV engineers, and teams that want their AI tooling to *understand* their robotics stack without commanding it.
 
@@ -154,6 +159,8 @@ Three new MCP tools (in addition to the five ROS2 tools above) :
 **v0.2.0 limitation.** TopicForge selects one adapter at a time. With `TOPICFORGE_DDS_BACKEND=cyclone`, the 3 DDS tools work and the 5 ROS2 tools raise a clear `AdapterError` — and vice versa with the default `TOPICFORGE_DDS_BACKEND=mock`. The mock backend exposes all 8 tools against deterministic fixtures for local development and tests. Real CycloneDDS discovery (builtin topics, QoS pair extraction, typed reader for samples) ships as a v0.2.x patch ; the v0.2.0 `CycloneDdsAdapter` is a protocol-compliant stub that raises a clear roadmap message. A composite adapter delegating per-tool is a v0.2.x roadmap item.
 
 `RTI Connext` and additional vendors will be available in the Pro tier (see `docs/pro.md`).
+
+**Full 5-minute walkthrough** — including the canonical QoS-mismatch debugging scenario, the single-adapter limitation matrix, and troubleshooting — lives in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md).
 
 ### Configure with Claude Desktop
 
