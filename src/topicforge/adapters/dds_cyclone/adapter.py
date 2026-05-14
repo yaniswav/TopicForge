@@ -48,6 +48,7 @@ from cyclonedds.util import duration
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
+    LifecycleBuffer,
     canonicalize_vendor_id,
     detect_mismatches,
     format_guid,
@@ -56,6 +57,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     QosProfile,
     SampleResult,
@@ -97,6 +99,9 @@ class CycloneDdsAdapter:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         self._domain_id = domain_id
+        # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
+        # reconciliation — see `list_participants` for the feed pattern.
+        self._lifecycle = LifecycleBuffer()
         try:
             self._dp = DomainParticipant(domain_id)
         except Exception as exc:  # binding-side errors vary by version
@@ -136,6 +141,13 @@ class CycloneDdsAdapter:
         time. Callers asking for a different domain receive what *this*
         participant sees — spinning up a second participant on the fly
         would violate the "one bus join per adapter instance" rule.
+
+        v0.4.0 Phase 1: each call feeds the `LifecycleBuffer`. GUIDs seen
+        in this snapshot are recorded as `seen` ; previously-known GUIDs
+        absent from the snapshot are reconciled to `lost`. The returned
+        list comes from the buffer (carrying `first_seen_ns`,
+        `last_seen_ns`, `status`, `seen_count`), not directly from the
+        raw discovery samples.
         """
         try:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
@@ -143,18 +155,25 @@ class CycloneDdsAdapter:
         except Exception as exc:
             raise AdapterError(f"cyclone participant discovery failed: {exc}") from exc
 
-        participants: list[ParticipantInfo] = []
+        observed_guids: set[str] = set()
         for sample in samples[:_MAX_PARTICIPANTS]:
-            participants.append(
-                ParticipantInfo(
-                    guid=format_guid(_extract_guid(sample)),
-                    vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
-                    hostname=_extract_hostname(sample),
-                    domain_id=self._domain_id,
-                    mode_effective="live",
-                )
+            guid = format_guid(_extract_guid(sample))
+            observed_guids.add(guid)
+            self._lifecycle.record_seen(
+                guid=guid,
+                vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
+                hostname=_extract_hostname(sample),
+                domain_id=self._domain_id,
+                mode_effective="live",
             )
-        return participants
+        # Reconcile: previously-active GUIDs missing from this snapshot
+        # flip to "left" + emit a `lost` event.
+        self._lifecycle.reconcile(
+            observed_guids=observed_guids,
+            domain_id=self._domain_id,
+            mode_effective="live",
+        )
+        return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
         """Pair reader/writer endpoints by topic, run the pure analyzer on each."""
@@ -253,6 +272,23 @@ class CycloneDdsAdapter:
             count=len(samples),
             samples=samples,
             mode_effective="live",
+        )
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        """Return lifecycle events for `self._domain_id` within the window.
+
+        Cyclone's lifecycle log is populated lazily by `list_participants`
+        calls — see the docstring there. A GUID that joined and left
+        between two `list_participants` calls will not produce events.
+        The `participant_events` tool description makes this explicit.
+        """
+        if lookback_seconds < 1 or lookback_seconds > 86400:
+            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        return self._lifecycle.events_since(
+            lookback_seconds=lookback_seconds,
+            domain_id=self._domain_id,
         )
 
 

@@ -123,3 +123,39 @@ def test_analyze_bag_returns_structured(inspector: Inspector) -> None:
 
 def test_backend_name(inspector: Inspector) -> None:
     assert inspector.backend_name == "mock"
+
+
+# ---------------------------------------------------------------------------
+# participant_events (v0.4.0 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def test_participant_events_default_lookback(inspector: Inspector) -> None:
+    """Default lookback (300s) yields the mock fixture's three events."""
+    events = inspector.participant_events(domain_id=0)
+    assert len(events) == 3
+    assert all(e.event_type == "discovered" for e in events)
+
+
+def test_participant_events_rejects_out_of_range_domain(inspector: Inspector) -> None:
+    with pytest.raises(AdapterError, match="domain_id"):
+        inspector.participant_events(domain_id=-1)
+    with pytest.raises(AdapterError, match="domain_id"):
+        inspector.participant_events(domain_id=233)
+
+
+def test_participant_events_rejects_non_int_domain(inspector: Inspector) -> None:
+    with pytest.raises(AdapterError, match="domain_id"):
+        inspector.participant_events(domain_id="0")  # type: ignore[arg-type]
+
+
+def test_participant_events_rejects_out_of_range_lookback(inspector: Inspector) -> None:
+    with pytest.raises(AdapterError, match="lookback_seconds"):
+        inspector.participant_events(domain_id=0, lookback_seconds=0)
+    with pytest.raises(AdapterError, match="lookback_seconds"):
+        inspector.participant_events(domain_id=0, lookback_seconds=86401)
+
+
+def test_participant_events_rejects_non_int_lookback(inspector: Inspector) -> None:
+    with pytest.raises(AdapterError, match="lookback_seconds"):
+        inspector.participant_events(domain_id=0, lookback_seconds="60")  # type: ignore[arg-type]

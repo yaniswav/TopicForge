@@ -17,6 +17,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -96,6 +97,12 @@ class _StubRosAdapter:
         self.calls.append(("peek_dds_samples", (topic, count)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        self.calls.append(("participant_events", (domain_id, lookback_seconds)))
+        raise AdapterError("ROS adapter should not receive DDS calls")
+
 
 class _StubDdsAdapter:
     """Tracks calls and returns canned values for the DDS half of the protocol."""
@@ -155,6 +162,12 @@ class _StubDdsAdapter:
         self.calls.append(("peek_dds_samples", (topic, count)))
         return SampleResult(topic=topic, count=0, samples=[], mode_effective=self._mode)
 
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        self.calls.append(("participant_events", (domain_id, lookback_seconds)))
+        return []
+
 
 # ---------------------------------------------------------------------------
 # Routing matrix
@@ -188,11 +201,13 @@ def test_dds_methods_route_to_dds_half() -> None:
     composite.list_participants(domain_id=42)
     composite.detect_qos_mismatches(topic="/x")
     composite.peek_dds_samples("/x", 5)
+    composite.participant_events(domain_id=42, lookback_seconds=60)
 
     assert [c[0] for c in dds.calls] == [
         "list_participants",
         "detect_qos_mismatches",
         "peek_dds_samples",
+        "participant_events",
     ]
     assert ros.calls == []
 

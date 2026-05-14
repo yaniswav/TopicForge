@@ -37,6 +37,7 @@ import fastdds
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
+    LifecycleBuffer,
     canonicalize_vendor_id,
     detect_mismatches,
     format_guid,
@@ -45,6 +46,7 @@ from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     QosProfile,
     SampleResult,
@@ -78,22 +80,46 @@ class _DiscoveryListener:
     signatures is bound via `create_participant(..., listener, mask)`.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, lifecycle: LifecycleBuffer | None = None, domain_id: int = 0) -> None:
         self._lock = threading.RLock()
         self._participants: dict[str, Any] = {}
         self._subscriptions: dict[str, Any] = {}
         self._publications: dict[str, Any] = {}
+        # v0.4.0 Phase 1: listener callbacks feed the lifecycle buffer
+        # directly (no polling reconciliation needed — Fast DDS gives us
+        # arrival AND removal events). `lifecycle=None` keeps the
+        # listener usable in isolation for tests that don't care.
+        self._lifecycle = lifecycle
+        self._domain_id = domain_id
 
     def on_participant_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
         try:
             status = getattr(info, "status", None)
             data = getattr(info, "info", None) or getattr(info, "participant_data", None) or info
             guid = format_guid(_extract_guid(data))
+            removed = _is_removal(status)
             with self._lock:
-                if _is_removal(status):
+                if removed:
                     self._participants.pop(guid, None)
                 else:
                     self._participants[guid] = data
+            if self._lifecycle is not None:
+                if removed:
+                    self._lifecycle.record_lost(
+                        guid=guid,
+                        vendor=canonicalize_vendor_id(_extract_vendor_id(data)),
+                        hostname=_extract_hostname(data),
+                        domain_id=self._domain_id,
+                        mode_effective="live",
+                    )
+                else:
+                    self._lifecycle.record_seen(
+                        guid=guid,
+                        vendor=canonicalize_vendor_id(_extract_vendor_id(data)),
+                        hostname=_extract_hostname(data),
+                        domain_id=self._domain_id,
+                        mode_effective="live",
+                    )
         except Exception:  # pragma: no cover — defensive
             log.exception("on_participant_discovery callback failed")
 
@@ -150,7 +176,9 @@ class FastDdsAdapter:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         self._domain_id = domain_id
-        self._listener = _DiscoveryListener()
+        # v0.4.0 Phase 1: lifecycle buffer fed by listener callbacks.
+        self._lifecycle = LifecycleBuffer()
+        self._listener = _DiscoveryListener(lifecycle=self._lifecycle, domain_id=domain_id)
         self._participant: Any | None = None
         self._factory: Any | None = None
         try:
@@ -214,18 +242,15 @@ class FastDdsAdapter:
     # ----- DDS surface (v0.3.0) -----
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
-        """Snapshot of discovered participants from the listener state."""
-        samples = self._listener.snapshot_participants()
-        return [
-            ParticipantInfo(
-                guid=format_guid(_extract_guid(s)),
-                vendor=canonicalize_vendor_id(_extract_vendor_id(s)),
-                hostname=_extract_hostname(s),
-                domain_id=self._domain_id,
-                mode_effective="live",
-            )
-            for s in samples
-        ]
+        """Snapshot of discovered participants from the lifecycle buffer.
+
+        v0.4.0 Phase 1: the listener callbacks have already populated
+        the buffer with lifecycle fields. We read the snapshot from the
+        buffer rather than rebuilding `ParticipantInfo` from the raw
+        listener cache so `first_seen_ns`, `last_seen_ns`, `status`,
+        and `seen_count` are exposed.
+        """
+        return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
         subs = self._listener.snapshot_subscriptions()
@@ -311,6 +336,21 @@ class FastDdsAdapter:
             count=len(samples),
             samples=samples,
             mode_effective="live",
+        )
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
+        """Return lifecycle events captured by the listener callbacks.
+
+        Fast DDS' listener fires on its worker thread ; the lifecycle
+        buffer's RLock serializes writes against this method's read.
+        """
+        if lookback_seconds < 1 or lookback_seconds > 86400:
+            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        return self._lifecycle.events_since(
+            lookback_seconds=lookback_seconds,
+            domain_id=self._domain_id,
         )
 
 

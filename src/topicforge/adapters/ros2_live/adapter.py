@@ -29,6 +29,7 @@ from topicforge.models import (
     BagTopicStats,
     MessageSample,
     MismatchReport,
+    ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
@@ -78,6 +79,11 @@ class Ros2CliAdapter:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
+        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+
+    def participant_events(
+        self, domain_id: int = 0, lookback_seconds: int = 300
+    ) -> list[ParticipantEvent]:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
     # ----------------------------- topics --------------------------------
