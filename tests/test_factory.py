@@ -225,3 +225,83 @@ def test_auto_mode_with_no_ros2_picks_mock(monkeypatch: pytest.MonkeyPatch) -> N
     )
     adapter = factory.build_adapter(settings)
     assert isinstance(adapter, MockAdapter)
+
+
+# ---------------------------------------------------------------------------
+# v0.4.0 Phase 1.5 — new vendor branches in _try_build_dds
+# ---------------------------------------------------------------------------
+
+
+def test_opendds_backend_falls_back_to_ros2_cli_when_binding_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pyopendds` is not on PyPI ; the OpenDdsAdapter reports unavailable
+    and the factory falls back to ROS2 CLI alone."""
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
+    settings = _live_settings(dds_backend="opendds")
+    adapter = factory.build_adapter(settings)
+    assert isinstance(adapter, Ros2CliAdapter)
+
+
+def test_dust_backend_falls_back_to_ros2_cli_when_binding_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dust DDS stub always reports unavailable ; ROS2 CLI takes over."""
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
+    settings = _live_settings(dds_backend="dust")
+    adapter = factory.build_adapter(settings)
+    assert isinstance(adapter, Ros2CliAdapter)
+
+
+def test_opensplice_backend_falls_back_when_pro_package_absent(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Pro tier vendor without `topicforge_pro` package installed → fallback."""
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
+    settings = _live_settings(dds_backend="opensplice")
+    with caplog.at_level("WARNING"):
+        adapter = factory.build_adapter(settings)
+    assert isinstance(adapter, Ros2CliAdapter)
+    assert any("opensplice" in record.message.lower() for record in caplog.records)
+
+
+def test_coredx_backend_falls_back_when_pro_package_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
+    settings = _live_settings(dds_backend="coredx")
+    adapter = factory.build_adapter(settings)
+    assert isinstance(adapter, Ros2CliAdapter)
+
+
+def test_intercom_backend_falls_back_when_pro_package_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
+    settings = _live_settings(dds_backend="intercom")
+    adapter = factory.build_adapter(settings)
+    assert isinstance(adapter, Ros2CliAdapter)
+
+
+def test_pro_vendor_module_path_uses_topicforge_pro_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful Pro vendor load should target `topicforge_pro.adapters.<vendor>`
+    (and `rti_connext` specifically for the RTI alias). We can't run a
+    real Pro adapter here ; we assert the import path by patching
+    `importlib.import_module` and capturing the requested name.
+    """
+    import importlib
+
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
+    requested: list[str] = []
+
+    def fake_import(name: str) -> object:
+        requested.append(name)
+        raise ImportError(f"simulated missing {name}")
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
+
+    settings = _live_settings(dds_backend="rti")
+    factory.build_adapter(settings)
+    assert "topicforge_pro.adapters.rti_connext" in requested

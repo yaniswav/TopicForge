@@ -169,3 +169,99 @@ def test_health_report_ros_backend_ros2_cli_when_live_and_ros2_present(
     )
     report = HealthService(settings).report()
     assert report.ros_backend == "ros2_cli"
+
+
+# ---------------------------------------------------------------------------
+# middleware_available for v0.4.0 Phase 1.5 new vendors
+# ---------------------------------------------------------------------------
+
+
+def test_health_report_middleware_available_false_for_opendds_without_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: None if name == "pyopendds" else real_find_spec(name, *a, **k),
+    )
+    settings = Settings(
+        mode="live",
+        log_level="INFO",
+        ros2_executable="ros2",
+        telemetry_enabled=False,
+        dds_backend="opendds",
+    )
+    report = HealthService(settings).report()
+    assert report.middleware_available is False
+
+
+def test_health_report_middleware_available_false_for_dust_without_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: None if name == "dust_dds_python" else real_find_spec(name, *a, **k),
+    )
+    settings = Settings(
+        mode="live",
+        log_level="INFO",
+        ros2_executable="ros2",
+        telemetry_enabled=False,
+        dds_backend="dust",
+    )
+    report = HealthService(settings).report()
+    assert report.middleware_available is False
+
+
+def test_health_report_middleware_available_pro_vendor_via_plugin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the Pro plugin module is importable, middleware_available=True."""
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+    target = "topicforge_pro.adapters.rti_connext"
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: object() if name == target else real_find_spec(name, *a, **k),
+    )
+    settings = Settings(
+        mode="live",
+        log_level="INFO",
+        ros2_executable="ros2",
+        telemetry_enabled=False,
+        dds_backend="rti",
+    )
+    report = HealthService(settings).report()
+    assert report.middleware_available is True
+
+
+def test_health_report_middleware_available_rti_via_upstream_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RTI shows as available even when only the upstream SDK is installed
+    (Pro plugin missing) — the health fallback probes rti.connextdds."""
+    import importlib.util
+
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: object() if name == "rti.connextdds" else None,
+    )
+    settings = Settings(
+        mode="live",
+        log_level="INFO",
+        ros2_executable="ros2",
+        telemetry_enabled=False,
+        dds_backend="rti",
+    )
+    report = HealthService(settings).report()
+    assert report.middleware_available is True

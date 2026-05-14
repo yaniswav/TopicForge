@@ -437,16 +437,31 @@ class HealthReport(BaseModel):
             "requests proactively. Constant within a given server version."
         ),
     )
-    dds_backend: Literal["mock", "cyclone", "fast", "rti", "none"] = Field(
+    dds_backend: Literal[
+        "mock",
+        "cyclone",
+        "fast",
+        "rti",
+        "opensplice",
+        "coredx",
+        "intercom",
+        "opendds",
+        "dust",
+        "none",
+    ] = Field(
         default="none",
         description=(
             "Active DDS module backend. `none` when the DDS module is not "
             "active (default for ROS2-only installs). `mock` for synthetic "
-            "fixtures. `cyclone` requires `pip install topicforge[dds-cyclone]` "
-            "(Eclipse CycloneDDS) ; `fast` requires "
-            "`pip install topicforge[dds-fast]` (eProsima Fast DDS) ; "
-            "`rti` requires the Pro tier and a valid RTI Connext license "
-            "(v0.4.0+ roadmap)."
+            "fixtures. **OSS tier** — `cyclone` requires "
+            "`pip install topicforge[dds-cyclone]` (Eclipse CycloneDDS) ; "
+            "`fast` requires `pip install topicforge[dds-fast]` (eProsima "
+            "Fast DDS) ; `opendds` and `dust` are stub adapters in v0.4.0 "
+            "Phase 1.5 (no maintained Python binding on PyPI yet — install "
+            "`pip install topicforge[dds-opendds]` / `[dds-dust]` to "
+            "exercise the auto-detect hook). **Pro tier** — `rti`, "
+            "`opensplice`, `coredx`, `intercom` require the `topicforge-pro` "
+            "package and a valid `TOPICFORGE_LICENSE_KEY`."
         ),
     )
     dds_domain_id: int | None = Field(
