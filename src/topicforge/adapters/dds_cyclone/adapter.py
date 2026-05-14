@@ -101,8 +101,7 @@ class CycloneDdsAdapter:
             self._dp = DomainParticipant(domain_id)
         except Exception as exc:  # binding-side errors vary by version
             raise AdapterError(
-                f"Failed to create CycloneDDS DomainParticipant on "
-                f"domain {domain_id}: {exc}"
+                f"Failed to create CycloneDDS DomainParticipant on domain {domain_id}: {exc}"
             ) from exc
 
     @property
@@ -140,9 +139,7 @@ class CycloneDdsAdapter:
         """
         try:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
-            samples = list(
-                reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC))
-            )
+            samples = list(reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))
         except Exception as exc:
             raise AdapterError(f"cyclone participant discovery failed: {exc}") from exc
 
@@ -164,12 +161,12 @@ class CycloneDdsAdapter:
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = list(
-                sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC))
-            )[:_MAX_ENDPOINTS]
-            pubs = list(
-                pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC))
-            )[:_MAX_ENDPOINTS]
+            subs = list(sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+                :_MAX_ENDPOINTS
+            ]
+            pubs = list(pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+                :_MAX_ENDPOINTS
+            ]
         except Exception as exc:
             raise AdapterError(f"cyclone endpoint discovery failed: {exc}") from exc
 
@@ -231,9 +228,9 @@ class CycloneDdsAdapter:
         topic_class = _BUILTIN_DCPS_TOPICS[topic]
         try:
             reader = BuiltinDataReader(self._dp, topic_class)
-            samples_raw = list(
-                reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC))
-            )[:count]
+            samples_raw = list(reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[
+                :count
+            ]
         except Exception as exc:
             raise AdapterError(f"cyclone peek failed: {exc}") from exc
 

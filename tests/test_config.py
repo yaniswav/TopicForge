@@ -98,9 +98,7 @@ def test_invalid_dds_backend_rejected() -> None:
 
 def test_dds_backend_mock_global_forces_dds_mock() -> None:
     """Global mock mode collapses every DDS backend to mock — no live access."""
-    s = load_settings(
-        env={"TOPICFORGE_MODE": "mock", "TOPICFORGE_DDS_BACKEND": "cyclone"}
-    )
+    s = load_settings(env={"TOPICFORGE_MODE": "mock", "TOPICFORGE_DDS_BACKEND": "cyclone"})
     assert s.effective_dds_backend == "mock"
 
 

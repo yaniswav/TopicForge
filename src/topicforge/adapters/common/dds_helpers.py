@@ -30,21 +30,21 @@ adapter output construction time — caught by the cross-vendor tests.
 # tag for them today ; observers still see those participants on the
 # bus via the OMG protocol guarantee, they just report as "unknown".
 _VENDOR_ID_MAP: dict[tuple[int, int], VendorTag] = {
-    (0x01, 0x01): "rti",        # Real-Time Innovations Connext
-    (0x01, 0x02): "unknown",    # PrismTech / OpenSplice (EOL)
-    (0x01, 0x03): "unknown",    # OCI / OpenDDS
-    (0x01, 0x04): "unknown",    # MilSoft Open DDS
-    (0x01, 0x05): "fast",       # eProsima Fast DDS
-    (0x01, 0x06): "unknown",    # GurumNetworks GurumDDS
-    (0x01, 0x07): "unknown",    # Twin Oaks Computing CoreDX
-    (0x01, 0x09): "unknown",    # ADLink / Vortex (pre-Cyclone)
-    (0x01, 0x0A): "unknown",    # PrismTech Vortex Lite
-    (0x01, 0x0B): "unknown",    # TechSoft InterCOM
-    (0x01, 0x0C): "unknown",    # Kongsberg Defence & Aerospace
-    (0x01, 0x0F): "unknown",    # ZRDDS
-    (0x01, 0x10): "unknown",    # GurumNetworks GurumDDS-Light
-    (0x01, 0x11): "unknown",    # Dust DDS (Rust)
-    (0x01, 0x16): "cyclone",    # Eclipse CycloneDDS
+    (0x01, 0x01): "rti",  # Real-Time Innovations Connext
+    (0x01, 0x02): "unknown",  # PrismTech / OpenSplice (EOL)
+    (0x01, 0x03): "unknown",  # OCI / OpenDDS
+    (0x01, 0x04): "unknown",  # MilSoft Open DDS
+    (0x01, 0x05): "fast",  # eProsima Fast DDS
+    (0x01, 0x06): "unknown",  # GurumNetworks GurumDDS
+    (0x01, 0x07): "unknown",  # Twin Oaks Computing CoreDX
+    (0x01, 0x09): "unknown",  # ADLink / Vortex (pre-Cyclone)
+    (0x01, 0x0A): "unknown",  # PrismTech Vortex Lite
+    (0x01, 0x0B): "unknown",  # TechSoft InterCOM
+    (0x01, 0x0C): "unknown",  # Kongsberg Defence & Aerospace
+    (0x01, 0x0F): "unknown",  # ZRDDS
+    (0x01, 0x10): "unknown",  # GurumNetworks GurumDDS-Light
+    (0x01, 0x11): "unknown",  # Dust DDS (Rust)
+    (0x01, 0x16): "cyclone",  # Eclipse CycloneDDS
 }
 
 
