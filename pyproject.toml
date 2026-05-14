@@ -30,8 +30,18 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
+# v0.3.0: split DDS extras per vendor. `[dds]` (the union) pulls both
+# OSS Python participants ; granular `[dds-cyclone]` / `[dds-fast]`
+# install only one when disk space or install time matters.
+dds-cyclone = [
+    "cyclonedds>=0.10",
+]
+dds-fast = [
+    "fastdds>=2.6.1,<3",
+]
 dds = [
     "cyclonedds>=0.10",
+    "fastdds>=2.6.1,<3",
 ]
 all = [
     "topicforge[dds]",
