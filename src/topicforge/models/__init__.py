@@ -5,6 +5,9 @@ from topicforge.models.schemas import (
     BagTopicStats,
     HealthReport,
     MessageSample,
+    MismatchReport,
+    ParticipantInfo,
+    QosProfile,
     SampleResult,
     TopicInfo,
 )
@@ -14,6 +17,9 @@ __all__ = [
     "BagTopicStats",
     "HealthReport",
     "MessageSample",
+    "MismatchReport",
+    "ParticipantInfo",
+    "QosProfile",
     "SampleResult",
     "TopicInfo",
 ]

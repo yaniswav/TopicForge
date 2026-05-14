@@ -115,9 +115,11 @@ Inherited from `topicforge/CLAUDE.md §3` verbatim — same layer
 separation, same files, same `server/` / `tools/` / `services/` /
 `models/` / `telemetry/` / `config/` layout. The DDS module adds:
 
-- `src/topicforge/adapters/dds_live/` — new sibling to the existing
+- `src/topicforge/adapters/dds_cyclone/` — new sibling to the existing
   `ros2_live/` and `ros2_mock/` directories. Houses
-  `CycloneDdsAdapter` (OSS) and the `MockMiddlewareAdapter` (fixtures).
+  `CycloneDdsAdapter` (OSS). The DDS mock surface is exposed by
+  `MockAdapter` itself (extended fixtures in `ros2_mock/fixtures.py`),
+  not by a separate adapter — one mock for the whole tool surface.
 - `MiddlewareAdapter` protocol in `src/topicforge/adapters/base.py` —
   generalization of the existing `RosAdapter`. `RosAdapter` becomes
   an alias / sub-shape of `MiddlewareAdapter` for backwards
@@ -273,20 +275,31 @@ specific deltas:
 Module versioning is **not independent** of TopicForge. The DDS module
 ships in TopicForge releases, in this order:
 
-- **TopicForge v0.2.0 — `MiddlewareAdapter` protocol prep.** Generalize
-  `RosAdapter` into `MiddlewareAdapter` in `adapters/base.py`. Ship
-  `MockMiddlewareAdapter` with deterministic two-participant DDS
-  fixtures. **No new MCP tools exposed yet** — protocol prep only,
-  same 5 tools as v0.1.2. CI unchanged.
-- **TopicForge v0.3.0 — `CycloneDdsAdapter` + 3 new tools.** Shipped in
-  OSS via the `topicforge[dds]` extras install. Tools added:
-  `list_participants`, `detect_qos_mismatches`, `peek_dds_samples`.
-  `health_check` and `list_topics` payloads extended (additive,
-  soft-breaking on the producer side, same convention as v0.1.2's
-  `mode_effective`). The 8-tool ceiling activates.
-- **TopicForge v0.4.0+ — `RtiConnextAdapter` in Pro tier.** Same
+- **TopicForge v0.2.0 — protocol generalization + DDS stub + 3 tools.**
+  Generalize `RosAdapter` into `MiddlewareAdapter` in `adapters/base.py`
+  with `RosAdapter` retained as a backward-compat alias. Ship
+  `MockAdapter` extended with DDS fixtures (2 participants, well-matched
+  and mismatched topics), `CycloneDdsAdapter` as a protocol-compliant
+  stub (lazy import + is_available + DDS methods raise with a v0.2.x
+  roadmap pointer), 3 new MCP tools (`list_participants`,
+  `detect_qos_mismatches`, `peek_dds_samples`), `pyproject.toml` extras
+  (`[dds]` pulls `cyclonedds>=0.10`). Soft-breaking schema changes to
+  `TopicInfo` and `HealthReport` (additive optional fields). The 8-tool
+  ceiling activates.
+- **TopicForge v0.2.x patch — real `CycloneDdsAdapter` implementation.**
+  Replace the v0.2.0 stub with the actual CycloneDDS discovery (builtin
+  topics for participants, reader/writer endpoint collection, typed
+  reader for samples on builtin topics first, arbitrary user topics
+  next). Same tool surface ; the stub-to-real swap is invisible from the
+  MCP client's POV.
+- **TopicForge v0.3.0+ — `RtiConnextAdapter` in Pro tier.** Same
   `_try_register_pro(mcp)` pattern. BYO RTI license. No new MCP tools
   ; same 3 DDS tools, new backend.
+
+This collapses the earlier v0.2.0 / v0.3.0 split (proposed before the
+mono-MCP pivot of 2026-05-14) into a single v0.2.0 ship + a v0.2.x
+hardening patch. The user-facing surface lands all at once ; the
+Cyclone-side implementation depth grows in patches.
 
 When a Phase 1 item ships, retire the matching `# TODO(roadmap):` tag
 in code and the corresponding entry in

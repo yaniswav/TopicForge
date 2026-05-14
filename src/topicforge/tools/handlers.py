@@ -28,6 +28,8 @@ from pydantic import Field
 from topicforge.models import (
     BagAnalysis,
     HealthReport,
+    MismatchReport,
+    ParticipantInfo,
     SampleResult,
     TopicInfo,
 )
@@ -160,6 +162,98 @@ def register_tools(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
     ) -> BagAnalysis:
         return inspector.analyze_bag(path)
+
+    # ----- DDS module tools (v0.2.0) -----
+    # The 3 tools below address the bare-DDS layer, distinct from the
+    # ROS2-graph tools above. They are active when TOPICFORGE_DDS_BACKEND
+    # is `cyclone`, `rti`, or `mock`. With the `ros2_cli` adapter (default
+    # for ROS2-only installs), they raise AdapterError pointing at the
+    # `pip install topicforge[dds]` remediation path.
+
+    @mcp.tool(
+        description=(
+            "List DDS participants observed on a domain. Returns each "
+            "participant's GUID, vendor (`cyclone`, `rti`, `mock`, "
+            "`unknown`), optional hostname, and `mode_effective` "
+            "(`live`/`mock`). **Distinct from ROS2 graph nodes** — this "
+            "operates at the raw DDS layer beneath ROS, useful for "
+            "non-ROS DDS stacks (Cyclone-only, RTI-only) or for "
+            "diagnosing why a participant isn't seen by the ROS graph. "
+            "Returns an MCP error when no DDS module is active "
+            "(install `pip install topicforge[dds]` and set "
+            "`TOPICFORGE_DDS_BACKEND=cyclone`)."
+        )
+    )
+    @instrument(telemetry, "list_participants")
+    def list_participants(
+        domain_id: Annotated[
+            int,
+            Field(
+                description=(
+                    "DDS domain id to observe (0..232). Defaults to 0 — "
+                    "the same default used by `cyclonedds` and the "
+                    "implicit default of most ROS2 setups."
+                ),
+                ge=0,
+                le=232,
+            ),
+        ] = 0,
+    ) -> list[ParticipantInfo]:
+        return inspector.list_participants(domain_id)
+
+    @mcp.tool(
+        description=(
+            "Detect DDS QoS incompatibilities between reader and writer "
+            "endpoints on the bus. Returns one `MismatchReport` per "
+            "incompatible (reader, writer) pair, listing the policies "
+            "that block (or risk degrading) communication: "
+            "Reliability, Durability, History, Deadline. Each report "
+            "carries `severity` (`incompatible` strictly blocks ; "
+            "`risky` may degrade) and `mode_effective` (`live`/`mock`). "
+            "Pass `topic` to scope to a single topic, omit for an "
+            "exhaustive scan. **Use this when** an LLM is debugging "
+            'why a "subscriber doesn\'t receive". Returns an MCP error '
+            "when no DDS module is active."
+        )
+    )
+    @instrument(telemetry, "detect_qos_mismatches")
+    def detect_qos_mismatches(
+        topic: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Optional topic name to scope the scan to "
+                    "(`/foo/bar` shape). `None` (default) returns all "
+                    "mismatches across all topics."
+                ),
+                default=None,
+            ),
+        ] = None,
+    ) -> list[MismatchReport]:
+        return inspector.detect_qos_mismatches(topic)
+
+    @mcp.tool(
+        description=(
+            "Peek recent samples on a raw DDS topic. **Distinct from "
+            "`sample_messages`** — `sample_messages` operates on the "
+            "ROS2 graph (via `ros2 topic echo`), while this tool reads "
+            "directly from the DDS layer (Cyclone / RTI / mock). Use "
+            "this for non-ROS DDS topics or when the ROS2 CLI is not "
+            "available. Returns a `SampleResult` envelope identical in "
+            "shape to `sample_messages` (`{topic, count, samples, "
+            "mode_effective}`). Sample payload format depends on the "
+            "backend — mock returns structured dicts ; live backends "
+            "return best-effort serialized representations of the DDS "
+            "samples. `count` defaults to 5, silently clamped to 50. "
+            "Returns an MCP error when no DDS module is active."
+        )
+    )
+    @instrument(telemetry, "peek_dds_samples")
+    def peek_dds_samples(
+        topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
+        count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
+    ) -> SampleResult:
+        return inspector.peek_dds_samples(topic, count)
 
     # TODO(roadmap): URDF tools — validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection — clock jumps, frame drops, TF gaps.

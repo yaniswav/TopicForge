@@ -10,7 +10,16 @@ If you change a value here, expect to update tests under `tests/`.
 
 from __future__ import annotations
 
-from topicforge.models import BagAnalysis, BagTopicStats, MessageSample, TopicInfo
+from topicforge.models import (
+    BagAnalysis,
+    BagTopicStats,
+    MessageSample,
+    MismatchReport,
+    ParticipantInfo,
+    QosProfile,
+    SampleResult,
+    TopicInfo,
+)
 
 MOCK_TOPICS: tuple[TopicInfo, ...] = (
     TopicInfo(
@@ -135,6 +144,107 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
 def mock_samples_for(topic: str, count: int) -> list[MessageSample]:
     """Return up to `count` deterministic samples for `topic`. Empty if unknown."""
     return list(_MOCK_SAMPLES.get(topic, [])[:count])
+
+
+# ---------------------------------------------------------------------------
+# DDS module fixtures — exercise list_participants, detect_qos_mismatches,
+# peek_dds_samples. Two participants on a single domain ; one well-matched
+# topic (reader & writer compatible) and one deliberately mismatched topic
+# (Reliability incompatibility, since RELIABLE reader cannot match a
+# BEST_EFFORT writer).
+# ---------------------------------------------------------------------------
+
+MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
+    ParticipantInfo(
+        guid="010f1c2a-3b4c-5d6e-7f80-000000000001",
+        vendor="cyclone",
+        hostname="mock-robot",
+        domain_id=0,
+        mode_effective="mock",
+    ),
+    ParticipantInfo(
+        guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
+        vendor="cyclone",
+        hostname="mock-laptop",
+        domain_id=0,
+        mode_effective="mock",
+    ),
+)
+
+MOCK_DDS_TOPICS: tuple[str, ...] = ("/dds/well_matched", "/dds/qos_mismatch")
+
+_MOCK_MISMATCHES: tuple[MismatchReport, ...] = (
+    MismatchReport(
+        topic="/dds/qos_mismatch",
+        reader_guid="010f1c2a-3b4c-5d6e-7f80-000000000001",
+        writer_guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
+        incompatible_policies=["Reliability"],
+        severity="incompatible",
+        mode_effective="mock",
+    ),
+)
+
+
+def mock_qos_for(topic: str) -> QosProfile | None:
+    """Return a deterministic QoS profile for a mock DDS topic, else None."""
+    if topic == "/dds/well_matched":
+        return QosProfile(
+            reliability="RELIABLE",
+            durability="VOLATILE",
+            history="KEEP_LAST",
+            history_depth=10,
+            deadline_ns=None,
+        )
+    if topic == "/dds/qos_mismatch":
+        return QosProfile(
+            reliability="BEST_EFFORT",
+            durability="VOLATILE",
+            history="KEEP_LAST",
+            history_depth=10,
+            deadline_ns=None,
+        )
+    return None
+
+
+def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
+    """Deterministic DDS samples for a mock DDS topic, wrapped in SampleResult."""
+    if topic == "/dds/well_matched":
+        samples = [
+            MessageSample(
+                topic=topic,
+                message_type="dds/Heartbeat",
+                timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+                payload={"seq": i, "vendor": "cyclone"},
+            )
+            for i in range(min(count, 3))
+        ]
+    elif topic == "/dds/qos_mismatch":
+        # The mismatched topic still has a writer producing samples — the
+        # mismatch only prevents one reader from matching, not the bus
+        # from carrying traffic.
+        samples = [
+            MessageSample(
+                topic=topic,
+                message_type="dds/Heartbeat",
+                timestamp_ns=_BASE_TS_NS,
+                payload={"seq": 0, "vendor": "cyclone", "qos_note": "writer is BEST_EFFORT"},
+            )
+        ][:count]
+    else:
+        samples = []
+    return SampleResult(
+        topic=topic,
+        count=len(samples),
+        samples=samples,
+        mode_effective="mock",
+    )
+
+
+def mock_mismatches_for(topic: str | None) -> list[MismatchReport]:
+    """Return the mock mismatches filtered by topic. None returns all."""
+    if topic is None:
+        return list(_MOCK_MISMATCHES)
+    return [m for m in _MOCK_MISMATCHES if m.topic == topic]
 
 
 MOCK_BAG_ANALYSIS = BagAnalysis(

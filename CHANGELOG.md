@@ -7,9 +7,43 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-14
+
 ### Strategic
 
-- (2026-05-14) **Mono-MCP pivot.** The 3-to-5-MCP pack draft is collapsed into a 2-product strategy: TopicForge umbrella (this product — covers ROS2 today and will grow a DDS observability module via a generalized `MiddlewareAdapter` protocol in v0.2.0+), and **DatasetForge** (Vision Dataset Inspector, the standalone second product). DdsForge as a standalone repo is cancelled — its spec is reframed as the TopicForge DDS module spec at `docs/projet-file/mcp-02-spec.md`. Motif: solo-maintenance cost of two parallel repos was the binding constraint, and ROS2 / DDS are the same problem shape (typed pub/sub graph introspection) under the same `MiddlewareAdapter` superset. No code change in this release ; documentary pivot only.
+- **Mono-MCP pivot (2026-05-14).** The 3-to-5-MCP pack draft is collapsed into a 2-product strategy: TopicForge umbrella (this product — covers ROS2 today and grows a DDS observability module starting with v0.2.0), and **DatasetForge** (Vision Dataset Inspector, the standalone second product). DdsForge as a standalone repo is cancelled — its spec is reframed as the TopicForge DDS module spec at `docs/projet-file/mcp-02-spec.md`. Motif: solo-maintenance cost of two parallel repos was the binding constraint, and ROS2 / DDS are the same problem shape (typed pub/sub graph introspection) under the same `MiddlewareAdapter` superset.
+
+### Added
+
+- **DDS module — 3 new MCP tools.** `list_participants(domain_id)`, `detect_qos_mismatches(topic)`, `peek_dds_samples(topic, count)`. All read-only ; surface DDS-layer introspection distinct from the ROS2 graph tools. `peek_dds_samples` is deliberately separate from `sample_messages` — different layer, different semantics, distinct tool description so an LLM picks the right one in a mixed setup.
+- **`MiddlewareAdapter` protocol** in `adapters/base.py` — superset of the historical `RosAdapter`. Covers both ROS2 graph methods and the new DDS methods under one contract. `RosAdapter` retained as a backward-compat alias (`RosAdapter = MiddlewareAdapter`).
+- **`CycloneDdsAdapter`** (`adapters/dds_cyclone/`) — lazy-imported only when `TOPICFORGE_DDS_BACKEND=cyclone` and the optional `cyclonedds` extras are installed (`pip install topicforge[dds]`). **v0.2.0 ships a protocol-compliant stub**: the lazy import, `is_available()`, and routing all work ; the 3 DDS methods raise `AdapterError` with a v0.2.x roadmap pointer. The real CycloneDDS discovery (builtin topics, QoS pair extraction, typed reader for samples) lands in a v0.2.x patch. The mock backend (`TOPICFORGE_DDS_BACKEND=mock`, the default) exposes a working DDS surface against deterministic fixtures in the meantime.
+- **3 new Pydantic schemas**: `QosProfile` (Reliability / Durability / History / Deadline at MVP), `ParticipantInfo` (GUID, vendor, hostname, domain_id), `MismatchReport` (incompatible_policies + severity). All frozen, `extra="forbid"`.
+- **Pure analyzer** `adapters/common/qos_analyzer.detect_mismatches` — module-level pure function, testable against synthesized QoS pairs without any DDS middleware installed.
+- **Environment variables**:
+  - `TOPICFORGE_DDS_BACKEND` — `mock | cyclone | rti | auto`, default `mock`. The DDS module is opt-in ; existing ROS2-only setups behave unchanged.
+  - `TOPICFORGE_DDS_DOMAIN_ID` — DDS domain id observed (0..232), default `0`.
+- **Mock fixtures enriched**: 2 deterministic DDS participants, two-topic scenario (`/dds/well_matched` and `/dds/qos_mismatch`) exercising `detect_qos_mismatches` end-to-end.
+- **`pyproject.toml` extras**: `[dds]` pulls `cyclonedds>=0.10` ; `[all]` aliases `[dds]`. `pip install topicforge` keeps the core + mock only (zero install impact on ROS2-only users).
+
+### Changed
+
+- **`TopicInfo` schema soft-breaking.** Three additive optional fields (`reader_count: int | None`, `writer_count: int | None`, `qos_profile: QosProfile | None`) — all default `None`. Producer side: code constructing `TopicInfo` directly is unaffected (defaults compile). **Strict MCP clients that validated v0.1.x responses against the `TopicInfo` schema with `additionalProperties: false` will reject v0.2.0 responses unless their schema is regenerated. Standard MCP clients that read tool descriptions dynamically are unaffected.**
+- **`HealthReport` schema soft-breaking**, same shape. Three additive optional fields (`dds_backend`, `dds_domain_id`, `middleware_available`) with safe defaults (`"none"`, `None`, `False`).
+- **`RosAdapter` renamed to `MiddlewareAdapter`** in `adapters/base.py`. The old name remains as an alias (`RosAdapter = MiddlewareAdapter`) ; existing imports `from topicforge.adapters import RosAdapter` still type-check. The `Ros2CliAdapter.name` value moves from `"live"` to `"ros2_cli"` — internal tag, separate from the MCP-wire `mode_effective` field which keeps its `Literal["mock", "live"]` contract.
+- **`Settings`** gains `dds_backend` and `dds_domain_id` fields with safe defaults (`"mock"`, `0`). Existing `Settings(...)` constructors are unaffected.
+- **`Ros2CliAdapter` DDS methods raise `AdapterError`** with a clear remediation path (`pip install topicforge[dds]` + `TOPICFORGE_DDS_BACKEND=cyclone`). This is the v0.2.0 MVP limitation D6 (single-adapter-at-a-time) ; a composite adapter that delegates per-tool is a v0.2.x roadmap item.
+
+### Internal
+
+- `parse_topic_info` and `parse_bag_info` parsers : `mode_effective` kwarg typed as `EffectiveMode` (`Literal["mock", "live"]`) rather than the broader `AdapterName`, cleanly separating the wire-facing mode from the implementation tag.
+- New pytest marker `requires_cyclonedds` for tests that need the SDK. Auto-skips otherwise via `pytest.importorskip`.
+
+### Notes
+
+- **`cyclonedds` is optional.** Default installs (`pip install topicforge`) are unchanged from v0.1.2 in dependency footprint. Only `pip install topicforge[dds]` pulls the bindings (`cyclonedds>=0.10`).
+- **No code change to the 5 ROS2 tools** — `health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag` behave identically to v0.1.2. The wire contract (`mode_effective: Literal["mock", "live"]`) is unchanged.
+- **v0.2.0 MVP limitation**: single adapter at a time. Users select ROS2 introspection (default) or DDS observability via `TOPICFORGE_DDS_BACKEND=cyclone`, not both simultaneously. The unselected half raises `AdapterError` with a remediation pointer. A composite adapter delegating per-tool category is a v0.2.x roadmap item.
 
 ## [0.1.2] - 2026-05-13
 
@@ -71,7 +105,8 @@ Initial MVP release of TopicForge — ROS Topic Inspector & Bag Analyzer MCP ser
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yaniswav/TopicForge/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/yaniswav/TopicForge/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/yaniswav/TopicForge/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yaniswav/TopicForge/releases/tag/v0.1.0
