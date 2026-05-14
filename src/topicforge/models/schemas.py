@@ -367,3 +367,16 @@ class HealthReport(BaseModel):
             "the backend's Python bindings are not installed."
         ),
     )
+    ros_backend: Literal["mock", "ros2_cli", "none"] = Field(
+        default="none",
+        description=(
+            "Active ROS2 backend. `ros2_cli` when the `ros2` CLI is on "
+            "PATH and live mode resolves to a Ros2CliAdapter (alone or "
+            "as the ROS half of a composite). `mock` when MockAdapter "
+            "serves the ROS surface. `none` when no ROS2 backend is "
+            "active (e.g. DDS-only live install with no `ros2` CLI). "
+            "Added in v0.4.0 Phase 1 alongside the composite adapter so "
+            "clients can distinguish the ROS2 and DDS halves of a "
+            "composed runtime."
+        ),
+    )
