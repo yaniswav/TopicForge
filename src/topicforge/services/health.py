@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 
@@ -9,6 +10,15 @@ from topicforge import __version__
 from topicforge.config import Settings
 from topicforge.models import HealthReport
 from topicforge.services.constants import MAX_SAMPLE_COUNT
+
+# Map effective DDS backend → the Python module the adapter imports lazily.
+# Used to decide `middleware_available` without actually constructing the
+# adapter — a separate concern from the factory's instantiation fallback.
+_DDS_BACKEND_MODULE = {
+    "cyclone": "cyclonedds",
+    "fast": "fastdds",
+    "rti": "rti.connextdds",
+}
 
 
 class HealthService:
@@ -19,9 +29,13 @@ class HealthService:
         """Build a HealthReport for the current environment.
 
         Never raises. `health_check` is the tool a user will reach for when
-        things look broken, so it must always answer.
+        things look broken, so it must always answer. DDS fields
+        (`dds_backend`, `dds_domain_id`, `middleware_available`) are
+        populated in v0.3.0+ — earlier versions returned the schema
+        defaults regardless of configuration.
         """
         ros2_path = shutil.which(self._settings.ros2_executable)
+        dds_backend = self._settings.effective_dds_backend
         return HealthReport(
             mode=self._settings.effective_mode,
             requested_mode=self._settings.mode,
@@ -29,4 +43,23 @@ class HealthService:
             ros2_distro=os.environ.get("ROS_DISTRO"),
             server_version=__version__,
             max_sample_count=MAX_SAMPLE_COUNT,
+            dds_backend=dds_backend,
+            dds_domain_id=self._settings.dds_domain_id,
+            middleware_available=_middleware_available(dds_backend),
         )
+
+
+def _middleware_available(backend: str) -> bool:
+    """True if the DDS backend's Python bindings are importable on this host.
+
+    Mock is always available (no middleware needed). The other backends are
+    checked via `importlib.util.find_spec` — purely predictive, no actual
+    import. The factory may still fall back at instantiation time, but the
+    health check reports the intent.
+    """
+    if backend == "mock":
+        return True
+    module = _DDS_BACKEND_MODULE.get(backend)
+    if module is None:
+        return False
+    return importlib.util.find_spec(module) is not None

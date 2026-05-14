@@ -169,6 +169,16 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         domain_id=0,
         mode_effective="mock",
     ),
+    # v0.3.0: third participant exercises the multi-vendor positioning —
+    # an eProsima Fast DDS participant alongside Cyclone, as the OMG-DDS
+    # interop matrix promises (see docs/dds-interop-matrix.md).
+    ParticipantInfo(
+        guid="010f1c2a-3b4c-5d6e-7f80-000000000003",
+        vendor="fast",
+        hostname="mock-aerospace-node",
+        domain_id=0,
+        mode_effective="mock",
+    ),
 )
 
 MOCK_DDS_TOPICS: tuple[str, ...] = ("/dds/well_matched", "/dds/qos_mismatch")
