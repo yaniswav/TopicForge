@@ -56,6 +56,8 @@ def test_health_report_serializes_to_dict() -> None:
         "dds_backend",
         "dds_domain_id",
         "middleware_available",
+        # v0.4.0 Phase 1: ros_backend symmetric to dds_backend.
+        "ros_backend",
     } <= payload.keys()
     assert "bag_tool_available" not in payload
 
@@ -124,3 +126,46 @@ def test_health_report_middleware_available_false_without_binding() -> None:
 
 
 import pytest  # noqa: E402 — used above only in the skipped path
+
+# ---------------------------------------------------------------------------
+# ros_backend (v0.4.0 Phase 1 — symmetric to dds_backend, supports composite)
+# ---------------------------------------------------------------------------
+
+
+def test_health_report_ros_backend_mock_in_mock_mode() -> None:
+    settings = Settings(
+        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
+    )
+    report = HealthService(settings).report()
+    assert report.ros_backend == "mock"
+
+
+def test_health_report_ros_backend_none_when_live_but_no_ros2() -> None:
+    """Live mode requested but `ros2` not on PATH — ros_backend == 'none'.
+
+    The composite path may still build a DDS-only adapter ; the health
+    field is purely a description of which ROS half resolves, not which
+    adapter actually runs.
+    """
+    settings = Settings(
+        mode="live",
+        log_level="INFO",
+        ros2_executable="definitely-not-a-real-binary-xyz",
+        telemetry_enabled=False,
+    )
+    report = HealthService(settings).report()
+    assert report.ros_backend == "none"
+
+
+def test_health_report_ros_backend_ros2_cli_when_live_and_ros2_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When `ros2` is on PATH in live mode, ros_backend reports 'ros2_cli'."""
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ros2")
+    settings = Settings(
+        mode="live", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
+    )
+    report = HealthService(settings).report()
+    assert report.ros_backend == "ros2_cli"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+from typing import Literal
 
 from topicforge import __version__
 from topicforge.config import Settings
@@ -31,8 +32,9 @@ class HealthService:
         Never raises. `health_check` is the tool a user will reach for when
         things look broken, so it must always answer. DDS fields
         (`dds_backend`, `dds_domain_id`, `middleware_available`) are
-        populated in v0.3.0+ — earlier versions returned the schema
-        defaults regardless of configuration.
+        populated in v0.3.0+ ; the `ros_backend` field is populated in
+        v0.4.0 Phase 1 alongside the composite adapter so clients can
+        distinguish the ROS2 and DDS halves of a composed runtime.
         """
         ros2_path = shutil.which(self._settings.ros2_executable)
         dds_backend = self._settings.effective_dds_backend
@@ -46,6 +48,7 @@ class HealthService:
             dds_backend=dds_backend,
             dds_domain_id=self._settings.dds_domain_id,
             middleware_available=_middleware_available(dds_backend),
+            ros_backend=_ros_backend(self._settings, ros2_path),
         )
 
 
@@ -63,3 +66,17 @@ def _middleware_available(backend: str) -> bool:
     if module is None:
         return False
     return importlib.util.find_spec(module) is not None
+
+
+def _ros_backend(settings: Settings, ros2_path: str | None) -> Literal["mock", "ros2_cli", "none"]:
+    """Resolve the ROS2 half of the runtime to a wire tag.
+
+    Mirrors the factory's decision tree: mock global mode → `"mock"` ;
+    live with `ros2` on PATH → `"ros2_cli"` ; live without `ros2` →
+    `"none"` (the factory falls back to DDS-only or mock).
+    """
+    if settings.effective_mode == "mock":
+        return "mock"
+    if ros2_path is not None:
+        return "ros2_cli"
+    return "none"
