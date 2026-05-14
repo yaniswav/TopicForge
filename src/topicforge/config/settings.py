@@ -69,11 +69,20 @@ class Settings:
         - If global `TOPICFORGE_MODE` resolves to `mock`, force the DDS
           backend to `mock` as well — mock global mode means no live
           access of any kind.
-        - `mock`, `cyclone`, `rti` are returned as-is when global mode
-          permits.
-        - `auto` resolves to `cyclone` when `cyclonedds` is importable,
-          else `mock`. (`rti` requires the Pro tier + license, never
-          auto-selected.)
+        - `mock`, `cyclone`, `fast`, `rti` are returned as-is when
+          global mode permits.
+        - `auto` resolves to the first available OSS backend in this
+          priority order: `fast` > `cyclone` > `mock`. `rti` is never
+          auto-selected (Pro tier + license required ; v0.4.0+ roadmap).
+
+        The `fast` > `cyclone` order reflects the OMG May 2025 interop
+        matrix where Fast DDS is validated against all five other
+        vendors on 47/47 pairs ; Cyclone keeps its role as a
+        long-standing fallback. Backward compat for v0.2.0 users with
+        only `cyclonedds` installed is preserved — `fastdds` is
+        unimportable on their host so the chain falls through to
+        `cyclone`. Only users with both SDKs installed see the new
+        ordering, and that case is rare in practice.
 
         Predictive resolution only. The factory may still fall back to
         mock if the chosen backend cannot actually instantiate.
@@ -81,6 +90,8 @@ class Settings:
         if self.effective_mode == "mock":
             return "mock"
         if self.dds_backend == "auto":
+            if importlib.util.find_spec("fastdds") is not None:
+                return "fast"
             if importlib.util.find_spec("cyclonedds") is not None:
                 return "cyclone"
             return "mock"
