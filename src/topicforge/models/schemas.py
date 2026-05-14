@@ -341,13 +341,16 @@ class HealthReport(BaseModel):
             "requests proactively. Constant within a given server version."
         ),
     )
-    dds_backend: Literal["mock", "cyclone", "rti", "none"] = Field(
+    dds_backend: Literal["mock", "cyclone", "fast", "rti", "none"] = Field(
         default="none",
         description=(
             "Active DDS module backend. `none` when the DDS module is not "
             "active (default for ROS2-only installs). `mock` for synthetic "
-            "fixtures. `cyclone` requires `pip install topicforge[dds]` ; "
-            "`rti` requires the Pro tier and a valid RTI Connext license."
+            "fixtures. `cyclone` requires `pip install topicforge[dds-cyclone]` "
+            "(Eclipse CycloneDDS) ; `fast` requires "
+            "`pip install topicforge[dds-fast]` (eProsima Fast DDS) ; "
+            "`rti` requires the Pro tier and a valid RTI Connext license "
+            "(v0.4.0+ roadmap)."
         ),
     )
     dds_domain_id: int | None = Field(

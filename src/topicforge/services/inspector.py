@@ -35,11 +35,17 @@ __all__ = ["DEFAULT_SAMPLE_COUNT", "MAX_SAMPLE_COUNT", "Inspector"]
 #   * each segment starts with a letter or underscore, then [A-Za-z0-9_]*
 # This rejects `//`, trailing `/`, digit-leading segments, dashes, dots, and
 # every shell metacharacter before any value reaches the `ros2` CLI.
-# TODO(roadmap, audit-2026-05-14): DDS topic names can carry `::` and other
-# separators that this regex rejects. When the real CycloneDdsAdapter lands
-# in v0.2.x, either dispatch the validator per backend or relax the rule.
-# See architecture audit "Refactor opportunities" #5.
 _TOPIC_NAME_RE = re.compile(r"^/[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)*$")
+
+# Relaxed validator for DDS topic names. DDS-native conventions allow:
+#   * topic names without a leading `/` (builtin DCPS topics: `DCPSParticipant`,
+#     `DCPSSubscription`, `DCPSPublication`)
+#   * `::` separators (C++-namespace style for typed user topics)
+#   * leading letter, underscore, or `/`
+# Still rejects whitespace, shell metacharacters, and other glaring oddities
+# so the live adapter's downstream consumers can rely on a clean string.
+# Resolves audit-2026-05-14 "Refactor opportunities" #5.
+_DDS_TOPIC_NAME_RE = re.compile(r"^[A-Za-z_/][A-Za-z0-9_/:]*$")
 
 
 class Inspector:
@@ -94,11 +100,11 @@ class Inspector:
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
         if topic is not None:
-            _validate_topic_name(topic)
+            _validate_topic_name_dds(topic)
         return self._adapter.detect_qos_mismatches(topic)
 
     def peek_dds_samples(self, topic: str, count: int | None = None) -> SampleResult:
-        _validate_topic_name(topic)
+        _validate_topic_name_dds(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
@@ -124,6 +130,26 @@ def _validate_topic_name(topic: str) -> None:
             f"topic name is malformed (got {topic!r}); each `/`-separated "
             "segment must start with a letter or underscore and contain only "
             "letters, digits, and underscores (no `//`, no trailing `/`)"
+        )
+
+
+def _validate_topic_name_dds(topic: str) -> None:
+    """Relaxed validator for DDS-native topic names.
+
+    DDS topic names follow OMG conventions: they may or may not start with
+    `/`, may contain `::` separators (C++-namespace style), and the builtin
+    DCPS topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`)
+    have no leading `/` at all. Still rejects whitespace, shell
+    metacharacters, and other oddities so the live adapter's downstream
+    consumers can rely on a clean string.
+    """
+    if not topic or not topic.strip():
+        raise AdapterError("topic must be a non-empty string")
+    if not _DDS_TOPIC_NAME_RE.match(topic):
+        raise AdapterError(
+            f"DDS topic name is malformed (got {topic!r}); allowed "
+            "characters are letters, digits, `_`, `:`, and `/`. "
+            "Whitespace, shell metacharacters, and dashes are rejected."
         )
 
 
