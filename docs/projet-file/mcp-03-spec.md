@@ -1,14 +1,17 @@
-# MCP 03 — Vision Dataset Inspector (DatasetForge)
+# MCP 02 — Vision Dataset Inspector (DatasetForge)
 
-> Spec draft for the third MCP in the robotics/CV pack. Sibling to TopicForge.
+> Spec draft for the second product of the 2-MCP pack (sibling to TopicForge).
 > Working name: **DatasetForge**. Brand TBD — naming is the maintainer's call;
 > the spec describes the product.
 
-> **Note on slot.** This spec was originally drafted as MCP 02 on 2026-05-13.
-> Following the competitive-landscape audit the same day, MCP 02 was reassigned
-> to **DdsForge** (DDS observability — see `mcp-02-spec.md`) to occupy an
-> uncrowded category and align with the safety-first / DDS-expansion arc.
-> DatasetForge becomes MCP 03 in the pack; the spec content below is unchanged.
+> **Note on slot.** This spec was drafted on 2026-05-13. Originally slotted
+> MCP 02, briefly re-slotted MCP 03 when DdsForge took the MCP 02 slot, and
+> re-slotted again to **MCP 02** on 2026-05-14 when the mono-MCP pivot
+> collapsed DdsForge into a TopicForge module (see `mcp-02-spec.md`, now
+> titled "TopicForge DDS Module — Specification"). DatasetForge remains the
+> second standalone product of the 2-MCP pack ; the spec content below is
+> structurally unchanged. The filename `mcp-03-spec.md` is retained for
+> historical continuity ; the slot is MCP 02.
 
 This is a strategic-internal document (`docs/projet-file/`), not a user-facing
 README. It exists so the next Claude Code session can pick up the build with
@@ -30,12 +33,13 @@ ML / CV engineers who installed TopicForge: they train detection /
 segmentation / pose models for the robots whose topics they introspect
 with MCP 01.
 
-**Pack position.** MCP 03 of a planned 3-to-5-MCP robotics/CV pack.
-TopicForge grounds the agent on the *runtime* robot stack (MCP 01);
-DdsForge grounds it on the *DDS layer beneath ROS or beyond ROS* (MCP 02);
-DatasetForge grounds it on the *training data* that produced the perception
-models running on that stack (MCP 03). Read-only by design — no editing,
-no relabeling.
+**Pack position.** MCP 02 of a 2-MCP pack (sibling to TopicForge).
+TopicForge umbrella grounds the agent on the *runtime* robot stack — ROS2
+today, with the *DDS layer beneath ROS or beyond ROS* added as a module
+in TopicForge v0.3.0+ (see `mcp-02-spec.md`, TopicForge DDS Module
+Specification). DatasetForge grounds the agent on the *training data*
+that produced the perception models running on that stack. Read-only by
+design — no editing, no relabeling.
 
 ---
 
@@ -263,9 +267,15 @@ Deliberate gaps for the maintainer — not roadmap items.
 - **First live adapter.** COCO is the proposed default; YOLO targets a
   different (smaller, hobbyist) audience. Block on signal from 3 robotics
   MLE DMs in the install funnel before locking.
-- **Pack-shared infrastructure.** Phase 1 of DatasetForge duplicates
-  TopicForge's telemetry / license / settings resolver. MCP 03 must not.
-  Lift to a `pack-template/` repo when MCP 03 starts, not before.
+- **Pack-shared infrastructure.** DatasetForge is the second product of
+  a 2-MCP pack (TopicForge + DatasetForge). The telemetry / license /
+  settings resolver patterns established in TopicForge can be lifted to
+  a `pack-template/` repo at DatasetForge kickoff if a third standalone
+  product is ever planned ; otherwise, fork-and-tweak from TopicForge is
+  acceptable for a 2-product pack. The mono-MCP pivot of 2026-05-14
+  (which folded DdsForge into a TopicForge module) means the rule-of-
+  three trigger is unlikely to fire — there are only 2 products in the
+  pack.
 
 ---
 
@@ -278,18 +288,22 @@ Deliberate gaps for the maintainer — not roadmap items.
 - `topicforge/docs/pro.md` — pricing terms reused for the Pro tier.
 - `topicforge/.claude/skills/topicforge/` — `add-mcp-tool`,
   `write-pure-parser`, `update-mock-fixtures`, `release-checklist` apply
-  near-verbatim. Fork-and-tweak at MVP; lift to a shared template when
-  MCP 03 starts.
+  near-verbatim. Fork-and-tweak at DatasetForge kickoff ; the
+  rule-of-three trigger for lifting to a shared `pack-template/` repo
+  is unlikely to fire at 2 products (see §11 Pack-shared infrastructure
+  and `topicforge/docs/product-plan.md §4`).
 
 ---
 
-## Reviewer notes (2026-05-13)
+## Reviewer notes (2026-05-13, superseded 2026-05-14)
 
 > This section was added by the spec-reviewer agent during the v0.1.2 prep
-> review. It does not modify the spec body. Issues listed below must be
-> resolved before or at implementation kickoff.
+> review. The 2026-05-14 mono-MCP pivot rewrote §11 and several other
+> sections of this spec ; the issues flagged below are either resolved
+> by the pivot or remain as deliberate open questions deferred to
+> DatasetForge kickoff. Kept for audit-trail continuity.
 
-### Issue 1 — Contradictory phrasing in §11 (Pack-shared infrastructure)
+### Issue 1 — Contradictory phrasing in §11 (Pack-shared infrastructure) — **RESOLVED 2026-05-14**
 
 **Location.** §11, "Pack-shared infrastructure" bullet:
 > "Phase 1 of DatasetForge duplicates TopicForge's telemetry / license /
@@ -309,6 +323,13 @@ pattern — the rule-of-three trigger for extraction. Lift the telemetry /
 license / settings resolver to a `pack-template/` repo at DatasetForge
 kickoff, before Phase 1 implementation. DatasetForge Phase 1 then builds on
 the shared template rather than duplicating it."
+
+**Resolution applied (2026-05-14).** The mono-MCP pivot collapsed
+DdsForge into a TopicForge module, leaving only 2 products in the pack
+(TopicForge + DatasetForge). The rule-of-three trigger no longer applies,
+and §11 has been rewritten accordingly: fork-and-tweak from TopicForge
+is now the acceptable default ; the `pack-template/` extraction is
+conditional on a third standalone product ever being planned.
 
 ### Issue 2 — Two open questions implicitly resolved by product-plan.md §4
 

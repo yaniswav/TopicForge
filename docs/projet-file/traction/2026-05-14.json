@@ -1,0 +1,24 @@
+{
+  "date": "2026-05-14",
+  "pypi": {
+    "status": "ok",
+    "last_day": 90,
+    "last_week": 90,
+    "last_month": 90
+  },
+  "github": {
+    "status": "ok",
+    "stars": 2,
+    "open_issues": 0,
+    "forks": 0
+  },
+  "pro": {
+    "slots_reserved": 0,
+    "slots_target": 10
+  },
+  "gates": {
+    "G1_pro_slots_met": false,
+    "G2_week_threshold_met": false,
+    "G3_dds_activation": "manual"
+  }
+}
