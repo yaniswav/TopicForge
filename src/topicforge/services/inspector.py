@@ -17,11 +17,17 @@ from topicforge.models import (
     SampleResult,
     TopicInfo,
 )
+from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 DEFAULT_SAMPLE_COUNT = 5
-MAX_SAMPLE_COUNT = 50
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
+
+# Re-export for backward-compatibility with v0.1.x code that imports
+# `MAX_SAMPLE_COUNT` from `topicforge.services.inspector`. The canonical
+# home is now `topicforge.services.constants` ; new code should import
+# from there.
+__all__ = ["DEFAULT_SAMPLE_COUNT", "MAX_SAMPLE_COUNT", "Inspector"]
 
 # Strict allowlist mirroring ROS2 topic-name conventions:
 #   * must start with `/`
