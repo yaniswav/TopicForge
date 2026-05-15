@@ -211,6 +211,127 @@ class ParticipantEvent(BaseModel):
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
+class TopicMetrics(BaseModel):
+    """Temporal metrics for a single DDS topic over a recent window.
+
+    Added in v0.4.0 Phase 2 alongside the `topic_metrics` MCP tool.
+    Built from samples that flow through the adapter's existing
+    `peek_dds_samples` path — the buffer is **opportunistic**, not
+    push-based, because neither `cyclonedds` nor `fastdds` Python
+    bindings expose reliable at-sample-receive callbacks. Same
+    caveat shape as Cyclone participant lifecycle in Phase 1: a
+    sample bursting between two tool calls is invisible.
+
+    Every numeric field is `None`-tolerant — fields collapse to
+    `None` (or `0` for the integer-typed `sequence_gaps_count`)
+    when the underlying data is unavailable: no samples observed,
+    no source timestamps to compute latency, no sequence number
+    embedded in the payload, etc. `samples_observed=0` is a valid
+    response shape ; it means the tool ran successfully but the
+    buffer had nothing to report for the requested window.
+    """
+
+    model_config = _CONFIG
+
+    topic: str = Field(description="Topic the metrics were computed for.")
+    window_seconds: int = Field(
+        ge=1,
+        le=3600,
+        description=(
+            "Requested window in seconds (1..3600). Echoed back from "
+            "the tool call so the LLM can correlate the request."
+        ),
+    )
+    window_seconds_actual: float = Field(
+        ge=0,
+        description=(
+            "Actual elapsed seconds within the window. May be smaller "
+            "than `window_seconds` when the adapter buffered samples "
+            "for less time than the requested window (e.g., the server "
+            "just started). `0.0` when `samples_observed=0`."
+        ),
+    )
+    samples_observed: int = Field(
+        ge=0,
+        description=(
+            "Number of samples in the buffer matching `topic` within "
+            "the window. `0` means TopicForge has not seen any sample "
+            "on this topic recently — it does NOT mean the topic has "
+            "no publisher, only that no `peek_dds_samples` call "
+            "captured one in the window."
+        ),
+    )
+    frequency_hz_observed: float | None = Field(
+        default=None,
+        description=(
+            "`samples_observed / window_seconds_actual`. `None` when "
+            "fewer than 2 samples were observed (a single sample does "
+            "not define a frequency)."
+        ),
+    )
+    frequency_hz_declared: float | None = Field(
+        default=None,
+        description=(
+            "Declared frequency extracted from the topic's QoS Deadline "
+            "policy when the adapter resolved it (Deadline period → "
+            "1 / period_seconds). `None` when the QoS profile does not "
+            "include Deadline or the adapter could not resolve it. Use "
+            "with `frequency_hz_observed` to diagnose a publisher that "
+            "is failing its declared deadline."
+        ),
+    )
+    sequence_gaps_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of missing sequence numbers detected in the "
+            "buffered samples. `0` either means no gaps observed OR "
+            "the sample type did not expose a sequence number (check "
+            "`sequence_numbers_available` to disambiguate)."
+        ),
+    )
+    sequence_numbers_available: bool = Field(
+        default=False,
+        description=(
+            "True when the adapter successfully extracted sequence "
+            "numbers from at least one sample. Sequence number support "
+            "depends on the message type — `Header`-stamped messages "
+            "with a `seq` field expose it ; primitives like "
+            "`std_msgs/String` do not."
+        ),
+    )
+    latency_ns_p50: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Median publish-to-receive latency in nanoseconds, "
+            "computed only when the sample type exposes a publish "
+            "timestamp (typically via `header.stamp` on "
+            "`Header`-stamped messages). `None` when "
+            "`latency_available=False`."
+        ),
+    )
+    latency_ns_p95: int | None = Field(
+        default=None,
+        ge=0,
+        description="95th-percentile publish-to-receive latency (ns).",
+    )
+    latency_ns_p99: int | None = Field(
+        default=None,
+        ge=0,
+        description="99th-percentile publish-to-receive latency (ns).",
+    )
+    latency_available: bool = Field(
+        default=False,
+        description=(
+            "True when at least one sample in the window carried both "
+            "a publish timestamp and a receive timestamp. The percentile "
+            "fields are `None` when this is False."
+        ),
+    )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+
+
 class MismatchReport(BaseModel):
     """A single reader/writer QoS incompatibility detected on a topic."""
 

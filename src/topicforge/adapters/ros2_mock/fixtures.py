@@ -10,6 +10,7 @@ If you change a value here, expect to update tests under `tests/`.
 
 from __future__ import annotations
 
+from topicforge.adapters.common.metrics_buffer import MetricsBuffer
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
@@ -20,6 +21,7 @@ from topicforge.models import (
     QosProfile,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 MOCK_TOPICS: tuple[TopicInfo, ...] = (
@@ -379,6 +381,74 @@ def mock_mismatches_for(topic: str | None) -> list[MismatchReport]:
     if topic is None:
         return list(_MOCK_MISMATCHES)
     return [m for m in _MOCK_MISMATCHES if m.topic == topic]
+
+
+# ---------------------------------------------------------------------------
+# Topic metrics fixtures (v0.4.0 Phase 2)
+# ---------------------------------------------------------------------------
+# A pre-populated MetricsBuffer holding a deterministic 10 Hz publisher
+# stream on `/dds/heartbeat_10hz`, plus a few empty topics so the tool
+# can be exercised against "no data" scenarios. The buffer is built
+# once at module import time and shared across all `mock_topic_metrics_for`
+# calls ; tests inject specific `now_ns` via `MetricsBuffer.compute_metrics`
+# for deterministic windowing.
+
+# Anchor: 100 samples at 100 ms intervals starting at `_METRICS_BASE_TS_NS`.
+# Each sample carries a sequence number and a publish_ns 50 ms BEFORE
+# the receive_ns, giving a deterministic 50 ms latency.
+_METRICS_BASE_TS_NS = 1_704_067_200_000_000_000  # same anchor as lifecycle
+_METRICS_NOW_NS = _METRICS_BASE_TS_NS + 10_000_000_000  # 10 s after first sample
+
+
+def _build_mock_metrics_buffer() -> MetricsBuffer:
+    buf = MetricsBuffer()
+    for i in range(100):
+        receive_ns = _METRICS_BASE_TS_NS + i * 100_000_000  # 100 ms spacing
+        buf.record(
+            topic="/dds/heartbeat_10hz",
+            receive_ns=receive_ns,
+            sequence_number=i,
+            publish_ns=receive_ns - 50_000_000,  # 50 ms before receive
+            domain_id=0,
+        )
+    # A second topic with a single sample — tests that
+    # `frequency_hz_observed` returns None when fewer than 2 samples.
+    buf.record(
+        topic="/dds/singleton",
+        receive_ns=_METRICS_BASE_TS_NS,
+        sequence_number=0,
+        publish_ns=None,
+        domain_id=0,
+    )
+    # A topic on a different domain — domain filtering.
+    buf.record(
+        topic="/dds/cross_domain",
+        receive_ns=_METRICS_BASE_TS_NS,
+        sequence_number=0,
+        publish_ns=None,
+        domain_id=42,
+    )
+    return buf
+
+
+_MOCK_METRICS_BUFFER: MetricsBuffer = _build_mock_metrics_buffer()
+
+
+def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> TopicMetrics:
+    """Deterministic TopicMetrics computed against `_MOCK_METRICS_BUFFER`.
+
+    `now_ns` is pinned at `_METRICS_NOW_NS` so the same call always
+    returns the same numbers regardless of wall clock — required for
+    test assertions.
+    """
+    return _MOCK_METRICS_BUFFER.compute_metrics(
+        topic=topic,
+        window_seconds=window_seconds,
+        now_ns=_METRICS_NOW_NS,
+        declared_hz=None,
+        mode_effective="mock",
+        domain_id=domain_id,
+    )
 
 
 MOCK_BAG_ANALYSIS = BagAnalysis(

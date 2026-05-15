@@ -34,6 +34,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 from topicforge.services import factory
 
@@ -93,6 +94,20 @@ class _StubDdsAdapter:
         self, domain_id: int = 0, lookback_seconds: int = 300
     ) -> list[ParticipantEvent]:
         return []
+
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
+        return TopicMetrics(
+            topic=topic,
+            window_seconds=window_seconds,
+            window_seconds_actual=0.0,
+            samples_observed=0,
+            sequence_gaps_count=0,
+            sequence_numbers_available=False,
+            latency_available=False,
+            mode_effective="live",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 
@@ -103,6 +104,12 @@ class _StubRosAdapter:
         self.calls.append(("participant_events", (domain_id, lookback_seconds)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
+        self.calls.append(("topic_metrics", (topic, window_seconds, domain_id)))
+        raise AdapterError("ROS adapter should not receive DDS calls")
+
 
 class _StubDdsAdapter:
     """Tracks calls and returns canned values for the DDS half of the protocol."""
@@ -168,6 +175,21 @@ class _StubDdsAdapter:
         self.calls.append(("participant_events", (domain_id, lookback_seconds)))
         return []
 
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
+        self.calls.append(("topic_metrics", (topic, window_seconds, domain_id)))
+        return TopicMetrics(
+            topic=topic,
+            window_seconds=window_seconds,
+            window_seconds_actual=0.0,
+            samples_observed=0,
+            sequence_gaps_count=0,
+            sequence_numbers_available=False,
+            latency_available=False,
+            mode_effective=self._mode,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Routing matrix
@@ -202,12 +224,14 @@ def test_dds_methods_route_to_dds_half() -> None:
     composite.detect_qos_mismatches(topic="/x")
     composite.peek_dds_samples("/x", 5)
     composite.participant_events(domain_id=42, lookback_seconds=60)
+    composite.topic_metrics(topic="/x", window_seconds=30, domain_id=42)
 
     assert [c[0] for c in dds.calls] == [
         "list_participants",
         "detect_qos_mismatches",
         "peek_dds_samples",
         "participant_events",
+        "topic_metrics",
     ]
     assert ros.calls == []
 

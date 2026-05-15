@@ -17,15 +17,19 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 DEFAULT_SAMPLE_COUNT = 5
 DEFAULT_LOOKBACK_SECONDS = 300
+DEFAULT_WINDOW_SECONDS = 60
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
 _LOOKBACK_MIN = 1
 _LOOKBACK_MAX = 86400
+_WINDOW_MIN = 1
+_WINDOW_MAX = 3600
 
 # Re-export for backward-compatibility with v0.1.x code that imports
 # `MAX_SAMPLE_COUNT` from `topicforge.services.inspector`. The canonical
@@ -122,6 +126,18 @@ class Inspector:
         _validate_lookback_seconds(seconds)
         return self._adapter.participant_events(domain_id, seconds)
 
+    def topic_metrics(
+        self,
+        topic: str,
+        window_seconds: int | None = None,
+        domain_id: int = 0,
+    ) -> TopicMetrics:
+        _validate_topic_name_dds(topic)
+        _validate_dds_domain(domain_id)
+        seconds = DEFAULT_WINDOW_SECONDS if window_seconds is None else window_seconds
+        _validate_window_seconds(seconds)
+        return self._adapter.topic_metrics(topic, seconds, domain_id)
+
 
 def _validate_dds_domain(domain_id: int) -> None:
     if not isinstance(domain_id, int) or isinstance(domain_id, bool):
@@ -139,6 +155,13 @@ def _validate_lookback_seconds(seconds: int) -> None:
         raise AdapterError(
             f"lookback_seconds must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}"
         )
+
+
+def _validate_window_seconds(seconds: int) -> None:
+    if not isinstance(seconds, int) or isinstance(seconds, bool):
+        raise AdapterError(f"window_seconds must be an int, got {type(seconds).__name__}")
+    if seconds < _WINDOW_MIN or seconds > _WINDOW_MAX:
+        raise AdapterError(f"window_seconds must be in {_WINDOW_MIN}..{_WINDOW_MAX}, got {seconds}")
 
 
 def _validate_topic_name(topic: str) -> None:

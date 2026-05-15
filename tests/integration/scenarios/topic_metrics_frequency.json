@@ -1,0 +1,30 @@
+{
+  "name": "topic_metrics_frequency",
+  "description": "A Cyclone publisher emits at 10 Hz for 65 seconds. The runner peeks via peek_dds_samples to populate the opportunistic metrics buffer, then topic_metrics(window=60) should return frequency_hz_observed in [9.0, 11.0].",
+  "required_vendors": ["cyclone"],
+  "setup": {
+    "domain_id": 0,
+    "publishers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/rate_10hz",
+        "rate_hz": 10,
+        "duration_s": 65
+      }
+    ],
+    "discovery_wait_s": 5,
+    "warm_up_peek_count": 100,
+    "warm_up_peek_interval_s": 0.5
+  },
+  "assertions": [
+    {
+      "tool": "topic_metrics",
+      "args": {"topic": "/integration/rate_10hz", "window_seconds": 60, "domain_id": 0},
+      "expect": {
+        "samples_observed_at_least": 50,
+        "frequency_hz_observed_min": 9.0,
+        "frequency_hz_observed_max": 11.0
+      }
+    }
+  ]
+}

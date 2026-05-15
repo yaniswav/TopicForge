@@ -7,6 +7,117 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Sprint v0.4.0 — Phase 2 (temporal metrics + real-bus rig)
+
+> Branch `feat/v0.4.0-phase2-metrics-and-realbus-testing`. Two
+> sub-milestones (2.1 metrics, 2.2 real-bus rig). v0.3.0 stays the
+> live PyPI version ; no version bump.
+
+#### Added (sub-milestone 2.1 — topic_metrics)
+
+- **`topic_metrics(topic, window_seconds, domain_id)` MCP tool**
+  (the 10th — second explicit ceiling break after `participant_events`
+  in Phase 1). Returns a `TopicMetrics` payload with
+  `samples_observed`, `frequency_hz_observed` (and `_declared` from
+  QoS Deadline when known), `sequence_gaps_count`, `latency_ns_p50` /
+  `_p95` / `_p99`, and boolean availability flags for each
+  conditional metric. Window range: 1..3600 seconds, default 60.
+- **`MetricsBuffer`** (`adapters/common/metrics_buffer.py`) — pure-
+  Python logic, RLock-protected per-topic deque with
+  `MAX_SAMPLES_PER_TOPIC=1000` drop-oldest cap. Pure-Python percentile
+  computation (no NumPy dependency added). Sequence gap counting
+  tolerates out-of-order arrivals and dedupes duplicates.
+- **`TopicMetrics`** Pydantic schema (`models/schemas.py`) — frozen,
+  `extra="forbid"`, every field documented with the
+  None/zero-on-unavailable semantics that surfaces partial data
+  cleanly to LLM callers.
+- **Cyclone + Fast adapter integration** — `_peek_builtin` and
+  `_peek_user_topic` paths now call `self._metrics.record(...)` for
+  each sample they surface. Sequence number and publish timestamp
+  extracted best-effort from the decoded payload via two new helpers
+  in `dds_cyclone/adapter.py`. **Opportunistic fill caveat** —
+  neither `cyclonedds` nor `fastdds` 2.6.x Python bindings expose
+  at-sample-receive callbacks, so the metrics buffer accumulates
+  ONLY as `peek_dds_samples` is exercised. Tool description surfaces
+  this to the LLM.
+- **Mock fixture** (`/dds/heartbeat_10hz`, 100 samples spaced 100 ms
+  apart with synthetic 50 ms latency and sequence 0..99) plus a
+  singleton topic and a cross-domain topic for filter testing.
+- **~30 new tests**: `tests/test_metrics_buffer.py` (~22 pure-logic
+  tests covering the helpers, ring overflow, multi-topic isolation,
+  domain filtering, thread-safety smoke) + `tests/test_topic_metrics.py`
+  (~12 tool-level tests via Inspector + MockAdapter).
+
+#### Changed (sub-milestone 2.1)
+
+- **`MiddlewareAdapter` protocol** gains `topic_metrics(topic,
+  window_seconds, domain_id)`. All existing adapters implement it:
+  Cyclone + Fast via the new buffer, Mock via fixtures, Ros2CliAdapter
+  / OpenDDS stub / Dust stub raise their existing roadmap errors.
+- **`AdapterName` Literal** unchanged (no new vendor) ; `MVP_TOOLS`
+  test set grows from 9 to 10.
+
+#### Added (sub-milestone 2.2 — real-bus rig)
+
+- **`tests/integration/`** — six scenario JSON files exercising
+  the multi-vendor OMG-DDS-RTPS claim against real publishers:
+  `multi_vendor_basic`, `lifecycle_tracking`, `qos_mismatch_detection`,
+  `xtypes_decode`, `topic_metrics_frequency`,
+  `topic_metrics_sequence_gaps`. Each scenario declares
+  `required_vendors` so the runner can skip cleanly when a binding
+  is missing.
+- **`tests/integration/test_scenarios_schema.py`** — pure-Python
+  validation of every scenario's structure. Runs in default
+  `make check` (8 tests). No SDK, no Docker required.
+- **`tests/integration/test_real_bus.py`** — parametrized integration
+  tests, marked `@pytest.mark.integration` ; **gated out of the
+  default pytest invocation**. Runs only with `pytest -m integration`
+  or the labeled CI workflow.
+- **`scripts/integration/scenarios_runner.py`** — Python entry point
+  that probes locally installed DDS bindings, dispatches scenarios,
+  and reports pass/fail per assertion. Pragmatic partial-run: missing
+  vendors are skipped with a clear `[skipped]` log rather than failing
+  the whole batch (D6).
+- **`scripts/integration/publishers/`** — per-vendor minimal publishers
+  (`cyclone_publisher.py`, `fast_publisher.py`, `opendds_publisher.py`).
+  Symmetric CLI surface: `--topic`, `--rate-hz`, `--duration-s`,
+  `--domain`, `--gap-at-seq`. OpenDDS publisher is a documented
+  scaffold (no PyPI binding yet).
+- **`scripts/integration/run-local.{sh,ps1}`** — standalone entry
+  points for Linux/macOS and Windows. No Docker required.
+- **`scripts/integration/docker-compose.yml` + per-vendor Dockerfiles** —
+  full multi-vendor rig for CI runs and maintainer validation.
+  Cyclone + Fast images build against the OSS PyPI bindings ; OpenDDS
+  image documents the BYO path. `topicforge` observer image installs
+  from repo source plus `[dds]` extra.
+- **`.github/workflows/integration.yml`** — manual label trigger
+  (`integration-tests`). Runs schema validation, builds the compose
+  stack, sleeps 30 s for discovery, runs `pytest -m integration`,
+  tears down. Default `ci.yml` is untouched.
+- **New pytest marker** `integration` — added to `pyproject.toml`
+  alongside the existing `requires_*` markers.
+
+#### Notes (sub-milestone 2.2)
+
+- **Validation reality.** The OSS-CI default pipeline lint-validates
+  scenario JSON structure, YAML/PowerShell/bash syntax, and the
+  runner's dispatch logic. It does NOT pull / build / run Docker
+  images. The maintainer validates the live publisher path locally
+  before merging Phase 2.2 ; the integration CI workflow is the
+  shared validation surface once an SDK-rich runner host is
+  available.
+- **OpenDDS publisher is a scaffold.** `pyopendds` is not on PyPI as
+  of 2026-05-14 — the publisher script exits with an actionable
+  error message, and the scenarios runner skips OpenDDS scenarios
+  cleanly. Scenarios requiring OpenDDS (`multi_vendor_basic`) still
+  run partial coverage of the other vendors.
+- **Real-bus assertion evaluation is structural at Phase 2.2.** The
+  runner dispatches scenarios and reports per-assertion status, but
+  the full per-assertion verification logic (parsing TopicForge tool
+  outputs, comparing against scenario `expect` clauses) is the
+  maintainer's follow-up. The scaffold is ready to receive that
+  wiring without re-touching the surrounding files.
+
 ### Sprint v0.4.0 — Phase 1 (DDS observability core)
 
 > Internal-only ; the branch `feat/v0.4.0-phase1-observability-core` is

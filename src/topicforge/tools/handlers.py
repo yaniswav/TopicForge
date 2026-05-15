@@ -33,6 +33,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 from topicforge.services import HealthService, Inspector
 from topicforge.telemetry import TelemetryClient, instrument
@@ -349,6 +350,64 @@ def register_tools(
         ] = 300,
     ) -> list[ParticipantEvent]:
         return inspector.participant_events(domain_id, lookback_seconds)
+
+    @mcp.tool(
+        description=(
+            "Return temporal metrics (frequency, sequence gaps, latency "
+            "percentiles) for a DDS topic over a recent time window. Use "
+            "this when an LLM needs to diagnose *'is this topic actually "
+            "publishing at the rate its QoS Deadline declares?'*, *'are "
+            "there missing sequence numbers?'*, or *'what is the p99 "
+            "latency on this topic?'*. Returns a `TopicMetrics` payload "
+            "carrying `samples_observed`, `frequency_hz_observed`, "
+            "`frequency_hz_declared` (from QoS Deadline when known), "
+            "`sequence_gaps_count`, `latency_ns_p50/p95/p99`, and "
+            "boolean availability flags. **Opportunistic fill caveat**: "
+            "the metrics buffer accumulates samples only as "
+            "`peek_dds_samples` flows them through the adapter — neither "
+            "cyclonedds nor fastdds 2.6.x Python bindings expose "
+            "at-sample-receive callbacks, so a topic that hasn't been "
+            "peeked recently returns `samples_observed=0`. To get useful "
+            "metrics, call `peek_dds_samples` on the topic first, then "
+            "this tool. **Read-only by architecture** — no method on "
+            "this tool writes to the bus. **Raises an MCP error** when "
+            "no DDS module is active or `window_seconds` is out of "
+            "range (1..3600). Added in v0.4.0 Phase 2 ; the 10th MCP "
+            "tool — the 8-tool ceiling from mcp-02-spec.md §2 was first "
+            "broken at Phase 1 (`participant_events`), this is the "
+            "second explicit acknowledgement."
+        )
+    )
+    @instrument(telemetry, "topic_metrics")
+    def topic_metrics(
+        topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
+        window_seconds: Annotated[
+            int,
+            Field(
+                description=(
+                    "Window in seconds over which to compute metrics "
+                    "(1..3600). Defaults to 60 seconds. Smaller windows "
+                    "reflect more recent state ; larger windows smooth "
+                    "transient anomalies."
+                ),
+                ge=1,
+                le=3600,
+            ),
+        ] = 60,
+        domain_id: Annotated[
+            int,
+            Field(
+                description=(
+                    "DDS domain id to scope the metrics to (0..232). "
+                    "Defaults to 0 — the same default as the rest of "
+                    "the DDS tools."
+                ),
+                ge=0,
+                le=232,
+            ),
+        ] = 0,
+    ) -> TopicMetrics:
+        return inspector.topic_metrics(topic, window_seconds, domain_id)
 
     # TODO(roadmap): URDF tools — validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection — clock jumps, frame drops, TF gaps.
