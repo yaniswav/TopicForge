@@ -38,6 +38,7 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     LifecycleBuffer,
+    MetricsBuffer,
     annotate_raw,
     canonicalize_vendor_id,
     detect_mismatches,
@@ -52,6 +53,7 @@ from topicforge.models import (
     QosProfile,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 log = logging.getLogger(__name__)
@@ -180,6 +182,9 @@ class FastDdsAdapter:
         self._domain_id = domain_id
         # v0.4.0 Phase 1: lifecycle buffer fed by listener callbacks.
         self._lifecycle = LifecycleBuffer()
+        # v0.4.0 Phase 2: metrics buffer fed opportunistically by
+        # `peek_dds_samples` flows.
+        self._metrics = MetricsBuffer()
         self._listener = _DiscoveryListener(lifecycle=self._lifecycle, domain_id=domain_id)
         self._participant: Any | None = None
         self._factory: Any | None = None
@@ -324,6 +329,7 @@ class FastDdsAdapter:
         else:
             raw = self._listener.snapshot_publications()
 
+        now_ns = time.time_ns()
         samples = [
             MessageSample(
                 topic=topic,
@@ -338,6 +344,15 @@ class FastDdsAdapter:
             )
             for s in raw[:count]
         ]
+        # v0.4.0 Phase 2: opportunistic metrics fill.
+        for _ in samples:
+            self._metrics.record(
+                topic=topic,
+                receive_ns=now_ns,
+                sequence_number=None,
+                publish_ns=None,
+                domain_id=self._domain_id,
+            )
         return SampleResult(
             topic=topic,
             count=len(samples),
@@ -372,6 +387,7 @@ class FastDdsAdapter:
             )
 
         fallback_samples: list[MessageSample] = []
+        now_ns = time.time_ns()
         if count > 0:
             fallback_samples.append(
                 MessageSample(
@@ -383,6 +399,18 @@ class FastDdsAdapter:
                         note=_USER_TOPIC_FALLBACK_MSG,
                     ),
                 )
+            )
+        # v0.4.0 Phase 2: even the raw-fallback path records into
+        # the metrics buffer so the user can detect publisher
+        # presence (samples_observed >= 1) even when the IDL cannot
+        # be decoded. seq# and publish_ns are None on the fallback.
+        for _ in fallback_samples:
+            self._metrics.record(
+                topic=topic,
+                receive_ns=now_ns,
+                sequence_number=None,
+                publish_ns=None,
+                domain_id=self._domain_id,
             )
         return SampleResult(
             topic=topic,
@@ -413,6 +441,27 @@ class FastDdsAdapter:
         return self._lifecycle.events_since(
             lookback_seconds=lookback_seconds,
             domain_id=self._domain_id,
+        )
+
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
+        """Return temporal metrics computed from the metrics buffer.
+
+        Fast DDS shares the same opportunistic-fill semantics as the
+        Cyclone adapter: the buffer accumulates only when
+        `peek_dds_samples` is exercised. The listener-driven
+        discovery surface does NOT today expose at-sample-receive
+        callbacks for Python (Fast DDS 2.6.x), so we cannot push
+        samples in the background.
+        """
+        if window_seconds < 1 or window_seconds > 3600:
+            raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
+        return self._metrics.compute_metrics(
+            topic=topic,
+            window_seconds=window_seconds,
+            domain_id=self._domain_id,
+            mode_effective="live",
         )
 
 

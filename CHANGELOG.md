@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Sprint v0.4.0 — Phase 2 (temporal metrics + real-bus rig)
+
+> Branch `feat/v0.4.0-phase2-metrics-and-realbus-testing`. Two
+> sub-milestones (2.1 metrics, 2.2 real-bus rig). v0.3.0 stays the
+> live PyPI version ; no version bump.
+
+#### Added (sub-milestone 2.1 — topic_metrics)
+
+- **`topic_metrics(topic, window_seconds, domain_id)` MCP tool**
+  (the 10th — second explicit ceiling break after `participant_events`
+  in Phase 1). Returns a `TopicMetrics` payload with
+  `samples_observed`, `frequency_hz_observed` (and `_declared` from
+  QoS Deadline when known), `sequence_gaps_count`, `latency_ns_p50` /
+  `_p95` / `_p99`, and boolean availability flags for each
+  conditional metric. Window range: 1..3600 seconds, default 60.
+- **`MetricsBuffer`** (`adapters/common/metrics_buffer.py`) — pure-
+  Python logic, RLock-protected per-topic deque with
+  `MAX_SAMPLES_PER_TOPIC=1000` drop-oldest cap. Pure-Python percentile
+  computation (no NumPy dependency added). Sequence gap counting
+  tolerates out-of-order arrivals and dedupes duplicates.
+- **`TopicMetrics`** Pydantic schema (`models/schemas.py`) — frozen,
+  `extra="forbid"`, every field documented with the
+  None/zero-on-unavailable semantics that surfaces partial data
+  cleanly to LLM callers.
+- **Cyclone + Fast adapter integration** — `_peek_builtin` and
+  `_peek_user_topic` paths now call `self._metrics.record(...)` for
+  each sample they surface. Sequence number and publish timestamp
+  extracted best-effort from the decoded payload via two new helpers
+  in `dds_cyclone/adapter.py`. **Opportunistic fill caveat** —
+  neither `cyclonedds` nor `fastdds` 2.6.x Python bindings expose
+  at-sample-receive callbacks, so the metrics buffer accumulates
+  ONLY as `peek_dds_samples` is exercised. Tool description surfaces
+  this to the LLM.
+- **Mock fixture** (`/dds/heartbeat_10hz`, 100 samples spaced 100 ms
+  apart with synthetic 50 ms latency and sequence 0..99) plus a
+  singleton topic and a cross-domain topic for filter testing.
+- **~30 new tests**: `tests/test_metrics_buffer.py` (~22 pure-logic
+  tests covering the helpers, ring overflow, multi-topic isolation,
+  domain filtering, thread-safety smoke) + `tests/test_topic_metrics.py`
+  (~12 tool-level tests via Inspector + MockAdapter).
+
+#### Changed (sub-milestone 2.1)
+
+- **`MiddlewareAdapter` protocol** gains `topic_metrics(topic,
+  window_seconds, domain_id)`. All existing adapters implement it:
+  Cyclone + Fast via the new buffer, Mock via fixtures, Ros2CliAdapter
+  / OpenDDS stub / Dust stub raise their existing roadmap errors.
+- **`AdapterName` Literal** unchanged (no new vendor) ; `MVP_TOOLS`
+  test set grows from 9 to 10.
+
 ### Sprint v0.4.0 — Phase 1 (DDS observability core)
 
 > Internal-only ; the branch `feat/v0.4.0-phase1-observability-core` is

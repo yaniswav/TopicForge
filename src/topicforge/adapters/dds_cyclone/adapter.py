@@ -49,6 +49,7 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     LifecycleBuffer,
+    MetricsBuffer,
     annotate_full,
     annotate_partial,
     annotate_raw,
@@ -65,6 +66,7 @@ from topicforge.models import (
     QosProfile,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 log = logging.getLogger(__name__)
@@ -308,6 +310,44 @@ def _dynamic_type_name(type_object: Any) -> str:
     return "dds/dynamic"
 
 
+def _extract_seq_from_payload(payload: dict[str, object]) -> int | None:
+    """Best-effort sequence-number extraction from a decoded payload.
+
+    Looks at common field names used by ROS / DDS message conventions :
+    `seq`, `sequence_number`, `sequence_id`. The `header.seq` form
+    common in ROS1 isn't recursed into here ; ROS2 messages typically
+    flatten it. Returns `None` if no integer-valued sequence key
+    is present.
+    """
+    for key in ("seq", "sequence_number", "sequence_id"):
+        value = payload.get(key)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _extract_publish_ns_from_payload(payload: dict[str, object]) -> int | None:
+    """Best-effort publish-timestamp extraction from a decoded payload.
+
+    Looks for `publish_ns` directly, then for a ROS-style nested
+    `header.stamp.{sec,nanosec}` shape that the decoded XTypes
+    representation can expose. Returns `None` when neither is
+    present.
+    """
+    direct = payload.get("publish_ns")
+    if isinstance(direct, int):
+        return direct
+    header = payload.get("header")
+    if isinstance(header, dict):
+        stamp = header.get("stamp")
+        if isinstance(stamp, dict):
+            sec = stamp.get("sec")
+            nsec = stamp.get("nanosec")
+            if isinstance(sec, int) and isinstance(nsec, int):
+                return sec * 1_000_000_000 + nsec
+    return None
+
+
 _USER_TOPIC_ROADMAP_MSG = (
     "peek_dds_samples could not decode user topic via cyclonedds.dynamic. "
     "v0.4.0 Phase 1.5 attempts a typed-reader decode pipeline ; on miss "
@@ -329,6 +369,9 @@ class CycloneDdsAdapter:
         # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
         # reconciliation — see `list_participants` for the feed pattern.
         self._lifecycle = LifecycleBuffer()
+        # v0.4.0 Phase 2: metrics buffer fed opportunistically by
+        # `peek_dds_samples` flows. See `_peek_builtin` / `_peek_user_topic`.
+        self._metrics = MetricsBuffer()
         try:
             self._dp = DomainParticipant(domain_id)
         except Exception as exc:  # binding-side errors vary by version
@@ -489,6 +532,9 @@ class CycloneDdsAdapter:
         except Exception as exc:
             raise AdapterError(f"cyclone peek failed: {exc}") from exc
 
+        import time
+
+        now_ns = time.time_ns()
         samples = [
             MessageSample(
                 topic=topic,
@@ -503,6 +549,18 @@ class CycloneDdsAdapter:
             )
             for s in samples_raw
         ]
+        # v0.4.0 Phase 2: opportunistic metrics fill. Builtin topics
+        # do not carry application-level seq# or publish_ns, so both
+        # are recorded as None ; the metrics buffer still tracks
+        # frequency on them.
+        for _ in samples:
+            self._metrics.record(
+                topic=topic,
+                receive_ns=now_ns,
+                sequence_number=None,
+                publish_ns=None,
+                domain_id=self._domain_id,
+            )
         return SampleResult(
             topic=topic,
             count=len(samples),
@@ -538,6 +596,20 @@ class CycloneDdsAdapter:
 
         decoded = _try_dynamic_decode_cyclone(self._dp, topic, count)
         if decoded is not None:
+            # v0.4.0 Phase 2: opportunistic metrics fill on the
+            # decoded user-topic path. Pull seq# and publish_ns from
+            # the decoded payload when available — best-effort.
+            import time
+
+            now_ns = time.time_ns()
+            for sample in decoded:
+                self._metrics.record(
+                    topic=topic,
+                    receive_ns=now_ns,
+                    sequence_number=_extract_seq_from_payload(sample.payload),
+                    publish_ns=_extract_publish_ns_from_payload(sample.payload),
+                    domain_id=self._domain_id,
+                )
             return SampleResult(
                 topic=topic,
                 count=len(decoded),
@@ -602,6 +674,26 @@ class CycloneDdsAdapter:
         return self._lifecycle.events_since(
             lookback_seconds=lookback_seconds,
             domain_id=self._domain_id,
+        )
+
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
+        """Return temporal metrics computed from the metrics buffer.
+
+        The buffer fills opportunistically via `peek_dds_samples`
+        calls (no per-sample callback in cyclonedds Python). A topic
+        that has not been peeked recently returns
+        `samples_observed=0`. The tool description surfaces this
+        caveat to LLM callers.
+        """
+        if window_seconds < 1 or window_seconds > 3600:
+            raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
+        return self._metrics.compute_metrics(
+            topic=topic,
+            window_seconds=window_seconds,
+            domain_id=self._domain_id,
+            mode_effective="live",
         )
 
 

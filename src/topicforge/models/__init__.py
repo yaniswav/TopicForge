@@ -11,6 +11,7 @@ from topicforge.models.schemas import (
     QosProfile,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "QosProfile",
     "SampleResult",
     "TopicInfo",
+    "TopicMetrics",
 ]
