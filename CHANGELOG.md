@@ -5,7 +5,7 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0]
 
 ### Sprint v0.4.0 — Phase 3 (bag analysis multi-format)
 
