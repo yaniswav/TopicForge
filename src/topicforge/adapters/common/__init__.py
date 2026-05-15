@@ -1,5 +1,13 @@
 """Cross-backend helpers — pure logic shared between adapters."""
 
+from topicforge.adapters.common.cdr_decoder import (
+    decode_dynamic_sample,
+    decode_field_value,
+    dynamic_type_name,
+    extract_publish_ns_from_payload,
+    extract_seq_from_payload,
+    iter_field_names,
+)
 from topicforge.adapters.common.dds_helpers import (
     DDS_ONLY_ERROR_MSG,
     VendorTag,
@@ -33,6 +41,12 @@ __all__ = [
     "annotate_partial",
     "annotate_raw",
     "canonicalize_vendor_id",
+    "decode_dynamic_sample",
+    "decode_field_value",
     "detect_mismatches",
+    "dynamic_type_name",
+    "extract_publish_ns_from_payload",
+    "extract_seq_from_payload",
     "format_guid",
+    "iter_field_names",
 ]
