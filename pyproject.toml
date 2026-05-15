@@ -66,6 +66,13 @@ dds-all-oss = [
     "topicforge[dds-opendds]",
     "topicforge[dds-dust]",
 ]
+# v0.4.0 Phase 3 — bag analysis via `rosbags` (Apache 2.0, pure-Python,
+# covers MCAP + ROS2 .db3 + ROS1 .bag legacy through a single API).
+# Optional because rosbags pulls in SQLite / msgpack / zstd-side deps
+# users without bag analysis don't need.
+bags = [
+    "rosbags>=0.9",
+]
 all = [
     "topicforge[dds]",
 ]
@@ -96,6 +103,7 @@ markers = [
     "requires_opendds: tests needing the `pyopendds` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
     "requires_dust: tests needing the `dust_dds_python` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
     "integration: real-bus DDS scenarios — only run with `-m integration` (v0.4.0 Phase 2.2+)",
+    "requires_rosbags: tests needing the `rosbags` Python library; auto-skip without it (v0.4.0 Phase 3+)",
 ]
 
 [tool.ruff]
