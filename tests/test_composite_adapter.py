@@ -110,6 +110,12 @@ class _StubRosAdapter:
         self.calls.append(("topic_metrics", (topic, window_seconds, domain_id)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        # peek_bag_samples is a ROS-half method (bag analysis lives on
+        # the ROS side per Phase 3.3 composite routing decision).
+        self.calls.append(("peek_bag_samples", (path, topic, count)))
+        return SampleResult(topic=topic, count=0, samples=[], mode_effective=self._mode)
+
 
 class _StubDdsAdapter:
     """Tracks calls and returns canned values for the DDS half of the protocol."""
@@ -190,6 +196,13 @@ class _StubDdsAdapter:
             mode_effective=self._mode,
         )
 
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        # DDS half should NOT receive peek_bag_samples — bag analysis
+        # routes to the ROS half. Recording the call here lets the
+        # routing test assert this stub was not exercised.
+        self.calls.append(("peek_bag_samples", (path, topic, count)))
+        raise AdapterError("DDS adapter should not receive bag calls")
+
 
 # ---------------------------------------------------------------------------
 # Routing matrix
@@ -205,12 +218,14 @@ def test_ros_methods_route_to_ros_half() -> None:
     composite.get_topic_info("/cmd_vel")
     composite.sample_messages("/cmd_vel", 3)
     composite.analyze_bag("/tmp/x.mcap")
+    composite.peek_bag_samples("/tmp/x.mcap", "/cmd_vel", 2)
 
     assert [c[0] for c in ros.calls] == [
         "list_topics",
         "get_topic_info",
         "sample_messages",
         "analyze_bag",
+        "peek_bag_samples",
     ]
     assert dds.calls == []  # DDS half must never be touched.
 
