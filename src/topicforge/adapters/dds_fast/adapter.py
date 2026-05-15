@@ -246,6 +246,9 @@ class FastDdsAdapter:
     def analyze_bag(self, path: str) -> BagAnalysis:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
     # ----- DDS surface (v0.3.0) -----
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:

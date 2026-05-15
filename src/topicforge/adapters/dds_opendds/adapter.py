@@ -98,3 +98,6 @@ class OpenDdsAdapter:
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
+
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        raise AdapterError(_OPENDDS_ROADMAP_MSG)

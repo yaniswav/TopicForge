@@ -30,6 +30,10 @@ MVP_TOOLS = {
     # DDS temporal diagnostics (v0.4.0 Phase 2) — the 10th tool ;
     # second explicit ceiling break, acknowledged in CHANGELOG.
     "topic_metrics",
+    # Bag post-mortem analysis (v0.4.0 Phase 3) — the 11th tool ;
+    # third explicit ceiling break, acknowledged in CHANGELOG and
+    # docs/projet-file/mcp-02-spec.md §2.
+    "peek_bag_samples",
 }
 
 

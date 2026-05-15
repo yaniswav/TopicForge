@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Sprint v0.4.0 — Phase 3 (bag analysis multi-format)
+
+> Branch `feat/v0.4.0-phase3-bag-analysis-mcap-db3-rosbag`. Three
+> sub-milestones (3.1 CDR refactor, 3.2 bag_service + enriched
+> analyze_bag, 3.3 peek_bag_samples). v0.3.0 stays the live PyPI
+> version ; no version bump in this branch — manual maintainer step
+> after final review.
+
+#### Refactored (sub-milestone 3.1 — CDR decoder commun)
+
+- **6 vendor-agnostic helpers extracted** from `dds_cyclone/adapter.py`
+  into `adapters/common/cdr_decoder.py`: `decode_dynamic_sample`,
+  `iter_field_names`, `decode_field_value`, `dynamic_type_name`,
+  `extract_seq_from_payload`, `extract_publish_ns_from_payload`. The
+  Cyclone module keeps `_underscore` aliases pointing at the new
+  common functions, so every pre-Phase-3 call site keeps working
+  without rewrites.
+- **22 new pure-logic tests** (`tests/test_cdr_decoder.py`) pin the
+  extracted contract in isolation. The 22 Phase 1.5 XTypes Cyclone
+  tests (gated by `requires_cyclonedds`) remain green through the
+  full pipeline on hosts with the SDK installed — refactor is
+  transparent.
+
+#### Added (sub-milestone 3.2 — BagService + enriched analyze_bag)
+
+- **`BagService`** (`services/bag_service.py`) — facade wrapping the
+  `rosbags` library (Apache 2.0, pure-Python). Two methods:
+  `analyze(path)` (stats + format detection) and `peek_samples(path,
+  topic, count)` (decoded samples via the shared cdr_decoder).
+  Lazy import of rosbags ; methods raise a clear AdapterError when
+  the library is absent (caller can fall back to v0.3.0 text-parse
+  behavior on the analyze path ; sample peek requires the library).
+- **`BagAnalysis` schema enriched** (`models/schemas.py`) with four
+  **additive optional fields**:
+  - `bag_format: Literal["mcap","db3","bag","unknown"] | None` —
+    container format detected from the file extension
+  - `samples_decoded_count: int` — total decoded sample count
+    (analyze keeps this at 0 ; peek_bag_samples does the decoding)
+  - `recording_duration_ns: int | None` — recording duration in ns
+    from the bag's index when readable
+  - `participants_recorded: list[ParticipantInfo]` — DDS participants
+    embedded in the bag container (MCAP can ; .db3 / .bag generally
+    don't — empty list is the common case)
+- **`MOCK_BAG_ANALYSIS` updated** with deterministic enriched values.
+  New `MOCK_BAG_SAMPLES` dict + `mock_bag_samples_for(topic, count)`
+  helper for the upcoming peek_bag_samples tool.
+- **`[bags]` pyproject extra** (`rosbags>=0.9`) — NOT bundled in
+  `[all]` for granular install. New `requires_rosbags` pytest
+  marker.
+
+#### Added (sub-milestone 3.3 — peek_bag_samples MCP tool)
+
+- **`peek_bag_samples(path, topic, count) -> SampleResult`** — the
+  11th MCP tool, third explicit ceiling break. Returns up to
+  `count` decoded samples for `topic` from a recorded bag file.
+  Distinct from `peek_dds_samples` (live bus) and `sample_messages`
+  (ROS2 graph live peek) — this tool is **post-mortem inspection**.
+  Same `SampleResult` shape across all three tools so LLM
+  consumers read one envelope. Each sample's `_decode_status`
+  annotation carries over from the shared cdr_decoder.
+- **`MiddlewareAdapter` protocol** gains
+  `peek_bag_samples(path, topic, count) -> SampleResult`. All
+  existing adapters implement it: Mock via fixtures, Ros2CliAdapter
+  via `BagService`, Cyclone / Fast / OpenDDS / Dust raise their
+  existing roadmap errors (DDS-only adapters don't do bag analysis).
+- **CompositeAdapter** delegates `peek_bag_samples` to the ROS half
+  (bag analysis is ROS-native — MCAP is the canonical ROS2
+  recording format).
+- **10 new tests** in `tests/test_peek_bag_samples.py` (tool-level
+  via Inspector + MockAdapter). Plus extensions to
+  `test_composite_adapter`, `test_factory`, `test_opendds_adapter`,
+  `test_dust_adapter`, `test_tools_integration` (MVP_TOOLS grows
+  from 10 → 11).
+- **`docs/projet-file/mcp-02-spec.md` §2** — ceiling note updated
+  to 11 tools.
+
+#### Notes (Phase 3)
+
+- **Bag analysis is offline-only.** `analyze_bag` and
+  `peek_bag_samples` read files ; they do not introspect the live
+  bus. For live introspection use the existing tool set
+  (`list_topics`, `peek_dds_samples`, etc.).
+- **rosbags requirement.** `BagService.peek_samples` strictly requires
+  `pip install topicforge[bags]` — no silent fallback for sample
+  peek. `analyze_bag` retains the v0.3.0 `ros2 bag info` text-parse
+  fallback on Ros2CliAdapter when rosbags is absent ; the enriched
+  fields populate at their safe defaults in that path.
+- **Backward compat.** Every v0.3.0 / Phase 1 / 1.5 / 2 test passes
+  unchanged. BagAnalysis additive fields preserve the wire contract
+  for v0.3.0 consumers ignoring them.
+- **The version bump and tag are deliberate manual maintainer
+  steps** after Phase 3 review. This branch leaves `pyproject.toml`
+  at `0.3.0`, `__version__` at `"0.3.0"`, and the
+  `## [Unreleased]` heading intact.
+
 ### Sprint v0.4.0 — Phase 2 (temporal metrics + real-bus rig)
 
 > Branch `feat/v0.4.0-phase2-metrics-and-realbus-testing`. Two

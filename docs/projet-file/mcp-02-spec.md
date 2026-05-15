@@ -115,8 +115,10 @@ acknowledgement in CHANGELOG :
   diagnostics)
 * v0.4.0 Phase 2 added `topic_metrics` (10th tool, temporal
   diagnostics — frequency, sequence gaps, latency percentiles)
+* v0.4.0 Phase 3 added `peek_bag_samples` (11th tool, post-mortem
+  bag inspection across MCAP / ROS2 .db3 / ROS1 .bag legacy)
 
-The current ceiling is **10 tools**. An 11th still requires an
+The current ceiling is **11 tools**. A 12th still requires an
 explicit re-scope decision documented in
 `topicforge/docs/product-plan.md §11`.
 

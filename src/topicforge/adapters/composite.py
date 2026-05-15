@@ -95,3 +95,8 @@ class CompositeAdapter:
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         return self._dds.topic_metrics(topic, window_seconds, domain_id)
+
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        # Bag analysis lives on the ROS half — MCAP is the canonical
+        # ROS2 recording format, and rosbags is a ROS-native library.
+        return self._ros.peek_bag_samples(path, topic, count)

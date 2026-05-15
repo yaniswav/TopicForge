@@ -92,6 +92,19 @@ class Ros2CliAdapter:
     ) -> TopicMetrics:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        """Read decoded samples from a bag file via the BagService facade.
+
+        v0.4.0 Phase 3: delegates to `services.bag_service.BagService`
+        which wraps the `rosbags` library. Raises `AdapterError` when
+        rosbags is not installed (clear `pip install topicforge[bags]`
+        remediation in the message). No silent fallback for sample
+        peek — the LLM tool description tells the user what to do.
+        """
+        from topicforge.services.bag_service import BagService
+
+        return BagService().peek_samples(path, topic, count)
+
     # ----------------------------- topics --------------------------------
 
     def list_topics(self) -> list[TopicInfo]:

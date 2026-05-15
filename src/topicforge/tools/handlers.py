@@ -409,6 +409,39 @@ def register_tools(
     ) -> TopicMetrics:
         return inspector.topic_metrics(topic, window_seconds, domain_id)
 
+    @mcp.tool(
+        description=(
+            "Peek up to `count` recent samples from a recorded bag file. "
+            "**Distinct from `peek_dds_samples`** (live bus introspection) "
+            "and `sample_messages` (ROS2 graph live peek) — this tool "
+            "operates on **offline bag content** for post-mortem analysis. "
+            "Supported formats: MCAP (`.mcap`), ROS2 rosbag2 SQLite "
+            "(`.db3`), ROS1 legacy chunked binary (`.bag`). The reader "
+            "auto-detects format from the file extension. Returns a "
+            "`SampleResult` envelope identical in shape to "
+            "`peek_dds_samples` — each sample's `payload` carries the "
+            "same `_decode_status` annotation (`full` / `partial` / "
+            "`raw`) so an LLM consumer reads one shape across live and "
+            "recorded sources. `count` defaults to 5 and is silently "
+            "clamped to 50. **Requires the `rosbags` library** "
+            "(`pip install topicforge[bags]`) — without it, raises an "
+            "`AdapterError` with the install command. The mock backend "
+            "returns deterministic fixture samples on canned bag paths. "
+            "**Read-only by architecture** — no method writes to the "
+            "bag file. **Raises an MCP error** when the bag path does "
+            "not exist, the topic is not present in the bag, or rosbags "
+            "is not installed. Added in v0.4.0 Phase 3 — the 11th MCP "
+            "tool ; 8-tool ceiling break #3, acknowledged in CHANGELOG."
+        )
+    )
+    @instrument(telemetry, "peek_bag_samples")
+    def peek_bag_samples(
+        path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
+        topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
+        count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
+    ) -> SampleResult:
+        return inspector.peek_bag_samples(path, topic, count)
+
     # TODO(roadmap): URDF tools — validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection — clock jumps, frame drops, TF gaps.
     # TODO(roadmap): dataset export — rosbag → COCO / Hugging Face Datasets.
