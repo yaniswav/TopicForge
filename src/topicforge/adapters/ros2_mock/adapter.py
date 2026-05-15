@@ -61,6 +61,20 @@ class MockAdapter:
         # The fixture is frozen; produce a copy with the caller's path.
         return fixtures.MOCK_BAG_ANALYSIS.model_copy(update={"path": path})
 
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+        """Deterministic mock sample peek for a recorded bag."""
+        if count < 0:
+            raise AdapterError("count must be >= 0")
+        _reject_non_bag_path(path)
+        clamped = min(count, _MAX_SAMPLE_COUNT)
+        samples = fixtures.mock_bag_samples_for(topic, clamped)
+        return SampleResult(
+            topic=topic,
+            count=len(samples),
+            samples=samples,
+            mode_effective="mock",
+        )
+
     # ---------------------------- DDS module ------------------------------
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:

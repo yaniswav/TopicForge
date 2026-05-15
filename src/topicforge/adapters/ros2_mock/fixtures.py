@@ -489,4 +489,54 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
         "/tf: static transforms only — no dynamic updates during recording",
     ],
     mode_effective="mock",
+    # v0.4.0 Phase 3: enriched fields populated deterministically.
+    bag_format="mcap",
+    samples_decoded_count=0,  # analyze() does not decode ; peek_bag_samples does
+    recording_duration_ns=42_500_000_000,  # 42.5s
+    participants_recorded=[],
 )
+
+
+# v0.4.0 Phase 3 — deterministic per-topic mock samples for peek_bag_samples.
+# Same topic names as MOCK_BAG_ANALYSIS so tests can correlate. Each sample
+# carries a `_decode_status="full"` annotation produced by the shared
+# decoder convention.
+MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
+    "/cmd_vel": [
+        MessageSample(
+            topic="/cmd_vel",
+            message_type="geometry_msgs/msg/Twist",
+            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            payload={
+                "_decode_status": "full",
+                "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},
+                "angular": {"x": 0.0, "y": 0.0, "z": 0.05 * i},
+                "_msgtype": "geometry_msgs/msg/Twist",
+            },
+        )
+        for i in range(5)
+    ],
+    "/odom": [
+        MessageSample(
+            topic="/odom",
+            message_type="nav_msgs/msg/Odometry",
+            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            payload={
+                "_decode_status": "full",
+                "header": {"frame_id": "odom"},
+                "pose": {"position": {"x": 0.1 * i, "y": 0.0, "z": 0.0}},
+                "_msgtype": "nav_msgs/msg/Odometry",
+            },
+        )
+        for i in range(3)
+    ],
+}
+
+
+def mock_bag_samples_for(topic: str, count: int) -> list[MessageSample]:
+    """Return up to `count` deterministic mock samples for `topic`.
+
+    Returns empty list for unknown topics — mirrors the
+    `mock_samples_for` convention.
+    """
+    return list(MOCK_BAG_SAMPLES.get(topic, [])[:count])

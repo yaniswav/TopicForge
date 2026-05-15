@@ -470,7 +470,15 @@ class BagTopicStats(BaseModel):
 
 
 class BagAnalysis(BaseModel):
-    """Structured summary of a ROS2 bag."""
+    """Structured summary of a ROS2 bag.
+
+    v0.4.0 Phase 3 enriches this model with four **additive optional**
+    fields (`bag_format`, `samples_decoded_count`, `recording_duration_ns`,
+    `participants_recorded`) populated when the new `rosbags`-backed
+    bag service runs. The v0.3.0 `ros2 bag info`-text-parsed path
+    leaves them at their safe defaults so every existing consumer
+    keeps working unchanged.
+    """
 
     model_config = _CONFIG
 
@@ -502,6 +510,49 @@ class BagAnalysis(BaseModel):
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    bag_format: Literal["mcap", "db3", "bag", "unknown"] | None = Field(
+        default=None,
+        description=(
+            "Concrete bag container format detected by the reader — `mcap` "
+            "(Foxglove MCAP), `db3` (ROS2 rosbag2 SQLite), `bag` (ROS1 "
+            "legacy chunked), or `unknown` when the reader could not "
+            "classify. `None` for the v0.3.0 `ros2 bag info`-text-parsed "
+            "code path that has no format awareness. Added in v0.4.0 "
+            "Phase 3 alongside the `rosbags`-backed bag service."
+        ),
+    )
+    samples_decoded_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Total decoded sample count across all topics produced by the "
+            "bag reader. `0` when the reader only parsed metadata (the "
+            "v0.3.0 text-parsed path) or when `rosbags` is not installed "
+            "on the host. Use `peek_bag_samples` to pull the actual "
+            "sample payloads for a specific topic."
+        ),
+    )
+    recording_duration_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Recording duration in nanoseconds when readable from the "
+            "bag's index. `None` when the v0.3.0 text-parsed path runs ; "
+            "`duration_seconds` (float) is the always-populated fallback "
+            "that downstream LLM consumers should prefer when this is "
+            "`None`."
+        ),
+    )
+    participants_recorded: list[ParticipantInfo] = Field(
+        default_factory=list,
+        description=(
+            "DDS participants recorded in the bag when the container "
+            "format embeds participant metadata. MCAP can carry it via "
+            "channel metadata records ; ROS2 `.db3` and ROS1 `.bag` "
+            "generally do not. Empty list when not available — the "
+            "common case at v0.4.0 Phase 3."
+        ),
+    )
 
 
 class SampleResult(BaseModel):

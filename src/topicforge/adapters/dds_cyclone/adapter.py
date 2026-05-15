@@ -50,12 +50,16 @@ from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     LifecycleBuffer,
     MetricsBuffer,
-    annotate_full,
-    annotate_partial,
     annotate_raw,
     canonicalize_vendor_id,
+    decode_dynamic_sample,
+    decode_field_value,
     detect_mismatches,
+    dynamic_type_name,
+    extract_publish_ns_from_payload,
+    extract_seq_from_payload,
     format_guid,
+    iter_field_names,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -68,6 +72,19 @@ from topicforge.models import (
     TopicInfo,
     TopicMetrics,
 )
+
+# v0.4.0 Phase 3: the 6 helpers below were extracted into
+# `adapters/common/cdr_decoder.py` so the same dynamic-type decode logic
+# powers both live Cyclone XTypes samples (Phase 1.5) and recorded
+# bag samples (Phase 3 `services/bag_service.py`). The `_underscore`
+# aliases stay in this module so the pre-Phase-3 call sites
+# (_try_dynamic_decode_cyclone, etc.) keep working without rewrites.
+_decode_dynamic_sample = decode_dynamic_sample
+_iter_field_names = iter_field_names
+_decode_field_value = decode_field_value
+_dynamic_type_name = dynamic_type_name
+_extract_seq_from_payload = extract_seq_from_payload
+_extract_publish_ns_from_payload = extract_publish_ns_from_payload
 
 log = logging.getLogger(__name__)
 
@@ -215,137 +232,12 @@ def _collect_dynamic_samples(dp: Any, topic: str, type_object: Any, count: int) 
         return None
 
 
-def _decode_dynamic_sample(sample: Any) -> dict[str, object]:
-    """Decode `sample` field-by-field into a payload dict.
-
-    Strategy:
-      * Iterate the sample's declared fields (via `__dataclass_fields__`,
-        `__fields__`, or `__slots__` — whichever the binding chose).
-      * For each field, attempt `getattr` + recursive decode of nested
-        structs / sequences / primitives.
-      * Per-field exception → mark the field as undecoded ; surface the
-        whole sample as `annotate_partial` with a comma-joined list of
-        failed field names in `_decode_note`.
-      * If no fields could be decoded → `annotate_raw` with the sample's
-        repr captured in the note.
-    """
-    decoded: dict[str, object] = {}
-    failed_fields: list[str] = []
-
-    for field_name in _iter_field_names(sample):
-        try:
-            value = getattr(sample, field_name)
-            decoded[field_name] = _decode_field_value(value)
-        except Exception:  # pragma: no cover — per-field defense
-            failed_fields.append(field_name)
-
-    if not decoded:
-        return annotate_raw(
-            b"",
-            note=(
-                "cyclonedds.dynamic sample exposed no decodable fields ; "
-                f"sample repr: {type(sample).__name__}"
-            ),
-        )
-    if failed_fields:
-        return annotate_partial(
-            decoded,
-            note=f"undecoded fields: {', '.join(failed_fields)}",
-            raw_bytes=None,
-        )
-    return annotate_full(decoded)
-
-
-def _iter_field_names(sample: Any) -> list[str]:
-    """Best-effort list of field names on a dynamic-type sample."""
-    fields = getattr(sample, "__dataclass_fields__", None)
-    if fields:
-        return list(fields)
-    fields = getattr(sample, "__fields__", None)
-    if fields:
-        return list(fields)
-    slots = getattr(sample, "__slots__", None)
-    if slots:
-        return list(slots)
-    return (
-        [name for name in vars(sample) if not name.startswith("_")]
-        if hasattr(sample, "__dict__")
-        else []
-    )
-
-
-def _decode_field_value(value: Any) -> object:
-    """Recursive decode of a single dynamic-type field value.
-
-    Primitives and strings pass through. Sequences (list / tuple) are
-    decoded element-wise. Nested struct-like objects recurse via the
-    same field-iteration logic. Unsupported types (bytes, custom
-    classes that resist iteration) collapse to their `repr()` so the
-    payload remains JSON-serializable.
-    """
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, (list, tuple)):
-        return [_decode_field_value(v) for v in value]
-    if isinstance(value, dict):
-        return {str(k): _decode_field_value(v) for k, v in value.items()}
-    # Nested struct — recurse.
-    if any(hasattr(value, attr) for attr in ("__dataclass_fields__", "__fields__", "__slots__")):
-        nested: dict[str, object] = {}
-        for field_name in _iter_field_names(value):
-            try:
-                nested[field_name] = _decode_field_value(getattr(value, field_name))
-            except Exception:  # pragma: no cover
-                nested[field_name] = f"<undecoded {type(value).__name__}.{field_name}>"
-        return nested
-    return repr(value)
-
-
-def _dynamic_type_name(type_object: Any) -> str:
-    """Best-effort message-type name from a resolved TypeObject."""
-    for attr in ("type_name", "name", "__name__"):
-        v = getattr(type_object, attr, None)
-        if isinstance(v, str) and v:
-            return v
-    return "dds/dynamic"
-
-
-def _extract_seq_from_payload(payload: dict[str, object]) -> int | None:
-    """Best-effort sequence-number extraction from a decoded payload.
-
-    Looks at common field names used by ROS / DDS message conventions :
-    `seq`, `sequence_number`, `sequence_id`. The `header.seq` form
-    common in ROS1 isn't recursed into here ; ROS2 messages typically
-    flatten it. Returns `None` if no integer-valued sequence key
-    is present.
-    """
-    for key in ("seq", "sequence_number", "sequence_id"):
-        value = payload.get(key)
-        if isinstance(value, int):
-            return value
-    return None
-
-
-def _extract_publish_ns_from_payload(payload: dict[str, object]) -> int | None:
-    """Best-effort publish-timestamp extraction from a decoded payload.
-
-    Looks for `publish_ns` directly, then for a ROS-style nested
-    `header.stamp.{sec,nanosec}` shape that the decoded XTypes
-    representation can expose. Returns `None` when neither is
-    present.
-    """
-    direct = payload.get("publish_ns")
-    if isinstance(direct, int):
-        return direct
-    header = payload.get("header")
-    if isinstance(header, dict):
-        stamp = header.get("stamp")
-        if isinstance(stamp, dict):
-            sec = stamp.get("sec")
-            nsec = stamp.get("nanosec")
-            if isinstance(sec, int) and isinstance(nsec, int):
-                return sec * 1_000_000_000 + nsec
-    return None
+# The 6 dynamic-type decoders (decode_dynamic_sample, iter_field_names,
+# decode_field_value, dynamic_type_name, extract_seq_from_payload,
+# extract_publish_ns_from_payload) live in
+# `topicforge.adapters.common.cdr_decoder` since v0.4.0 Phase 3 ; the
+# `_underscore` aliases at the top of this module preserve the original
+# Cyclone call sites without rewrites.
 
 
 _USER_TOPIC_ROADMAP_MSG = (
@@ -399,6 +291,9 @@ class CycloneDdsAdapter:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     # ----- DDS surface (v0.3.0 real implementation) -----
