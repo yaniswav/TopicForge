@@ -1,0 +1,47 @@
+{
+  "name": "qos_mismatch_detection",
+  "description": "A BEST_EFFORT writer and a RELIABLE reader join the same topic. DDS forbids this match per OMG spec; detect_qos_mismatches must surface the Reliability incompatibility with severity='incompatible'.",
+  "required_vendors": ["cyclone"],
+  "setup": {
+    "domain_id": 0,
+    "publishers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/mismatched",
+        "rate_hz": 1,
+        "duration_s": 30,
+        "qos": {
+          "reliability": "BEST_EFFORT",
+          "durability": "VOLATILE",
+          "history": "KEEP_LAST",
+          "history_depth": 10
+        }
+      }
+    ],
+    "subscribers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/mismatched",
+        "duration_s": 30,
+        "qos": {
+          "reliability": "RELIABLE",
+          "durability": "VOLATILE",
+          "history": "KEEP_LAST",
+          "history_depth": 10
+        }
+      }
+    ],
+    "discovery_wait_s": 5
+  },
+  "assertions": [
+    {
+      "tool": "detect_qos_mismatches",
+      "args": {"topic": "/integration/mismatched"},
+      "expect": {
+        "count_at_least": 1,
+        "policies_include": ["Reliability"],
+        "severity_includes": ["incompatible"]
+      }
+    }
+  ]
+}

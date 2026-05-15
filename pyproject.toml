@@ -95,6 +95,7 @@ markers = [
     "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
     "requires_opendds: tests needing the `pyopendds` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
     "requires_dust: tests needing the `dust_dds_python` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
+    "integration: real-bus DDS scenarios — only run with `-m integration` (v0.4.0 Phase 2.2+)",
 ]
 
 [tool.ruff]

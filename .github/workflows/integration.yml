@@ -1,0 +1,53 @@
+name: Integration (real-bus)
+
+# Manual label trigger only — runs are intentional and cost-bound.
+# The default CI workflow (ci.yml) keeps running on every push and
+# covers lint + unit tests. This workflow ONLY fires when a maintainer
+# attaches the `integration-tests` label to a PR.
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  real-bus:
+    name: Real-bus integration scenarios
+    # Run only when the label triggering this event is the one we expect.
+    if: github.event.label.name == 'integration-tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install topicforge + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,dds]"
+
+      - name: Schema validation (pure-Python ; runs without Docker)
+        run: python -m pytest tests/integration/test_scenarios_schema.py -v
+
+      - name: Build integration containers
+        working-directory: scripts/integration
+        run: docker compose build
+
+      - name: Spin up publishers + observer
+        working-directory: scripts/integration
+        run: |
+          docker compose up -d
+          sleep 30   # let DDS discovery settle
+
+      - name: Run integration tests
+        run: python -m pytest -m integration -v --tb=short
+
+      - name: Tear down
+        if: always()
+        working-directory: scripts/integration
+        run: docker compose down --remove-orphans

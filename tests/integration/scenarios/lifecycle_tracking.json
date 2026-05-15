@@ -1,0 +1,34 @@
+{
+  "name": "lifecycle_tracking",
+  "description": "A Cyclone publisher joins the bus for 5 seconds then exits cleanly. participant_events(lookback=60) should report one discovered event followed by one lost event after the publisher quits.",
+  "required_vendors": ["cyclone"],
+  "setup": {
+    "domain_id": 0,
+    "publishers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/transient",
+        "rate_hz": 2,
+        "duration_s": 5
+      }
+    ],
+    "post_publisher_wait_s": 5,
+    "discovery_wait_s": 2
+  },
+  "assertions": [
+    {
+      "tool": "list_participants",
+      "args": {"domain_id": 0},
+      "expect": {
+        "comment": "after the publisher exits, status should be 'left' for at least one participant"
+      }
+    },
+    {
+      "tool": "participant_events",
+      "args": {"domain_id": 0, "lookback_seconds": 60},
+      "expect": {
+        "event_types_include": ["discovered", "lost"]
+      }
+    }
+  ]
+}

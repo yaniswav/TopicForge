@@ -1,0 +1,29 @@
+{
+  "name": "xtypes_decode",
+  "description": "A Cyclone publisher publishes a custom IDL type (struct Beat { uint32 seq; string status; float32 battery_pct; }). TopicForge's peek_dds_samples should attempt dynamic XTypes decode via cyclonedds.dynamic ; on success samples carry _decode_status='full' or 'partial', on miss '_decode_status=raw' with annotated bytes. Fast DDS is skipped because its 2.6.x dynamic XTypes binding is partial.",
+  "required_vendors": ["cyclone"],
+  "setup": {
+    "domain_id": 0,
+    "publishers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/beat",
+        "rate_hz": 5,
+        "duration_s": 20,
+        "idl": "struct Beat { uint32 seq; string status; float32 battery_pct; };"
+      }
+    ],
+    "discovery_wait_s": 5
+  },
+  "assertions": [
+    {
+      "tool": "peek_dds_samples",
+      "args": {"topic": "/integration/beat", "count": 3},
+      "expect": {
+        "samples_count_at_least": 1,
+        "payload_keys_include_any": ["_decode_status"],
+        "decode_status_in": ["full", "partial", "raw"]
+      }
+    }
+  ]
+}
