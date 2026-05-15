@@ -33,6 +33,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 log = logging.getLogger(__name__)
@@ -84,6 +85,11 @@ class Ros2CliAdapter:
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300
     ) -> list[ParticipantEvent]:
+        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
     # ----------------------------- topics --------------------------------

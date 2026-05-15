@@ -51,6 +51,7 @@ def test_dds_methods_raise_with_roadmap_pointer() -> None:
         ("detect_qos_mismatches", (None,)),
         ("peek_dds_samples", ("/x", 1)),
         ("participant_events", (0, 60)),
+        ("topic_metrics", ("/x", 60, 0)),
     ]:
         with pytest.raises(AdapterError, match="OpenDDS adapter is a stub"):
             getattr(adapter, method)(*args)

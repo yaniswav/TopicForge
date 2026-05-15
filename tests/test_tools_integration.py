@@ -27,6 +27,9 @@ MVP_TOOLS = {
     # DDS lifecycle tool (v0.4.0 Phase 1) — the 9th tool, breaks the
     # 8-tool ceiling documented in docs/projet-file/mcp-02-spec.md §2.
     "participant_events",
+    # DDS temporal diagnostics (v0.4.0 Phase 2) — the 10th tool ;
+    # second explicit ceiling break, acknowledged in CHANGELOG.
+    "topic_metrics",
 }
 
 

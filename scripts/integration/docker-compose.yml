@@ -1,0 +1,72 @@
+# Docker compose for the TopicForge real-bus integration rig.
+#
+# Spins up one publisher container per vendor (Cyclone + Fast + OpenDDS),
+# plus a TopicForge observer container. All share the same DDS domain
+# via host networking (DDS multicast discovery requires it).
+#
+# Validation reality: this file ships lint-clean YAML, but the actual
+# build/run is the maintainer's responsibility — neither pulling the
+# images nor spinning the containers happens in the OSS-CI default
+# pipeline. The `integration-tests` PR label triggers CI which then
+# runs `docker compose up -d` on a runner with Docker available.
+
+services:
+  publisher-cyclone:
+    build:
+      context: ../..
+      dockerfile: scripts/integration/docker/publisher-cyclone/Dockerfile
+    network_mode: host
+    environment:
+      - CYCLONEDDS_URI=
+    command:
+      - --topic
+      - /integration/heartbeat_cyclone
+      - --rate-hz
+      - "5"
+      - --duration-s
+      - "60"
+      - --domain
+      - "0"
+
+  publisher-fast:
+    build:
+      context: ../..
+      dockerfile: scripts/integration/docker/publisher-fast/Dockerfile
+    network_mode: host
+    command:
+      - --topic
+      - /integration/heartbeat_fast
+      - --rate-hz
+      - "5"
+      - --duration-s
+      - "60"
+      - --domain
+      - "0"
+
+  publisher-opendds:
+    build:
+      context: ../..
+      dockerfile: scripts/integration/docker/publisher-opendds/Dockerfile
+    network_mode: host
+    command:
+      - --topic
+      - /integration/heartbeat_opendds
+      - --rate-hz
+      - "5"
+      - --duration-s
+      - "60"
+      - --domain
+      - "0"
+
+  topicforge:
+    build:
+      context: ../..
+      dockerfile: scripts/integration/docker/topicforge/Dockerfile
+    network_mode: host
+    environment:
+      - TOPICFORGE_MODE=live
+      - TOPICFORGE_DDS_BACKEND=cyclone
+      - TOPICFORGE_DDS_DOMAIN_ID=0
+    depends_on:
+      - publisher-cyclone
+      - publisher-fast

@@ -107,9 +107,17 @@ in v0.1.2 are unchanged.
 make the distinction explicit. No silent overload.
 
 Do not expand. New tools follow the `add-mcp-tool` skill at
-`.claude/skills/topicforge/add-mcp-tool/SKILL.md`. The hard ceiling at
-the umbrella level is 8 MCP tools (5 ROS2 + 3 DDS) ; a 9th tool requires
-an explicit re-scope decision documented in
+`.claude/skills/topicforge/add-mcp-tool/SKILL.md`. The original 8-tool
+ceiling (5 ROS2 + 3 DDS) was broken twice during v0.4.0 with explicit
+acknowledgement in CHANGELOG :
+
+* v0.4.0 Phase 1 added `participant_events` (9th tool, lifecycle
+  diagnostics)
+* v0.4.0 Phase 2 added `topic_metrics` (10th tool, temporal
+  diagnostics — frequency, sequence gaps, latency percentiles)
+
+The current ceiling is **10 tools**. An 11th still requires an
+explicit re-scope decision documented in
 `topicforge/docs/product-plan.md §11`.
 
 The write path — publishing samples, calling RPCs, modifying QoS at
