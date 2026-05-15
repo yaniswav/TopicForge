@@ -18,6 +18,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 AdapterName = Literal[
@@ -126,6 +127,10 @@ class MiddlewareAdapter(Protocol):
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300
     ) -> list[ParticipantEvent]: ...
+
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics: ...
 
 
 # Backward-compat alias. External code importing `RosAdapter` continues

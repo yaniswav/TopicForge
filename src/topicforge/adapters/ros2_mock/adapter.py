@@ -18,6 +18,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicMetrics,
 )
 
 # Extensions the live `ros2 bag info` accepts. The mock mirrors this list so
@@ -94,6 +95,15 @@ class MockAdapter:
         if lookback_seconds < 1 or lookback_seconds > 86400:
             raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
         return fixtures.mock_participant_events_for(domain_id, lookback_seconds)
+
+    def topic_metrics(
+        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+    ) -> TopicMetrics:
+        if domain_id < 0 or domain_id > 232:
+            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        if window_seconds < 1 or window_seconds > 3600:
+            raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
+        return fixtures.mock_topic_metrics_for(topic, window_seconds, domain_id)
 
 
 def _reject_non_bag_path(path: str) -> None:
