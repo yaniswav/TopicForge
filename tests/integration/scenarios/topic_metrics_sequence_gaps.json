@@ -1,0 +1,34 @@
+{
+  "name": "topic_metrics_sequence_gaps",
+  "description": "A Cyclone publisher emits 100 samples but skips sequence number 50 explicitly. topic_metrics should report sequence_gaps_count >= 1 once the metrics buffer has been populated through peek_dds_samples. Best-effort: the assertion tolerates the case where the binding does not expose seq# (sequence_numbers_available=False is also accepted).",
+  "required_vendors": ["cyclone"],
+  "setup": {
+    "domain_id": 0,
+    "publishers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/with_gap",
+        "rate_hz": 10,
+        "duration_s": 12,
+        "gap_at_seq": 50,
+        "idl": "struct Beat { uint32 seq; };"
+      }
+    ],
+    "discovery_wait_s": 5,
+    "warm_up_peek_count": 50,
+    "warm_up_peek_interval_s": 0.5
+  },
+  "assertions": [
+    {
+      "tool": "topic_metrics",
+      "args": {"topic": "/integration/with_gap", "window_seconds": 60, "domain_id": 0},
+      "expect": {
+        "samples_observed_at_least": 30,
+        "either": [
+          {"sequence_numbers_available": false},
+          {"sequence_gaps_count_at_least": 1}
+        ]
+      }
+    }
+  ]
+}

@@ -57,6 +57,67 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - **`AdapterName` Literal** unchanged (no new vendor) ; `MVP_TOOLS`
   test set grows from 9 to 10.
 
+#### Added (sub-milestone 2.2 — real-bus rig)
+
+- **`tests/integration/`** — six scenario JSON files exercising
+  the multi-vendor OMG-DDS-RTPS claim against real publishers:
+  `multi_vendor_basic`, `lifecycle_tracking`, `qos_mismatch_detection`,
+  `xtypes_decode`, `topic_metrics_frequency`,
+  `topic_metrics_sequence_gaps`. Each scenario declares
+  `required_vendors` so the runner can skip cleanly when a binding
+  is missing.
+- **`tests/integration/test_scenarios_schema.py`** — pure-Python
+  validation of every scenario's structure. Runs in default
+  `make check` (8 tests). No SDK, no Docker required.
+- **`tests/integration/test_real_bus.py`** — parametrized integration
+  tests, marked `@pytest.mark.integration` ; **gated out of the
+  default pytest invocation**. Runs only with `pytest -m integration`
+  or the labeled CI workflow.
+- **`scripts/integration/scenarios_runner.py`** — Python entry point
+  that probes locally installed DDS bindings, dispatches scenarios,
+  and reports pass/fail per assertion. Pragmatic partial-run: missing
+  vendors are skipped with a clear `[skipped]` log rather than failing
+  the whole batch (D6).
+- **`scripts/integration/publishers/`** — per-vendor minimal publishers
+  (`cyclone_publisher.py`, `fast_publisher.py`, `opendds_publisher.py`).
+  Symmetric CLI surface: `--topic`, `--rate-hz`, `--duration-s`,
+  `--domain`, `--gap-at-seq`. OpenDDS publisher is a documented
+  scaffold (no PyPI binding yet).
+- **`scripts/integration/run-local.{sh,ps1}`** — standalone entry
+  points for Linux/macOS and Windows. No Docker required.
+- **`scripts/integration/docker-compose.yml` + per-vendor Dockerfiles** —
+  full multi-vendor rig for CI runs and maintainer validation.
+  Cyclone + Fast images build against the OSS PyPI bindings ; OpenDDS
+  image documents the BYO path. `topicforge` observer image installs
+  from repo source plus `[dds]` extra.
+- **`.github/workflows/integration.yml`** — manual label trigger
+  (`integration-tests`). Runs schema validation, builds the compose
+  stack, sleeps 30 s for discovery, runs `pytest -m integration`,
+  tears down. Default `ci.yml` is untouched.
+- **New pytest marker** `integration` — added to `pyproject.toml`
+  alongside the existing `requires_*` markers.
+
+#### Notes (sub-milestone 2.2)
+
+- **Validation reality.** The OSS-CI default pipeline lint-validates
+  scenario JSON structure, YAML/PowerShell/bash syntax, and the
+  runner's dispatch logic. It does NOT pull / build / run Docker
+  images. The maintainer validates the live publisher path locally
+  before merging Phase 2.2 ; the integration CI workflow is the
+  shared validation surface once an SDK-rich runner host is
+  available.
+- **OpenDDS publisher is a scaffold.** `pyopendds` is not on PyPI as
+  of 2026-05-14 — the publisher script exits with an actionable
+  error message, and the scenarios runner skips OpenDDS scenarios
+  cleanly. Scenarios requiring OpenDDS (`multi_vendor_basic`) still
+  run partial coverage of the other vendors.
+- **Real-bus assertion evaluation is structural at Phase 2.2.** The
+  runner dispatches scenarios and reports per-assertion status, but
+  the full per-assertion verification logic (parsing TopicForge tool
+  outputs, comparing against scenario `expect` clauses) is the
+  maintainer's follow-up. The scaffold is ready to receive that
+  wiring without re-touching the surrounding files.
+
 ### Sprint v0.4.0 — Phase 1 (DDS observability core)
 
 > Internal-only ; the branch `feat/v0.4.0-phase1-observability-core` is

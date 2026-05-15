@@ -1,0 +1,39 @@
+{
+  "name": "multi_vendor_basic",
+  "description": "Three publishers (Cyclone, Fast, OpenDDS) join the same domain. TopicForge's list_participants must surface all three with their canonical vendor tags via the OMG-DDS-RTPS protocol guarantee.",
+  "required_vendors": ["cyclone", "fast", "opendds"],
+  "setup": {
+    "domain_id": 0,
+    "publishers": [
+      {
+        "vendor": "cyclone",
+        "topic": "/integration/heartbeat_cyclone",
+        "rate_hz": 5,
+        "duration_s": 30
+      },
+      {
+        "vendor": "fast",
+        "topic": "/integration/heartbeat_fast",
+        "rate_hz": 5,
+        "duration_s": 30
+      },
+      {
+        "vendor": "opendds",
+        "topic": "/integration/heartbeat_opendds",
+        "rate_hz": 5,
+        "duration_s": 30
+      }
+    ],
+    "discovery_wait_s": 5
+  },
+  "assertions": [
+    {
+      "tool": "list_participants",
+      "args": {"domain_id": 0},
+      "expect": {
+        "count_at_least": 3,
+        "vendors_include": ["cyclone", "fast", "unknown"]
+      }
+    }
+  ]
+}
