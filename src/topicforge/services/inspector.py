@@ -138,6 +138,14 @@ class Inspector:
         _validate_window_seconds(seconds)
         return self._adapter.topic_metrics(topic, seconds, domain_id)
 
+    def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
+        clean_path = _validate_bag_path(path)
+        _validate_topic_name_dds(topic)
+        n = DEFAULT_SAMPLE_COUNT if count is None else count
+        if n < 0:
+            raise AdapterError("count must be >= 0")
+        return self._adapter.peek_bag_samples(clean_path, topic, min(n, MAX_SAMPLE_COUNT))
+
 
 def _validate_dds_domain(domain_id: int) -> None:
     if not isinstance(domain_id, int) or isinstance(domain_id, bool):

@@ -132,6 +132,8 @@ class MiddlewareAdapter(Protocol):
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics: ...
 
+    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult: ...
+
 
 # Backward-compat alias. External code importing `RosAdapter` continues
 # to type-check against the broader `MiddlewareAdapter` shape. Will be
