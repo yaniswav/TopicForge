@@ -1,4 +1,4 @@
-# DDS quickstart — TopicForge v0.3.0+
+# DDS quickstart — TopicForge v0.4.0+
 
 A 5-minute tour of TopicForge's multi-vendor DDS observability module. Both backends — Eclipse CycloneDDS and eProsima Fast DDS — join the bus as **read-only DDS-RTPS participants** and observe every conformant vendor on the wire via the OMG protocol guarantee. The `MiddlewareAdapter` protocol does not expose a write method, so the MCP client cannot publish back to the bus on any backend.
 
@@ -99,25 +99,25 @@ The analyzer covers the four MVP policies — **Reliability**, **Durability**, *
 
 ---
 
-## 4. Single-adapter limitation (v0.3.0)
+## 4. Composite adapter (v0.4.0 Phase 1+)
 
-TopicForge v0.3.0 still selects **one adapter at a time** based on `TOPICFORGE_MODE` + `TOPICFORGE_DDS_BACKEND` :
+v0.4.0 Phase 1 lifted the v0.3.0 single-adapter limitation. When `TOPICFORGE_MODE=live` is paired with a DDS backend, TopicForge instantiates **both** a `Ros2CliAdapter` and the chosen DDS adapter behind a `CompositeAdapter` and routes per-tool category — the 5 ROS2 graph tools hit the CLI, the 6 DDS / observability tools (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`, `participant_events`, `topic_metrics`, `peek_bag_samples`) hit the DDS half. The `name` collapses to `"ros2_cli+cyclone"` or `"ros2_cli+fast"` ; `effective_mode` reports `"live"` whenever either half is live.
 
-| `TOPICFORGE_MODE` | `TOPICFORGE_DDS_BACKEND` | Active adapter             | ROS2 tools                | DDS tools                  |
-| ----------------- | ------------------------ | -------------------------- | ------------------------- | -------------------------- |
-| `mock`            | (any)                    | `MockAdapter`              | work (fixtures)           | work (fixtures)            |
-| `live` / `auto`   | `mock` (default)         | `Ros2CliAdapter`           | work                      | raise with remediation     |
-| `live` / `auto`   | `cyclone`                | `CycloneDdsAdapter`        | raise (DDS-only adapter)  | work (real CycloneDDS)     |
-| `live` / `auto`   | `fast`                   | `FastDdsAdapter`           | raise (DDS-only adapter)  | work (real Fast DDS)       |
-| `live` / `auto`   | `rti`                    | falls back to ROS2 CLI     | work (CLI)                | raise (v0.4.0+ Pro tier)   |
+| `TOPICFORGE_MODE` | `TOPICFORGE_DDS_BACKEND` | Active adapter                | ROS2 tools                       | DDS / observability tools           |
+| ----------------- | ------------------------ | ----------------------------- | -------------------------------- | ----------------------------------- |
+| `mock`            | (any)                    | `MockAdapter`                 | work (fixtures)                  | work (fixtures)                     |
+| `live` / `auto`   | `mock` (default)         | `Ros2CliAdapter`              | work                             | raise with remediation              |
+| `live` / `auto`   | `cyclone`                | `CompositeAdapter(ros2_cli + cyclone)` | work (CLI)              | work (real CycloneDDS)              |
+| `live` / `auto`   | `fast`                   | `CompositeAdapter(ros2_cli + fast)` | work (CLI)                 | work (real Fast DDS)                |
+| `live` / `auto`   | `rti`                    | falls back to `Ros2CliAdapter` | work (CLI)                      | raise (v0.4.0+ Pro tier — BYO license) |
 
-A composite adapter that delegates per-tool category (ROS2 graph vs DDS layer) is on the v0.3.x roadmap. For now, restart the server with a different `TOPICFORGE_DDS_BACKEND` to switch sides.
+**Graceful degradation paths preserved.** DDS binding missing → ROS2-CLI-only (the v0.3.0 behavior). ROS2 CLI missing on PATH → DDS-only adapter with a clear `DDS_ONLY_ERROR_MSG` on the 5 ROS2 methods. Neither available → MockAdapter (auto mode only).
 
-Error messages on the unselected side are explicit and point at the remediation path — no silent failures.
+`HealthReport` reports both halves via the `ros_backend` and `dds_backend` fields, so a downstream client can introspect which half of a composite is live without guessing.
 
 ---
 
-## 5. v0.3.0 scope of `peek_dds_samples`
+## 5. v0.4.0 scope of `peek_dds_samples`
 
 `peek_dds_samples` is full-fidelity on the 4 builtin DCPS topics with both backends :
 
@@ -127,18 +127,26 @@ peek_dds_samples(topic="DCPSSubscription", count=10)
 peek_dds_samples(topic="DCPSPublication", count=10)
 ```
 
-Arbitrary user topics raise an `AdapterError` pointing at the v0.3.x roadmap — XTypes/IDL discovery (`cyclonedds.dynamic.get_types_for_typeid` on Cyclone, XTypes remote-type lookup on Fast DDS) is the missing piece for arbitrary user-topic peek.
+**Arbitrary user topics (v0.4.0 Phase 1.5+).** The v0.3.0 `AdapterError` is retired. The tool now returns best-effort decoded samples annotated with a `_decode_status` field :
 
-The other two DDS tools — `list_participants` and `detect_qos_mismatches` — work end-to-end on any user-topic deployment ; they don't depend on payload deserialization.
+- `"full"` — every IDL field decoded (currently the Cyclone XTypes path, structurally in place ; real-bus validation pending user feedback)
+- `"partial"` — some fields decoded, others opaque (mixed-success path)
+- `"raw"` — the binding could not resolve the dynamic XTypes ; the serialized payload is preserved as hex in `_raw_bytes_hex` (capped at 4096 hex chars ; `_raw_bytes_truncated=True` flags clipping)
+
+The diagnostic key `_decode_note` carries a short explanation when the status is non-`full`. The wire shape is identical across Cyclone and Fast DDS — the analyzer doesn't need to know which backend produced the sample.
+
+Fast DDS 2.6.x exposes only a partial dynamic XTypes Python surface today, so the `"raw"` fallback is the common path on Fast DDS user topics — the structural plumbing is identical to Cyclone, the upstream binding completion is the gating factor.
+
+The other DDS tools — `list_participants`, `detect_qos_mismatches`, `participant_events`, `topic_metrics` — work end-to-end on any user-topic deployment ; they don't depend on payload deserialization.
 
 ---
 
 ## 6. What's next
 
-- **v0.3.x patch** — XTypes/IDL discovery to extend `peek_dds_samples` to arbitrary user topics on both backends.
-- **v0.3.x patch** — Extended QoS coverage : Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget.
-- **v0.3.x patch** — Composite adapter routing ROS2 graph tools to `Ros2CliAdapter` and DDS tools to the selected DDS adapter, so both surfaces are usable simultaneously.
-- **v0.4.0+** — `RtiConnextAdapter` in the Pro tier (BYO RTI Connext license, gated by `TOPICFORGE_LICENSE_KEY`).
+- **v0.5.x patch** — Fast DDS XTypes binding completion to lift `"raw"` → `"full"` for arbitrary user-topic peek on Fast.
+- **v0.5.x patch** — Extended QoS coverage : Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget.
+- **v0.5.x patch** — Real-bus validation of the Cyclone XTypes pipeline (the v0.4.0 Phase 1.5 structural pipeline awaits user feedback on real domains).
+- **v0.4.0+ Pro tier** — Real `RtiConnextAdapter` (BYO RTI Connext license, gated by `TOPICFORGE_LICENSE_KEY`). Scaffolded but not yet shipped.
 
 Full strategic roadmap lives in [`docs/product-plan.md`](product-plan.md) and the DDS module spec at [`docs/projet-file/mcp-02-spec.md`](projet-file/mcp-02-spec.md).
 
@@ -149,8 +157,9 @@ Full strategic roadmap lives in [`docs/product-plan.md`](product-plan.md) and th
 - **`pip install topicforge[dds-cyclone]` fails on Windows / macOS Python 3.13+** — `cyclonedds` wheels are typically published for Python 3.8 to 3.12. Pin Python 3.11 or 3.12 for the install host.
 - **`pip install topicforge[dds-cyclone]` fails with `CYCLONEDDS_HOME`** — pip is trying to build `cyclonedds` from source because no wheel matches your platform/Python combination. Either switch to a supported Python (3.11/3.12) or install the native CycloneDDS C library first (see Eclipse CycloneDDS releases).
 - **`pip install topicforge[dds-fast]` fails** — eProsima Fast DDS Python bindings (`fastdds>=2.6.1,<3`) currently ship wheels for Linux first. Windows wheels lag ; consult fast-dds.docs.eprosima.com for the current matrix.
-- **DDS tool returns "v0.3.x roadmap" error** — you called `peek_dds_samples` on an arbitrary user topic. The 4 builtin DCPS topics work today ; arbitrary user-topic peek is a v0.3.x patch (XTypes/IDL discovery).
-- **DDS tool returns "DDS module is not active" error** — your `TOPICFORGE_DDS_BACKEND` is `mock` while `TOPICFORGE_MODE` is `live` (the ROS2 CLI adapter is selected). Set `TOPICFORGE_DDS_BACKEND=cyclone` or `=fast` explicitly to enable the DDS adapters.
+- **DDS tool returns samples with `_decode_status="raw"`** — the binding could not resolve the dynamic XTypes for this user topic. Inspect `_decode_note` for the cause and `_raw_bytes_hex` for the serialized payload. On Fast DDS this is the common path until 2.6.x dynamic XTypes binding completion. On Cyclone, ensure the publisher uses XTypes-discoverable types and re-run.
+- **DDS tool returns "DDS module is not active" error** — your `TOPICFORGE_DDS_BACKEND` is `mock` while `TOPICFORGE_MODE` is `live` (the ROS2 CLI half of the composite is the only one selected). Set `TOPICFORGE_DDS_BACKEND=cyclone` or `=fast` explicitly to enable the DDS half — the `CompositeAdapter` will then serve both surfaces.
+- **DDS tool returns "DDS observability only" with a long remediation message** — the inverse case: a DDS-only adapter is active (the ROS2 CLI is missing on PATH) and you called a ROS2 graph tool. Install ROS2 and source the workspace so `ros2` is on PATH ; the `CompositeAdapter` will pick up both halves on the next run.
 - **`auto` selects the wrong backend** — `auto` prefers Fast > Cyclone > Mock. If you want Cyclone explicitly, set `TOPICFORGE_DDS_BACKEND=cyclone` rather than relying on `auto`.
 
 Report issues at https://github.com/yaniswav/TopicForge/issues.

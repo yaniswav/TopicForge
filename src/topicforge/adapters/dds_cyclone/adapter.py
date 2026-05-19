@@ -318,7 +318,12 @@ class CycloneDdsAdapter:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
             samples = list(reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))
         except Exception as exc:
-            raise AdapterError(f"cyclone participant discovery failed: {exc}") from exc
+            raise AdapterError(
+                f"CycloneDDS participant discovery failed on domain {self._domain_id} "
+                f"({type(exc).__name__}: {exc}). Common causes: DDS domain mismatch, "
+                f"firewall blocking RTPS multicast, or CYCLONEDDS_URI pointing at an "
+                f"unreadable config."
+            ) from exc
 
         observed_guids: set[str] = set()
         for sample in samples[:_MAX_PARTICIPANTS]:
@@ -352,7 +357,10 @@ class CycloneDdsAdapter:
                 :_MAX_ENDPOINTS
             ]
         except Exception as exc:
-            raise AdapterError(f"cyclone endpoint discovery failed: {exc}") from exc
+            raise AdapterError(
+                f"CycloneDDS endpoint discovery failed on domain {self._domain_id} "
+                f"({type(exc).__name__}: {exc})."
+            ) from exc
 
         by_topic: dict[str, tuple[list[Any], list[Any]]] = {}
         for sample in subs:
@@ -425,7 +433,9 @@ class CycloneDdsAdapter:
                 :count
             ]
         except Exception as exc:
-            raise AdapterError(f"cyclone peek failed: {exc}") from exc
+            raise AdapterError(
+                f"CycloneDDS sample peek failed on topic {topic!r} ({type(exc).__name__}: {exc})."
+            ) from exc
 
         import time
 

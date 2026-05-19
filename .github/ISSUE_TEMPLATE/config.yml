@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/yaniswav/TopicForge/blob/main/SECURITY.md
+    about: Vulnerability disclosures go to the email in SECURITY.md, not public issues.
+  - name: Troubleshooting
+    url: https://github.com/yaniswav/TopicForge/blob/main/docs/TROUBLESHOOTING.md
+    about: Common AdapterError messages and their remediation paths.
+  - name: DDS quickstart
+    url: https://github.com/yaniswav/TopicForge/blob/main/docs/DDS_QUICKSTART.md
+    about: 5-minute walkthrough for the DDS module — backend selection, QoS mismatch scenario.
