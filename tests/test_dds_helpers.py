@@ -115,3 +115,25 @@ def test_dds_only_error_msg_mentions_remediation() -> None:
     path so an LLM client can take action without re-reading docs."""
     assert "TOPICFORGE_DDS_BACKEND" in DDS_ONLY_ERROR_MSG
     assert "TOPICFORGE_MODE" in DDS_ONLY_ERROR_MSG
+
+
+def test_dds_only_error_msg_preserves_substring_match_token() -> None:
+    """`tests/test_cyclone_adapter.py` and friends use `match="DDS observability only"`
+    via `pytest.raises`. The substring must survive any future re-wording so those
+    test files don't quietly regress."""
+    assert "DDS observability only" in DDS_ONLY_ERROR_MSG
+
+
+def test_dds_only_error_msg_mentions_composite_remediation() -> None:
+    """v0.5.0 polish: the message must name the v0.4.0 CompositeAdapter as the
+    canonical remediation for the dual-surface workflow, so an LLM caller can
+    suggest the right action immediately."""
+    assert "CompositeAdapter" in DDS_ONLY_ERROR_MSG
+
+
+def test_dds_only_error_msg_lists_affected_tools() -> None:
+    """The message names every ROS2-side tool a DDS-only adapter cannot serve,
+    so the LLM caller does not need to introspect the protocol to know what is
+    blocked."""
+    for tool in ("list_topics", "get_topic_info", "sample_messages", "analyze_bag"):
+        assert tool in DDS_ONLY_ERROR_MSG, f"missing tool name in error message: {tool!r}"

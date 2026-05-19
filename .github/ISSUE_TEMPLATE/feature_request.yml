@@ -1,0 +1,78 @@
+name: Feature request
+description: Propose a new capability. Read the scope notes first.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening : TopicForge is intentionally small. The tool surface is capped at 11
+        as of v0.4.0 ; each new tool needs an explicit scope discussion (see `docs/product-plan.md §11`
+        "Scope creep within the TopicForge umbrella"). Many ideas land better in the Pro tier
+        roadmap (URDF inspection, bag anomaly detection) than as OSS additions.
+
+        For parser fixes on a new ROS2 distro, please file a bug instead with a failing test.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Concrete, user-facing. Avoid solution language at this stage.
+      placeholder: |
+        "When I bring up a new robot stack I cannot tell from `list_topics` alone
+        which nodes own which topics — I have to cross-reference `ros2 node list`
+        manually."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: |
+        Tool name, parameters, return shape if you have a concrete idea.
+        Drop a Pydantic-like sketch if it helps — the maintainer will refine.
+      placeholder: |
+        `list_nodes(name_filter: str | None = None) -> list[NodeInfo]`
+        where `NodeInfo` carries `name`, `namespace`, `publishers`, `subscribers`, `services`.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which tier should this live in?
+      options:
+        - "OSS (core)"
+        - "Pro tier (URDF / bag anomaly / multi-bag diff family)"
+        - "I don't know — maintainer decides"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What did you try before opening this? `ros2` CLI commands, scripts, other MCPs?
+      placeholder: |
+        I currently run `ros2 node list && ros2 node info <each>` then paste the
+        output into Claude manually.
+    validations:
+      required: false
+
+  - type: textarea
+    id: who-benefits
+    attributes:
+      label: Who else benefits?
+      description: Solo dev? Small team? Specific industry? Helps with scope decisions.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Quick checks
+      options:
+        - label: I've checked `docs/product-plan.md` and this is not already on a roadmap.
+        - label: I've checked existing issues for duplicates.
+        - label: I understand TopicForge is read-only by architecture and will not propose write/command/publish capabilities.

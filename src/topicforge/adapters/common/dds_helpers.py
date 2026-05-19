@@ -98,14 +98,24 @@ def format_guid(raw: bytes | tuple[int, ...] | str | None) -> str:
 
 
 DDS_ONLY_ERROR_MSG = (
-    "This adapter serves DDS observability only. Use TOPICFORGE_MODE=live "
-    "with TOPICFORGE_DDS_BACKEND=mock (the default) for the 5 ROS2 graph "
-    "and bag tools, or TOPICFORGE_MODE=mock for end-to-end fixtures."
+    "This adapter serves DDS observability only — it cannot run the ROS2 "
+    "graph tools (list_topics, get_topic_info, sample_messages, analyze_bag, "
+    "peek_bag_samples). To get both surfaces in one process: install ROS2 "
+    "and source the workspace so `ros2` is on PATH, then re-run with "
+    "TOPICFORGE_MODE=live — the v0.4.0 CompositeAdapter routes ROS2 tools to "
+    "the CLI and DDS tools to your TOPICFORGE_DDS_BACKEND automatically. "
+    "For offline development use TOPICFORGE_MODE=mock."
 )
 """Standard message raised by DDS adapters when asked for ROS2 introspection.
 
 Both `CycloneDdsAdapter` and `FastDdsAdapter` raise
-`AdapterError(DDS_ONLY_ERROR_MSG)` on the 4 ROS2 methods of the
+`AdapterError(DDS_ONLY_ERROR_MSG)` on the 5 ROS2 methods of the
 `MiddlewareAdapter` protocol. The single message keeps the user-facing
-remediation text consistent across vendors.
+remediation text consistent across vendors. Lists every tool affected so
+the LLM caller can suggest exactly the right next action.
+
+Test contract: must contain the substrings `"DDS observability only"`,
+`"TOPICFORGE_DDS_BACKEND"`, `"TOPICFORGE_MODE"` (pinned by
+`tests/test_dds_helpers.py` and the cross-vendor / cyclone / fast adapter
+test suites).
 """

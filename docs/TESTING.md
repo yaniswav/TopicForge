@@ -14,21 +14,30 @@ If you find a step that doesn't work, please [open an issue](https://github.com/
 
 | You want to... | Time | Path |
 | --- | --- | --- |
-| See the five MCP tools work end-to-end without installing ROS2 | 5 min | [Path 1 — Mock mode](#path-1--mock-mode-no-ros2-required) |
+| See the eleven MCP tools work end-to-end without installing ROS2 | 5 min | [Path 1 — Mock mode](#path-1--mock-mode-no-ros2-required) |
 | Validate live mode against real ROS2 traffic on Windows | 45 min | [Path 2 — WSL2 + Humble](#path-2--wsl2--ros2-humble-windows-recommended) |
 | Same as Path 2, but you're already on Ubuntu/Debian | 20 min | [Path 3 — Linux native](#path-3--linux-native) |
 | Reproducible throwaway environment | 15 min | [Path 4 — Docker](#path-4--docker-throwaway) |
 | Native Windows ROS2 install (no virtualization) | 1–2 h | [Path 5 — Windows native (advanced)](#path-5--windows-native-advanced) |
 
 Once any path is set up, jump to [Test scenarios](#test-scenarios) to
-exercise the five tools, then [Connect an MCP client](#connect-an-mcp-client)
+exercise the eleven tools, then [Connect an MCP client](#connect-an-mcp-client)
 to use TopicForge from Claude Desktop, Claude Code, Cursor, etc.
+
+> **Tool surface as of v0.4.0.** 5 ROS2 graph tools (`health_check`,
+> `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`) +
+> 3 DDS tools (`list_participants`, `detect_qos_mismatches`,
+> `peek_dds_samples`) + 3 observability tools (`participant_events`,
+> `topic_metrics`, `peek_bag_samples`). The mock adapter serves all
+> eleven against deterministic fixtures so no DDS broker is required
+> for evaluation. See [`docs/DDS_QUICKSTART.md`](DDS_QUICKSTART.md) for
+> the DDS half.
 
 ---
 
 ## Path 1 — Mock mode (no ROS2 required)
 
-The fastest way to confirm the server starts, registers all five tools,
+The fastest way to confirm the server starts, registers all eleven tools,
 and serves typed payloads to an MCP client.
 
 ```bash
