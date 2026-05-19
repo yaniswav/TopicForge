@@ -198,13 +198,20 @@ class FastDdsAdapter:
             mask = fastdds.StatusMask.all()
             self._participant = factory.create_participant(domain_id, qos, self._listener, mask)
             if self._participant is None:
-                raise AdapterError("DomainParticipantFactory.create_participant returned None")
+                raise AdapterError(
+                    f"Fast DDS DomainParticipant creation returned None on domain "
+                    f"{domain_id}. Likely an ABI mismatch between the `fastdds` Python "
+                    f"binding and the installed Fast DDS core library — pin "
+                    f"`fastdds>=2.6.1,<3` and reinstall, or check the FastDDS_DEFAULT_PROFILES_FILE "
+                    f"env var if you set one."
+                )
             self._factory = factory
         except AdapterError:
             raise
         except Exception as exc:
             raise AdapterError(
-                f"Failed to create Fast DDS DomainParticipant on domain {domain_id}: {exc}"
+                f"Failed to create Fast DDS DomainParticipant on domain {domain_id} "
+                f"({type(exc).__name__}: {exc})."
             ) from exc
         # Bounded warm-up — discovery callbacks fire asynchronously after
         # the participant joins.

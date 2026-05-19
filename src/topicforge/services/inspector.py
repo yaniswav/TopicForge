@@ -73,11 +73,12 @@ class Inspector:
         return self._adapter.name
 
     def list_topics(self) -> list[TopicInfo]:
-        # TODO(roadmap, audit-2026-05-14): validation symmetry — list_topics
-        # is a pass-through with no input to validate, while peer methods
-        # like get_topic_info validate. The "symmetric gate" docstring
-        # justifies it today, but revisit if new tools land that take args
-        # this method does not. See architecture audit "Refactor" #7.
+        # Validation symmetry note (audit-2026-05-14 "Refactor" #7, resolved
+        # WONT-FIX in v0.5.0): list_topics takes no MCP-level arguments, so
+        # an Inspector-side gate would have nothing to validate. Peer methods
+        # like get_topic_info do validate ; the asymmetry is structural, not
+        # accidental. Reopened only if a future tool variant ships with args
+        # that need normalizing here.
         return self._adapter.list_topics()
 
     def get_topic_info(self, topic: str) -> TopicInfo:

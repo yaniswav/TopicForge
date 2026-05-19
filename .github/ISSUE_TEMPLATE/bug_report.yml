@@ -1,0 +1,120 @@
+name: Bug report
+description: Something broke. Pure-Python reproductions land fastest.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Two minutes of structured detail saves a 30-minute back-and-forth.
+
+        Security vulnerabilities → please use the email in `SECURITY.md`, not this form.
+
+  - type: input
+    id: version
+    attributes:
+      label: TopicForge version
+      description: "Output of `python -m topicforge --version` or `pip show topicforge`."
+      placeholder: "topicforge 0.4.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime mode
+      description: "From your `TOPICFORGE_MODE` env var or `health_check` output."
+      options:
+        - mock
+        - live
+        - auto (resolved to live)
+        - auto (resolved to mock)
+        - "I don't know"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dds-backend
+    attributes:
+      label: DDS backend (if relevant)
+      description: "Skip if the bug doesn't touch the DDS module."
+      options:
+        - "n/a — bug is on the ROS2 side"
+        - mock
+        - cyclone
+        - fast
+        - rti
+        - opendds
+        - dust
+        - other / Pro tier vendor
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows (native)
+        - Windows (WSL2)
+        - Ubuntu / Debian
+        - macOS
+        - other Linux
+        - Docker container
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Be precise. Quote the exact tool call and the exact response or exception text. Substring of the AdapterError message is gold.
+      placeholder: |
+        I called `peek_dds_samples(topic="/foo/bar", count=5)` and got
+        `AdapterError("CycloneDDS sample peek failed on topic ...")`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: A SampleResult with up to 5 decoded samples.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      description: |
+        A failing pytest is gold. A copy-pastable shell session is silver.
+        "It happens sometimes" is bronze — please include the env vars and command line at minimum.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment variables set
+      description: "Only the `TOPICFORGE_*` and `ROS_*` / `CYCLONEDDS_*` / `FastDDS_*` ones. Redact anything sensitive."
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Quick checks
+      options:
+        - label: I've read [docs/TROUBLESHOOTING.md](../blob/main/docs/TROUBLESHOOTING.md) and my error isn't covered there.
+        - label: This is not a security vulnerability (those go to the email in `SECURITY.md`).
