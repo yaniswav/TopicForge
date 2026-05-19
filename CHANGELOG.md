@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Sprint v0.5.0 — Polish + validation (pre-marketing-publication)
+
+> Branch `feat/v0.5.0-polish-and-validation`. Three sub-milestones
+> (5.1 real validation, 5.2 audit closure + error polish, 5.3 docs +
+> examples + repo polish). No new MCP tool, no schema change. Last
+> sprint before marketing publication ; the next version bump is
+> the maintainer's manual `release` commit + tag.
+
+#### Changed (sub-milestone 5.1 — Real validation)
+
+- **CI matrix expanded** (`.github/workflows/ci.yml`) from
+  `ubuntu-latest × {3.11, 3.12}` to `{ubuntu-latest, windows-latest} ×
+  {3.11, 3.12, 3.13}` (6 cells, `fail-fast: false`). Windows-latest
+  coverage closes the largest unverified surface — TopicForge's primary
+  dev environment is Windows per `CLAUDE.md §7` and was previously only
+  hand-validated. Python 3.13 added now that wheels are stable across
+  the dependency footprint.
+- **`pyproject.toml` classifiers** widened with `Programming Language ::
+  Python :: 3.13`.
+
+#### Changed (sub-milestone 5.2 — AdapterError polish)
+
+- **`DDS_ONLY_ERROR_MSG`** (`adapters/common/dds_helpers.py`) rewritten
+  with the v0.4.0 `CompositeAdapter` remediation path explicit, and
+  with every affected ROS2 tool name listed inline. Substring
+  `"DDS observability only"`, `"TOPICFORGE_DDS_BACKEND"`,
+  `"TOPICFORGE_MODE"` preserved — existing `pytest.raises(match=...)`
+  contracts honored. New token assertions added :
+  `"CompositeAdapter"`, the 4 affected tool names.
+- **CycloneDDS adapter errors** (`adapters/dds_cyclone/adapter.py`)
+  enriched with the underlying exception type, the active domain id,
+  the topic name (where relevant), and common-cause diagnostic hints
+  (`CYCLONEDDS_URI` misconfiguration, multicast firewall, domain
+  mismatch). Three sites : participant discovery, endpoint discovery,
+  sample peek.
+- **Fast DDS participant-init error** (`adapters/dds_fast/adapter.py`)
+  enriched with an ABI-mismatch diagnostic — Fast DDS 2.6.x Python
+  binding wheels frequently desynchronize with system-installed Fast
+  DDS native libraries, and the v0.4.0 wording masked the cause behind
+  a bare `"returned None"`. New message points at the pyproject pin
+  (`fastdds>=2.6.1,<3`) and the `FastDDS_DEFAULT_PROFILES_FILE` env
+  var as the two likely culprits.
+- **`BagService` IO errors** (`services/bag_service.py`) wrap the
+  rosbags-side exception class name into the AdapterError message so
+  the LLM caller can pivot on `PermissionError` / `IsADirectoryError`
+  / etc. without inspecting `__cause__`.
+- **`_ROSBAGS_REQUIRED_MSG`** rewording — clarifies that `analyze_bag`
+  has a v0.3.0 text-parse fallback while `peek_bag_samples` does not.
+
+#### Closed (sub-milestone 5.2 — audit triage)
+
+- **`docs/projet-file/audit-followup-triage-v0.2.0.md` refreshed**
+  against the current tree (was last touched pre-v0.3.0). Strict
+  B-class : 3 items now CLOSED (B6 in v0.2.0, B9 in v0.3.0, B10 in
+  v0.5.0). 6 items remain DEFER (B1-B5 hosted-context security
+  hardening ; B7, B8 wire-contract decisions for v0.6+).
+- **`TODO(roadmap, audit-2026-05-14)` at `services/inspector.py:76`
+  retired as WONT-FIX-by-design** — the `list_topics` Inspector gate
+  is intentionally empty (no MCP-level args to validate). The comment
+  block is now a permanent design note rather than a roadmap pointer.
+
+#### Added (sub-milestone 5.2 — regression tests)
+
+- **5 new tests** in `tests/test_dds_helpers.py` and
+  `tests/test_bag_service.py` (regex-token assertions, not exact
+  wording) — pin the polished message contract without locking the
+  exact prose. Baseline grows from 394 to 399 passed ; 24 skipped
+  unchanged ; ruff clean.
+
+#### Changed (sub-milestone 5.3 — Documentation cascade)
+
+- **`README.md`** — CI badge added ; tagline refreshed from "v0.3.0"
+  to "v0.4.0" framing emphasising observability + bag analysis ; the
+  3-row DDS tool mini-table grew into a 6-row table listing every
+  DDS / observability tool with its sub-milestone of origin ;
+  `peek_dds_samples` scope rewritten around `_decode_status` (full /
+  partial / raw) ; telemetry contract field description switched from
+  "five MVP tools" to "eleven MCP tools" ; `TOPICFORGE_DDS_BACKEND`
+  Literal values listed in the config reference ; Roadmap section
+  pruned of items that shipped in v0.4.0 (Composite adapter, XTypes
+  Cyclone push).
+- **`docs/DDS_QUICKSTART.md`** — header bumped to v0.4.0+ ; §4
+  "Single-adapter limitation (v0.3.0)" replaced by "Composite adapter
+  (v0.4.0 Phase 1+)" with the new routing table ; §5 documents the
+  v0.4.0 Phase 1.5 best-effort XTypes story (no more
+  `AdapterError` on user topics) ; §6 "What's next" pruned of shipped
+  items ; §7 Troubleshooting updated.
+- **`docs/TESTING.md`** — "five MCP tools" → "eleven MCP tools" in the
+  three documented occurrences ("Pick your path" table row, the lead
+  paragraph, Path 1 header). New v0.4.0 tool-surface callout above
+  the path picker.
+
+#### Added (sub-milestone 5.3 — new docs and examples)
+
+- **`docs/MIGRATION_v0.3_to_v0.4.md`** (new, sibling to the existing
+  `MIGRATION_v0.2_to_v0.3.md`). 8 sections : new tools, env vars and
+  extras, soft-breaking schema widening (`ParticipantInfo` +4 fields,
+  `BagAnalysis` +4 fields, `HealthReport.ros_backend`, `dds_backend`
+  widening, `AdapterName` widening, new `TopicMetrics` /
+  `ParticipantEvent` schemas), `CompositeAdapter`, `peek_dds_samples`
+  user-topic story, protocol expansions, plus a quick checklist.
+- **`docs/TROUBLESHOOTING.md`** (new). One section per polished
+  AdapterError message, plus the cross-cutting "ROS2 CLI not found on
+  PATH" / `auto` fallback to mock case. Each section quotes the
+  message and lists the diagnostics in order.
+- **`examples/`** (new). 4 mock-mode-runnable walkthroughs covering
+  the headline value props :
+  - `01-discover-ros2-stack.md` — `health_check` + `list_topics` +
+    `get_topic_info` + `sample_messages`
+  - `02-debug-qos-mismatch.md` — `list_participants` +
+    `detect_qos_mismatches` + `peek_dds_samples` (canonical
+    Reliability mismatch story)
+  - `03-analyze-recording.md` — `analyze_bag` + `peek_bag_samples`
+    post-mortem inspection
+  - `04-monitor-topic-frequency.md` — `topic_metrics` +
+    `participant_events` with the opportunistic-fill caveat
+  Each example pairs an MCP-client prompt with the expected tool
+  calls and a short LLM-facing synthesis.
+
+#### Added (sub-milestone 5.3 — repo polish)
+
+- **`CONTRIBUTING.md`** (new). What contributions land easily vs hard,
+  development setup, the `make check` contract, mock-first
+  development convention, layer separation, pure-parser convention,
+  commit conventions.
+- **`SECURITY.md`** (new). Local-trust threat model, the
+  read-only-by-architecture stance, vulnerability disclosure email,
+  response SLAs, supported version policy.
+- **`.github/ISSUE_TEMPLATE/bug_report.yml`** (new) — structured form
+  with version, mode, OS, Python, repro, env vars, troubleshooting
+  check.
+- **`.github/ISSUE_TEMPLATE/feature_request.yml`** (new) —
+  problem-first framing, tier disambiguation (OSS / Pro), explicit
+  read-only-by-architecture acknowledgment.
+- **`.github/ISSUE_TEMPLATE/config.yml`** (new) — disables blank
+  issues, links to `SECURITY.md`, `docs/TROUBLESHOOTING.md`,
+  `docs/DDS_QUICKSTART.md`.
+- **`.github/PULL_REQUEST_TEMPLATE.md`** (new) — summary, test plan,
+  backward-compatibility checklist (covers the 11-tool cap, schema
+  additive-only invariant, telemetry 6-field contract, env var docs,
+  public API removal flag).
+
+#### Notes
+
+- **Backward compat preserved.** Zero schema changes, zero new tools,
+  zero env-var renames. The `DDS_ONLY_ERROR_MSG` substring tokens
+  pinned by existing tests (`"DDS observability only"`,
+  `"TOPICFORGE_DDS_BACKEND"`, `"TOPICFORGE_MODE"`) are preserved
+  intact ; v0.4.0 producers and clients keep working byte-for-byte.
+- **CHANGELOG entry deferred to release time.** This branch leaves
+  `pyproject.toml` at `0.4.0`, `__version__` at `"0.4.0"`, and the
+  `## [Unreleased]` heading populated with the polish notes above.
+  The version bump and `v0.5.0` tag are the maintainer's manual
+  steps after final review.
+
 ## [0.4.0] - 2026-05-15
 
 ### Sprint v0.4.0 — Phase 3 (bag analysis multi-format)

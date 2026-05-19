@@ -1,11 +1,12 @@
 # TopicForge
 
 [![PyPI version](https://img.shields.io/pypi/v/topicforge.svg)](https://pypi.org/project/topicforge/)
+[![CI](https://github.com/yaniswav/TopicForge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yaniswav/TopicForge/actions/workflows/ci.yml)
 [![Python versions](https://img.shields.io/pypi/pyversions/topicforge.svg)](https://pypi.org/project/topicforge/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/yaniswav/TopicForge/blob/main/LICENSE)
 [![Read-only by architecture](https://img.shields.io/badge/safety-read--only_by_architecture-2563eb)](https://github.com/yaniswav/TopicForge#security-model)
 
-> **The safety-first read-only MCP for ROS2 robotics — now with multi-vendor OMG DDS-RTPS observability (v0.3.0).** TopicForge lets AI agents inspect your ROS2 graph, ROS bag files, and (since v0.2.0) the raw DDS layer beneath ROS, without ever publishing back to the bus. v0.3.0 ships two OSS Python adapters — Eclipse CycloneDDS and eProsima Fast DDS — each joining the bus as a read-only DDS-RTPS participant that observes **every conformant vendor on the wire** (RTI Connext, OpenDDS, CoreDX, Dust DDS in Rust, etc.) via the OMG protocol guarantee. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md) for the canonical multi-vendor positioning and the OMG May 2025 interop reference.
+> **The safety-first read-only MCP for ROS2 robotics — observability + multi-vendor OMG DDS-RTPS (v0.4.0).** TopicForge lets AI agents inspect your ROS2 graph, recorded bag files, and the raw DDS layer beneath ROS — without ever publishing back to the bus. **Eleven typed read-only tools** (5 ROS2 graph + 3 DDS + 3 observability/bag) share a single Pydantic envelope so an LLM caller reads one schema across the whole stack. v0.4.0 adds participant lifecycle tracking (`participant_events`), temporal metrics (`topic_metrics`), and post-mortem bag sample peek (`peek_bag_samples`) on top of v0.3.0's two OSS Python DDS participants — Eclipse CycloneDDS and eProsima Fast DDS — each observing **every conformant vendor on the wire** (RTI Connext, OpenDDS, CoreDX, Dust DDS in Rust, etc.) via the OMG protocol guarantee. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md) for the canonical multi-vendor positioning and the OMG May 2025 interop reference.
 
 TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents — such as Claude — inspect ROS2 topics, analyze ROS bag files, and (since v0.2.0) observe the raw DDS layer through a clean, structured tool interface. It is read-only by **architecture**, not by configuration: there is no write path to misconfigure, no permission system to audit, no liability conversation to have. The MCP client can see the robot stack; it cannot touch it.
 
@@ -171,21 +172,24 @@ CoreDX, InterCOM) ship under the optional `topicforge-pro` package with
 BYO vendor license. See [`docs/pro.md`](docs/pro.md) for the early-access
 slot and pricing terms ; nothing is collected today.
 
-Three new MCP tools (in addition to the five ROS2 tools above) :
+Six DDS / observability tools (in addition to the five ROS2 tools above) :
 
-| Tool                    | Purpose                                                                          |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `list_participants`     | DDS participants discovered on a domain, with vendor and hostname                |
-| `detect_qos_mismatches` | Reader/writer QoS incompatibilities preventing communication on a topic          |
-| `peek_dds_samples`      | Recent samples on a raw DDS topic (distinct from `sample_messages` on ROS2 graph)|
+| Tool                    | Since   | Purpose                                                                                                        |
+| ----------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `list_participants`     | v0.2.0  | DDS participants discovered on a domain, with vendor, hostname, and (v0.4.0) lifecycle fields                  |
+| `detect_qos_mismatches` | v0.2.0  | Reader/writer QoS incompatibilities preventing communication on a topic                                        |
+| `peek_dds_samples`      | v0.2.0  | Recent samples on a raw DDS topic — v0.4.0 adds best-effort XTypes user-topic decode (distinct from `sample_messages` on ROS2 graph) |
+| `participant_events`    | v0.4.0  | Lifecycle stream — `discovered` / `lost` participant events over a configurable window                         |
+| `topic_metrics`         | v0.4.0  | Temporal metrics — observed frequency, sequence gaps, latency p50/p95/p99 over a sliding window                |
+| `peek_bag_samples`      | v0.4.0  | Post-mortem inspection — decoded samples from a recorded `.mcap` / `.db3` / `.bag` file                        |
 
-**Composite adapter (v0.4.0 Phase 1+).** When `TOPICFORGE_MODE=live` is paired with a DDS backend (`cyclone`, `fast`, …), TopicForge instantiates **both** a ROS2 CLI adapter and the chosen DDS adapter and routes per-tool category — the 5 ROS2 tools hit the CLI, the 3 DDS tools (+ `participant_events` from Phase 1) hit the DDS backend. ROS2-only or DDS-only setups still work — the missing half is skipped and the present half serves what it can. The mock backend continues to expose all 11 tools against deterministic fixtures for local development.
+**Composite adapter (v0.4.0 Phase 1+).** When `TOPICFORGE_MODE=live` is paired with a DDS backend (`cyclone`, `fast`, …), TopicForge instantiates **both** a ROS2 CLI adapter and the chosen DDS adapter and routes per-tool category — the 5 ROS2 tools hit the CLI, the DDS / observability tools hit the DDS backend. ROS2-only or DDS-only setups still work — the missing half is skipped and the present half serves what it can. The mock backend continues to expose all 11 tools against deterministic fixtures for local development.
 
-**v0.3.0 limitation — `peek_dds_samples` scope.** Full-fidelity on the 4 builtin DCPS topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) ; arbitrary user topics raise an `AdapterError` pointing at the v0.3.x XTypes/IDL roadmap. The other two DDS tools (`list_participants`, `detect_qos_mismatches`) work end-to-end on any user-topic deployment.
+**`peek_dds_samples` payload shape (v0.4.0 Phase 1.5).** Full-fidelity on the 4 builtin DCPS topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`). Arbitrary user topics return best-effort decoded samples with a `_decode_status` annotation : `"full"` (every IDL field decoded — currently a v0.4.0+ Cyclone XTypes path), `"partial"` (some fields decoded, others opaque), or `"raw"` (binding could not resolve the dynamic XTypes — bytes preserved as hex in `_raw_bytes_hex`). The diagnostic key `_decode_note` carries a short explanation when the status is non-`full`. The wire shape is identical across Cyclone and Fast backends.
 
 **`RTI Connext`** is v0.4.0+ Pro tier (BYO license — see `docs/pro.md`).
 
-**Full 5-minute walkthrough** — backend selection, the canonical QoS-mismatch debugging scenario, troubleshooting — lives in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md). Migration from v0.2.0 in [`docs/MIGRATION_v0.2_to_v0.3.md`](docs/MIGRATION_v0.2_to_v0.3.md).
+**Full 5-minute walkthrough** — backend selection, the canonical QoS-mismatch debugging scenario, troubleshooting — lives in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md). Migration history : [v0.2 → v0.3](docs/MIGRATION_v0.2_to_v0.3.md), [v0.3 → v0.4](docs/MIGRATION_v0.3_to_v0.4.md).
 
 ### Configure with Claude Desktop
 
@@ -240,7 +244,7 @@ make check    # both, plus tests (CI bundle)
 | `TOPICFORGE_LOG_LEVEL`      | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                                           |
 | `TOPICFORGE_ROS2_BIN`       | `ros2`  | Name (or path) of the ROS2 CLI binary                                         |
 | `TOPICFORGE_TELEMETRY`      | `off`   | Opt-in anonymous usage telemetry. See [Telemetry](#telemetry).                |
-| `TOPICFORGE_DDS_BACKEND`    | `mock`  | DDS module backend: `mock`, `cyclone`, `fast`, `rti`, or `auto`. `auto` resolves to Fast > Cyclone > Mock. See [Multi-vendor DDS support](#multi-vendor-dds-support-v030). |
+| `TOPICFORGE_DDS_BACKEND`    | `mock`  | DDS module backend: `mock`, `cyclone`, `fast`, `rti`, `opensplice`, `coredx`, `intercom`, `opendds`, `dust`, or `auto`. The v0.4.0 Phase 1.5 auto-detect chain resolves to: `rti > opensplice > coredx > intercom` (Pro tier, if installed) `> opendds > fast > cyclone > dust > mock`. See [Multi-vendor DDS support](#multi-vendor-dds-support-v030). |
 | `TOPICFORGE_DDS_DOMAIN_ID`  | `0`     | DDS domain id observed (0..232) when a DDS backend is active.                 |
 
 See [`.env.example`](.env.example).
@@ -268,7 +272,7 @@ When telemetry is on, each MCP tool call emits a single event with **only** thes
 
 | Field             | Example          | Notes                                                                  |
 | ----------------- | ---------------- | ---------------------------------------------------------------------- |
-| `tool_name`       | `"list_topics"`  | One of the five MVP tools — never argument values.                     |
+| `tool_name`       | `"list_topics"`  | One of the eleven MCP tools — never argument values.                   |
 | `latency_ms`      | `12.34`          | Wall-clock duration of the handler, rounded to 2 decimals.             |
 | `mode`            | `"mock"`         | Effective runtime mode: `mock` or `live`.                              |
 | `version`         | `"0.1.2"`        | TopicForge server version.                                             |
@@ -314,16 +318,14 @@ See [`docs/product-plan.md`](docs/product-plan.md) for the full product trajecto
 
 Near-term additions on the bench:
 
-- `rclpy`-backed live adapter for faster & richer sampling
-- XTypes/IDL discovery to extend `peek_dds_samples` to arbitrary user topics (today: 4 builtin DCPS topics only) — v0.3.x patch
-- Extended QoS coverage (Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget) — v0.3.x patch
-- Composite adapter delegating per-tool category, so ROS2 + DDS surfaces work simultaneously — v0.3.x patch
-- `RtiConnextAdapter` in the Pro tier (BYO RTI Connext license, gated by `TOPICFORGE_LICENSE_KEY`) — v0.4.0+
-- URDF inspector / validator MCP tools
-- Bag anomaly detection (clock jumps, gaps, dropped frames, TF tree health)
+- `rclpy`-backed live adapter for faster & richer sampling (per-message rmw receive timestamps, windowed sampling) — gated on external user demand
+- Extended QoS coverage (Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget) — v0.5.x patch
+- Real `RtiConnextAdapter` in the Pro tier (BYO RTI Connext license, gated by `TOPICFORGE_LICENSE_KEY`) — the v0.4.0 Phase 1.5 framework is in place ; production binding pending Pro tier launch
+- URDF inspector / validator MCP tools (Pro tier)
+- Bag anomaly detection (clock jumps, gaps, dropped frames, TF tree health) — Pro tier
 - Dataset export helpers (rosbag → COCO / HF Datasets)
 - Synthetic data pipeline controller (Blender, Gazebo, Isaac Sim)
-- Hosted MCP endpoint with auth
+- Hosted MCP endpoint with auth (Phase 3 — depends on Pro tier traction)
 
 ## Project layout
 

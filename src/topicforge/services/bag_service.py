@@ -48,7 +48,10 @@ _BAG_FORMAT_BY_EXTENSION: dict[str, str] = {
 
 _MAX_SAMPLE_COUNT = 50
 _ROSBAGS_REQUIRED_MSG = (
-    "Bag sample peek requires the `rosbags` library. Install via `pip install topicforge[bags]`."
+    "Bag analysis with full sample decode requires the `rosbags` library. "
+    "Install via `pip install topicforge[bags]` and retry. "
+    "`analyze_bag` may still fall back to the v0.3.0 `ros2 bag info` text-parse "
+    "path via the live ROS2 CLI adapter ; `peek_bag_samples` has no fallback."
 )
 
 
@@ -115,7 +118,9 @@ class BagService:
         except AdapterError:
             raise
         except Exception as exc:  # pragma: no cover — defensive
-            raise AdapterError(f"failed to open bag {path!r}: {exc}") from exc
+            raise AdapterError(
+                f"failed to open bag {path!r} ({type(exc).__name__}: {exc})"
+            ) from exc
 
         return BagAnalysis(
             path=str(path),
@@ -155,7 +160,9 @@ class BagService:
         except AdapterError:
             raise
         except Exception as exc:  # pragma: no cover — defensive
-            raise AdapterError(f"failed to peek samples from {path!r}: {exc}") from exc
+            raise AdapterError(
+                f"failed to peek samples from {path!r} ({type(exc).__name__}: {exc})"
+            ) from exc
 
         return SampleResult(
             topic=topic,

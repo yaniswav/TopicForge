@@ -102,6 +102,47 @@ def test_bag_service_peek_rejects_negative_count(
         svc.peek_samples("/tmp/whatever.mcap", "/topic", -1)
 
 
+def test_bag_service_analyze_surfaces_exception_type_in_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+) -> None:
+    """v0.5.0 polish: wrap the rosbags-side exception type into the message so
+    the LLM caller can act on `PermissionError` / `IsADirectoryError` etc. without
+    re-reading the traceback."""
+    from topicforge.services import bag_service
+
+    fake_bag = tmp_path / "x.mcap"  # type: ignore[attr-defined]
+    fake_bag.write_bytes(b"")
+
+    def _boom(_path):
+        raise RuntimeError("synthetic open failure")
+
+    monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
+    monkeypatch.setattr(bag_service, "_read_with_rosbags", _boom)
+    svc = BagService()
+    with pytest.raises(AdapterError, match=r"RuntimeError.*synthetic"):
+        svc.analyze(str(fake_bag))
+
+
+def test_bag_service_peek_surfaces_exception_type_in_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+) -> None:
+    """Same as analyze: exception class name + str(exc) must appear in the message
+    so the caller can pivot without inspecting `__cause__`."""
+    from topicforge.services import bag_service
+
+    fake_bag = tmp_path / "x.mcap"  # type: ignore[attr-defined]
+    fake_bag.write_bytes(b"")
+
+    def _boom(_path, _topic, _count):
+        raise OSError("synthetic peek failure")
+
+    monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
+    monkeypatch.setattr(bag_service, "_peek_with_rosbags", _boom)
+    svc = BagService()
+    with pytest.raises(AdapterError, match=r"OSError.*synthetic"):
+        svc.peek_samples(str(fake_bag), "/topic", 5)
+
+
 # --------------------------------------------------------------------------
 # requires_rosbags — auto-skipped without the library
 # --------------------------------------------------------------------------
