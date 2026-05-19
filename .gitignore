@@ -217,6 +217,12 @@ CLAUDE*.md
 # remain reproducible. Tracked, not part of sdist.
 !/docs/projet-file/references/
 !/docs/projet-file/references/**
+# Archive of superseded strategic artifacts (old audit reports, dated
+# launch-post drafts). Kept in git so the historical context survives
+# but tucked away so the active `projet-file/` folder stays focused on
+# what is currently load-bearing.
+!/docs/projet-file/archive/
+!/docs/projet-file/archive/**
 /docs/assets/screencast-raw/
 
 
