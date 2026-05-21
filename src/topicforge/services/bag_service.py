@@ -31,6 +31,7 @@ from topicforge.adapters.common import (
     annotate_partial,
     annotate_raw,
 )
+from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
@@ -45,8 +46,6 @@ _BAG_FORMAT_BY_EXTENSION: dict[str, str] = {
     ".db3": "db3",
     ".bag": "bag",
 }
-
-_MAX_SAMPLE_COUNT = 50
 _ROSBAGS_REQUIRED_MSG = (
     "Bag analysis with full sample decode requires the `rosbags` library. "
     "Install via `pip install topicforge[bags]` and retry. "
@@ -154,7 +153,7 @@ class BagService:
         if not resolved.exists():
             raise AdapterError(f"bag path does not exist: {path!r}")
 
-        clamped = min(count, _MAX_SAMPLE_COUNT)
+        clamped = min(count, MAX_SAMPLE_COUNT)
         try:
             samples = _peek_with_rosbags(resolved, topic, clamped)
         except AdapterError:
