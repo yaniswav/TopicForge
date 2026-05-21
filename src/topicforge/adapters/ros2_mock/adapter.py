@@ -10,6 +10,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.ros2_mock import fixtures
+from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
     MessageSample,
@@ -26,8 +27,6 @@ from topicforge.models import (
 # live — otherwise mock mode would hide a real-world UX problem until the
 # first ROS2 install.
 _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
-
-_MAX_SAMPLE_COUNT = 50
 
 
 class MockAdapter:
@@ -66,7 +65,7 @@ class MockAdapter:
         if count < 0:
             raise AdapterError("count must be >= 0")
         _reject_non_bag_path(path)
-        clamped = min(count, _MAX_SAMPLE_COUNT)
+        clamped = min(count, MAX_SAMPLE_COUNT)
         samples = fixtures.mock_bag_samples_for(topic, clamped)
         return SampleResult(
             topic=topic,
@@ -98,7 +97,7 @@ class MockAdapter:
                 f"Unknown DDS topic: {topic!r}. Known mock DDS topics: "
                 f"{list(fixtures.MOCK_DDS_TOPICS)}"
             )
-        clamped = min(count, _MAX_SAMPLE_COUNT)
+        clamped = min(count, MAX_SAMPLE_COUNT)
         return fixtures.mock_dds_samples_for(topic, clamped)
 
     def participant_events(
