@@ -24,8 +24,8 @@ from topicforge.config import Settings
 # `topicforge-pro` package still sees `middleware_available=True` —
 # they just need the Pro package to actually use it.
 from topicforge.config.settings import _DDS_BACKEND_MODULES
+from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import HealthReport
-from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 _HEALTH_FALLBACK_MODULES: dict[str, str] = {
     "rti": "rti.connextdds",

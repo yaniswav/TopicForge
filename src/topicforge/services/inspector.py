@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
+from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
     MismatchReport,
@@ -19,7 +20,6 @@ from topicforge.models import (
     TopicInfo,
     TopicMetrics,
 )
-from topicforge.services.constants import MAX_SAMPLE_COUNT
 
 DEFAULT_SAMPLE_COUNT = 5
 DEFAULT_LOOKBACK_SECONDS = 300
@@ -31,11 +31,7 @@ _LOOKBACK_MAX = 86400
 _WINDOW_MIN = 1
 _WINDOW_MAX = 3600
 
-# Re-export for backward-compatibility with v0.1.x code that imports
-# `MAX_SAMPLE_COUNT` from `topicforge.services.inspector`. The canonical
-# home is now `topicforge.services.constants` ; new code should import
-# from there.
-__all__ = ["DEFAULT_SAMPLE_COUNT", "MAX_SAMPLE_COUNT", "Inspector"]
+__all__ = ["DEFAULT_SAMPLE_COUNT", "Inspector"]
 
 # Strict allowlist mirroring ROS2 topic-name conventions:
 #   * must start with `/`
