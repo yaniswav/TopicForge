@@ -95,7 +95,7 @@ Both real backends and the mock fixtures encode the canonical "subscriber doesn'
 
 An LLM reading this output has enough information to suggest a concrete fix ("the writer is BEST_EFFORT but the reader requires RELIABLE — either relax the reader or upgrade the writer"). That is the diagnostic loop the DDS module is designed to support — and it works identically regardless of which backend produced the discovery samples, because the vendor-neutral pure analyzer at `src/topicforge/adapters/common/qos_analyzer.py` operates on canonical `QosProfile` Pydantic models.
 
-The analyzer covers the four MVP policies — **Reliability**, **Durability**, **History**, **Deadline** — that explain the bulk of real-world mismatch cases. Liveliness, Ownership, Partition, TimeBasedFilter, and LatencyBudget are v0.3.x patches.
+The analyzer covers the four MVP policies — **Reliability**, **Durability**, **History**, **Deadline** — that explain the bulk of real-world mismatch cases. Liveliness, Ownership, Partition, TimeBasedFilter, and LatencyBudget are v0.5.x patches.
 
 ---
 

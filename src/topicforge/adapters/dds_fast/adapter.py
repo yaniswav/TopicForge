@@ -1,21 +1,35 @@
-"""eProsima Fast DDS adapter — listener-driven discovery (v0.3.0).
+"""eProsima Fast DDS adapter — listener-driven discovery (v0.3.0+).
 
 Joins the bus as a read-only DDS-RTPS participant via the eProsima
 Fast DDS Python bindings. A duck-typed listener accumulates discovery
 state under an RLock so the public API methods read consistent
-snapshots without racing the discovery callbacks.
+snapshots without racing the discovery callbacks. Lifecycle events
+(`discovered` / `lost`) are captured natively in
+`on_participant_discovery` — no polling reconciliation needed,
+contrasted with the Cyclone polling path.
 
 See `docs/dds-interop-matrix.md` for the canonical multi-vendor
 positioning. The factory only loads this module when
 `TOPICFORGE_DDS_BACKEND=fast` (or `auto` resolving to fast) — see
-`services/factory.py`.
+`services/factory.py`. Pair with `Ros2CliAdapter` via the v0.4.0
+`CompositeAdapter` to serve both ROS2 and DDS surfaces simultaneously.
 
-v0.3.0 scope mirrors `CycloneDdsAdapter`:
-  * `list_participants` — snapshot of discovered participants
-  * `detect_qos_mismatches` — paired subs/pubs by topic + pure analyzer
-  * `peek_dds_samples` — builtin discovery snapshots (DCPSParticipant /
-    DCPSSubscription / DCPSPublication). Arbitrary user topics raise
-    `AdapterError` pointing at the v0.3.x XTypes/IDL roadmap.
+Current scope (v0.4.0+) mirrors `CycloneDdsAdapter` :
+
+  * `list_participants` — snapshot of discovered participants enriched
+    with `LifecycleBuffer` fields (first/last seen, status, seen_count).
+  * `detect_qos_mismatches` — paired subs/pubs by topic + pure analyzer.
+  * `peek_dds_samples` — full-fidelity on the 4 builtin DCPS topics ;
+    arbitrary user topics return best-effort samples with a
+    `_decode_status` annotation. Fast DDS 2.6.x ships only a partial
+    dynamic XTypes Python surface, so the `"raw"` fallback with
+    `_raw_bytes_hex` is the common path on user topics until upstream
+    binding completion (v0.5.x patch).
+  * `participant_events` — `discovered` + `lost` from native listener
+    callbacks ; no polling required.
+  * `topic_metrics` — opportunistic metrics buffered as `peek_dds_samples`
+    surfaces samples (same caveat as Cyclone — no at-sample-receive
+    callback in fastdds 2.6.x Python).
 
 Sample-introspection helpers are defensive against binding-version
 shape variations — same convention as the Cyclone adapter's helpers.

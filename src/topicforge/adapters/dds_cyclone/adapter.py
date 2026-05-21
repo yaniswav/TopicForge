@@ -1,26 +1,37 @@
-"""Cyclone DDS adapter — real implementation (v0.3.0).
+"""Cyclone DDS adapter — real implementation (v0.3.0+).
 
-Replaces the v0.2.0 stub with actual CycloneDDS discovery via the
-`cyclonedds.builtin` builtin data readers. Joins the bus as a read-only
-DDS-RTPS participant on the configured domain and observes every
-conformant vendor on the wire — see `docs/dds-interop-matrix.md` for
-the canonical multi-vendor positioning.
+Joins the bus as a read-only DDS-RTPS participant on the configured
+domain via the `cyclonedds.builtin` builtin data readers, and observes
+every conformant vendor on the wire — see `docs/dds-interop-matrix.md`
+for the canonical multi-vendor positioning.
 
-The 3 DDS methods (`list_participants`, `detect_qos_mismatches`,
-`peek_dds_samples`) call into the CycloneDDS Python bindings ; the 4
-ROS2 methods raise `AdapterError(DDS_ONLY_ERROR_MSG)` (this adapter is
-DDS-only). The factory only loads this module when
-`TOPICFORGE_DDS_BACKEND=cyclone` (or `auto` resolving to cyclone) — see
-`services/factory.py`.
+The DDS / observability methods call into the CycloneDDS Python
+bindings ; the ROS2 graph methods raise `AdapterError(DDS_ONLY_ERROR_MSG)`
+(this adapter is DDS-only — pair with `Ros2CliAdapter` via the
+v0.4.0 `CompositeAdapter` to get both surfaces simultaneously). The
+factory only loads this module when `TOPICFORGE_DDS_BACKEND=cyclone`
+(or `auto` resolving to cyclone) — see `services/factory.py`.
 
-v0.3.0 scope:
-  * `list_participants` — full DCPSParticipant discovery via builtin reader
-  * `detect_qos_mismatches` — DCPSSubscription + DCPSPublication paired
-    by topic, run through the vendor-neutral pure analyzer in
-    `adapters/common/qos_analyzer.py`
-  * `peek_dds_samples` — works on the 4 builtin DCPS topics. Arbitrary
-    user topics require IDL/XTypes discovery and raise an `AdapterError`
-    pointing at the v0.3.x roadmap.
+Current scope (v0.4.0+):
+
+* `list_participants` — DCPSParticipant discovery via builtin reader,
+  enriched with `LifecycleBuffer` reconciliation (first/last seen,
+  status, seen_count).
+* `detect_qos_mismatches` — DCPSSubscription + DCPSPublication paired by
+  topic, run through the vendor-neutral pure analyzer in
+  `adapters/common/qos_analyzer.py`.
+* `peek_dds_samples` — full-fidelity on the 4 builtin DCPS topics ;
+  arbitrary user topics go through `_peek_user_topic` with best-effort
+  `cyclonedds.dynamic` XTypes decode (Phase 1.5). Each sample carries a
+  `_decode_status` annotation (`"full"` / `"partial"` / `"raw"`) so the
+  LLM caller knows whether to trust the payload or fall back on
+  `_raw_bytes_hex`.
+* `participant_events` — `discovered` / `lost` events from the
+  `LifecycleBuffer`. Caveat : Cyclone updates the buffer only on
+  `list_participants` poll calls (no native at-discovery callbacks).
+* `topic_metrics` — opportunistic frequency / sequence-gap / latency
+  metrics buffered as `peek_dds_samples` surfaces samples (no native
+  at-sample-receive callback in cyclonedds 2.6.x Python).
 
 Sample-introspection helpers below are defensive against binding-version
 shape variations — they read attributes via `getattr` with fallbacks and
@@ -96,8 +107,10 @@ _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
 
-# Builtin DCPS topics that `peek_dds_samples` can serve in v0.3.0.
-# Arbitrary user topics require IDL/XTypes discovery (v0.3.x roadmap).
+# Builtin DCPS topics that `peek_dds_samples` serves with full-fidelity
+# structured payloads. Arbitrary user topics route through
+# `_peek_user_topic` (Phase 1.5 best-effort XTypes decode → annotated
+# raw-bytes fallback).
 _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
     "DCPSParticipant": BuiltinTopicDcpsParticipant,
     "DCPSSubscription": BuiltinTopicDcpsSubscription,

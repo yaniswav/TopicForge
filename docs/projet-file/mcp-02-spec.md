@@ -332,11 +332,11 @@ ships in TopicForge releases, in this order:
   Soft-breaking schema changes to `TopicInfo` and `HealthReport`
   (additive optional fields). The 8-tool ceiling activates.
 - **TopicForge v0.3.0 — real Cyclone + real Fast DDS + multi-vendor
-  framing (current sprint).** Replace the v0.2.0 Cyclone stub with the
+  framing (shipped).** Replaced the v0.2.0 Cyclone stub with the
   actual CycloneDDS discovery (builtin DCPS readers for participants
   and endpoints, QoS pair extraction, typed reader for samples on
-  builtin DCPS topics first ; arbitrary user-topic peek defers to a
-  v0.3.x patch). Ship `FastDdsAdapter` as a parallel OSS backend on
+  builtin DCPS topics first ; arbitrary user-topic peek deferred to
+  v0.4.0 Phase 1.5 — see entry below). Shipped `FastDdsAdapter` as a parallel OSS backend on
   `fastdds` (listener-driven discovery via
   `DomainParticipantListener`, RLock-protected state, bounded
   discovery startup delay). Pyproject extras refactor:
@@ -346,15 +346,25 @@ ships in TopicForge releases, in this order:
   statement and the OMG May 2025 interop reference. Same 3 MCP
   tools ; vendor-neutral wire contract. Soft-breaking
   `ParticipantInfo.vendor` Literal expansion to include `"fast"`.
-- **TopicForge v0.3.x patches.** IDL/XTypes discovery to extend
-  `peek_dds_samples` to arbitrary user topics (today: builtin DCPS
-  topics only). Extended QoS coverage (Liveliness, Ownership,
-  Partition, TimeBasedFilter, LatencyBudget). Composite adapter
-  delegating per-tool category so users can run ROS2 + DDS surfaces
-  simultaneously.
-- **TopicForge v0.4.0+ — `RtiConnextAdapter` in Pro tier.** Same
-  `_try_register_pro(mcp)` pattern. BYO RTI license. No new MCP
-  tools ; same 3 DDS tools, new backend.
+- **TopicForge v0.4.0 — observability + composite + XTypes (shipped).**
+  IDL/XTypes discovery extended `peek_dds_samples` to arbitrary user
+  topics via best-effort Cyclone `cyclonedds.dynamic` decode (Phase 1.5)
+  with a `_decode_status` annotation (`"full"` / `"partial"` / `"raw"`).
+  `CompositeAdapter` (Phase 1) lifts the v0.3.0 single-adapter
+  limitation — ROS2 and DDS surfaces work simultaneously, routed by
+  tool category. 8-vendor auto-detect chain (Phase 1.5). Three new
+  observability tools shipped (`participant_events`, `topic_metrics`,
+  `peek_bag_samples`) — the v0.3.0 8-tool ceiling explicitly broken
+  three times, acknowledged inline.
+- **TopicForge v0.5.x patches (planned).** Fast DDS `TypeObjectFactory`
+  binding completion to lift `_decode_status="raw"` → `"full"` on Fast
+  user topics. Extended QoS coverage (Liveliness, Ownership, Partition,
+  TimeBasedFilter, LatencyBudget). Real-bus validation of the v0.4.0
+  Phase 1.5 Cyclone XTypes pipeline against multi-vendor publishers.
+- **TopicForge v0.4.0+ Pro tier — real `RtiConnextAdapter`.** Same
+  `_try_register_pro(mcp)` pattern. BYO RTI license. The v0.4.0 Phase 1.5
+  scaffold lives in `pro/` (gitignored) ; production binding pending
+  Pro tier launch. No new MCP tools ; same surface, new backend.
 
 The earlier v0.2.0 / v0.3.0 split (proposed before the mono-MCP pivot
 of 2026-05-14 and further refined by the multi-vendor framing when
@@ -508,11 +518,11 @@ decisions.
 - **`cyclonedds` version pin.** Determined at v0.3.0 implementation
   kickoff after a smoke test against the current bindings on
   Windows + Linux.
-- **QoS mismatch taxonomy.** Lock the policies checked at v0.3.0
-  (recommended: Reliability, Durability, History, Deadline — the four
-  that explain > 80 % of real-world *"subscriber doesn't receive"*
-  cases). Defer Liveliness, Ownership, Partition, TimeBasedFilter,
-  LatencyBudget to v0.3.x patches.
+- **QoS mismatch taxonomy.** Resolved at v0.3.0 : Reliability,
+  Durability, History, Deadline ship — the four that explain > 80 %
+  of real-world *"subscriber doesn't receive"* cases. Liveliness,
+  Ownership, Partition, TimeBasedFilter, LatencyBudget deferred to
+  v0.5.x patches (still pending as of v0.5.0).
 - **`peek_dds_samples` vs `sample_messages` description ergonomics.**
   Verify in a Claude session that the LLM picks the right tool when
   asked *"show me recent samples on topic /foo"* in a mixed ROS2+DDS
@@ -544,7 +554,7 @@ Resolved by the multi-vendor framing of 2026-05-14
   importable on their host ; the new ordering only matters when
   both SDKs are installed.
 
-Newly open (resolve before v0.3.x patches) :
+Newly open (resolve before v0.5.x patches) :
 
 - ~~**XTypes / IDL discovery feasibility.**~~ **Resolved in v0.4.0
   Phase 1 (2026-05-14).** `peek_dds_samples` on user-defined topics no

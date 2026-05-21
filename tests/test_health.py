@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from topicforge.config import Settings
+from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.services import HealthService
-from topicforge.services.inspector import MAX_SAMPLE_COUNT
 
 
 def test_health_report_in_mock_mode() -> None:
