@@ -10,11 +10,13 @@ Design rules (mirror `lifecycle.py`):
 * **Pure logic at module level.** No DDS dependency. Tests pin
   behavior against synthetic input — same convention as
   `parse_topic_list`, `detect_mismatches`, `LifecycleBuffer`.
-* **Bounded per-topic.** Each topic's ring caps at
+* **Bounded per-topic and in topic count.** Each topic's ring caps at
   `MAX_SAMPLES_PER_TOPIC` (default 1000) ; older samples drop out
-  when new ones arrive. Memory footprint is bounded by
-  `O(topics x 1000 x sample_record_size)` — at 50 topics roughly
-  10 MB worst case.
+  when new ones arrive. The number of distinct topics tracked caps at
+  `MAX_TOPICS` (default 4096), oldest-inserted evicted on overflow, so a
+  churny bus cannot grow the map without bound. Memory footprint is bounded
+  by `O(min(topics, 4096) x 1000 x sample_record_size)` — at 50 topics
+  roughly 10 MB worst case.
 * **Thread-safe.** Cyclone and Fast adapters today fill the buffer
   on the tool-call thread (synchronous), but a future rclpy adapter
   (roadmapped in `docs/product-plan.md §5`) will fire callbacks
@@ -37,6 +39,10 @@ from topicforge.models import TopicMetrics
 
 MAX_SAMPLES_PER_TOPIC = 1000
 """Hard cap on per-topic ring buffer. Drop-oldest on overflow."""
+
+MAX_TOPICS = 4096
+"""Hard cap on the number of distinct topics tracked. Oldest-inserted topic
+evicted on overflow so a churny bus cannot grow the map without bound."""
 
 EffectiveMode = Literal["mock", "live"]
 
@@ -66,9 +72,15 @@ class MetricsSample:
 class MetricsBuffer:
     """Per-topic bounded ring + percentile/frequency computation."""
 
-    def __init__(self, *, max_samples_per_topic: int = MAX_SAMPLES_PER_TOPIC) -> None:
+    def __init__(
+        self,
+        *,
+        max_samples_per_topic: int = MAX_SAMPLES_PER_TOPIC,
+        max_topics: int = MAX_TOPICS,
+    ) -> None:
         self._lock = threading.RLock()
         self._cap = max_samples_per_topic
+        self._max_topics = max_topics
         self._samples: dict[str, deque[MetricsSample]] = {}
 
     # --------------------------- mutating ------------------------------
@@ -87,6 +99,11 @@ class MetricsBuffer:
         with self._lock:
             ring = self._samples.get(topic)
             if ring is None:
+                if len(self._samples) >= self._max_topics:
+                    # Evict the oldest-inserted topic to keep the map bounded.
+                    oldest = next(iter(self._samples), None)
+                    if oldest is not None:
+                        del self._samples[oldest]
                 ring = deque(maxlen=self._cap)
                 self._samples[topic] = ring
             ring.append(

@@ -62,8 +62,17 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   against a writer that offers none — an absent deadline is the infinite
   (loosest) period and cannot satisfy a finite request. The previous rule
   required both sides non-null and silently missed this incompatibility.
+- **`LifecycleBuffer` participant map was unbounded (Lot 3, audit P1-4 / M1 /
+  P1).** Only the event ring was capped; the participant dict grew one entry
+  per GUID ever seen (a churny bus mints a fresh RTPS GUID on each node
+  restart), and `list_participants` returned every tombstone forever. Now
+  capped at `MAX_PARTICIPANTS = 4096`, evicting `"left"` tombstones first then
+  the oldest-inserted entry — the docstring's "Bounded" claim is now true.
+- **`MetricsBuffer` topic map was unbounded (Lot 3, audit P2-5).** Per-topic
+  rings were capped but the number of topic keys was not; now capped at
+  `MAX_TOPICS = 4096`, oldest-inserted topic evicted on overflow.
 
-Baseline: 399 → 464 passed, 24 → 23 skipped, ruff clean, coverage 88.83%.
+Baseline: 399 → 470 passed, 24 → 23 skipped, ruff clean, coverage 88.90%.
 
 ## [0.5.0] - 2026-05-21
 

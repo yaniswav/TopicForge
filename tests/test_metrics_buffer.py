@@ -376,3 +376,18 @@ def test_thread_safety_smoke() -> None:
 
     assert buf.sample_count("/t1") == 100
     assert buf.sample_count("/t2") == 100
+
+
+def test_topic_map_bounded_by_max_topics() -> None:
+    # Audit P2-5: the number of distinct topics must not grow unbounded.
+    buf = MetricsBuffer(max_topics=3)
+    for i in range(10):
+        buf.record(topic=f"/t{i}", receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)
+    assert len(buf.snapshot_topics()) == 3
+
+
+def test_topic_eviction_is_oldest_inserted() -> None:
+    buf = MetricsBuffer(max_topics=2)
+    for topic in ("/a", "/b", "/c"):
+        buf.record(topic=topic, receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)
+    assert set(buf.snapshot_topics()) == {"/b", "/c"}
