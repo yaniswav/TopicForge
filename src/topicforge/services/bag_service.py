@@ -26,11 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from topicforge.adapters.base import AdapterError
-from topicforge.adapters.common import (
-    annotate_full,
-    annotate_partial,
-    annotate_raw,
-)
+from topicforge.adapters.common import annotate_raw
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
@@ -275,8 +271,3 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
     if isinstance(decoded, dict):
         decoded.setdefault("_msgtype", getattr(connection, "msgtype", "<unknown>"))
     return decoded
-
-
-# Unused imports kept for forward-compat (planned use in v0.4.0 Phase 3
-# patches that surface participant metadata from MCAP channel records).
-_ = (annotate_full, annotate_partial)

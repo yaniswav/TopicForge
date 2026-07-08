@@ -217,7 +217,16 @@ modèle. Une branche `fix/lotN-...` par lot, un `make check` + skill `verify-cha
   ⚠️ **P1-5 non vérifiable sans bus réel** → valider sur le rig `scripts/integration/`.
 - **Tier** : Opus 4.8. **Effort** : M.
 
-### Lot 4 — Nettoyage mineur *(mécanique, indépendant)*
+### Lot 4 — Nettoyage mineur *(mécanique, indépendant)* ✅ FAIT (2026-07-08)
+
+> OpenDDS `is_available()` → `False` (S1) · `__slots__` string (C2) · cap
+> récursion `decode_field_value` (M6) · `_encode_raw_bytes` slice-avant-hex (M5)
+> · test e2e `AdapterError → ToolError`/isError · test de cohérence vendor
+> Literal (P2-3, pin — pas d'élargissement du contrat wire) · `_KNOWN_TOOLS`
+> + `peek_bag_samples` · dead code retiré (bag_service). **470 → 476 passed, verts.**
+> *Non fait (reporté)* : collapse des stubs OpenDDS/Dust (P2-2) — refactor à
+> faible valeur, laissé pour plus tard.
+
 - **Contenu** : P2-3 (Literal `vendor` aligné) · S1 (`OpenDdsAdapter.is_available()` → `False`) ·
   `__slots__` string (`cdr_decoder.py:94`) · `_KNOWN_TOOLS` + `peek_bag_samples` · test e2e
   `AdapterError → isError` · P2-2 (collapse stubs) · `_encode_raw_bytes` slice-avant-hex · cap
