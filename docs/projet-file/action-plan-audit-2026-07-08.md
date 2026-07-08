@@ -201,7 +201,16 @@ modèle. Une branche `fix/lotN-...` par lot, un `make check` + skill `verify-cha
   désormais testable. **Critère de sortie** : chaque bug a un test rouge-puis-vert, math validée sur
   distribution connue. **Tier** : Opus 4.8 + Fable 5 (sémantique RxO Deadline). **Effort** : M.
 
-### Lot 3 — Fiabilité runtime *(mémoire + lifecycle)*
+### Lot 3 — Fiabilité runtime *(mémoire + lifecycle)* ✅ PARTIEL (2026-07-08)
+
+> **Fait (pur, testé)** : P1-4 `LifecycleBuffer._participants` borné à
+> `MAX_PARTICIPANTS=4096` (évince les tombstones `"left"` d'abord) ; docstring
+> « bounded » désormais vrai. `MetricsBuffer._samples` borné à `MAX_TOPICS=4096`
+> (P2-5). Tests d'éviction ajoutés. **464 → 470 passed, cov 88.90 %.**
+> **Reporté au batch rig** : P1-5 (`take_iter → read_iter`, reader persistant,
+> anti-flapping) — non vérifiable sans bus réel, ne pas modifier l'adaptateur à
+> l'aveugle. À traiter avec le Lot 5 sur `scripts/integration/`.
+
 - **Contenu** : P1-4 (borner `LifecycleBuffer._participants` + purge, corriger le docstring) · borner
   `MetricsBuffer._samples` (P2-5) · P1-5 (`take_iter → read_iter`, reader persistant, anti-flapping).
 - **Critère de sortie** : cap testé, docstring « bounded » vrai, pas de flapping sur scénario simulé.
