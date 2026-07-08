@@ -29,7 +29,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
     "ruff>=0.4",
+    # rosbags (Apache-2.0, pure-Python) is a *dev* dependency so the
+    # bag-analysis I/O tests actually run in CI instead of self-skipping on
+    # `requires_rosbags`. It is NOT a runtime dependency — end users opt in
+    # via `topicforge[bags]`.
+    "rosbags>=0.9",
 ]
 # v0.3.0: split DDS extras per vendor. `[dds]` (the union) pulls both
 # OSS Python participants ; granular `[dds-cyclone]` / `[dds-fast]`
@@ -106,6 +112,33 @@ markers = [
     "integration: real-bus DDS scenarios — only run with `-m integration` (v0.4.0 Phase 2.2+)",
     "requires_rosbags: tests needing the `rosbags` Python library; auto-skip without it (v0.4.0 Phase 3+)",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["topicforge"]
+omit = [
+    # The two real DDS adapters import their vendor binding (cyclonedds /
+    # fastdds) at module top level, so they are structurally unreachable
+    # without those SDKs installed. Their pure logic was extracted into
+    # adapters/common/{dds_introspection,qos_normalize,cdr_decoder}.py
+    # (Lot 0) which IS measured here; the thin binding shells are exercised
+    # only under the `-m integration` real-bus tier. Excluded so the
+    # coverage gate reflects testable code rather than being dragged down
+    # by lines no unit run can reach.
+    "*/adapters/dds_cyclone/adapter.py",
+    "*/adapters/dds_fast/adapter.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Threshold reflects the unit-testable surface (the two binding shells are
+# omitted above). Baseline at the Lot 0 achieved floor (87% total); the
+# extracted pure modules (qos_normalize, dds_introspection) are ~100%, while
+# factory.py / bag_service.py binding-present branches stay uncovered without
+# the SDKs installed. Ratchet upward as those get tests; do not lower without
+# a note in the changelog.
+fail_under = 85
 
 [tool.ruff]
 line-length = 100
