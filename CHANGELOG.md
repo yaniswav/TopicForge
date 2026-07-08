@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- **DDS pure logic extracted for testability (Lot 0, external audit
+  2026-07-08).** The QoS-profile normalizers (`_cyclone_qos_to_profile` /
+  `_fast_qos_to_profile`) and the discovery-sample field extractors
+  (`_extract_guid` / `_extract_vendor_id` / `_extract_hostname` /
+  `_extract_topic_name` / `_is_removal`) were moved out of
+  `adapters/dds_cyclone/adapter.py` and `adapters/dds_fast/adapter.py` —
+  which import their vendor binding at module top level and were therefore
+  never exercised by the test suite — into the binding-free
+  `adapters/common/qos_normalize.py` and `adapters/common/dds_introspection.py`.
+  The adapters import them back under their original private names, so every
+  call site is unchanged (verified by `ruff check` static analysis, since the
+  adapters are not importable without their SDKs). `fast_qos_to_profile`
+  takes the binding's int→str enum maps as parameters so it stays
+  import-free. This is the highest-value item from the audit: the QoS
+  normalization feeds `detect_qos_mismatches` (the flagship DDS diagnostic)
+  and was previously untestable and untested.
+
+### Added
+
+- `tests/test_dds_qos_normalization.py` and `tests/test_dds_introspection.py`
+  drive the extracted logic with synthetic duck-typed objects (no
+  `cyclonedds` / `fastdds` needed), including regression guards for the
+  "renamed policy key silently yields no QoS profile → no mismatch ever
+  reported" failure mode. The extracted modules are now ~91–92% covered.
+- `pytest-cov` and `rosbags` added to the `[dev]` extra, plus `[tool.coverage]`
+  config with a `fail_under = 85` floor (the two binding-only adapter shells
+  are `omit`ted as structurally unreachable without their SDKs). Adding
+  `rosbags` un-skips the real `.db3` bag-analysis I/O test.
+
+### Fixed
+
+- `tests/test_bag_service.py` bag-generation helper updated for the current
+  `rosbags` API (`Writer(..., version=Writer.VERSION_LATEST)`; typestore keyed
+  by `std_msgs/msg/String`, not `std_msgs__msg__String`). The test was
+  previously auto-skipped and had gone silently stale — un-skipping it in CI
+  surfaced the drift.
+
+Baseline: 399 → 457 passed, 24 → 23 skipped, ruff clean, coverage 88.75%.
+
 ## [0.5.0] - 2026-05-21
 
 ### Sprint v0.5.0 — Polish + validation (pre-marketing-publication)

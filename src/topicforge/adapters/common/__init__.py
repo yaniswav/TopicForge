@@ -14,6 +14,17 @@ from topicforge.adapters.common.dds_helpers import (
     canonicalize_vendor_id,
     format_guid,
 )
+from topicforge.adapters.common.dds_introspection import (
+    cyclone_extract_guid,
+    cyclone_extract_hostname,
+    cyclone_extract_topic_name,
+    cyclone_extract_vendor_id,
+    fast_extract_guid,
+    fast_extract_hostname,
+    fast_extract_topic_name,
+    fast_extract_vendor_id,
+    is_removal,
+)
 from topicforge.adapters.common.lifecycle import MAX_EVENTS, LifecycleBuffer
 from topicforge.adapters.common.metrics_buffer import (
     MAX_SAMPLES_PER_TOPIC,
@@ -21,6 +32,10 @@ from topicforge.adapters.common.metrics_buffer import (
     MetricsSample,
 )
 from topicforge.adapters.common.qos_analyzer import detect_mismatches
+from topicforge.adapters.common.qos_normalize import (
+    cyclone_qos_to_profile,
+    fast_qos_to_profile,
+)
 from topicforge.adapters.common.xtypes import (
     DecodeStatus,
     annotate_full,
@@ -41,12 +56,23 @@ __all__ = [
     "annotate_partial",
     "annotate_raw",
     "canonicalize_vendor_id",
+    "cyclone_extract_guid",
+    "cyclone_extract_hostname",
+    "cyclone_extract_topic_name",
+    "cyclone_extract_vendor_id",
+    "cyclone_qos_to_profile",
     "decode_dynamic_sample",
     "decode_field_value",
     "detect_mismatches",
     "dynamic_type_name",
     "extract_publish_ns_from_payload",
     "extract_seq_from_payload",
+    "fast_extract_guid",
+    "fast_extract_hostname",
+    "fast_extract_topic_name",
+    "fast_extract_vendor_id",
+    "fast_qos_to_profile",
     "format_guid",
+    "is_removal",
     "iter_field_names",
 ]

@@ -72,13 +72,27 @@ from topicforge.adapters.common import (
     format_guid,
     iter_field_names,
 )
+from topicforge.adapters.common import (
+    cyclone_extract_guid as _extract_guid,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_hostname as _extract_hostname,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_topic_name as _extract_topic_name,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_vendor_id as _extract_vendor_id,
+)
+from topicforge.adapters.common import (
+    cyclone_qos_to_profile as _cyclone_qos_to_profile,
+)
 from topicforge.models import (
     BagAnalysis,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
     ParticipantInfo,
-    QosProfile,
     SampleResult,
     TopicInfo,
     TopicMetrics,
@@ -615,129 +629,11 @@ class CycloneDdsAdapter:
         )
 
 
-# ---------------------------------------------------------------------------
-# Sample-introspection helpers — defensive against binding shape variations.
-# Each helper returns None / "unknown" / safe defaults rather than raising,
-# so a single odd discovery sample never breaks the whole tool call.
-# ---------------------------------------------------------------------------
-
-
-def _extract_guid(sample: Any) -> bytes | None:
-    """Pull the 16-byte GUID off a discovery sample, if present."""
-    for attr in ("key", "participant_key", "guid"):
-        v = getattr(sample, attr, None)
-        if v is None:
-            continue
-        if isinstance(v, bytes):
-            return v
-        inner = getattr(v, "value", None)
-        if isinstance(inner, bytes):
-            return inner
-    return None
-
-
-def _extract_vendor_id(sample: Any) -> tuple[int, int] | None:
-    """Pull the 2-byte OMG vendor_id off a discovery sample, if present."""
-    v = getattr(sample, "vendor_id", None)
-    if v is None:
-        v = getattr(sample, "vendor", None)
-    if v is None:
-        return None
-    if isinstance(v, bytes) and len(v) >= 2:
-        return (v[0], v[1])
-    inner = getattr(v, "vendorId", None)
-    if isinstance(inner, (bytes, tuple, list)) and len(inner) >= 2:
-        return (inner[0], inner[1])
-    if isinstance(v, (tuple, list)) and len(v) >= 2:
-        return (v[0], v[1])
-    return None
-
-
-def _extract_hostname(sample: Any) -> str | None:
-    """Pull a hostname / participant-name hint off a sample, if exposed."""
-    for attr in ("hostname", "participant_name", "user_data"):
-        v = getattr(sample, attr, None)
-        if isinstance(v, (bytes, bytearray)):
-            try:
-                decoded = v.decode("utf-8", errors="replace")
-            except (UnicodeError, AttributeError):
-                continue
-            if decoded:
-                return decoded
-        if isinstance(v, str) and v:
-            return v
-    return None
-
-
-def _extract_topic_name(sample: Any) -> str | None:
-    v = getattr(sample, "topic_name", None)
-    if v is None:
-        v = getattr(sample, "topic", None)
-    if isinstance(v, str) and v:
-        return v
-    return None
-
-
-# QoS Policy class-name → canonical string maps. CycloneDDS exposes
-# policies as instances of nested classes under `cyclonedds.qos.Policy.*`
-# — we read them by simple class name to stay binding-version-agnostic.
-_RELIABILITY_NAMES = {"Reliable": "RELIABLE", "BestEffort": "BEST_EFFORT"}
-_DURABILITY_NAMES = {
-    "Volatile": "VOLATILE",
-    "TransientLocal": "TRANSIENT_LOCAL",
-    "Transient": "TRANSIENT",
-    "Persistent": "PERSISTENT",
-}
-_HISTORY_NAMES = {"KeepLast": "KEEP_LAST", "KeepAll": "KEEP_ALL"}
-
-
-def _cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
-    """Map a Cyclone discovery sample's QoS into the canonical QosProfile.
-
-    Returns `None` when essential QoS policies (reliability, durability,
-    history) are missing — the analyzer needs all three present to
-    produce a meaningful pair report.
-    """
-    qos = getattr(sample, "qos", None)
-    if qos is None:
-        return None
-
-    reliability: str | None = None
-    durability: str | None = None
-    history: str | None = None
-    history_depth: int | None = None
-    deadline_ns: int | None = None
-
-    try:
-        for policy in qos:
-            cls_name = type(policy).__name__
-            if cls_name in _RELIABILITY_NAMES:
-                reliability = _RELIABILITY_NAMES[cls_name]
-            elif cls_name in _DURABILITY_NAMES:
-                durability = _DURABILITY_NAMES[cls_name]
-            elif cls_name in _HISTORY_NAMES:
-                history = _HISTORY_NAMES[cls_name]
-                depth = getattr(policy, "depth", None)
-                if isinstance(depth, int):
-                    history_depth = depth
-            elif cls_name == "Deadline":
-                d = getattr(policy, "duration", None)
-                if d is None:
-                    d = getattr(policy, "deadline", None)
-                if hasattr(d, "to_nanoseconds"):
-                    deadline_ns = int(d.to_nanoseconds())
-                elif isinstance(d, int):
-                    deadline_ns = d
-    except (TypeError, AttributeError):  # defensive against odd qos shapes
-        return None
-
-    if reliability is None or durability is None or history is None:
-        return None
-
-    return QosProfile(
-        reliability=reliability,  # type: ignore[arg-type]
-        durability=durability,  # type: ignore[arg-type]
-        history=history,  # type: ignore[arg-type]
-        history_depth=history_depth,
-        deadline_ns=deadline_ns,
-    )
+# Sample-introspection helpers (_extract_guid / _extract_vendor_id /
+# _extract_hostname / _extract_topic_name) and the QoS normalizer
+# (_cyclone_qos_to_profile) were moved to the binding-free
+# `topicforge.adapters.common.dds_introspection` /
+# `.qos_normalize` modules (Lot 0, audit 2026-07-08) so they are
+# unit-testable without the cyclonedds bindings installed. They are
+# imported and aliased back to their original names at the top of this
+# module, so the call sites above are unchanged.
