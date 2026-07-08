@@ -52,6 +52,18 @@ def test_count_sequence_gaps_dedupes_duplicates() -> None:
     assert _count_sequence_gaps([0, 0, 1, 2, 2]) == 0
 
 
+def test_count_sequence_gaps_skips_wrap_or_reset_discontinuity() -> None:
+    # Audit C6: a 16-bit wrap (65535→0) or publisher restart is a
+    # discontinuity, not tens of thousands of lost samples.
+    assert _count_sequence_gaps([65534, 65535, 0, 1]) == 0
+
+
+def test_count_sequence_gaps_counts_small_gap_beside_reset() -> None:
+    # A genuine small gap (missing 2) is still counted even when a large
+    # reset-sized jump is present in the same writer's stream.
+    assert _count_sequence_gaps([0, 1, 3, 900_000, 900_001]) == 1
+
+
 def test_percentile_empty_returns_none() -> None:
     assert _percentile([], 50) is None
 
@@ -170,6 +182,64 @@ def test_sequence_numbers_unavailable_when_all_none() -> None:
         )
     m = buf.compute_metrics(topic="/z", window_seconds=60, now_ns=5_000_000_000)
     assert m.sequence_numbers_available is False
+    assert m.sequence_gaps_count == 0
+
+
+def test_frequency_uses_n_minus_1_intervals_not_now() -> None:
+    # Audit C5 (off-by-one + now-based span): 3 samples 1 s apart span
+    # 2 s over 2 intervals → 1.0 Hz, independent of now_ns. The old code
+    # divided count by (now - oldest), giving a now-dependent, ~1.5x rate.
+    buf = MetricsBuffer()
+    for i in range(3):
+        buf.record(
+            topic="/f",
+            receive_ns=i * 1_000_000_000,
+            sequence_number=i,
+            publish_ns=None,
+            domain_id=0,
+        )
+    m = buf.compute_metrics(topic="/f", window_seconds=60, now_ns=5_000_000_000)
+    assert m.samples_observed == 3
+    assert m.frequency_hz_observed == 1.0
+
+
+def test_snapshot_same_timestamp_yields_no_frequency() -> None:
+    # Audit C5: an opportunistic peek surfaces all samples with one shared
+    # receive_ns. Co-located samples do not define a rate → None (the old
+    # code reported count / (now - that_instant), a fabricated number).
+    buf = MetricsBuffer()
+    for i in range(5):
+        buf.record(
+            topic="/snap",
+            receive_ns=1_000_000_000,
+            sequence_number=i,
+            publish_ns=None,
+            domain_id=0,
+        )
+    m = buf.compute_metrics(topic="/snap", window_seconds=60, now_ns=3_000_000_000)
+    assert m.samples_observed == 5
+    assert m.frequency_hz_observed is None
+
+
+def test_sequence_gaps_grouped_by_writer() -> None:
+    # Audit C6: two writers with offset counters (100,101 and 0,1) must NOT
+    # read as an ~99-wide phantom gap. Grouping by writer_guid keeps each
+    # writer's contiguous run separate → 0 gaps.
+    buf = MetricsBuffer()
+    buf.record(
+        topic="/w", receive_ns=0, sequence_number=100, publish_ns=None, domain_id=0, writer_guid="A"
+    )
+    buf.record(
+        topic="/w", receive_ns=1, sequence_number=101, publish_ns=None, domain_id=0, writer_guid="A"
+    )
+    buf.record(
+        topic="/w", receive_ns=2, sequence_number=0, publish_ns=None, domain_id=0, writer_guid="B"
+    )
+    buf.record(
+        topic="/w", receive_ns=3, sequence_number=1, publish_ns=None, domain_id=0, writer_guid="B"
+    )
+    m = buf.compute_metrics(topic="/w", window_seconds=60, now_ns=1_000_000_000)
+    assert m.sequence_numbers_available is True
     assert m.sequence_gaps_count == 0
 
 
@@ -306,3 +376,18 @@ def test_thread_safety_smoke() -> None:
 
     assert buf.sample_count("/t1") == 100
     assert buf.sample_count("/t2") == 100
+
+
+def test_topic_map_bounded_by_max_topics() -> None:
+    # Audit P2-5: the number of distinct topics must not grow unbounded.
+    buf = MetricsBuffer(max_topics=3)
+    for i in range(10):
+        buf.record(topic=f"/t{i}", receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)
+    assert len(buf.snapshot_topics()) == 3
+
+
+def test_topic_eviction_is_oldest_inserted() -> None:
+    buf = MetricsBuffer(max_topics=2)
+    for topic in ("/a", "/b", "/c"):
+        buf.record(topic=topic, receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)
+    assert set(buf.snapshot_topics()) == {"/b", "/c"}

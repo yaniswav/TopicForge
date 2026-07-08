@@ -55,8 +55,27 @@ from topicforge.adapters.common import (
     MetricsBuffer,
     annotate_raw,
     canonicalize_vendor_id,
-    detect_mismatches,
+    detect_mismatches_across_endpoints,
     format_guid,
+    validate_domain_id,
+)
+from topicforge.adapters.common import (
+    fast_extract_guid as _extract_guid,
+)
+from topicforge.adapters.common import (
+    fast_extract_hostname as _extract_hostname,
+)
+from topicforge.adapters.common import (
+    fast_extract_topic_name as _extract_topic_name,
+)
+from topicforge.adapters.common import (
+    fast_extract_vendor_id as _extract_vendor_id,
+)
+from topicforge.adapters.common import (
+    fast_qos_to_profile as _common_fast_qos_to_profile,
+)
+from topicforge.adapters.common import (
+    is_removal as _is_removal,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -191,8 +210,7 @@ class FastDdsAdapter:
         *,
         discovery_wait_ms: int = _DEFAULT_DISCOVERY_WAIT_MS,
     ) -> None:
-        if domain_id < 0 or domain_id > 232:
-            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        validate_domain_id(domain_id)
         self._domain_id = domain_id
         # v0.4.0 Phase 1: lifecycle buffer fed by listener callbacks.
         self._lifecycle = LifecycleBuffer()
@@ -284,50 +302,21 @@ class FastDdsAdapter:
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
-        subs = self._listener.snapshot_subscriptions()
-        pubs = self._listener.snapshot_publications()
+        """Pair reader/writer endpoints by topic via the shared analyzer.
 
-        by_topic: dict[str, tuple[list[Any], list[Any]]] = {}
-        for sample in subs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[0].append(sample)
-        for sample in pubs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[1].append(sample)
-
-        reports: list[MismatchReport] = []
-        for tname, (readers, writers) in by_topic.items():
-            for reader_sample in readers:
-                reader_profile = _fast_qos_to_profile(reader_sample)
-                if reader_profile is None:
-                    continue
-                for writer_sample in writers:
-                    writer_profile = _fast_qos_to_profile(writer_sample)
-                    if writer_profile is None:
-                        continue
-                    result = detect_mismatches(reader_profile, writer_profile)
-                    if result is None:
-                        continue
-                    policies, severity = result
-                    reports.append(
-                        MismatchReport(
-                            topic=tname,
-                            reader_guid=format_guid(_extract_guid(reader_sample)),
-                            writer_guid=format_guid(_extract_guid(writer_sample)),
-                            incompatible_policies=policies,
-                            severity=severity,
-                            mode_effective="live",
-                        )
-                    )
-        return reports
+        The pairing / reporting logic lives in
+        `common.qos_endpoints.detect_mismatches_across_endpoints` (shared with
+        the Cyclone adapter, unit-tested without a binding). This method only
+        supplies the listener's discovery snapshots and the Fast helpers.
+        """
+        return detect_mismatches_across_endpoints(
+            subs=self._listener.snapshot_subscriptions(),
+            pubs=self._listener.snapshot_publications(),
+            topic=topic,
+            qos_to_profile=_fast_qos_to_profile,
+            extract_topic_name=_extract_topic_name,
+            extract_guid=_extract_guid,
+        )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         """v0.4.0 Phase 1: builtin DCPS snapshots + user-topic raw fallback.
@@ -533,93 +522,17 @@ def _try_dynamic_decode_fast(topic: str, count: int) -> list[MessageSample] | No
     return None
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers — defensive against binding shape variations across
-# Fast DDS Python binding versions. Same convention as the Cyclone helpers:
-# never raise, collapse missing data to None / "unknown" / safe defaults.
-# ---------------------------------------------------------------------------
-
-
-def _is_removal(status: Any) -> bool:
-    """Detect a 'participant/endpoint removed' discovery status across
-    binding versions. Fast DDS exposes status as either an enum value
-    or a string label — accept both.
-    """
-    if status is None:
-        return False
-    s = str(status).upper()
-    return "REMOVED" in s or "DISPOSED" in s or "DROPPED" in s
-
-
-def _extract_guid(sample: Any) -> bytes | None:
-    """Pull a 16-byte GUID off a Fast DDS discovery sample."""
-    for attr in ("guid", "key", "participant_key"):
-        v = getattr(sample, attr, None)
-        if v is None:
-            continue
-        if isinstance(v, bytes):
-            return v
-        for inner_attr in ("value", "data", "guidPrefix"):
-            inner = getattr(v, inner_attr, None)
-            if isinstance(inner, bytes):
-                return inner
-            if isinstance(inner, (tuple, list)) and inner:
-                try:
-                    return bytes(int(b) & 0xFF for b in inner)
-                except (TypeError, ValueError):
-                    continue
-        if isinstance(v, (tuple, list)) and v:
-            try:
-                return bytes(int(b) & 0xFF for b in v)
-            except (TypeError, ValueError):
-                continue
-    return None
-
-
-def _extract_vendor_id(sample: Any) -> tuple[int, int] | None:
-    v = getattr(sample, "vendor_id", None)
-    if v is None:
-        info = getattr(sample, "info", None)
-        if info is not None:
-            v = getattr(info, "vendor_id", None)
-    if v is None:
-        return None
-    if isinstance(v, bytes) and len(v) >= 2:
-        return (v[0], v[1])
-    if isinstance(v, (tuple, list)) and len(v) >= 2:
-        try:
-            return (int(v[0]), int(v[1]))
-        except (TypeError, ValueError):
-            return None
-    inner = getattr(v, "vendor_id", None)
-    if isinstance(inner, (bytes, tuple, list)) and len(inner) >= 2:
-        try:
-            return (int(inner[0]), int(inner[1]))
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def _extract_hostname(sample: Any) -> str | None:
-    for attr in ("hostname", "participant_name", "name", "user_data"):
-        v = getattr(sample, attr, None)
-        if isinstance(v, (bytes, bytearray)):
-            try:
-                decoded = v.decode("utf-8", errors="replace")
-            except (UnicodeError, AttributeError):
-                continue
-            if decoded:
-                return decoded
-        if isinstance(v, str) and v:
-            return v
-    return None
-
-
-def _extract_topic_name(sample: Any) -> str | None:
-    v = getattr(sample, "topic_name", None)
-    if isinstance(v, str) and v:
-        return v
-    return None
+# Sample-introspection helpers (_is_removal / _extract_guid /
+# _extract_vendor_id / _extract_hostname / _extract_topic_name) were moved
+# to the binding-free `topicforge.adapters.common.dds_introspection` module
+# (Lot 0, audit 2026-07-08) so they are unit-testable without the fastdds
+# bindings installed. They are imported and aliased back to their original
+# names at the top of this module, so the call sites above are unchanged.
+#
+# The QoS enum maps below stay here because they read integer values from
+# the `fastdds` binding itself. The normalization logic that consumes them
+# lives in `common.qos_normalize.fast_qos_to_profile` (also testable with
+# synthetic maps) — `_fast_qos_to_profile` below binds the two together.
 
 
 # QoS enum integer values come from the binding's own constants rather
@@ -653,60 +566,16 @@ _HISTORY_MAP = _build_history_map()
 
 
 def _fast_qos_to_profile(sample: Any) -> QosProfile | None:
-    qos = getattr(sample, "qos", None)
-    if qos is None:
-        return None
+    """Bind the shared Fast normalizer to this binding's enum maps.
 
-    reliability: str | None = None
-    durability: str | None = None
-    history: str | None = None
-    history_depth: int | None = None
-    deadline_ns: int | None = None
-
-    try:
-        rel = getattr(qos, "reliability", None) or getattr(qos, "m_reliability", None)
-        if rel is not None:
-            kind = getattr(rel, "kind", None)
-            if kind is not None:
-                reliability = _RELIABILITY_MAP.get(kind)
-
-        dur = getattr(qos, "durability", None) or getattr(qos, "m_durability", None)
-        if dur is not None:
-            kind = getattr(dur, "kind", None)
-            if kind is not None:
-                durability = _DURABILITY_MAP.get(kind)
-
-        hist = getattr(qos, "history", None) or getattr(qos, "m_history", None)
-        if hist is not None:
-            kind = getattr(hist, "kind", None)
-            if kind is not None:
-                history = _HISTORY_MAP.get(kind)
-            depth = getattr(hist, "depth", None)
-            if isinstance(depth, int):
-                history_depth = depth
-
-        ddl = getattr(qos, "deadline", None) or getattr(qos, "m_deadline", None)
-        if ddl is not None:
-            period = getattr(ddl, "period", None)
-            if period is not None:
-                sec = getattr(period, "seconds", None)
-                if sec is None:
-                    sec = getattr(period, "sec", None) or 0
-                nsec = getattr(period, "nanosec", None)
-                if nsec is None:
-                    nsec = getattr(period, "nanoseconds", None) or 0
-                if sec or nsec:
-                    deadline_ns = int(sec) * 1_000_000_000 + int(nsec)
-    except (TypeError, AttributeError):  # defensive
-        return None
-
-    if reliability is None or durability is None or history is None:
-        return None
-
-    return QosProfile(
-        reliability=reliability,  # type: ignore[arg-type]
-        durability=durability,  # type: ignore[arg-type]
-        history=history,  # type: ignore[arg-type]
-        history_depth=history_depth,
-        deadline_ns=deadline_ns,
+    The pure normalization logic lives in
+    `common.qos_normalize.fast_qos_to_profile` ; this thin wrapper feeds it
+    the `fastdds`-derived int→str maps so the call sites in
+    `detect_qos_mismatches` stay unchanged.
+    """
+    return _common_fast_qos_to_profile(
+        sample,
+        reliability_map=_RELIABILITY_MAP,
+        durability_map=_DURABILITY_MAP,
+        history_map=_HISTORY_MAP,
     )

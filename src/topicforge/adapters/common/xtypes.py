@@ -98,11 +98,14 @@ def annotate_raw(raw_bytes: bytes, *, note: str) -> dict[str, object]:
 
 
 def _encode_raw_bytes(raw_bytes: bytes) -> dict[str, object]:
-    """Encode bytes as hex with bounded length + truncation flag."""
-    hex_str = raw_bytes.hex()
-    truncated = len(hex_str) > _RAW_BYTES_PREVIEW_LIMIT
-    if truncated:
-        hex_str = hex_str[:_RAW_BYTES_PREVIEW_LIMIT]
+    """Encode bytes as hex with bounded length + truncation flag.
+
+    Slices the *bytes* before hex-encoding (each byte → 2 hex chars) so a
+    large payload does not allocate its full 2x-size hex string only to be
+    truncated to the preview limit. (Audit M5.)
+    """
+    truncated = len(raw_bytes) * 2 > _RAW_BYTES_PREVIEW_LIMIT
+    hex_str = raw_bytes[: _RAW_BYTES_PREVIEW_LIMIT // 2].hex() if truncated else raw_bytes.hex()
     out: dict[str, object] = {"_raw_bytes_hex": hex_str}
     if truncated:
         out["_raw_bytes_truncated"] = True

@@ -26,6 +26,12 @@ _DURABILITY_ORDER: tuple[str, ...] = (
     "PERSISTENT",
 )
 
+# An absent Deadline QoS is the *infinite* default period (the loosest
+# possible offer/request). Modeling `None` as +infinity lets the single
+# RxO comparison below cover every case, including the reader-finite /
+# writer-absent incompatibility the pre-audit code missed.
+_INFINITE_DEADLINE = float("inf")
+
 
 def detect_mismatches(
     reader_qos: QosProfile, writer_qos: QosProfile
@@ -67,15 +73,21 @@ def detect_mismatches(
     if reader_qos.history == "KEEP_ALL" and writer_qos.history == "KEEP_LAST":
         risky.append("History")
 
-    # Deadline — a reader deadline strictly tighter than the writer
-    # deadline is incompatible: the writer cannot honor the reader's
-    # promise. If either side has no deadline (None), no constraint
-    # applies on that side.
-    if (
-        reader_qos.deadline_ns is not None
-        and writer_qos.deadline_ns is not None
-        and reader_qos.deadline_ns < writer_qos.deadline_ns
-    ):
+    # Deadline — RxO rule: the writer's *offered* period must be <= the
+    # reader's *requested* period, else the writer cannot honor the reader's
+    # promise. An absent deadline is the infinite (loosest) default, so:
+    #   * reader finite, writer finite → incompatible when writer > reader
+    #   * reader finite, writer absent (∞) → incompatible (∞ > finite)  ← the
+    #       false negative the pre-audit code missed
+    #   * reader absent (∞), writer anything → compatible (∞ requested)
+    #   * both absent → compatible
+    reader_deadline = (
+        reader_qos.deadline_ns if reader_qos.deadline_ns is not None else _INFINITE_DEADLINE
+    )
+    writer_deadline = (
+        writer_qos.deadline_ns if writer_qos.deadline_ns is not None else _INFINITE_DEADLINE
+    )
+    if writer_deadline > reader_deadline:
         incompatible.append("Deadline")
 
     if not incompatible and not risky:

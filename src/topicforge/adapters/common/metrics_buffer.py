@@ -10,11 +10,13 @@ Design rules (mirror `lifecycle.py`):
 * **Pure logic at module level.** No DDS dependency. Tests pin
   behavior against synthetic input — same convention as
   `parse_topic_list`, `detect_mismatches`, `LifecycleBuffer`.
-* **Bounded per-topic.** Each topic's ring caps at
+* **Bounded per-topic and in topic count.** Each topic's ring caps at
   `MAX_SAMPLES_PER_TOPIC` (default 1000) ; older samples drop out
-  when new ones arrive. Memory footprint is bounded by
-  `O(topics x 1000 x sample_record_size)` — at 50 topics roughly
-  10 MB worst case.
+  when new ones arrive. The number of distinct topics tracked caps at
+  `MAX_TOPICS` (default 4096), oldest-inserted evicted on overflow, so a
+  churny bus cannot grow the map without bound. Memory footprint is bounded
+  by `O(min(topics, 4096) x 1000 x sample_record_size)` — at 50 topics
+  roughly 10 MB worst case.
 * **Thread-safe.** Cyclone and Fast adapters today fill the buffer
   on the tool-call thread (synchronous), but a future rclpy adapter
   (roadmapped in `docs/product-plan.md §5`) will fire callbacks
@@ -29,7 +31,7 @@ Design rules (mirror `lifecycle.py`):
 from __future__ import annotations
 
 import threading
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Literal
 
@@ -37,6 +39,10 @@ from topicforge.models import TopicMetrics
 
 MAX_SAMPLES_PER_TOPIC = 1000
 """Hard cap on per-topic ring buffer. Drop-oldest on overflow."""
+
+MAX_TOPICS = 4096
+"""Hard cap on the number of distinct topics tracked. Oldest-inserted topic
+evicted on overflow so a churny bus cannot grow the map without bound."""
 
 EffectiveMode = Literal["mock", "live"]
 
@@ -49,8 +55,10 @@ class MetricsSample:
     surfaces the sample. `receive_ns` is `time.time_ns()` at capture
     moment (wall clock, NOT DDS-RTPS receive timestamp — neither
     binding exposes the underlying RTPS timestamp through Python
-    reliably). `sequence_number` and `publish_ns` are best-effort —
-    `None` when the sample type doesn't expose them.
+    reliably). `sequence_number`, `publish_ns`, and `writer_guid` are
+    best-effort — `None` when the sample type / binding doesn't expose
+    them. `writer_guid` lets `compute_metrics` count sequence gaps per
+    writer instead of merging independent counters (Audit C6).
     """
 
     topic: str
@@ -58,14 +66,21 @@ class MetricsSample:
     sequence_number: int | None
     publish_ns: int | None
     domain_id: int
+    writer_guid: str | None = None
 
 
 class MetricsBuffer:
     """Per-topic bounded ring + percentile/frequency computation."""
 
-    def __init__(self, *, max_samples_per_topic: int = MAX_SAMPLES_PER_TOPIC) -> None:
+    def __init__(
+        self,
+        *,
+        max_samples_per_topic: int = MAX_SAMPLES_PER_TOPIC,
+        max_topics: int = MAX_TOPICS,
+    ) -> None:
         self._lock = threading.RLock()
         self._cap = max_samples_per_topic
+        self._max_topics = max_topics
         self._samples: dict[str, deque[MetricsSample]] = {}
 
     # --------------------------- mutating ------------------------------
@@ -78,11 +93,17 @@ class MetricsBuffer:
         sequence_number: int | None,
         publish_ns: int | None,
         domain_id: int,
+        writer_guid: str | None = None,
     ) -> None:
         """Append one sample to the per-topic ring. Oldest evicted on cap."""
         with self._lock:
             ring = self._samples.get(topic)
             if ring is None:
+                if len(self._samples) >= self._max_topics:
+                    # Evict the oldest-inserted topic to keep the map bounded.
+                    oldest = next(iter(self._samples), None)
+                    if oldest is not None:
+                        del self._samples[oldest]
                 ring = deque(maxlen=self._cap)
                 self._samples[topic] = ring
             ring.append(
@@ -92,6 +113,7 @@ class MetricsBuffer:
                     sequence_number=sequence_number,
                     publish_ns=publish_ns,
                     domain_id=domain_id,
+                    writer_guid=writer_guid,
                 )
             )
 
@@ -154,18 +176,34 @@ class MetricsBuffer:
         # window_seconds_actual reflects the actual elapsed range
         # within the window — useful when the buffer is younger than
         # `window_seconds` (e.g., server just started).
-        oldest_ns = min(s.receive_ns for s in samples)
+        receive_times = [s.receive_ns for s in samples]
+        oldest_ns = min(receive_times)
+        newest_ns = max(receive_times)
         elapsed_ns = max(now_ns - oldest_ns, 1)  # >=1 ns to avoid /0
         window_actual_s = elapsed_ns / 1_000_000_000
 
-        # A single sample doesn't define a frequency.
+        # Frequency is measured from the span of the samples' own arrival
+        # instants (newest - oldest) over N-1 intervals — NOT from
+        # (now - oldest), which would fold in idle time since the last peek.
+        # Samples surfaced by one opportunistic peek share a single
+        # receive_ns (span 0), so a snapshot legitimately yields no
+        # frequency rather than a fabricated rate. (Audit C5.)
+        sample_span_ns = newest_ns - oldest_ns
         freq_observed: float | None = (
-            samples_observed / window_actual_s if samples_observed >= 2 else None
+            (samples_observed - 1) / (sample_span_ns / 1_000_000_000)
+            if samples_observed >= 2 and sample_span_ns > 0
+            else None
         )
 
-        seq_numbers = [s.sequence_number for s in samples if s.sequence_number is not None]
-        seq_available = len(seq_numbers) > 0
-        gaps_count = _count_sequence_gaps(seq_numbers) if seq_available else 0
+        # Sequence gaps are counted per writer: merging sequence numbers
+        # from independent writers on one topic would read each writer's
+        # counter offset as a huge phantom gap. (Audit C6.)
+        seq_by_writer: dict[str | None, list[int]] = defaultdict(list)
+        for s in samples:
+            if s.sequence_number is not None:
+                seq_by_writer[s.writer_guid].append(s.sequence_number)
+        seq_available = len(seq_by_writer) > 0
+        gaps_count = sum(_count_sequence_gaps(seqs) for seqs in seq_by_writer.values())
 
         latencies = [
             s.receive_ns - s.publish_ns
@@ -214,13 +252,25 @@ class MetricsBuffer:
 # ---------------------------------------------------------------------------
 
 
-def _count_sequence_gaps(seq_numbers: list[int]) -> int:
-    """Count missing entries in the observed sequence number list.
+# A hole wider than this between two consecutive observed sequence numbers is
+# treated as a publisher restart / counter wrap (a discontinuity), not as that
+# many genuinely lost samples — so a 16-bit wrap (65535→0) or a restart is not
+# reported as tens of thousands of gaps. (Audit C6.)
+_MAX_PLAUSIBLE_GAP = 10_000
 
-    Sorts the input and counts the gaps between consecutive values.
-    Out-of-order arrivals are tolerated (we sort first). Duplicates
-    are deduplicated before counting — they should not contribute to
-    a gap claim.
+
+def _count_sequence_gaps(seq_numbers: list[int]) -> int:
+    """Count missing entries in ONE writer's observed sequence numbers.
+
+    Sorts + dedupes the input, then sums the holes between consecutive
+    values. Out-of-order arrivals are tolerated (we sort first) and
+    duplicates are removed. A single hole wider than `_MAX_PLAUSIBLE_GAP`
+    is treated as a reset/wrap discontinuity and skipped rather than
+    counted as that many losses.
+
+    Callers pass one writer's sequence numbers — cross-writer merging is
+    handled in `compute_metrics` by grouping on writer GUID first, so an
+    independent writer's counter offset is never read as a phantom gap.
 
     Example: [0, 1, 2, 5, 6] → 2 gaps (3 and 4 missing).
     """
@@ -232,7 +282,7 @@ def _count_sequence_gaps(seq_numbers: list[int]) -> int:
     gaps = 0
     for prev, curr in pairwise(unique):
         diff = curr - prev
-        if diff > 1:
+        if 1 < diff <= _MAX_PLAUSIBLE_GAP:
             gaps += diff - 1
     return gaps
 

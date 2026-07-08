@@ -65,12 +65,28 @@ from topicforge.adapters.common import (
     canonicalize_vendor_id,
     decode_dynamic_sample,
     decode_field_value,
-    detect_mismatches,
+    detect_mismatches_across_endpoints,
     dynamic_type_name,
     extract_publish_ns_from_payload,
     extract_seq_from_payload,
     format_guid,
     iter_field_names,
+    validate_domain_id,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_guid as _extract_guid,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_hostname as _extract_hostname,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_topic_name as _extract_topic_name,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_vendor_id as _extract_vendor_id,
+)
+from topicforge.adapters.common import (
+    cyclone_qos_to_profile as _cyclone_qos_to_profile,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -78,7 +94,6 @@ from topicforge.models import (
     MismatchReport,
     ParticipantEvent,
     ParticipantInfo,
-    QosProfile,
     SampleResult,
     TopicInfo,
     TopicMetrics,
@@ -100,8 +115,11 @@ _extract_publish_ns_from_payload = extract_publish_ns_from_payload
 log = logging.getLogger(__name__)
 
 # Tunables — kept module-level so a future env-var hook is a one-line
-# change. Discovery is a bounded operation: `take_iter` returns whatever
-# samples accumulated during the timeout window.
+# change. Discovery + sample reads use `read_iter` (non-destructive) rather
+# than `take_iter`, so observing the builtin discovery topics does not drain
+# the reader cache and cause spurious lost / re-discovered participant
+# flapping across polls. (Audit P1-5 — the read-vs-take semantics on a real
+# bus must be confirmed on the `scripts/integration/` rig before this ships.)
 _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
@@ -214,7 +232,7 @@ def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:
     """
     try:
         reader = BuiltinDataReader(dp, BuiltinTopicDcpsPublication)
-        for sample in reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)):
+        for sample in reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)):
             if _extract_topic_name(sample) != topic:
                 continue
             for attr in ("type_id", "type_identifier", "type_info"):
@@ -239,7 +257,7 @@ def _collect_dynamic_samples(dp: Any, topic: str, type_object: Any, count: int) 
 
         dynamic_topic = DynamicTopic(dp, topic, type_object)
         reader = DynamicDataReader(dp, dynamic_topic)
-        return list(reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[:count]
+        return list(reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[:count]
     except Exception:  # pragma: no cover — binding-side error
         log.debug("typed reader construction failed for topic %r", topic, exc_info=True)
         return None
@@ -268,8 +286,7 @@ class CycloneDdsAdapter:
     name: AdapterName = "cyclone"
 
     def __init__(self, domain_id: int = 0) -> None:
-        if domain_id < 0 or domain_id > 232:
-            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        validate_domain_id(domain_id)
         self._domain_id = domain_id
         # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
         # reconciliation — see `list_participants` for the feed pattern.
@@ -329,7 +346,7 @@ class CycloneDdsAdapter:
         """
         try:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
-            samples = list(reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))
+            samples = list(reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS participant discovery failed on domain {self._domain_id} "
@@ -359,14 +376,20 @@ class CycloneDdsAdapter:
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
-        """Pair reader/writer endpoints by topic, run the pure analyzer on each."""
+        """Pair reader/writer endpoints by topic, run the shared analyzer on each.
+
+        The pairing / reporting logic lives in
+        `common.qos_endpoints.detect_mismatches_across_endpoints` (shared with
+        the Fast adapter, unit-tested without a binding). This method only
+        gathers the vendor-native endpoint samples and hands them over.
+        """
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = list(sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            subs = list(sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
-            pubs = list(pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            pubs = list(pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
         except Exception as exc:
@@ -375,47 +398,14 @@ class CycloneDdsAdapter:
                 f"({type(exc).__name__}: {exc})."
             ) from exc
 
-        by_topic: dict[str, tuple[list[Any], list[Any]]] = {}
-        for sample in subs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[0].append(sample)
-        for sample in pubs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[1].append(sample)
-
-        reports: list[MismatchReport] = []
-        for tname, (readers, writers) in by_topic.items():
-            for reader_sample in readers:
-                reader_profile = _cyclone_qos_to_profile(reader_sample)
-                if reader_profile is None:
-                    continue
-                for writer_sample in writers:
-                    writer_profile = _cyclone_qos_to_profile(writer_sample)
-                    if writer_profile is None:
-                        continue
-                    result = detect_mismatches(reader_profile, writer_profile)
-                    if result is None:
-                        continue
-                    policies, severity = result
-                    reports.append(
-                        MismatchReport(
-                            topic=tname,
-                            reader_guid=format_guid(_extract_guid(reader_sample)),
-                            writer_guid=format_guid(_extract_guid(writer_sample)),
-                            incompatible_policies=policies,
-                            severity=severity,
-                            mode_effective="live",
-                        )
-                    )
-        return reports
+        return detect_mismatches_across_endpoints(
+            subs=subs,
+            pubs=pubs,
+            topic=topic,
+            qos_to_profile=_cyclone_qos_to_profile,
+            extract_topic_name=_extract_topic_name,
+            extract_guid=_extract_guid,
+        )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         """Peek recent samples on a DDS topic.
@@ -442,7 +432,7 @@ class CycloneDdsAdapter:
         topic_class = _BUILTIN_DCPS_TOPICS[topic]
         try:
             reader = BuiltinDataReader(self._dp, topic_class)
-            samples_raw = list(reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[
+            samples_raw = list(reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[
                 :count
             ]
         except Exception as exc:
@@ -566,10 +556,10 @@ class CycloneDdsAdapter:
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = list(sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            subs = list(sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
-            pubs = list(pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            pubs = list(pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
         except Exception:  # pragma: no cover — defensive
@@ -615,129 +605,11 @@ class CycloneDdsAdapter:
         )
 
 
-# ---------------------------------------------------------------------------
-# Sample-introspection helpers — defensive against binding shape variations.
-# Each helper returns None / "unknown" / safe defaults rather than raising,
-# so a single odd discovery sample never breaks the whole tool call.
-# ---------------------------------------------------------------------------
-
-
-def _extract_guid(sample: Any) -> bytes | None:
-    """Pull the 16-byte GUID off a discovery sample, if present."""
-    for attr in ("key", "participant_key", "guid"):
-        v = getattr(sample, attr, None)
-        if v is None:
-            continue
-        if isinstance(v, bytes):
-            return v
-        inner = getattr(v, "value", None)
-        if isinstance(inner, bytes):
-            return inner
-    return None
-
-
-def _extract_vendor_id(sample: Any) -> tuple[int, int] | None:
-    """Pull the 2-byte OMG vendor_id off a discovery sample, if present."""
-    v = getattr(sample, "vendor_id", None)
-    if v is None:
-        v = getattr(sample, "vendor", None)
-    if v is None:
-        return None
-    if isinstance(v, bytes) and len(v) >= 2:
-        return (v[0], v[1])
-    inner = getattr(v, "vendorId", None)
-    if isinstance(inner, (bytes, tuple, list)) and len(inner) >= 2:
-        return (inner[0], inner[1])
-    if isinstance(v, (tuple, list)) and len(v) >= 2:
-        return (v[0], v[1])
-    return None
-
-
-def _extract_hostname(sample: Any) -> str | None:
-    """Pull a hostname / participant-name hint off a sample, if exposed."""
-    for attr in ("hostname", "participant_name", "user_data"):
-        v = getattr(sample, attr, None)
-        if isinstance(v, (bytes, bytearray)):
-            try:
-                decoded = v.decode("utf-8", errors="replace")
-            except (UnicodeError, AttributeError):
-                continue
-            if decoded:
-                return decoded
-        if isinstance(v, str) and v:
-            return v
-    return None
-
-
-def _extract_topic_name(sample: Any) -> str | None:
-    v = getattr(sample, "topic_name", None)
-    if v is None:
-        v = getattr(sample, "topic", None)
-    if isinstance(v, str) and v:
-        return v
-    return None
-
-
-# QoS Policy class-name → canonical string maps. CycloneDDS exposes
-# policies as instances of nested classes under `cyclonedds.qos.Policy.*`
-# — we read them by simple class name to stay binding-version-agnostic.
-_RELIABILITY_NAMES = {"Reliable": "RELIABLE", "BestEffort": "BEST_EFFORT"}
-_DURABILITY_NAMES = {
-    "Volatile": "VOLATILE",
-    "TransientLocal": "TRANSIENT_LOCAL",
-    "Transient": "TRANSIENT",
-    "Persistent": "PERSISTENT",
-}
-_HISTORY_NAMES = {"KeepLast": "KEEP_LAST", "KeepAll": "KEEP_ALL"}
-
-
-def _cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
-    """Map a Cyclone discovery sample's QoS into the canonical QosProfile.
-
-    Returns `None` when essential QoS policies (reliability, durability,
-    history) are missing — the analyzer needs all three present to
-    produce a meaningful pair report.
-    """
-    qos = getattr(sample, "qos", None)
-    if qos is None:
-        return None
-
-    reliability: str | None = None
-    durability: str | None = None
-    history: str | None = None
-    history_depth: int | None = None
-    deadline_ns: int | None = None
-
-    try:
-        for policy in qos:
-            cls_name = type(policy).__name__
-            if cls_name in _RELIABILITY_NAMES:
-                reliability = _RELIABILITY_NAMES[cls_name]
-            elif cls_name in _DURABILITY_NAMES:
-                durability = _DURABILITY_NAMES[cls_name]
-            elif cls_name in _HISTORY_NAMES:
-                history = _HISTORY_NAMES[cls_name]
-                depth = getattr(policy, "depth", None)
-                if isinstance(depth, int):
-                    history_depth = depth
-            elif cls_name == "Deadline":
-                d = getattr(policy, "duration", None)
-                if d is None:
-                    d = getattr(policy, "deadline", None)
-                if hasattr(d, "to_nanoseconds"):
-                    deadline_ns = int(d.to_nanoseconds())
-                elif isinstance(d, int):
-                    deadline_ns = d
-    except (TypeError, AttributeError):  # defensive against odd qos shapes
-        return None
-
-    if reliability is None or durability is None or history is None:
-        return None
-
-    return QosProfile(
-        reliability=reliability,  # type: ignore[arg-type]
-        durability=durability,  # type: ignore[arg-type]
-        history=history,  # type: ignore[arg-type]
-        history_depth=history_depth,
-        deadline_ns=deadline_ns,
-    )
+# Sample-introspection helpers (_extract_guid / _extract_vendor_id /
+# _extract_hostname / _extract_topic_name) and the QoS normalizer
+# (_cyclone_qos_to_profile) were moved to the binding-free
+# `topicforge.adapters.common.dds_introspection` /
+# `.qos_normalize` modules (Lot 0, audit 2026-07-08) so they are
+# unit-testable without the cyclonedds bindings installed. They are
+# imported and aliased back to their original names at the top of this
+# module, so the call sites above are unchanged.
