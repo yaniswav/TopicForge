@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common import validate_domain_id
 from topicforge.models import (
     BagAnalysis,
     MessageSample,
@@ -47,8 +48,7 @@ class DustDdsAdapter:
     name: AdapterName = "dust"
 
     def __init__(self, domain_id: int = 0) -> None:
-        if domain_id < 0 or domain_id > 232:
-            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        validate_domain_id(domain_id)
         self._domain_id = domain_id
 
     @property

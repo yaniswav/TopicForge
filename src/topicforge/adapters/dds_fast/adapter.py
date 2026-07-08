@@ -55,8 +55,9 @@ from topicforge.adapters.common import (
     MetricsBuffer,
     annotate_raw,
     canonicalize_vendor_id,
-    detect_mismatches,
+    detect_mismatches_across_endpoints,
     format_guid,
+    validate_domain_id,
 )
 from topicforge.adapters.common import (
     fast_extract_guid as _extract_guid,
@@ -209,8 +210,7 @@ class FastDdsAdapter:
         *,
         discovery_wait_ms: int = _DEFAULT_DISCOVERY_WAIT_MS,
     ) -> None:
-        if domain_id < 0 or domain_id > 232:
-            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        validate_domain_id(domain_id)
         self._domain_id = domain_id
         # v0.4.0 Phase 1: lifecycle buffer fed by listener callbacks.
         self._lifecycle = LifecycleBuffer()
@@ -302,50 +302,21 @@ class FastDdsAdapter:
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
-        subs = self._listener.snapshot_subscriptions()
-        pubs = self._listener.snapshot_publications()
+        """Pair reader/writer endpoints by topic via the shared analyzer.
 
-        by_topic: dict[str, tuple[list[Any], list[Any]]] = {}
-        for sample in subs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[0].append(sample)
-        for sample in pubs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[1].append(sample)
-
-        reports: list[MismatchReport] = []
-        for tname, (readers, writers) in by_topic.items():
-            for reader_sample in readers:
-                reader_profile = _fast_qos_to_profile(reader_sample)
-                if reader_profile is None:
-                    continue
-                for writer_sample in writers:
-                    writer_profile = _fast_qos_to_profile(writer_sample)
-                    if writer_profile is None:
-                        continue
-                    result = detect_mismatches(reader_profile, writer_profile)
-                    if result is None:
-                        continue
-                    policies, severity = result
-                    reports.append(
-                        MismatchReport(
-                            topic=tname,
-                            reader_guid=format_guid(_extract_guid(reader_sample)),
-                            writer_guid=format_guid(_extract_guid(writer_sample)),
-                            incompatible_policies=policies,
-                            severity=severity,
-                            mode_effective="live",
-                        )
-                    )
-        return reports
+        The pairing / reporting logic lives in
+        `common.qos_endpoints.detect_mismatches_across_endpoints` (shared with
+        the Cyclone adapter, unit-tested without a binding). This method only
+        supplies the listener's discovery snapshots and the Fast helpers.
+        """
+        return detect_mismatches_across_endpoints(
+            subs=self._listener.snapshot_subscriptions(),
+            pubs=self._listener.snapshot_publications(),
+            topic=topic,
+            qos_to_profile=_fast_qos_to_profile,
+            extract_topic_name=_extract_topic_name,
+            extract_guid=_extract_guid,
+        )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         """v0.4.0 Phase 1: builtin DCPS snapshots + user-topic raw fallback.

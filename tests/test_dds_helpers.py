@@ -5,11 +5,28 @@ Pure tests — no DDS middleware needed, no monkeypatching, no fixtures.
 
 from __future__ import annotations
 
+import pytest
+
+from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     canonicalize_vendor_id,
     format_guid,
+    validate_domain_id,
 )
+
+
+def test_validate_domain_id_accepts_range_bounds() -> None:
+    validate_domain_id(0)
+    validate_domain_id(232)  # no raise
+
+
+def test_validate_domain_id_rejects_out_of_range() -> None:
+    with pytest.raises(AdapterError, match="domain_id"):
+        validate_domain_id(-1)
+    with pytest.raises(AdapterError, match="domain_id"):
+        validate_domain_id(233)
+
 
 # ---------------------------------------------------------------------------
 # canonicalize_vendor_id — OMG vendor_id mapping

@@ -65,12 +65,13 @@ from topicforge.adapters.common import (
     canonicalize_vendor_id,
     decode_dynamic_sample,
     decode_field_value,
-    detect_mismatches,
+    detect_mismatches_across_endpoints,
     dynamic_type_name,
     extract_publish_ns_from_payload,
     extract_seq_from_payload,
     format_guid,
     iter_field_names,
+    validate_domain_id,
 )
 from topicforge.adapters.common import (
     cyclone_extract_guid as _extract_guid,
@@ -114,8 +115,11 @@ _extract_publish_ns_from_payload = extract_publish_ns_from_payload
 log = logging.getLogger(__name__)
 
 # Tunables — kept module-level so a future env-var hook is a one-line
-# change. Discovery is a bounded operation: `take_iter` returns whatever
-# samples accumulated during the timeout window.
+# change. Discovery + sample reads use `read_iter` (non-destructive) rather
+# than `take_iter`, so observing the builtin discovery topics does not drain
+# the reader cache and cause spurious lost / re-discovered participant
+# flapping across polls. (Audit P1-5 — the read-vs-take semantics on a real
+# bus must be confirmed on the `scripts/integration/` rig before this ships.)
 _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
@@ -228,7 +232,7 @@ def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:
     """
     try:
         reader = BuiltinDataReader(dp, BuiltinTopicDcpsPublication)
-        for sample in reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)):
+        for sample in reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)):
             if _extract_topic_name(sample) != topic:
                 continue
             for attr in ("type_id", "type_identifier", "type_info"):
@@ -253,7 +257,7 @@ def _collect_dynamic_samples(dp: Any, topic: str, type_object: Any, count: int) 
 
         dynamic_topic = DynamicTopic(dp, topic, type_object)
         reader = DynamicDataReader(dp, dynamic_topic)
-        return list(reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[:count]
+        return list(reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[:count]
     except Exception:  # pragma: no cover — binding-side error
         log.debug("typed reader construction failed for topic %r", topic, exc_info=True)
         return None
@@ -282,8 +286,7 @@ class CycloneDdsAdapter:
     name: AdapterName = "cyclone"
 
     def __init__(self, domain_id: int = 0) -> None:
-        if domain_id < 0 or domain_id > 232:
-            raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
+        validate_domain_id(domain_id)
         self._domain_id = domain_id
         # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
         # reconciliation — see `list_participants` for the feed pattern.
@@ -343,7 +346,7 @@ class CycloneDdsAdapter:
         """
         try:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
-            samples = list(reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))
+            samples = list(reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS participant discovery failed on domain {self._domain_id} "
@@ -373,14 +376,20 @@ class CycloneDdsAdapter:
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
-        """Pair reader/writer endpoints by topic, run the pure analyzer on each."""
+        """Pair reader/writer endpoints by topic, run the shared analyzer on each.
+
+        The pairing / reporting logic lives in
+        `common.qos_endpoints.detect_mismatches_across_endpoints` (shared with
+        the Fast adapter, unit-tested without a binding). This method only
+        gathers the vendor-native endpoint samples and hands them over.
+        """
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = list(sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            subs = list(sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
-            pubs = list(pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            pubs = list(pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
         except Exception as exc:
@@ -389,47 +398,14 @@ class CycloneDdsAdapter:
                 f"({type(exc).__name__}: {exc})."
             ) from exc
 
-        by_topic: dict[str, tuple[list[Any], list[Any]]] = {}
-        for sample in subs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[0].append(sample)
-        for sample in pubs:
-            tname = _extract_topic_name(sample)
-            if tname is None:
-                continue
-            if topic is not None and tname != topic:
-                continue
-            by_topic.setdefault(tname, ([], []))[1].append(sample)
-
-        reports: list[MismatchReport] = []
-        for tname, (readers, writers) in by_topic.items():
-            for reader_sample in readers:
-                reader_profile = _cyclone_qos_to_profile(reader_sample)
-                if reader_profile is None:
-                    continue
-                for writer_sample in writers:
-                    writer_profile = _cyclone_qos_to_profile(writer_sample)
-                    if writer_profile is None:
-                        continue
-                    result = detect_mismatches(reader_profile, writer_profile)
-                    if result is None:
-                        continue
-                    policies, severity = result
-                    reports.append(
-                        MismatchReport(
-                            topic=tname,
-                            reader_guid=format_guid(_extract_guid(reader_sample)),
-                            writer_guid=format_guid(_extract_guid(writer_sample)),
-                            incompatible_policies=policies,
-                            severity=severity,
-                            mode_effective="live",
-                        )
-                    )
-        return reports
+        return detect_mismatches_across_endpoints(
+            subs=subs,
+            pubs=pubs,
+            topic=topic,
+            qos_to_profile=_cyclone_qos_to_profile,
+            extract_topic_name=_extract_topic_name,
+            extract_guid=_extract_guid,
+        )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         """Peek recent samples on a DDS topic.
@@ -456,7 +432,7 @@ class CycloneDdsAdapter:
         topic_class = _BUILTIN_DCPS_TOPICS[topic]
         try:
             reader = BuiltinDataReader(self._dp, topic_class)
-            samples_raw = list(reader.take_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[
+            samples_raw = list(reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[
                 :count
             ]
         except Exception as exc:
@@ -580,10 +556,10 @@ class CycloneDdsAdapter:
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = list(sub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            subs = list(sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
-            pubs = list(pub_reader.take_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
+            pubs = list(pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
         except Exception:  # pragma: no cover — defensive
