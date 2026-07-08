@@ -178,7 +178,16 @@ modèle. Une branche `fix/lotN-...` par lot, un `make check` + skill `verify-cha
   nouveaux tests verts, `make check` vert, nombre de skips inchangé.
 - **Tier** : Opus 4.8 (extraction) + Sonnet 5 (tests, config CI). **Effort** : M.
 
-### Lot 1 — Vérité documentaire *(indépendant, faible risque — insérable n'importe quand)*
+### Lot 1 — Vérité documentaire *(indépendant, faible risque — insérable n'importe quand)* ✅ FAIT (2026-07-08)
+
+> `product-plan.md` §1/§4 réalignés sur 11 outils ; §11 : décision de re-scope
+> rétroactive ajoutée qui **ferme la barrière de gouvernance franchie** (plafond
+> révisé à 11, un 12ᵉ outil exige une discussion documentée). Honnêteté C1 :
+> README + description `peek_dds_samples` ne promettent plus le repli
+> `_raw_bytes_hex` (vide sur le chemin user-topic raw). **476 passed, verts.**
+> *Non touché* : `CLAUDE.md` (gitignored/local, §2 « MVP verrouillé » possiblement
+> gelé volontairement) — laissé au mainteneur, signalé dans le rapport.
+
 - **Contenu** : M6/P1-6 (aligner `product-plan.md` §1/4/11/13 + `CLAUDE.md` §2/12 sur les 11 outils,
   fermer la barrière de gouvernance franchie) · volet doc de C1/P0-2 (aucune description d'outil ni
   README ne promet un comportement live absent).
