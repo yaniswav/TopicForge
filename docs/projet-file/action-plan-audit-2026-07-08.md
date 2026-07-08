@@ -187,7 +187,14 @@ modèle. Une branche `fix/lotN-...` par lot, un `make check` + skill `verify-cha
   CHANGELOG / `MVP_TOOLS` ; zéro promesse doc non tenue. **Tier** : Fable 5 (arbitrage) → Sonnet 5
   (cascade `docs-curator`). **Effort** : S.
 
-### Lot 2 — Bugs fonctionnels metrics / QoS *(après Lot 0)*
+### Lot 2 — Bugs fonctionnels metrics / QoS *(après Lot 0)* ✅ FAIT (2026-07-08)
+
+> P1-1 fréquence : `(N-1)/(newest-oldest)` sur le span réel des samples (plus de
+> division par `now-oldest`) ; snapshot au même timestamp → `None`. P1-2 gaps :
+> comptés par writer (nouveau `MetricsSample.writer_guid`) + garde reset/wrap à
+> 10 000. P1-3 Deadline : absent = infini → reader fini vs writer absent = incompatible.
+> Tests rouge-puis-vert ajoutés. **457 → 464 passed, ruff + cov (88.83 %) verts.**
+
 - **Contenu** : P1-1 (fréquence off-by-one + timestamps snapshot) · P1-2 (gaps par writer GUID +
   détection wrap/reset) · P1-3 (faux-négatif Deadline RxO offered-infinite).
 - **Pourquoi groupé** : trois outils livrés qui renvoient des chiffres faux ; tous en logique pure

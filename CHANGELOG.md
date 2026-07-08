@@ -45,8 +45,25 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   by `std_msgs/msg/String`, not `std_msgs__msg__String`). The test was
   previously auto-skipped and had gone silently stale — un-skipping it in CI
   surfaced the drift.
+- **`topic_metrics` frequency was wrong (Lot 2, audit C5).** It divided the
+  sample count by `(now − oldest_sample)` — folding in idle time since the
+  last peek — and counted N intervals instead of N−1. Now measured as
+  `(N−1) / (newest − oldest)` over the samples' own arrival span; samples
+  surfaced by a single opportunistic peek share one timestamp (span 0) and
+  correctly yield `frequency_hz_observed = null` instead of a fabricated rate.
+- **`topic_metrics` sequence-gap count exploded on multi-writer topics,
+  publisher restarts, and counter wrap (Lot 2, audit C6).** Gaps are now
+  counted per writer (new best-effort `MetricsSample.writer_guid`), so
+  independent writers' counter offsets are not read as phantom gaps, and a
+  single jump wider than 10 000 is treated as a reset/wrap discontinuity
+  rather than that many losses.
+- **QoS Deadline false negative (Lot 2, audit C3/P1-3).**
+  `detect_qos_mismatches` now flags a reader that requests a finite Deadline
+  against a writer that offers none — an absent deadline is the infinite
+  (loosest) period and cannot satisfy a finite request. The previous rule
+  required both sides non-null and silently missed this incompatibility.
 
-Baseline: 399 → 457 passed, 24 → 23 skipped, ruff clean, coverage 88.75%.
+Baseline: 399 → 464 passed, 24 → 23 skipped, ruff clean, coverage 88.83%.
 
 ## [0.5.0] - 2026-05-21
 
