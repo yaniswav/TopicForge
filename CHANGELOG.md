@@ -100,6 +100,23 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - Dead `annotate_full` / `annotate_partial` imports and the `_ = (...)`
   unused-suppressor from `services/bag_service.py`.
 
+### Documentation (Lot 1 — reconcile the strategic source of truth)
+
+- **`docs/product-plan.md` realigned on the shipped 11-tool surface (audit
+  M6/P1-6).** §1 and §4 said "five typed tools today" / DDS "roadmapped"
+  while six DDS/observability tools had shipped across v0.2.0–v0.4.0. §11's
+  risk register carried a self-imposed governance gate — "any 9th tool needs
+  an explicit re-scope discussion documented in this register before code
+  lands" — that was crossed during v0.4.0 without the discussion being
+  recorded. Added a retroactive re-scope decision closing that gap: the three
+  ceiling-breaking tools are accepted, the new ceiling is 11 tools, a 12th
+  needs a documented re-scope.
+- **User-topic `raw` decode honesty (audit C1).** README and the
+  `peek_dds_samples` tool description no longer imply the `raw` fallback
+  preserves the payload in `_raw_bytes_hex` — on the current user-topic raw
+  path that field is empty (a `raw` status means "present but not decoded").
+  Capturing the on-wire CDR bytes is stated as roadmapped rather than done.
+
 Baseline: 399 → 476 passed, 24 → 23 skipped, ruff clean, coverage 88.90%.
 
 ## [0.5.0] - 2026-05-21
