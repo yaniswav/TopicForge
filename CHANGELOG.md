@@ -117,7 +117,28 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   path that field is empty (a `raw` status means "present but not decoded").
   Capturing the on-wire CDR bytes is stated as roadmapped rather than done.
 
-Baseline: 399 → 476 passed, 24 → 23 skipped, ruff clean, coverage 88.90%.
+### Changed (Lot 5 — DDS adapter deduplication)
+
+- **QoS-mismatch endpoint pairing deduplicated (audit D1/M7/P2).** The ~40
+  identical lines in each adapter's `detect_qos_mismatches` (group endpoints by
+  topic, pair reader × writer, build `MismatchReport`) moved to the binding-free
+  `common/qos_endpoints.detect_mismatches_across_endpoints`, unit-tested without
+  a binding. Each writer's QoS profile is now parsed once per topic instead of
+  once per reader (fixes the O(readers × writers) re-parse). Both adapters
+  delegate to it.
+- **Shared `validate_domain_id` (`common/dds_helpers`).** The identical 0..232
+  bound check in all four DDS adapter constructors (Cyclone, Fast, OpenDDS,
+  Dust) is now defined once.
+- **Cyclone discovery/sample reads switched from `take_iter` to `read_iter`
+  (audit A1/P1-5).** Destructive `take` drained the builtin discovery cache,
+  risking spurious lost / re-discovered participant flapping across polls;
+  `read` is non-destructive — the correct choice for read-only observability.
+  ⚠️ **Requires real-bus validation on `scripts/integration/` before release**:
+  the read-vs-take semantics cannot be exercised without `cyclonedds` installed
+  (the adapter is not importable in the unit environment; these edits are
+  validated only by `ruff` static analysis + `py_compile`).
+
+Baseline: 399 → 485 passed, 24 → 23 skipped, ruff clean, coverage 89.12%.
 
 ## [0.5.0] - 2026-05-21
 

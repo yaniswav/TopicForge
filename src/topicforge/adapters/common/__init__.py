@@ -13,6 +13,7 @@ from topicforge.adapters.common.dds_helpers import (
     VendorTag,
     canonicalize_vendor_id,
     format_guid,
+    validate_domain_id,
 )
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
@@ -32,6 +33,7 @@ from topicforge.adapters.common.metrics_buffer import (
     MetricsSample,
 )
 from topicforge.adapters.common.qos_analyzer import detect_mismatches
+from topicforge.adapters.common.qos_endpoints import detect_mismatches_across_endpoints
 from topicforge.adapters.common.qos_normalize import (
     cyclone_qos_to_profile,
     fast_qos_to_profile,
@@ -64,6 +66,7 @@ __all__ = [
     "decode_dynamic_sample",
     "decode_field_value",
     "detect_mismatches",
+    "detect_mismatches_across_endpoints",
     "dynamic_type_name",
     "extract_publish_ns_from_payload",
     "extract_seq_from_payload",
@@ -75,4 +78,5 @@ __all__ = [
     "format_guid",
     "is_removal",
     "iter_field_names",
+    "validate_domain_id",
 ]

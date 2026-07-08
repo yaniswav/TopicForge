@@ -243,7 +243,21 @@ modèle. Une branche `fix/lotN-...` par lot, un `make check` + skill `verify-cha
 - **Critère de sortie** : `make check` vert, chaque mineur adressé ou justifié. **Tier** : Sonnet 5.
   **Effort** : S-M.
 
-### Lot 5 — Déduplication base DDS *(risqué — en dernier)*
+### Lot 5 — Déduplication base DDS *(risqué — en dernier)* ✅ PRÉPARÉ (2026-07-08) — ⚠️ à valider sur le rig
+
+> **Fait & testé (binding-free)** : logique de pairing `detect_qos_mismatches`
+> extraite vers `common/qos_endpoints.py` (+ fix perf O(R*W) → profils writer
+> pré-calculés) ; `validate_domain_id` partagé. Tests : `test_qos_endpoints.py`
+> + validation domaine des stubs. **476 → 485 passed, cov 89.12 %.**
+> **À valider sur le rig `scripts/integration/`** (non exécutable ici, bindings
+> absents) : le wiring Cyclone/Fast de `detect_qos_mismatches` (validé ruff +
+> py_compile seulement) et la bascule `take_iter → read_iter` (P1-5). Ne pas
+> release avant un run réel-bus vert.
+> *Non fait* : base-classe complète `_DdsObservabilityBase` (les 5 raisers
+> ROS2 / participant_events / topic_metrics restent dupliqués, faible valeur,
+> risque élevé sur code non testé) — la dedup à plus forte valeur (pairing QoS)
+> est capturée.
+
 - **Contenu** : P2-1 (`_DdsObservabilityBase` : validation domaine, 5 raisers ROS2, squelette
   `detect_qos_mismatches`, `participant_events`, `topic_metrics`, boucles metrics).
 - **Pourquoi en dernier** : c'est le code le moins testable (adaptateurs à import-binding), donc le
