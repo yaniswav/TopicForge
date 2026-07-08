@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Tools we ship as of v0.4.0 Phase 2 — every scenario assertion must
+# All 11 tools we ship as of v0.4.0 Phase 3 — every scenario assertion must
 # target one of these. Mirrors `tests/test_tools_integration.py::MVP_TOOLS`.
 _KNOWN_TOOLS: set[str] = {
     "health_check",
@@ -22,6 +22,7 @@ _KNOWN_TOOLS: set[str] = {
     "peek_dds_samples",
     "participant_events",
     "topic_metrics",
+    "peek_bag_samples",
 }
 
 # Vendor tags accepted in scenario `required_vendors` lists.

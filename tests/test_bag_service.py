@@ -161,10 +161,13 @@ def test_bag_service_analyze_returns_enriched_bag_analysis_db3(
     typestore = get_typestore(Stores.LATEST)
     string_msgtype = "std_msgs/msg/String"
 
-    with Writer(bag_path) as writer:
+    # rosbags >= 0.10 made `version` a required keyword-only argument on
+    # Writer (rosbag2 metadata schema version). Use VERSION_LATEST so the
+    # test tracks the newest schema the installed rosbags supports.
+    with Writer(bag_path, version=Writer.VERSION_LATEST) as writer:
         conn = writer.add_connection("/test_topic", string_msgtype, typestore=typestore)
         for i in range(5):
-            msg = typestore.types[string_msgtype.replace("/", "__")](data=f"hello-{i}")
+            msg = typestore.types[string_msgtype](data=f"hello-{i}")
             writer.write(conn, i * 100_000_000, typestore.serialize_cdr(msg, string_msgtype))
 
     svc = BagService()

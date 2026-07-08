@@ -10,10 +10,13 @@ Design rules:
 * **Pure logic at module level.** No DDS dependency. Tests pin behavior
   against synthetic input — same convention as `parse_topic_list` and
   `detect_mismatches` (the *"pure parsers / analyzers"* convention).
-* **Bounded.** The event ring tops out at `MAX_EVENTS` (default 200) ;
-  overflow drops the oldest. Matches the
+* **Bounded.** The event ring tops out at `MAX_EVENTS` (default 200) and
+  the participant map at `MAX_PARTICIPANTS` (default 4096) ; overflow drops
+  the oldest (tombstoned `"left"` participants first). Matches the
   `MAX_SAMPLE_COUNT=50` ergonomic of `sample_messages` — tools should
-  never return unbounded collections.
+  never return unbounded collections, and a long-running server on a churny
+  bus (each restarted node mints a fresh RTPS GUID) must not grow without
+  bound.
 * **Thread-safe.** Discovery callbacks fire on the underlying DDS
   library's worker thread (Fast) ; tool calls fire on the MCP request
   thread. An RLock guards every mutating method ; readers (
@@ -37,6 +40,11 @@ from topicforge.models import ParticipantEvent, ParticipantInfo
 MAX_EVENTS = 200
 """Hard cap on the event ring. Older entries drop out as new ones arrive."""
 
+MAX_PARTICIPANTS = 4096
+"""Hard cap on the number of distinct participants tracked. On overflow a
+tombstoned (`status == "left"`) participant is dropped first, else the
+oldest-inserted one — so a churny bus cannot grow the map without bound."""
+
 EventType = Literal["discovered", "lost"]
 EffectiveMode = Literal["mock", "live"]
 
@@ -54,10 +62,13 @@ class LifecycleBuffer:
     filtering happens via the same clock.
     """
 
-    def __init__(self, *, max_events: int = MAX_EVENTS) -> None:
+    def __init__(
+        self, *, max_events: int = MAX_EVENTS, max_participants: int = MAX_PARTICIPANTS
+    ) -> None:
         self._lock = threading.RLock()
         self._participants: dict[str, ParticipantInfo] = {}
         self._events: deque[ParticipantEvent] = deque(maxlen=max_events)
+        self._max_participants = max_participants
 
     # ------------------------- mutating operations --------------------------
 
@@ -82,6 +93,8 @@ class LifecycleBuffer:
         with self._lock:
             existing = self._participants.get(guid)
             if existing is None:
+                if len(self._participants) >= self._max_participants:
+                    self._evict_participant()
                 self._participants[guid] = ParticipantInfo(
                     guid=guid,
                     vendor=vendor,
@@ -225,6 +238,22 @@ class LifecycleBuffer:
         return events
 
     # --------------------------- private helpers ----------------------------
+
+    def _evict_participant(self) -> None:
+        """Drop one participant to keep the map bounded. Called under lock.
+
+        Prefers a tombstoned (`status == "left"`) entry so currently-active
+        participants survive ; falls back to the oldest-inserted entry
+        (dicts preserve insertion order) when every tracked participant is
+        still active.
+        """
+        for guid, info in self._participants.items():
+            if info.status == "left":
+                del self._participants[guid]
+                return
+        oldest = next(iter(self._participants), None)
+        if oldest is not None:
+            del self._participants[oldest]
 
     def _append_event(
         self,

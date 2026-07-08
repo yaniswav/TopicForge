@@ -5,11 +5,28 @@ Pure tests — no DDS middleware needed, no monkeypatching, no fixtures.
 
 from __future__ import annotations
 
+import pytest
+
+from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     canonicalize_vendor_id,
     format_guid,
+    validate_domain_id,
 )
+
+
+def test_validate_domain_id_accepts_range_bounds() -> None:
+    validate_domain_id(0)
+    validate_domain_id(232)  # no raise
+
+
+def test_validate_domain_id_rejects_out_of_range() -> None:
+    with pytest.raises(AdapterError, match="domain_id"):
+        validate_domain_id(-1)
+    with pytest.raises(AdapterError, match="domain_id"):
+        validate_domain_id(233)
+
 
 # ---------------------------------------------------------------------------
 # canonicalize_vendor_id — OMG vendor_id mapping
@@ -137,3 +154,27 @@ def test_dds_only_error_msg_lists_affected_tools() -> None:
     blocked."""
     for tool in ("list_topics", "get_topic_info", "sample_messages", "analyze_bag"):
         assert tool in DDS_ONLY_ERROR_MSG, f"missing tool name in error message: {tool!r}"
+
+
+def test_every_canonical_vendor_tag_is_valid_participant_literal() -> None:
+    """Audit P2-3: pin that every tag `canonicalize_vendor_id` can produce
+    (the `_VENDOR_ID_MAP` values) is accepted by the `ParticipantInfo.vendor`
+    Literal. Otherwise an adapter emitting a mapped-but-unlisted tag would
+    raise a ValidationError at output-construction time. This test fails if
+    the vendor map and the schema Literal ever drift apart."""
+    from topicforge.adapters.common.dds_helpers import _VENDOR_ID_MAP
+    from topicforge.models import ParticipantEvent, ParticipantInfo
+
+    tags = set(_VENDOR_ID_MAP.values()) | {"cyclone", "fast", "rti", "mock", "unknown"}
+    for tag in tags:
+        info = ParticipantInfo(guid="g", vendor=tag, domain_id=0, mode_effective="mock")
+        assert info.vendor == tag
+        event = ParticipantEvent(
+            guid="g",
+            event_type="discovered",
+            vendor=tag,
+            timestamp_ns=0,
+            domain_id=0,
+            mode_effective="mock",
+        )
+        assert event.vendor == tag

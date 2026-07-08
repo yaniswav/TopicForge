@@ -7,6 +7,139 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- **DDS pure logic extracted for testability (Lot 0, external audit
+  2026-07-08).** The QoS-profile normalizers (`_cyclone_qos_to_profile` /
+  `_fast_qos_to_profile`) and the discovery-sample field extractors
+  (`_extract_guid` / `_extract_vendor_id` / `_extract_hostname` /
+  `_extract_topic_name` / `_is_removal`) were moved out of
+  `adapters/dds_cyclone/adapter.py` and `adapters/dds_fast/adapter.py` —
+  which import their vendor binding at module top level and were therefore
+  never exercised by the test suite — into the binding-free
+  `adapters/common/qos_normalize.py` and `adapters/common/dds_introspection.py`.
+  The adapters import them back under their original private names, so every
+  call site is unchanged (verified by `ruff check` static analysis, since the
+  adapters are not importable without their SDKs). `fast_qos_to_profile`
+  takes the binding's int→str enum maps as parameters so it stays
+  import-free. This is the highest-value item from the audit: the QoS
+  normalization feeds `detect_qos_mismatches` (the flagship DDS diagnostic)
+  and was previously untestable and untested.
+
+### Added
+
+- `tests/test_dds_qos_normalization.py` and `tests/test_dds_introspection.py`
+  drive the extracted logic with synthetic duck-typed objects (no
+  `cyclonedds` / `fastdds` needed), including regression guards for the
+  "renamed policy key silently yields no QoS profile → no mismatch ever
+  reported" failure mode. The extracted modules are now ~91–92% covered.
+- `pytest-cov` and `rosbags` added to the `[dev]` extra, plus `[tool.coverage]`
+  config with a `fail_under = 85` floor (the two binding-only adapter shells
+  are `omit`ted as structurally unreachable without their SDKs). Adding
+  `rosbags` un-skips the real `.db3` bag-analysis I/O test.
+
+### Fixed
+
+- `tests/test_bag_service.py` bag-generation helper updated for the current
+  `rosbags` API (`Writer(..., version=Writer.VERSION_LATEST)`; typestore keyed
+  by `std_msgs/msg/String`, not `std_msgs__msg__String`). The test was
+  previously auto-skipped and had gone silently stale — un-skipping it in CI
+  surfaced the drift.
+- **`topic_metrics` frequency was wrong (Lot 2, audit C5).** It divided the
+  sample count by `(now − oldest_sample)` — folding in idle time since the
+  last peek — and counted N intervals instead of N−1. Now measured as
+  `(N−1) / (newest − oldest)` over the samples' own arrival span; samples
+  surfaced by a single opportunistic peek share one timestamp (span 0) and
+  correctly yield `frequency_hz_observed = null` instead of a fabricated rate.
+- **`topic_metrics` sequence-gap count exploded on multi-writer topics,
+  publisher restarts, and counter wrap (Lot 2, audit C6).** Gaps are now
+  counted per writer (new best-effort `MetricsSample.writer_guid`), so
+  independent writers' counter offsets are not read as phantom gaps, and a
+  single jump wider than 10 000 is treated as a reset/wrap discontinuity
+  rather than that many losses.
+- **QoS Deadline false negative (Lot 2, audit C3/P1-3).**
+  `detect_qos_mismatches` now flags a reader that requests a finite Deadline
+  against a writer that offers none — an absent deadline is the infinite
+  (loosest) period and cannot satisfy a finite request. The previous rule
+  required both sides non-null and silently missed this incompatibility.
+- **`LifecycleBuffer` participant map was unbounded (Lot 3, audit P1-4 / M1 /
+  P1).** Only the event ring was capped; the participant dict grew one entry
+  per GUID ever seen (a churny bus mints a fresh RTPS GUID on each node
+  restart), and `list_participants` returned every tombstone forever. Now
+  capped at `MAX_PARTICIPANTS = 4096`, evicting `"left"` tombstones first then
+  the oldest-inserted entry — the docstring's "Bounded" claim is now true.
+- **`MetricsBuffer` topic map was unbounded (Lot 3, audit P2-5).** Per-topic
+  rings were capped but the number of topic keys was not; now capped at
+  `MAX_TOPICS = 4096`, oldest-inserted topic evicted on overflow.
+- **OpenDDS stub `is_available()` always returns False (Lot 4, audit S1).** A
+  stub that advertised availability (when a `pyopendds` module happened to be
+  importable) could be auto-selected by the factory, after which every tool
+  call raised. Now consistent with the Dust stub.
+- **`iter_field_names` mis-decoded a string `__slots__` (Lot 4, audit C2).**
+  `__slots__ = "value"` was exploded into `['v','a','l','u','e']`; a bare
+  string slot is now treated as a single field name.
+- **`decode_field_value` recursion is depth-capped at 32 (Lot 4, audit M6).**
+  A pathologically deep decoded object graph collapses to `repr()` instead of
+  risking `RecursionError`.
+- **`_encode_raw_bytes` slices before hex-encoding (Lot 4, audit M5).** A large
+  raw payload no longer allocates its full 2×-size hex string only to truncate
+  it to the 4096-char preview.
+
+### Added (Lot 4 — test hardening)
+
+- End-to-end test that a failing tool call surfaces as an MCP error
+  (`ToolError`) rather than being masked as a success — pins the thin-handler
+  contract (CLAUDE.md §8, audit test-gap #4).
+- Test pinning that every canonical vendor tag is a valid
+  `ParticipantInfo`/`ParticipantEvent.vendor` Literal (guards against
+  vendor-map ↔ schema drift, audit P2-3). Scenario allowlist `_KNOWN_TOOLS`
+  now includes the 11th tool `peek_bag_samples`.
+
+### Removed (Lot 4)
+
+- Dead `annotate_full` / `annotate_partial` imports and the `_ = (...)`
+  unused-suppressor from `services/bag_service.py`.
+
+### Documentation (Lot 1 — reconcile the strategic source of truth)
+
+- **`docs/product-plan.md` realigned on the shipped 11-tool surface (audit
+  M6/P1-6).** §1 and §4 said "five typed tools today" / DDS "roadmapped"
+  while six DDS/observability tools had shipped across v0.2.0–v0.4.0. §11's
+  risk register carried a self-imposed governance gate — "any 9th tool needs
+  an explicit re-scope discussion documented in this register before code
+  lands" — that was crossed during v0.4.0 without the discussion being
+  recorded. Added a retroactive re-scope decision closing that gap: the three
+  ceiling-breaking tools are accepted, the new ceiling is 11 tools, a 12th
+  needs a documented re-scope.
+- **User-topic `raw` decode honesty (audit C1).** README and the
+  `peek_dds_samples` tool description no longer imply the `raw` fallback
+  preserves the payload in `_raw_bytes_hex` — on the current user-topic raw
+  path that field is empty (a `raw` status means "present but not decoded").
+  Capturing the on-wire CDR bytes is stated as roadmapped rather than done.
+
+### Changed (Lot 5 — DDS adapter deduplication)
+
+- **QoS-mismatch endpoint pairing deduplicated (audit D1/M7/P2).** The ~40
+  identical lines in each adapter's `detect_qos_mismatches` (group endpoints by
+  topic, pair reader × writer, build `MismatchReport`) moved to the binding-free
+  `common/qos_endpoints.detect_mismatches_across_endpoints`, unit-tested without
+  a binding. Each writer's QoS profile is now parsed once per topic instead of
+  once per reader (fixes the O(readers × writers) re-parse). Both adapters
+  delegate to it.
+- **Shared `validate_domain_id` (`common/dds_helpers`).** The identical 0..232
+  bound check in all four DDS adapter constructors (Cyclone, Fast, OpenDDS,
+  Dust) is now defined once.
+- **Cyclone discovery/sample reads switched from `take_iter` to `read_iter`
+  (audit A1/P1-5).** Destructive `take` drained the builtin discovery cache,
+  risking spurious lost / re-discovered participant flapping across polls;
+  `read` is non-destructive — the correct choice for read-only observability.
+  ⚠️ **Requires real-bus validation on `scripts/integration/` before release**:
+  the read-vs-take semantics cannot be exercised without `cyclonedds` installed
+  (the adapter is not importable in the unit environment; these edits are
+  validated only by `ruff` static analysis + `py_compile`).
+
+Baseline: 399 → 485 passed, 24 → 23 skipped, ruff clean, coverage 89.12%.
+
 ## [0.5.0] - 2026-05-21
 
 ### Sprint v0.5.0 — Polish + validation (pre-marketing-publication)

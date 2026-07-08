@@ -93,7 +93,10 @@ def iter_field_names(sample: Any) -> list[str]:
         return list(fields)
     slots = getattr(sample, "__slots__", None)
     if slots:
-        return list(slots)
+        # `__slots__` may legally be a bare string (a single slot name);
+        # list() on a string explodes it into characters, so wrap it first
+        # to avoid decoding one field as N garbage fields. (Audit C2.)
+        return [slots] if isinstance(slots, str) else list(slots)
     return (
         [name for name in vars(sample) if not name.startswith("_")]
         if hasattr(sample, "__dict__")
@@ -101,7 +104,14 @@ def iter_field_names(sample: Any) -> list[str]:
     )
 
 
-def decode_field_value(value: Any) -> object:
+_MAX_DECODE_DEPTH = 32
+"""Recursion cap for `decode_field_value`. Beyond this depth a value is
+collapsed to `repr()` rather than recursed into — guards against a
+pathologically deep or self-referential decoded object graph raising
+`RecursionError`. Normal DDS/ROS IDL types nest far shallower. (Audit M6.)"""
+
+
+def decode_field_value(value: Any, *, _depth: int = 0) -> object:
     """Recursive decode of a single dynamic-type field value.
 
     Primitives and strings pass through. Sequences (list / tuple) are
@@ -110,19 +120,26 @@ def decode_field_value(value: Any) -> object:
     recurse via the same field-iteration logic. Unsupported types
     (bytes, custom classes that resist iteration) collapse to their
     `repr()` so the payload remains JSON-serializable.
+
+    `_depth` is internal — recursion beyond `_MAX_DECODE_DEPTH` collapses
+    to `repr()` to bound stack usage.
     """
+    if _depth >= _MAX_DECODE_DEPTH:
+        return repr(value)
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     if isinstance(value, (list, tuple)):
-        return [decode_field_value(v) for v in value]
+        return [decode_field_value(v, _depth=_depth + 1) for v in value]
     if isinstance(value, dict):
-        return {str(k): decode_field_value(v) for k, v in value.items()}
+        return {str(k): decode_field_value(v, _depth=_depth + 1) for k, v in value.items()}
     # Nested struct — recurse.
     if any(hasattr(value, attr) for attr in ("__dataclass_fields__", "__fields__", "__slots__")):
         nested: dict[str, object] = {}
         for field_name in iter_field_names(value):
             try:
-                nested[field_name] = decode_field_value(getattr(value, field_name))
+                nested[field_name] = decode_field_value(
+                    getattr(value, field_name), _depth=_depth + 1
+                )
             except Exception:  # pragma: no cover
                 nested[field_name] = f"<undecoded {type(value).__name__}.{field_name}>"
         return nested

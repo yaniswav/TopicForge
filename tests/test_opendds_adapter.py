@@ -26,8 +26,10 @@ def test_constructor_succeeds_for_valid_domain() -> None:
     assert adapter.effective_mode == "live"
 
 
-def test_is_available_false_without_pyopendds() -> None:
-    """Pyopendds is not on PyPI ; the probe must report not-available."""
+def test_is_available_always_false_for_stub() -> None:
+    """Audit S1: a stub must never report available — even if a `pyopendds`
+    module is importable — because the factory selects on is_available() and
+    every method here raises. The Dust stub follows the same rule."""
     adapter = OpenDdsAdapter(domain_id=0)
     assert adapter.is_available() is False
 

@@ -260,3 +260,24 @@ def test_mixed_severity_keeps_all_offending_policies() -> None:
     policies, severity = result
     assert set(policies) == {"Reliability", "Durability", "Deadline", "History"}
     assert severity == "incompatible"
+
+
+def test_reader_finite_deadline_writer_none_incompatible() -> None:
+    """Audit P1-3 / C3: a writer offering no deadline = infinite (loosest)
+    period, which cannot satisfy a reader that requests a finite deadline.
+    The pre-audit rule skipped this case (both-must-be-non-None) and
+    returned a false 'compatible'."""
+    reader = _profile(deadline_ns=100_000_000)
+    writer = _profile(deadline_ns=None)
+    result = detect_mismatches(reader, writer)
+    assert result is not None
+    policies, severity = result
+    assert policies == ["Deadline"]
+    assert severity == "incompatible"
+
+
+def test_both_deadline_none_compatible() -> None:
+    """Both infinite → no deadline constraint on either side → compatible."""
+    reader = _profile(deadline_ns=None)
+    writer = _profile(deadline_ns=None)
+    assert detect_mismatches(reader, writer) is None

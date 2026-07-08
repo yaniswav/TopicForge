@@ -212,3 +212,37 @@ def test_extract_publish_ns_header_stamp() -> None:
 def test_extract_publish_ns_none_when_unavailable() -> None:
     assert extract_publish_ns_from_payload({}) is None
     assert extract_publish_ns_from_payload({"header": {"frame_id": "x"}}) is None
+
+
+def test_iter_field_names_string_slots_not_exploded() -> None:
+    # Audit C2: `__slots__ = "value"` (a bare string) is legal Python; list()
+    # on it would explode into ['v','a','l','u','e']. It must be treated as a
+    # single field name.
+    class OneSlot:
+        __slots__ = "value"
+
+        def __init__(self) -> None:
+            self.value = 42
+
+    assert iter_field_names(OneSlot()) == ["value"]
+
+
+def test_decode_string_slots_object_decodes_single_field() -> None:
+    class OneSlot:
+        __slots__ = "value"
+
+        def __init__(self) -> None:
+            self.value = 42
+
+    assert decode_field_value(OneSlot()) == {"value": 42}
+
+
+def test_decode_field_value_caps_recursion_depth() -> None:
+    # Audit M6: a pathologically deep list nest collapses to repr() at the cap
+    # instead of raising RecursionError.
+    nested: Any = 0
+    for _ in range(100):
+        nested = [nested]
+    # Must not raise; the deep interior is repr()'d once the cap is hit.
+    result = decode_field_value(nested)
+    assert isinstance(result, list)

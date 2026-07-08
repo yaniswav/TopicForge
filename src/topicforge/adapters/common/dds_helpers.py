@@ -16,6 +16,24 @@ from __future__ import annotations
 
 from typing import Literal
 
+from topicforge.adapters.base import AdapterError
+
+_DDS_DOMAIN_MIN = 0
+_DDS_DOMAIN_MAX = 232
+
+
+def validate_domain_id(domain_id: int) -> None:
+    """Raise `AdapterError` when `domain_id` is outside the DDS range 0..232.
+
+    Shared by every DDS adapter constructor (Cyclone, Fast, OpenDDS, Dust) so
+    the bound check — and its exact message — is defined once. (Lot 5.)
+    """
+    if domain_id < _DDS_DOMAIN_MIN or domain_id > _DDS_DOMAIN_MAX:
+        raise AdapterError(
+            f"domain_id must be in {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}, got {domain_id}"
+        )
+
+
 VendorTag = Literal["cyclone", "fast", "rti", "mock", "unknown"]
 """Canonical vendor tag exposed on `ParticipantInfo.vendor`.
 
