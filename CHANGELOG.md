@@ -71,8 +71,36 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - **`MetricsBuffer` topic map was unbounded (Lot 3, audit P2-5).** Per-topic
   rings were capped but the number of topic keys was not; now capped at
   `MAX_TOPICS = 4096`, oldest-inserted topic evicted on overflow.
+- **OpenDDS stub `is_available()` always returns False (Lot 4, audit S1).** A
+  stub that advertised availability (when a `pyopendds` module happened to be
+  importable) could be auto-selected by the factory, after which every tool
+  call raised. Now consistent with the Dust stub.
+- **`iter_field_names` mis-decoded a string `__slots__` (Lot 4, audit C2).**
+  `__slots__ = "value"` was exploded into `['v','a','l','u','e']`; a bare
+  string slot is now treated as a single field name.
+- **`decode_field_value` recursion is depth-capped at 32 (Lot 4, audit M6).**
+  A pathologically deep decoded object graph collapses to `repr()` instead of
+  risking `RecursionError`.
+- **`_encode_raw_bytes` slices before hex-encoding (Lot 4, audit M5).** A large
+  raw payload no longer allocates its full 2×-size hex string only to truncate
+  it to the 4096-char preview.
 
-Baseline: 399 → 470 passed, 24 → 23 skipped, ruff clean, coverage 88.90%.
+### Added (Lot 4 — test hardening)
+
+- End-to-end test that a failing tool call surfaces as an MCP error
+  (`ToolError`) rather than being masked as a success — pins the thin-handler
+  contract (CLAUDE.md §8, audit test-gap #4).
+- Test pinning that every canonical vendor tag is a valid
+  `ParticipantInfo`/`ParticipantEvent.vendor` Literal (guards against
+  vendor-map ↔ schema drift, audit P2-3). Scenario allowlist `_KNOWN_TOOLS`
+  now includes the 11th tool `peek_bag_samples`.
+
+### Removed (Lot 4)
+
+- Dead `annotate_full` / `annotate_partial` imports and the `_ = (...)`
+  unused-suppressor from `services/bag_service.py`.
+
+Baseline: 399 → 476 passed, 24 → 23 skipped, ruff clean, coverage 88.90%.
 
 ## [0.5.0] - 2026-05-21
 

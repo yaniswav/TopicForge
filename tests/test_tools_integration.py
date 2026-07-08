@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from topicforge.config import Settings
 from topicforge.server import build_app
 
@@ -62,6 +64,27 @@ def test_registered_tools_have_descriptions() -> None:
     for t in tools:
         if t.name in MVP_TOOLS:
             assert t.description, f"{t.name} is missing a description"
+
+
+def test_adapter_error_propagates_as_tool_error() -> None:
+    """Contract (CLAUDE.md §8, audit test-gap #4): handlers are thin —
+    `AdapterError` bubbles up to FastMCP, which surfaces it as an MCP-native
+    error (isError=true) rather than masking it as a successful result. At the
+    FastMCP `call_tool` layer this manifests as a `ToolError` carrying the
+    adapter's message. If a handler ever wrapped errors in a custom success
+    envelope, this would silently pass a normal result instead of raising."""
+    from mcp.server.fastmcp.exceptions import ToolError
+
+    app = _mock_app()
+    with pytest.raises(ToolError, match="Unknown topic"):
+        asyncio.run(app.call_tool("get_topic_info", {"topic": "/does_not_exist"}))
+
+
+def test_valid_tool_call_returns_result_not_error() -> None:
+    """Contrast case: a well-formed call returns a result without raising."""
+    app = _mock_app()
+    result = asyncio.run(app.call_tool("health_check", {}))
+    assert result is not None
 
 
 # Map each tool to the title FastMCP derives from its Pydantic return type.
