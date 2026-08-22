@@ -161,7 +161,7 @@ def test_participant_events_short_lookback_filters_old_events(
     mock_adapter: MockAdapter,
 ) -> None:
     # Mock anchor is `now = base + 120s`. A 60s lookback drops events
-    # older than `now - 60s = base + 60s` — the fixture only places
+    # older than `now - 60s = base + 60s`: the fixture only places
     # discovery events at base..base+10s, so all three drop out.
     events = mock_adapter.participant_events(domain_id=0, lookback_seconds=60)
     assert events == []
@@ -217,7 +217,7 @@ def test_peek_dds_samples_user_topic_raw_fallback(mock_adapter: MockAdapter) -> 
 def test_peek_dds_samples_known_topics_unchanged_payload_shape(
     mock_adapter: MockAdapter,
 ) -> None:
-    """The two v0.3.0 fixture topics must NOT grow `_decode_status` —
+    """The two v0.3.0 fixture topics must NOT grow `_decode_status`:
     that would be a wire-breaking change for v0.3.0 clients pinned on
     the old payload shape.
     """

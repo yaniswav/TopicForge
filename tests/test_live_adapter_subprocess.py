@@ -160,7 +160,7 @@ def test_list_topics_safe_counts_default_to_zero_on_failure(
         call_count["n"] += 1
         if call_count["n"] == 1:
             return success  # `topic list -t`
-        return failing  # `topic info <name>` — fails
+        return failing  # `topic info <name>`: fails
 
     _stub_run(monkeypatch, run_stub)
     adapter = Ros2CliAdapter()
@@ -173,7 +173,7 @@ def test_list_topics_safe_counts_default_to_zero_on_failure(
 
 def test_effective_mode_is_live() -> None:
     """The live adapter declares `effective_mode == "live"` regardless of
-    whether `ros2` is actually installed — the property is a static contract,
+    whether `ros2` is actually installed: the property is a static contract,
     not a runtime probe."""
     assert Ros2CliAdapter().effective_mode == "live"
 

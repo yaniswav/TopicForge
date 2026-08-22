@@ -1,4 +1,4 @@
-"""Cross-backend helpers — pure logic shared between adapters."""
+"""Cross-backend helpers: pure logic shared between adapters."""
 
 from topicforge.adapters.common.cdr_decoder import (
     decode_dynamic_sample,

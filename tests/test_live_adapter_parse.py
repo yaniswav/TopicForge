@@ -1,6 +1,6 @@
 """Unit tests for the pure parsers in the live adapter.
 
-These tests never touch a real ROS2 install — they hit the regex parsers
+These tests never touch a real ROS2 install: they hit the regex parsers
 directly against representative CLI output. This is how we cover the live
 adapter on machines (and CI) without ROS2.
 """
@@ -100,7 +100,7 @@ def test_parse_echo_yaml_skips_comments_and_blank_lines() -> None:
 
 def test_parse_echo_yaml_reserves_raw_text_key_on_empty_input() -> None:
     out = parse_echo_yaml("")
-    # `_raw_text` is the single guaranteed key — clients can rely on its
+    # `_raw_text` is the single guaranteed key: clients can rely on its
     # presence even when the upstream CLI produced nothing parseable.
     assert out == {"_raw_text": ""}
 
@@ -140,7 +140,7 @@ def test_parse_bag_info_zero_duration_yields_no_frequency() -> None:
 
 
 # ---------------------------------------------------------------------------
-# parse_csv_echo — covers the new `ros2 topic echo --csv --once` shape.
+# parse_csv_echo: covers the new `ros2 topic echo --csv --once` shape.
 # ---------------------------------------------------------------------------
 
 
@@ -172,13 +172,13 @@ def test_parse_csv_echo_multi_row_preserves_order_and_timestamps() -> None:
 
 
 def test_parse_csv_echo_empty_input_returns_empty_list() -> None:
-    # No publisher / echo timed out before printing anything — adapter must
+    # No publisher / echo timed out before printing anything: adapter must
     # be allowed to return an empty sample list, not crash.
     assert parse_csv_echo("") == []
 
 
 def test_parse_csv_echo_inline_single_row() -> None:
-    # Compact inline case — sensor_msgs/Imu-shaped, three trailing columns
+    # Compact inline case: sensor_msgs/Imu-shaped, three trailing columns
     # to confirm column indexing past the timestamp.
     sample = "1715600000,1,base_link,0.5,-0.5\n"
     rows = parse_csv_echo(sample)
@@ -228,7 +228,7 @@ def test_parse_csv_echo_skips_single_column_rows() -> None:
 
 def test_parse_csv_echo_garbage_interleaved_does_not_crash() -> None:
     # Garbage rows still have >= 2 columns so they survive as
-    # zero-timestamp payloads — the parser is intentionally tolerant. The
+    # zero-timestamp payloads: the parser is intentionally tolerant. The
     # contract is "don't crash", not "filter every weird shape".
     sample = "totally,not,a,timestamp,row\n1715600000,7,frame_a\n,,empty,fields\n"
     rows = parse_csv_echo(sample)
@@ -255,7 +255,7 @@ def test_parse_csv_echo_rejects_out_of_range_nanosec() -> None:
 def test_parse_csv_echo_rejects_sec_outside_plausible_epoch_window() -> None:
     # A `sec` value of 1 (e.g. an `int32` field that happens to look like
     # a small integer) is not a plausible 2000-2100 epoch second and must
-    # be left in the payload — otherwise headerless integer-leading
+    # be left in the payload: otherwise headerless integer-leading
     # messages would get a fake timestamp of `~1 ns past the epoch`.
     sample = "1,2,3\n"
     rows = parse_csv_echo(sample)

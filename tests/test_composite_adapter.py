@@ -1,6 +1,6 @@
 """Tests for `topicforge.adapters.composite.CompositeAdapter`.
 
-The composite is a pure routing wrapper — these tests assert that each
+The composite is a pure routing wrapper: these tests assert that each
 of the 7 `MiddlewareAdapter` methods reaches the correct half (ROS or
 DDS) and that errors propagate unchanged.
 """
@@ -197,7 +197,7 @@ class _StubDdsAdapter:
         )
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
-        # DDS half should NOT receive peek_bag_samples — bag analysis
+        # DDS half should NOT receive peek_bag_samples: bag analysis
         # routes to the ROS half. Recording the call here lets the
         # routing test assert this stub was not exercised.
         self.calls.append(("peek_bag_samples", (path, topic, count)))

@@ -1,4 +1,4 @@
-# TopicForge — examples
+# TopicForge: examples
 
 Four end-to-end walkthroughs, each runnable against the **mock adapter**
 (no ROS2 / DDS install required). Each example pairs an MCP-client
@@ -7,9 +7,9 @@ prompt with the expected tool calls and a short LLM-facing diagnosis.
 | File | Scenario | Tools exercised |
 | ---- | -------- | --------------- |
 | [`01-discover-ros2-stack.md`](01-discover-ros2-stack.md) | Bring up TopicForge, list the graph, peek a topic | `health_check`, `list_topics`, `get_topic_info`, `sample_messages` |
-| [`02-debug-qos-mismatch.md`](02-debug-qos-mismatch.md) | "My subscriber is not receiving" — multi-vendor QoS diagnosis | `list_participants`, `detect_qos_mismatches`, `peek_dds_samples` |
+| [`02-debug-qos-mismatch.md`](02-debug-qos-mismatch.md) | "My subscriber is not receiving": multi-vendor QoS diagnosis | `list_participants`, `detect_qos_mismatches`, `peek_dds_samples` |
 | [`03-analyze-recording.md`](03-analyze-recording.md) | Post-mortem inspection of an MCAP / DB3 / BAG recording | `analyze_bag`, `peek_bag_samples` |
-| [`04-monitor-topic-frequency.md`](04-monitor-topic-frequency.md) | Live observability — frequency, sequence gaps, lifecycle events | `topic_metrics`, `participant_events` |
+| [`04-monitor-topic-frequency.md`](04-monitor-topic-frequency.md) | Live observability: frequency, sequence gaps, lifecycle events | `topic_metrics`, `participant_events` |
 
 ## How to run any example
 

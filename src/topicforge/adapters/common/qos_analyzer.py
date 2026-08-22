@@ -1,9 +1,9 @@
-"""Pure QoS-mismatch analyzer — no DDS dependency.
+"""Pure QoS-mismatch analyzer: no DDS dependency.
 
 Compares a reader QoS profile against a writer QoS profile and surfaces
 the policies that block (or risk degrading) communication. Testable
 against synthesized `QosProfile` pairs without any DDS middleware
-installed — same convention as the live-adapter pure parsers.
+installed: same convention as the live-adapter pure parsers.
 
 The MVP covers four policies (Reliability, Durability, History, Deadline)
 that explain the bulk of "subscriber doesn't receive" diagnostics in
@@ -55,32 +55,32 @@ def detect_mismatches(
     incompatible: list[str] = []
     risky: list[str] = []
 
-    # Reliability — RELIABLE reader cannot match BEST_EFFORT writer.
+    # Reliability: RELIABLE reader cannot match BEST_EFFORT writer.
     # The reverse is compatible (a BEST_EFFORT reader accepts what
     # arrives from any writer).
     if reader_qos.reliability == "RELIABLE" and writer_qos.reliability == "BEST_EFFORT":
         incompatible.append("Reliability")
 
-    # Durability — reader cannot demand a stronger guarantee than the writer.
+    # Durability: reader cannot demand a stronger guarantee than the writer.
     reader_rank = _DURABILITY_ORDER.index(reader_qos.durability)
     writer_rank = _DURABILITY_ORDER.index(writer_qos.durability)
     if reader_rank > writer_rank:
         incompatible.append("Durability")
 
-    # History — KEEP_ALL reader paired with KEEP_LAST writer is risky.
+    # History: KEEP_ALL reader paired with KEEP_LAST writer is risky.
     # The writer may drop samples under load that the reader expects to
     # retain. Not strictly blocked by the spec, but worth flagging.
     if reader_qos.history == "KEEP_ALL" and writer_qos.history == "KEEP_LAST":
         risky.append("History")
 
-    # Deadline — RxO rule: the writer's *offered* period must be <= the
+    # Deadline: RxO rule: the writer's *offered* period must be <= the
     # reader's *requested* period, else the writer cannot honor the reader's
     # promise. An absent deadline is the infinite (loosest) default, so:
-    #   * reader finite, writer finite → incompatible when writer > reader
-    #   * reader finite, writer absent (∞) → incompatible (∞ > finite)  ← the
+    #   * reader finite, writer finite -> incompatible when writer > reader
+    #   * reader finite, writer absent (infinite) -> incompatible (infinite > finite)  <- the
     #       false negative the pre-audit code missed
-    #   * reader absent (∞), writer anything → compatible (∞ requested)
-    #   * both absent → compatible
+    #   * reader absent (infinite), writer anything -> compatible (infinite requested)
+    #   * both absent -> compatible
     reader_deadline = (
         reader_qos.deadline_ns if reader_qos.deadline_ns is not None else _INFINITE_DEADLINE
     )

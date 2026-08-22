@@ -1,38 +1,38 @@
-"""eProsima Fast DDS adapter — listener-driven discovery (v0.3.0+).
+"""eProsima Fast DDS adapter: listener-driven discovery (v0.3.0+).
 
 Joins the bus as a read-only DDS-RTPS participant via the eProsima
 Fast DDS Python bindings. A duck-typed listener accumulates discovery
 state under an RLock so the public API methods read consistent
 snapshots without racing the discovery callbacks. Lifecycle events
 (`discovered` / `lost`) are captured natively in
-`on_participant_discovery` — no polling reconciliation needed,
+`on_participant_discovery`: no polling reconciliation needed,
 contrasted with the Cyclone polling path.
 
 See `docs/dds-interop-matrix.md` for the canonical multi-vendor
 positioning. The factory only loads this module when
-`TOPICFORGE_DDS_BACKEND=fast` (or `auto` resolving to fast) — see
+`TOPICFORGE_DDS_BACKEND=fast` (or `auto` resolving to fast): see
 `services/factory.py`. Pair with `Ros2CliAdapter` via the v0.4.0
 `CompositeAdapter` to serve both ROS2 and DDS surfaces simultaneously.
 
 Current scope (v0.4.0+) mirrors `CycloneDdsAdapter` :
 
-  * `list_participants` — snapshot of discovered participants enriched
+  * `list_participants`: snapshot of discovered participants enriched
     with `LifecycleBuffer` fields (first/last seen, status, seen_count).
-  * `detect_qos_mismatches` — paired subs/pubs by topic + pure analyzer.
-  * `peek_dds_samples` — full-fidelity on the 4 builtin DCPS topics ;
+  * `detect_qos_mismatches`: paired subs/pubs by topic + pure analyzer.
+  * `peek_dds_samples`: full-fidelity on the 4 builtin DCPS topics ;
     arbitrary user topics return best-effort samples with a
     `_decode_status` annotation. Fast DDS 2.6.x ships only a partial
     dynamic XTypes Python surface, so the `"raw"` fallback with
     `_raw_bytes_hex` is the common path on user topics until upstream
     binding completion (v0.5.x patch).
-  * `participant_events` — `discovered` + `lost` from native listener
+  * `participant_events`: `discovered` + `lost` from native listener
     callbacks ; no polling required.
-  * `topic_metrics` — opportunistic metrics buffered as `peek_dds_samples`
-    surfaces samples (same caveat as Cyclone — no at-sample-receive
+  * `topic_metrics`: opportunistic metrics buffered as `peek_dds_samples`
+    surfaces samples (same caveat as Cyclone; no at-sample-receive
     callback in fastdds 2.6.x Python).
 
 Sample-introspection helpers are defensive against binding-version
-shape variations — same convention as the Cyclone adapter's helpers.
+shape variations: same convention as the Cyclone adapter's helpers.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ import threading
 import time
 from typing import Any
 
-# Top-level import — the factory only loads this module when fastdds is
+# Top-level import: the factory only loads this module when fastdds is
 # importable. ImportError here propagates to the factory which falls
 # back to mock with a logged warning.
 import fastdds
@@ -110,7 +110,7 @@ class _DiscoveryListener:
     """Aggregates Fast DDS discovery callbacks under a single RLock.
 
     We do not subclass `fastdds.DomainParticipantListener` at module
-    import — that would surface as a hard error on hosts where the
+    import: that would surface as a hard error on hosts where the
     binding ships listener as a virtual C++ base whose Python proxy
     requires SWIG setup. The Fast DDS Python binding accepts a
     duck-typed listener: any object exposing the expected method
@@ -123,7 +123,7 @@ class _DiscoveryListener:
         self._subscriptions: dict[str, Any] = {}
         self._publications: dict[str, Any] = {}
         # v0.4.0 Phase 1: listener callbacks feed the lifecycle buffer
-        # directly (no polling reconciliation needed — Fast DDS gives us
+        # directly (no polling reconciliation needed; Fast DDS gives us
         # arrival AND removal events). `lifecycle=None` keeps the
         # listener usable in isolation for tests that don't care.
         self._lifecycle = lifecycle
@@ -157,7 +157,7 @@ class _DiscoveryListener:
                         domain_id=self._domain_id,
                         mode_effective="live",
                     )
-        except Exception:  # pragma: no cover — defensive
+        except Exception:  # pragma: no cover: defensive
             log.exception("on_participant_discovery callback failed")
 
     def on_data_reader_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
@@ -170,7 +170,7 @@ class _DiscoveryListener:
                     self._subscriptions.pop(guid, None)
                 else:
                     self._subscriptions[guid] = data
-        except Exception:  # pragma: no cover — defensive
+        except Exception:  # pragma: no cover: defensive
             log.exception("on_data_reader_discovery callback failed")
 
     def on_data_writer_discovery(self, dp: Any, info: Any, should_be_ignored: Any = None) -> None:
@@ -183,7 +183,7 @@ class _DiscoveryListener:
                     self._publications.pop(guid, None)
                 else:
                     self._publications[guid] = data
-        except Exception:  # pragma: no cover — defensive
+        except Exception:  # pragma: no cover: defensive
             log.exception("on_data_writer_discovery callback failed")
 
     def snapshot_participants(self) -> list[Any]:
@@ -233,7 +233,7 @@ class FastDdsAdapter:
                 raise AdapterError(
                     f"Fast DDS DomainParticipant creation returned None on domain "
                     f"{domain_id}. Likely an ABI mismatch between the `fastdds` Python "
-                    f"binding and the installed Fast DDS core library — pin "
+                    f"binding and the installed Fast DDS core library: pin "
                     f"`fastdds>=2.6.1,<3` and reinstall, or check the FastDDS_DEFAULT_PROFILES_FILE "
                     f"env var if you set one."
                 )
@@ -245,7 +245,7 @@ class FastDdsAdapter:
                 f"Failed to create Fast DDS DomainParticipant on domain {domain_id} "
                 f"({type(exc).__name__}: {exc})."
             ) from exc
-        # Bounded warm-up — discovery callbacks fire asynchronously after
+        # Bounded warm-up: discovery callbacks fire asynchronously after
         # the participant joins.
         if discovery_wait_ms > 0:
             time.sleep(discovery_wait_ms / 1000.0)
@@ -267,7 +267,7 @@ class FastDdsAdapter:
         if self._participant is not None and self._factory is not None:
             try:
                 self._factory.delete_participant(self._participant)
-            except Exception:  # pragma: no cover — defensive on shutdown
+            except Exception:  # pragma: no cover: defensive on shutdown
                 log.exception("delete_participant failed on FastDdsAdapter.close()")
             self._participant = None
 
@@ -379,7 +379,7 @@ class FastDdsAdapter:
         v0.4.0 Phase 1.5: attempt a `fastdds.TypeObjectFactory` probe to
         resolve the topic's TypeObject. On success, emit `annotate_partial`
         payloads with whatever fields the binding can surface (Fast DDS
-        2.6.x dynamic XTypes is incomplete — many constructs land as
+        2.6.x dynamic XTypes is incomplete; many constructs land as
         opaque). On miss, the existing raw-bytes fallback runs.
         """
         if not self._is_topic_on_bus(topic):
@@ -481,7 +481,7 @@ class FastDdsAdapter:
 def _try_dynamic_decode_fast(topic: str, count: int) -> list[MessageSample] | None:
     """Best-effort decode of a user topic via `fastdds.TypeObjectFactory`.
 
-    Fast DDS 2.6.x dynamic XTypes Python coverage is partial — the C++
+    Fast DDS 2.6.x dynamic XTypes Python coverage is partial: the C++
     side exposes `TypeObjectFactory` + `DynamicData` but the SWIG-
     generated Python wrappers do not fully bridge the remote-type-lookup
     semantics. We probe the factory ; if any decodable representation
@@ -501,7 +501,7 @@ def _try_dynamic_decode_fast(topic: str, count: int) -> list[MessageSample] | No
         factory = factory_cls.get_instance() if hasattr(factory_cls, "get_instance") else None
         if factory is None:
             return None
-    except Exception:  # pragma: no cover — binding-side error
+    except Exception:  # pragma: no cover: binding-side error
         log.debug("fastdds.TypeObjectFactory probe failed for topic %r", topic, exc_info=True)
         return None
 
@@ -532,11 +532,11 @@ def _try_dynamic_decode_fast(topic: str, count: int) -> list[MessageSample] | No
 # The QoS enum maps below stay here because they read integer values from
 # the `fastdds` binding itself. The normalization logic that consumes them
 # lives in `common.qos_normalize.fast_qos_to_profile` (also testable with
-# synthetic maps) — `_fast_qos_to_profile` below binds the two together.
+# synthetic maps): `_fast_qos_to_profile` below binds the two together.
 
 
 # QoS enum integer values come from the binding's own constants rather
-# than being hardcoded — they can shift across major binding versions.
+# than being hardcoded: they can shift across major binding versions.
 def _build_reliability_map() -> dict[int, str]:
     return {
         getattr(fastdds, "RELIABLE_RELIABILITY_QOS", 1): "RELIABLE",
@@ -570,7 +570,7 @@ def _fast_qos_to_profile(sample: Any) -> QosProfile | None:
 
     The pure normalization logic lives in
     `common.qos_normalize.fast_qos_to_profile` ; this thin wrapper feeds it
-    the `fastdds`-derived int→str maps so the call sites in
+    the `fastdds`-derived int->str maps so the call sites in
     `detect_qos_mismatches` stay unchanged.
     """
     return _common_fast_qos_to_profile(

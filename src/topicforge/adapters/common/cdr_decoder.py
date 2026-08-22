@@ -5,25 +5,25 @@ field-by-field decode logic powers both live DDS samples (via the
 Cyclone XTypes pipeline from Phase 1.5) and recorded bag samples
 (via the Phase 3 `services/bag_service.py`).
 
-The 6 public helpers below operate on **Python value shapes** — they
+The 6 public helpers below operate on **Python value shapes**: they
 do not import any DDS or ROS binding. The CycloneDdsAdapter wraps its
 `cyclonedds.dynamic` typed-reader pipeline around them ; the bag
 service wraps `rosbags.AnyReader` around them.
 
 Public API:
 
-* `iter_field_names(sample)` — list field names from a dynamic-type
+* `iter_field_names(sample)`: list field names from a dynamic-type
   Python object (dataclass / Pydantic / slots / dict-attr).
-* `decode_field_value(value)` — recursive decode of one field value.
-* `decode_dynamic_sample(sample)` — full sample → payload dict with
+* `decode_field_value(value)`: recursive decode of one field value.
+* `decode_dynamic_sample(sample)`: full sample -> payload dict with
   `_decode_status` annotation.
-* `dynamic_type_name(type_object)` — best-effort message-type name.
-* `extract_seq_from_payload(payload)` — pull `seq` / `sequence_number`
+* `dynamic_type_name(type_object)`: best-effort message-type name.
+* `extract_seq_from_payload(payload)`: pull `seq` / `sequence_number`
   / `sequence_id` from a decoded payload dict.
-* `extract_publish_ns_from_payload(payload)` — pull `publish_ns` or
+* `extract_publish_ns_from_payload(payload)`: pull `publish_ns` or
   `header.stamp.{sec,nanosec}` from a decoded payload dict.
 
-Tests live in `tests/test_cdr_decoder.py` — pure logic, no DDS / bag
+Tests live in `tests/test_cdr_decoder.py`: pure logic, no DDS / bag
 dependency required.
 """
 
@@ -43,13 +43,13 @@ def decode_dynamic_sample(sample: Any) -> dict[str, object]:
 
     Strategy:
       * Iterate the sample's declared fields (via `__dataclass_fields__`,
-        `__fields__`, or `__slots__` — whichever the binding chose).
+        `__fields__`, or `__slots__`; whichever the binding chose).
       * For each field, attempt `getattr` + recursive decode of nested
         structs / sequences / primitives.
-      * Per-field exception → mark the field as undecoded ; surface the
+      * Per-field exception -> mark the field as undecoded ; surface the
         whole sample as `annotate_partial` with a comma-joined list of
         failed field names in `_decode_note`.
-      * If no fields could be decoded → `annotate_raw` with the sample's
+      * If no fields could be decoded -> `annotate_raw` with the sample's
         repr captured in the note.
     """
     decoded: dict[str, object] = {}
@@ -59,7 +59,7 @@ def decode_dynamic_sample(sample: Any) -> dict[str, object]:
         try:
             value = getattr(sample, field_name)
             decoded[field_name] = decode_field_value(value)
-        except Exception:  # pragma: no cover — per-field defense
+        except Exception:  # pragma: no cover: per-field defense
             failed_fields.append(field_name)
 
     if not decoded:
@@ -106,7 +106,7 @@ def iter_field_names(sample: Any) -> list[str]:
 
 _MAX_DECODE_DEPTH = 32
 """Recursion cap for `decode_field_value`. Beyond this depth a value is
-collapsed to `repr()` rather than recursed into — guards against a
+collapsed to `repr()` rather than recursed into: guards against a
 pathologically deep or self-referential decoded object graph raising
 `RecursionError`. Normal DDS/ROS IDL types nest far shallower. (Audit M6.)"""
 
@@ -121,7 +121,7 @@ def decode_field_value(value: Any, *, _depth: int = 0) -> object:
     (bytes, custom classes that resist iteration) collapse to their
     `repr()` so the payload remains JSON-serializable.
 
-    `_depth` is internal — recursion beyond `_MAX_DECODE_DEPTH` collapses
+    `_depth` is internal: recursion beyond `_MAX_DECODE_DEPTH` collapses
     to `repr()` to bound stack usage.
     """
     if _depth >= _MAX_DECODE_DEPTH:
@@ -132,7 +132,7 @@ def decode_field_value(value: Any, *, _depth: int = 0) -> object:
         return [decode_field_value(v, _depth=_depth + 1) for v in value]
     if isinstance(value, dict):
         return {str(k): decode_field_value(v, _depth=_depth + 1) for k, v in value.items()}
-    # Nested struct — recurse.
+    # Nested struct: recurse.
     if any(hasattr(value, attr) for attr in ("__dataclass_fields__", "__fields__", "__slots__")):
         nested: dict[str, object] = {}
         for field_name in iter_field_names(value):

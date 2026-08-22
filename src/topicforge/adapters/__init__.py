@@ -1,4 +1,4 @@
-"""Adapters — the only layer that knows how to talk to a specific backend."""
+"""Adapters: the only layer that knows how to talk to a specific backend."""
 
 from topicforge.adapters.base import (
     AdapterError,

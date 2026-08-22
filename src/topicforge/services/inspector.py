@@ -1,4 +1,4 @@
-"""Inspector — the domain layer between MCP tool handlers and adapters.
+"""Inspector: the domain layer between MCP tool handlers and adapters.
 
 Tools call the Inspector. The Inspector validates inputs, delegates to the
 adapter, and ensures outputs are well-formed regardless of backend.
@@ -58,7 +58,7 @@ class Inspector:
     All MCP-level input normalization happens here (topic name format, count clamping,
     path validation) so adapters can assume well-formed inputs. Today some methods are
     thin pass-throughs to the adapter; they remain in this layer to keep the contract
-    surface symmetric — every tool goes through the same gate.
+    surface symmetric: every tool goes through the same gate.
     """
 
     def __init__(self, adapter: MiddlewareAdapter) -> None:
@@ -207,7 +207,7 @@ def _validate_bag_path(path: str) -> str:
 
     Returns the stripped path. Raises `AdapterError` for empty, blank,
     null-byte-containing, or otherwise malformed paths. Does NOT check
-    existence or extension — that is the live adapter's responsibility.
+    existence or extension: that is the live adapter's responsibility.
     """
     if not isinstance(path, str):
         raise AdapterError("path must be a string")

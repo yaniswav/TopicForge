@@ -1,4 +1,4 @@
-"""TopicForge — ROS Topic Inspector & Bag Analyzer MCP server."""
+"""TopicForge: ROS Topic Inspector & Bag Analyzer MCP server."""
 
 __version__ = "0.5.2"
 

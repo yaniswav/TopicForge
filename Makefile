@@ -4,7 +4,7 @@ PIP    ?= $(PYTHON) -m pip
 .PHONY: help install dev test lint fmt format check run run-mock run-live clean
 
 help:
-	@echo "TopicForge — common developer tasks"
+	@echo "TopicForge: common developer tasks"
 	@echo ""
 	@echo "  make install     Install runtime dependencies (editable)"
 	@echo "  make dev         Install runtime + dev dependencies (editable)"

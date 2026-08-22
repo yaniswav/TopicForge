@@ -1,4 +1,4 @@
-"""Lifecycle buffer — shared participant tracking across DDS adapters.
+"""Lifecycle buffer: shared participant tracking across DDS adapters.
 
 A bounded, RLock-protected ring buffer of `ParticipantEvent` plus a
 dictionary of currently-known participants. Both Cyclone (polling-delta)
@@ -8,12 +8,12 @@ and Fast DDS (listener-callback) adapters feed this buffer ; the
 Design rules:
 
 * **Pure logic at module level.** No DDS dependency. Tests pin behavior
-  against synthetic input — same convention as `parse_topic_list` and
+  against synthetic input: same convention as `parse_topic_list` and
   `detect_mismatches` (the *"pure parsers / analyzers"* convention).
 * **Bounded.** The event ring tops out at `MAX_EVENTS` (default 200) and
   the participant map at `MAX_PARTICIPANTS` (default 4096) ; overflow drops
   the oldest (tombstoned `"left"` participants first). Matches the
-  `MAX_SAMPLE_COUNT=50` ergonomic of `sample_messages` — tools should
+  `MAX_SAMPLE_COUNT=50` ergonomic of `sample_messages`: tools should
   never return unbounded collections, and a long-running server on a churny
   bus (each restarted node mints a fresh RTPS GUID) must not grow without
   bound.
@@ -23,7 +23,7 @@ Design rules:
   `snapshot_participants`, `events_since`) return defensive copies.
 * **No background thread.** The buffer is updated in-band when an
   adapter polls or a callback fires. A participant that joined and
-  left between two adapter touches is invisible — this is the
+  left between two adapter touches is invisible: this is the
   documented Cyclone caveat in `participant_events` tool description.
 """
 
@@ -43,7 +43,7 @@ MAX_EVENTS = 200
 MAX_PARTICIPANTS = 4096
 """Hard cap on the number of distinct participants tracked. On overflow a
 tombstoned (`status == "left"`) participant is dropped first, else the
-oldest-inserted one — so a churny bus cannot grow the map without bound."""
+oldest-inserted one: so a churny bus cannot grow the map without bound."""
 
 EventType = Literal["discovered", "lost"]
 EffectiveMode = Literal["mock", "live"]
@@ -147,8 +147,8 @@ class LifecycleBuffer:
         mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
     ) -> None:
-        """Mark a participant as left. Idempotent — emits one event per
-        transition `active → left`. Re-calls while already `"left"` are
+        """Mark a participant as left. Idempotent: emits one event per
+        transition `active -> left`. Re-calls while already `"left"` are
         no-ops. If the GUID was never seen, falls through to a no-op
         (we cannot synthesize a participant we never observed).
         """
@@ -224,7 +224,7 @@ class LifecycleBuffer:
     ) -> list[ParticipantEvent]:
         """Return events younger than `lookback_seconds`, newest first.
 
-        Hard cap mirrors `MAX_EVENTS` — the underlying ring is already
+        Hard cap mirrors `MAX_EVENTS`: the underlying ring is already
         bounded so this is implicit. `domain_id=None` skips filtering.
         """
         ts = now_ns if now_ns is not None else time.time_ns()
@@ -266,7 +266,7 @@ class LifecycleBuffer:
         mode_effective: EffectiveMode,
         ts: int,
     ) -> None:
-        # Called under self._lock — do not acquire again.
+        # Called under self._lock: do not acquire again.
         self._events.append(
             ParticipantEvent(
                 guid=guid,
