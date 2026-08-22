@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-22
+
+Documentation and metadata only. No code, no schema, and no dependency
+changes — `pip install topicforge` behaves identically to 0.5.1.
+
+### Added
+
+- **`server.json` — MCP Registry metadata.** Declares the server as
+  `io.github.yaniswav/topicforge` (the `io.github.<user>/` prefix is
+  required by the registry's GitHub-namespace authentication) and points
+  at the PyPI package, with the four user-facing environment variables
+  described so MCP clients can render configuration hints. Validated
+  against the registry's published JSON schema.
+- **PyPI ownership marker in `README.md`.** The registry verifies
+  ownership of a PyPI package by looking for an `mcp-name: <server name>`
+  string in the package description, which is generated from the README
+  at build time. The marker is an HTML comment, so it does not render.
+
+### Why this release exists
+
+The marker only reaches PyPI when a distribution is built and published.
+0.5.1 shipped before the marker was added, so its published description
+does not carry it and registry validation would reject the submission.
+Cutting this version is the mechanical prerequisite for listing
+TopicForge in the official MCP Registry — there is no functional change
+to install.
+
 ## [0.5.1] - 2026-08-22
 
 ### Fixed (hotfix — MCP SDK 2.0 incompatibility)
@@ -878,7 +905,8 @@ Initial MVP release of TopicForge — ROS Topic Inspector & Bag Analyzer MCP ser
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/yaniswav/TopicForge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/yaniswav/TopicForge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/yaniswav/TopicForge/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yaniswav/TopicForge/compare/v0.3.0...v0.4.0
