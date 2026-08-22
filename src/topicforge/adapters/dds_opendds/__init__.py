@@ -1,4 +1,4 @@
-"""OpenDDS adapter — v0.4.0 Phase 1.5 stub.
+"""OpenDDS adapter: v0.4.0 Phase 1.5 stub.
 
 This package is **never imported** unless `services.factory` resolves
 the DDS backend to `opendds` (or `auto` with `pyopendds` installable).

@@ -1,6 +1,6 @@
 """Unit tests for `topicforge.adapters.common.xtypes`.
 
-Pure-logic helpers — no DDS dependency. Same convention as
+Pure-logic helpers: no DDS dependency. Same convention as
 `tests/test_qos_analyzer.py` and `tests/test_lifecycle_buffer.py`.
 """
 
@@ -73,5 +73,5 @@ def test_annotate_raw_does_not_flag_truncation_when_under_limit() -> None:
 
 
 def test_raw_bytes_preview_limit_is_documented_constant() -> None:
-    """Pin the constant — tool description quotes it."""
+    """Pin the constant: tool description quotes it."""
     assert _RAW_BYTES_PREVIEW_LIMIT == 4096

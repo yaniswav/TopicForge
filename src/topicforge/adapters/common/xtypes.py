@@ -1,4 +1,4 @@
-"""XTypes/IDL decode annotations — adapter-agnostic helpers.
+"""XTypes/IDL decode annotations: adapter-agnostic helpers.
 
 `peek_dds_samples` on **user-defined topics** (added in v0.4.0 Phase 1)
 returns decoded payloads when the active DDS backend can resolve the
@@ -7,19 +7,19 @@ an annotated raw-bytes representation otherwise. This module owns the
 payload shape so Cyclone and Fast DDS adapters produce identical wire
 output regardless of the underlying binding's capabilities.
 
-The shape extends — never replaces — the existing `MessageSample.payload`
+The shape extends (never replaces) the existing `MessageSample.payload`
 dict (which is `dict[str, object]` on the model side, so additions are
 safe). Three convenience builders:
 
-* `annotate_full(fields)` — every IDL field decoded ; `_decode_status="full"`.
-* `annotate_partial(fields, note, raw_bytes)` — some fields decoded,
+* `annotate_full(fields)`: every IDL field decoded ; `_decode_status="full"`.
+* `annotate_partial(fields, note, raw_bytes)`: some fields decoded,
   some omitted ; `_decode_status="partial"`. Preserves raw bytes hex so
   a client can re-decode against a richer schema.
-* `annotate_raw(raw_bytes, note)` — no decode at all ; `_decode_status="raw"`.
+* `annotate_raw(raw_bytes, note)`: no decode at all ; `_decode_status="raw"`.
 
 Reserved payload keys: `_decode_status`, `_decode_note`, `_raw_bytes_hex`.
 User-topic field names must not collide. The reserved-key prefix is a
-single leading underscore — matches the existing `_raw_text` convention
+single leading underscore: matches the existing `_raw_text` convention
 used by `sample_messages` on the ROS2 CLI live path.
 """
 
@@ -30,12 +30,12 @@ from typing import Literal
 DecodeStatus = Literal["full", "partial", "raw"]
 """Tag for `MessageSample.payload['_decode_status']`.
 
-* `full` — every field of the discovered IDL/XTypes type was decoded.
-* `partial` — some fields decoded ; opaque sub-structures (unions,
+* `full`: every field of the discovered IDL/XTypes type was decoded.
+* `partial`: some fields decoded ; opaque sub-structures (unions,
   recursive types, optional fields the binding cannot resolve) are
   omitted and `_raw_bytes_hex` carries the original bytes for client
   re-decoding.
-* `raw` — no decode at all (binding does not support dynamic XTypes,
+* `raw`: no decode at all (binding does not support dynamic XTypes,
   TypeObject resolution failed, etc.). Use `_decode_note` to explain.
 """
 
@@ -43,7 +43,7 @@ _RAW_BYTES_PREVIEW_LIMIT = 4096
 """Cap on `_raw_bytes_hex` length (in hex chars). Above this, the hex
 is truncated and a `_raw_bytes_truncated=True` flag is set so a client
 knows what it sees is not the full payload. Mirrors the bounded-output
-discipline of `MAX_SAMPLE_COUNT` on `sample_messages` — tool payloads
+discipline of `MAX_SAMPLE_COUNT` on `sample_messages`: tool payloads
 must stay tractable for an LLM context window.
 """
 
@@ -53,7 +53,7 @@ def annotate_full(fields: dict[str, object]) -> dict[str, object]:
 
     The decoded fields are merged at the top level (no nesting under a
     `data` key) so an LLM reading the payload sees the message shape
-    directly — same convention as the existing mock DDS fixtures.
+    directly: same convention as the existing mock DDS fixtures.
     """
     payload: dict[str, object] = dict(fields)
     payload["_decode_status"] = "full"
@@ -71,7 +71,7 @@ def annotate_partial(
 
     `note` should explain *what* the binding could not decode (e.g.
     `"union 'mode' field skipped (cyclonedds.dynamic does not yet "
-    `support unions)"`). Keep it short — this is an LLM-facing hint.
+    `support unions)"`). Keep it short: this is an LLM-facing hint.
     """
     payload: dict[str, object] = dict(fields)
     payload["_decode_status"] = "partial"
@@ -82,7 +82,7 @@ def annotate_partial(
 
 
 def annotate_raw(raw_bytes: bytes, *, note: str) -> dict[str, object]:
-    """Build a payload with no decode — bytes preserved as hex.
+    """Build a payload with no decode: bytes preserved as hex.
 
     Used when (a) the binding does not expose dynamic XTypes for this
     type, or (b) TypeObject resolution returned but the decode call
@@ -100,7 +100,7 @@ def annotate_raw(raw_bytes: bytes, *, note: str) -> dict[str, object]:
 def _encode_raw_bytes(raw_bytes: bytes) -> dict[str, object]:
     """Encode bytes as hex with bounded length + truncation flag.
 
-    Slices the *bytes* before hex-encoding (each byte → 2 hex chars) so a
+    Slices the *bytes* before hex-encoding (each byte -> 2 hex chars) so a
     large payload does not allocate its full 2x-size hex string only to be
     truncated to the preview limit. (Audit M5.)
     """

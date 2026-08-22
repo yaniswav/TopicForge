@@ -14,15 +14,15 @@ maintainer ; the contribution loop is intentionally tight.
   `.github/ISSUE_TEMPLATE/bug_report.yml`. A failing pytest case in
   the body of the issue is gold.
 - **Doc improvements.** Typos, broken links, unclear quickstart
-  steps. Open a PR directly — these merge fast.
+  steps. Open a PR directly: these merge fast.
 - **Cross-platform regressions.** TopicForge is Windows-first ; if you
   hit a Mac / Linux-specific breakage, file it with the stack trace.
 
 ## What contributions are harder to land
 
 - **New MCP tools.** The tool surface is intentionally capped (11 as
-  of v0.4.0) — any expansion is a strategy decision documented in
-  `docs/product-plan.md §11` "Scope creep within the TopicForge
+  of v0.4.0): any expansion is a strategy decision documented in
+  `docs/product-plan.md section 11` "Scope creep within the TopicForge
   umbrella". File an issue describing the use case first ; the
   maintainer will close, defer, or sponsor the work.
 - **New backends.** The `RosAdapter` / `MiddlewareAdapter` protocol is
@@ -67,13 +67,13 @@ the baseline. CI catches the rest.
 Every test must run without a real ROS2 install. The `mock` adapter
 covers the full tool surface with deterministic fixtures. Tests that
 need a binding declare a `requires_*` pytest marker and auto-skip
-when the binding is absent — see `tests/test_cyclone_adapter.py` for
+when the binding is absent: see `tests/test_cyclone_adapter.py` for
 the pattern.
 
 ### Layer separation
 
-The architecture is intentionally layered (`server/ → tools/ →
-services/ → adapters/`). Tool handlers never call `subprocess` ;
+The architecture is intentionally layered (`server/ -> tools/ ->
+services/ -> adapters/`). Tool handlers never call `subprocess` ;
 adapters never validate MCP-level inputs ; services never know which
 backend they're talking to. PRs that violate this earn a "rework"
 review.
@@ -92,7 +92,7 @@ adapter rewrite.
   fine. `fix: parse_csv_echo handles empty stamp` is the typical
   shape.
 - Body explains the *why*, not the *what* (the diff is the what).
-- One concern per commit — no "fix tests + add feature + docs" bundles.
+- One concern per commit: no "fix tests + add feature + docs" bundles.
 - We do not use the `Co-Authored-By: Claude` trailer, even when an AI
   assistant was used. The contributor's authorship line is the
   contract.
@@ -100,7 +100,7 @@ adapter rewrite.
 ## Releasing
 
 The maintainer handles releases. Tagging `v*` on `main` triggers the
-`publish.yml` workflow → OIDC Trusted Publisher → PyPI. See
+`publish.yml` workflow -> OIDC Trusted Publisher -> PyPI. See
 `.claude/skills/topicforge/release-checklist/` for the internal
 checklist (not shipped to PyPI sdist).
 

@@ -4,14 +4,14 @@ The factory's decision tree is the single source of truth for which
 adapter actually runs at startup. These tests pin every branch:
 
   * mock mode always returns MockAdapter (no composite).
-  * live + no DDS + no `ros2` on PATH → fallback to MockAdapter.
-  * live + ros2 on PATH + DDS backend mock → Ros2CliAdapter alone.
-  * live + ros2 on PATH + DDS backend cyclone (binding missing) →
+  * live + no DDS + no `ros2` on PATH -> fallback to MockAdapter.
+  * live + ros2 on PATH + DDS backend mock -> Ros2CliAdapter alone.
+  * live + ros2 on PATH + DDS backend cyclone (binding missing) ->
     Ros2CliAdapter alone (graceful degradation).
-  * live + ros2 on PATH + DDS backend cyclone (binding installed) →
+  * live + ros2 on PATH + DDS backend cyclone (binding installed) ->
     CompositeAdapter wrapping both.
-  * live + no ros2 on PATH + DDS backend installed → DDS adapter alone.
-  * rti backend → warning + ROS2 CLI alone.
+  * live + no ros2 on PATH + DDS backend installed -> DDS adapter alone.
+  * rti backend -> warning + ROS2 CLI alone.
 
 The DDS adapters are heavyweight to instantiate (they create real DDS
 participants when imported), so we stub them via monkeypatching.
@@ -114,7 +114,7 @@ class _StubDdsAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Branch 1 — mock mode
+# Branch 1: mock mode
 # ---------------------------------------------------------------------------
 
 
@@ -126,7 +126,7 @@ def test_mock_mode_returns_mock_adapter() -> None:
 
 
 def test_mock_mode_ignores_dds_backend_selection() -> None:
-    """Global mock mode overrides DDS backend — MockAdapter serves all 8."""
+    """Global mock mode overrides DDS backend: MockAdapter serves all 8."""
     settings = Settings(
         mode="mock",
         log_level="INFO",
@@ -138,7 +138,7 @@ def test_mock_mode_ignores_dds_backend_selection() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Branch 5 — final fallback when nothing live is reachable
+# Branch 5: final fallback when nothing live is reachable
 # ---------------------------------------------------------------------------
 
 
@@ -150,7 +150,7 @@ def test_live_without_ros2_or_dds_falls_back_to_mock(monkeypatch: pytest.MonkeyP
 
 
 # ---------------------------------------------------------------------------
-# Branch 3 — live + DDS backend mock → Ros2CliAdapter alone
+# Branch 3: live + DDS backend mock -> Ros2CliAdapter alone
 # ---------------------------------------------------------------------------
 
 
@@ -162,7 +162,7 @@ def test_live_with_dds_mock_returns_ros2_cli(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ---------------------------------------------------------------------------
-# Branch 2a — composite (both halves up)
+# Branch 2a: composite (both halves up)
 # ---------------------------------------------------------------------------
 
 
@@ -178,7 +178,7 @@ def test_composite_when_both_ros_and_dds_available(monkeypatch: pytest.MonkeyPat
 
 
 # ---------------------------------------------------------------------------
-# Branch 2b — DDS binding missing, fall back to ROS2 CLI alone
+# Branch 2b: DDS binding missing, fall back to ROS2 CLI alone
 # ---------------------------------------------------------------------------
 
 
@@ -193,7 +193,7 @@ def test_dds_missing_falls_back_to_ros2_cli(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # ---------------------------------------------------------------------------
-# Branch 2c — ROS2 CLI missing, DDS up → DDS adapter alone
+# Branch 2c: ROS2 CLI missing, DDS up -> DDS adapter alone
 # ---------------------------------------------------------------------------
 
 
@@ -209,7 +209,7 @@ def test_dds_only_when_ros2_missing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Branch 4 — rti requested → ROS2 CLI alone (logged warning)
+# Branch 4: rti requested -> ROS2 CLI alone (logged warning)
 # ---------------------------------------------------------------------------
 
 
@@ -246,7 +246,7 @@ def test_auto_mode_with_no_ros2_picks_mock(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 # ---------------------------------------------------------------------------
-# v0.4.0 Phase 1.5 — new vendor branches in _try_build_dds
+# v0.4.0 Phase 1.5: new vendor branches in _try_build_dds
 # ---------------------------------------------------------------------------
 
 
@@ -274,7 +274,7 @@ def test_dust_backend_falls_back_to_ros2_cli_when_binding_absent(
 def test_opensplice_backend_falls_back_when_pro_package_absent(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Pro tier vendor without `topicforge_pro` package installed → fallback."""
+    """Pro tier vendor without `topicforge_pro` package installed -> fallback."""
     monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
     settings = _live_settings(dds_backend="opensplice")
     with caplog.at_level("WARNING"):

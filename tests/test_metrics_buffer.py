@@ -1,6 +1,6 @@
 """Unit tests for `topicforge.adapters.common.metrics_buffer.MetricsBuffer`.
 
-Pure logic — no DDS dependency. Same convention as
+Pure logic: no DDS dependency. Same convention as
 `tests/test_qos_analyzer.py` and `tests/test_lifecycle_buffer.py`.
 """
 
@@ -16,7 +16,7 @@ from topicforge.adapters.common.metrics_buffer import (
 )
 
 # ---------------------------------------------------------------------------
-# Pure helpers — _count_sequence_gaps + _percentile
+# Pure helpers: _count_sequence_gaps + _percentile
 # ---------------------------------------------------------------------------
 
 
@@ -33,17 +33,17 @@ def test_count_sequence_gaps_no_gaps() -> None:
 
 
 def test_count_sequence_gaps_single_gap() -> None:
-    # 0,1,2 then jump to 5 → missing 3,4 = 2 gaps
+    # 0,1,2 then jump to 5 -> missing 3,4 = 2 gaps
     assert _count_sequence_gaps([0, 1, 2, 5, 6]) == 2
 
 
 def test_count_sequence_gaps_multiple_gaps() -> None:
-    # 0 then 3 (missing 1,2) then 10 (missing 4..9 = 6) → 2 + 6 = 8
+    # 0 then 3 (missing 1,2) then 10 (missing 4..9 = 6) -> 2 + 6 = 8
     assert _count_sequence_gaps([0, 3, 10]) == 8
 
 
 def test_count_sequence_gaps_out_of_order_arrival() -> None:
-    # Same sequence as no_gaps, just out of order — gap count unchanged
+    # Same sequence as no_gaps, just out of order: gap count unchanged
     assert _count_sequence_gaps([3, 1, 0, 4, 2]) == 0
 
 
@@ -53,7 +53,7 @@ def test_count_sequence_gaps_dedupes_duplicates() -> None:
 
 
 def test_count_sequence_gaps_skips_wrap_or_reset_discontinuity() -> None:
-    # Audit C6: a 16-bit wrap (65535→0) or publisher restart is a
+    # Audit C6: a 16-bit wrap (65535->0) or publisher restart is a
     # discontinuity, not tens of thousands of lost samples.
     assert _count_sequence_gaps([65534, 65535, 0, 1]) == 0
 
@@ -75,7 +75,7 @@ def test_percentile_single_value() -> None:
 
 def test_percentile_synthetic_distribution() -> None:
     values = sorted(range(1, 101))  # 1..100 inclusive
-    # Nearest-rank: p50 = ceil(0.50*100)-1 = 49 → values[49] = 50
+    # Nearest-rank: p50 = ceil(0.50*100)-1 = 49 -> values[49] = 50
     assert _percentile(values, 50) == 50
     assert _percentile(values, 95) == 95
     assert _percentile(values, 99) == 99
@@ -138,7 +138,7 @@ def test_record_then_compute_basic_frequency() -> None:
     # now_ns = last sample receive (9_900_000_000)
     m = buf.compute_metrics(topic="/x", window_seconds=60, now_ns=9_900_000_000)
     assert m.samples_observed == 100
-    # Elapsed = last - first = 9_900_000_000 ns = 9.9 s ; 100/9.9 ≈ 10.10
+    # Elapsed = last - first = 9_900_000_000 ns = 9.9 s ; 100/9.9 ~= 10.10
     assert m.frequency_hz_observed is not None
     assert 9.5 < m.frequency_hz_observed < 10.5
 
@@ -153,9 +153,9 @@ def test_window_filter_drops_old_samples() -> None:
         start_ns=0,
         interval_ns=1_000_000_000,
     )
-    # Window = 10 s, now = 60 s → only last 10 samples survive
+    # Window = 10 s, now = 60 s -> only last 10 samples survive
     m = buf.compute_metrics(topic="/y", window_seconds=10, now_ns=60_000_000_000)
-    # Samples with receive_ns >= now - 10s = 50e9 — that's samples
+    # Samples with receive_ns >= now - 10s = 50e9: that's samples
     # with index >= 50, so 10 samples (50..59).
     assert m.samples_observed == 10
 
@@ -187,7 +187,7 @@ def test_sequence_numbers_unavailable_when_all_none() -> None:
 
 def test_frequency_uses_n_minus_1_intervals_not_now() -> None:
     # Audit C5 (off-by-one + now-based span): 3 samples 1 s apart span
-    # 2 s over 2 intervals → 1.0 Hz, independent of now_ns. The old code
+    # 2 s over 2 intervals -> 1.0 Hz, independent of now_ns. The old code
     # divided count by (now - oldest), giving a now-dependent, ~1.5x rate.
     buf = MetricsBuffer()
     for i in range(3):
@@ -205,7 +205,7 @@ def test_frequency_uses_n_minus_1_intervals_not_now() -> None:
 
 def test_snapshot_same_timestamp_yields_no_frequency() -> None:
     # Audit C5: an opportunistic peek surfaces all samples with one shared
-    # receive_ns. Co-located samples do not define a rate → None (the old
+    # receive_ns. Co-located samples do not define a rate -> None (the old
     # code reported count / (now - that_instant), a fabricated number).
     buf = MetricsBuffer()
     for i in range(5):
@@ -224,7 +224,7 @@ def test_snapshot_same_timestamp_yields_no_frequency() -> None:
 def test_sequence_gaps_grouped_by_writer() -> None:
     # Audit C6: two writers with offset counters (100,101 and 0,1) must NOT
     # read as an ~99-wide phantom gap. Grouping by writer_guid keeps each
-    # writer's contiguous run separate → 0 gaps.
+    # writer's contiguous run separate -> 0 gaps.
     buf = MetricsBuffer()
     buf.record(
         topic="/w", receive_ns=0, sequence_number=100, publish_ns=None, domain_id=0, writer_guid="A"
@@ -245,7 +245,7 @@ def test_sequence_gaps_grouped_by_writer() -> None:
 
 def test_sequence_gaps_detected_in_window() -> None:
     buf = MetricsBuffer()
-    # 0,1,2 then gap 3,4 missing then 5,6 → 2 gaps
+    # 0,1,2 then gap 3,4 missing then 5,6 -> 2 gaps
     for seq in (0, 1, 2, 5, 6):
         buf.record(
             topic="/seq",
@@ -298,7 +298,7 @@ def test_ring_buffer_cap_enforced() -> None:
 
 
 def test_default_cap_constant_pinned() -> None:
-    """The tool description quotes this constant — pin it."""
+    """The tool description quotes this constant: pin it."""
     assert MAX_SAMPLES_PER_TOPIC == 1000
 
 
@@ -336,7 +336,7 @@ def test_domain_filtering() -> None:
     m42 = buf.compute_metrics(topic="/d", window_seconds=60, now_ns=1_000_000_000, domain_id=42)
     assert m0.samples_observed == 5
     assert m42.samples_observed == 5
-    # The two metrics should be independent — confirm one was filtered.
+    # The two metrics should be independent: confirm one was filtered.
     assert buf.sample_count("/d") == 10  # both domains stored under same ring
 
 

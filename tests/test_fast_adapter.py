@@ -1,12 +1,12 @@
 """Tests for the FastDdsAdapter (v0.3.0).
 
 Skipped without `fastdds`. Listener-driven discovery may need a few
-hundred ms to populate against a local bus — the constructor uses
+hundred ms to populate against a local bus: the constructor uses
 `discovery_wait_ms=1500` by default, which gives the listener time to
 collect at least the local participant before the fixture yields.
 
 The `_DiscoveryListener` thread-safety test exercises the RLock without
-requiring a real Fast DDS participant — it works on the listener class
+requiring a real Fast DDS participant: it works on the listener class
 directly with synthetic discovery infos.
 """
 
@@ -71,7 +71,7 @@ def test_detect_qos_mismatches_returns_list(adapter: FastDdsAdapter) -> None:
 def test_detect_qos_mismatches_topic_filter_accepts_unknown_topic(
     adapter: FastDdsAdapter,
 ) -> None:
-    """Filtering on an unobserved topic must return [] — never raise."""
+    """Filtering on an unobserved topic must return []: never raise."""
     result = adapter.detect_qos_mismatches(topic="/never/seen/this/topic")
     assert result == []
 
@@ -108,11 +108,11 @@ def test_close_is_idempotent(adapter: FastDdsAdapter) -> None:
 
 
 def test_listener_thread_safe_under_concurrent_callbacks() -> None:
-    """Stress: 4 threads fire 50 callbacks each at the listener — final
+    """Stress: 4 threads fire 50 callbacks each at the listener: final
     snapshot must be a coherent list, no exceptions raised. Tests the
     listener class directly without going through the Fast DDS
-    participant, so this test does not require the fastdds binding —
-    but it's gated by requires_fastdds at the module level for
+    participant, so this test does not require the fastdds binding.
+    But it's gated by requires_fastdds at the module level for
     organizational clarity (the listener IS part of the Fast adapter)."""
     import threading
 

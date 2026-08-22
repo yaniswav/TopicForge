@@ -2,7 +2,7 @@
 
 Models are deliberately small, frozen, and JSON-friendly so MCP clients
 (particularly LLMs) can reason about them without ambiguity. `extra="forbid"`
-keeps adapters honest — an accidental extra key fails fast in tests rather
+keeps adapters honest: an accidental extra key fails fast in tests rather
 than silently propagating to clients.
 """
 
@@ -22,8 +22,8 @@ _MODE_EFFECTIVE_DESC = (
 )
 
 # `mode_effective` is carried on `TopicInfo`, `SampleResult`, `BagAnalysis`,
-# `ParticipantInfo`, and `MismatchReport` — every tool's primary response
-# carrier — but **not** on `HealthReport` (which surfaces mode via its
+# `ParticipantInfo`, and `MismatchReport` (every tool's primary response
+# carrier) but **not** on `HealthReport` (which surfaces mode via its
 # dedicated `mode`/`requested_mode` fields) or `MessageSample` (which
 # nests inside `SampleResult`, whose envelope already carries the field).
 # This asymmetry is deliberate ; do not add `mode_effective` to either
@@ -35,7 +35,7 @@ class QosProfile(BaseModel):
 
     MVP covers the four policies that explain over 80% of real-world
     "subscriber doesn't receive" cases. Vendor-specific extensions are
-    intentionally ignored at MVP — `detect_qos_mismatches` compares against
+    intentionally ignored at MVP: `detect_qos_mismatches` compares against
     canonical DDS spec values only.
     """
 
@@ -74,7 +74,7 @@ class QosProfile(BaseModel):
         description=(
             "Deadline QoS in nanoseconds. `None` means no deadline. "
             "A reader deadline tighter (smaller) than a writer deadline is "
-            "incompatible — the writer cannot guarantee the reader's promise."
+            "incompatible: the writer cannot guarantee the reader's promise."
         ),
     )
 
@@ -91,7 +91,7 @@ class ParticipantInfo(BaseModel):
 
     guid: str = Field(
         description=(
-            "DDS Global Unique Identifier of the participant — hex string, "
+            "DDS Global Unique Identifier of the participant: hex string, "
             "stable across discovery events within a single deployment."
         )
     )
@@ -104,7 +104,7 @@ class ParticipantInfo(BaseModel):
             "fixtures ; `unknown` when the live adapter could not map "
             "the observed vendor_id to a known tag. Vendor-neutral: "
             "TopicForge observes every conformant DDS-RTPS participant "
-            "on the bus via the OMG protocol guarantee — see "
+            "on the bus via the OMG protocol guarantee: see "
             "`docs/dds-interop-matrix.md`."
         )
     )
@@ -163,7 +163,7 @@ class ParticipantInfo(BaseModel):
 
 
 class ParticipantEvent(BaseModel):
-    """A single lifecycle event for a DDS participant — discovered or lost.
+    """A single lifecycle event for a DDS participant: discovered or lost.
 
     Distinct from `ParticipantInfo` because events carry intrinsic time
     + type semantics (point-in-time facts), while `ParticipantInfo` is a
@@ -216,13 +216,13 @@ class TopicMetrics(BaseModel):
 
     Added in v0.4.0 Phase 2 alongside the `topic_metrics` MCP tool.
     Built from samples that flow through the adapter's existing
-    `peek_dds_samples` path — the buffer is **opportunistic**, not
+    `peek_dds_samples` path: the buffer is **opportunistic**, not
     push-based, because neither `cyclonedds` nor `fastdds` Python
     bindings expose reliable at-sample-receive callbacks. Same
     caveat shape as Cyclone participant lifecycle in Phase 1: a
     sample bursting between two tool calls is invisible.
 
-    Every numeric field is `None`-tolerant — fields collapse to
+    Every numeric field is `None`-tolerant: fields collapse to
     `None` (or `0` for the integer-typed `sequence_gaps_count`)
     when the underlying data is unavailable: no samples observed,
     no source timestamps to compute latency, no sequence number
@@ -256,7 +256,7 @@ class TopicMetrics(BaseModel):
         description=(
             "Number of samples in the buffer matching `topic` within "
             "the window. `0` means TopicForge has not seen any sample "
-            "on this topic recently — it does NOT mean the topic has "
+            "on this topic recently: it does NOT mean the topic has "
             "no publisher, only that no `peek_dds_samples` call "
             "captured one in the window."
         ),
@@ -273,7 +273,7 @@ class TopicMetrics(BaseModel):
         default=None,
         description=(
             "Declared frequency extracted from the topic's QoS Deadline "
-            "policy when the adapter resolved it (Deadline period → "
+            "policy when the adapter resolved it (Deadline period -> "
             "1 / period_seconds). `None` when the QoS profile does not "
             "include Deadline or the adapter could not resolve it. Use "
             "with `frequency_hz_observed` to diagnose a publisher that "
@@ -295,7 +295,7 @@ class TopicMetrics(BaseModel):
         description=(
             "True when the adapter successfully extracted sequence "
             "numbers from at least one sample. Sequence number support "
-            "depends on the message type — `Header`-stamped messages "
+            "depends on the message type: `Header`-stamped messages "
             "with a `seq` field expose it ; primitives like "
             "`std_msgs/String` do not."
         ),
@@ -425,7 +425,7 @@ class MessageSample(BaseModel):
     timestamp_ns: int = Field(
         description=(
             "Timestamp in nanoseconds since epoch. In live mode this is the "
-            "`header.stamp` of the sampled message when present — the live "
+            "`header.stamp` of the sampled message when present: the live "
             "adapter invokes `ros2 topic echo --csv --once`, whose flattened "
             "CSV exposes `header.stamp.sec`/`nanosec` as the first two "
             "columns for any `Header`-stamped message. **Headerless message "
@@ -513,7 +513,7 @@ class BagAnalysis(BaseModel):
     bag_format: Literal["mcap", "db3", "bag", "unknown"] | None = Field(
         default=None,
         description=(
-            "Concrete bag container format detected by the reader — `mcap` "
+            "Concrete bag container format detected by the reader: `mcap` "
             "(Foxglove MCAP), `db3` (ROS2 rosbag2 SQLite), `bag` (ROS1 "
             "legacy chunked), or `unknown` when the reader could not "
             "classify. `None` for the v0.3.0 `ros2 bag info`-text-parsed "
@@ -549,7 +549,7 @@ class BagAnalysis(BaseModel):
             "DDS participants recorded in the bag when the container "
             "format embeds participant metadata. MCAP can carry it via "
             "channel metadata records ; ROS2 `.db3` and ROS1 `.bag` "
-            "generally do not. Empty list when not available — the "
+            "generally do not. Empty list when not available: the "
             "common case at v0.4.0 Phase 3."
         ),
     )
@@ -567,7 +567,7 @@ class SampleResult(BaseModel):
             "Number of samples actually returned. May be 0 (no publisher active "
             "in live mode, or empty mock fixture), less than the requested count "
             "(topic yielded fewer messages within the timeout), or capped by the "
-            "MVP's silent maximum of 50 — request `count > 50` and you will "
+            "MVP's silent maximum of 50: request `count > 50` and you will "
             "receive at most 50 without warning."
         ),
     )
@@ -589,7 +589,7 @@ class HealthReport(BaseModel):
         default=None,
         description=(
             "Value of `ROS_DISTRO` if set in the environment. **Env "
-            "disclosure, by design** — under the local-trust threat model "
+            "disclosure, by design**: under the local-trust threat model "
             "(see README 'Security model'), the MCP client is a trusted "
             "agent on a machine the user controls, and exposing the ROS2 "
             "distro lets it adapt to e.g. `humble`/`jazzy` differences. "
@@ -625,13 +625,13 @@ class HealthReport(BaseModel):
         description=(
             "Active DDS module backend. `none` when the DDS module is not "
             "active (default for ROS2-only installs). `mock` for synthetic "
-            "fixtures. **OSS tier** — `cyclone` requires "
+            "fixtures. **OSS tier**: `cyclone` requires "
             "`pip install topicforge[dds-cyclone]` (Eclipse CycloneDDS) ; "
             "`fast` requires `pip install topicforge[dds-fast]` (eProsima "
             "Fast DDS) ; `opendds` and `dust` are stub adapters in v0.4.0 "
-            "Phase 1.5 (no maintained Python binding on PyPI yet — install "
+            "Phase 1.5 (no maintained Python binding on PyPI yet; install "
             "`pip install topicforge[dds-opendds]` / `[dds-dust]` to "
-            "exercise the auto-detect hook). **Pro tier** — `rti`, "
+            "exercise the auto-detect hook). **Pro tier**: `rti`, "
             "`opensplice`, `coredx`, `intercom` require the `topicforge-pro` "
             "package and a valid `TOPICFORGE_LICENSE_KEY`."
         ),

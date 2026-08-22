@@ -1,6 +1,6 @@
 """Tests for the pure QoS-mismatch analyzer.
 
-Synthesized `QosProfile` pairs only — no DDS middleware installed,
+Synthesized `QosProfile` pairs only: no DDS middleware installed,
 no adapter wiring. Pins the four MVP policies and the canonical enum
 contract that keeps the analyzer truly vendor-agnostic across the
 Cyclone and Fast DDS adapters.
@@ -48,7 +48,7 @@ def test_reliable_reader_best_effort_writer_incompatible():
 
 
 def test_best_effort_reader_reliable_writer_compatible():
-    """Reverse direction — BE reader takes what arrives, no mismatch."""
+    """Reverse direction: BE reader takes what arrives, no mismatch."""
     reader = _profile(reliability="BEST_EFFORT")
     writer = _profile(reliability="RELIABLE")
     assert detect_mismatches(reader, writer) is None
@@ -65,7 +65,7 @@ def test_transient_local_reader_volatile_writer_incompatible():
 
 
 def test_volatile_reader_transient_local_writer_compatible():
-    """Reader demands less than writer provides — fine."""
+    """Reader demands less than writer provides: fine."""
     reader = _profile(durability="VOLATILE")
     writer = _profile(durability="TRANSIENT_LOCAL")
     assert detect_mismatches(reader, writer) is None
@@ -161,13 +161,13 @@ def test_incompatible_takes_precedence_over_risky():
 
 
 # ---------------------------------------------------------------------------
-# Cross-vendor edge cases (v0.3.0) — flagged by the OMG-DDS exploration
+# Cross-vendor edge cases (v0.3.0): flagged by the OMG-DDS exploration
 # report as gaps a parametrized test SHOULD cover.
 # ---------------------------------------------------------------------------
 
 
 def test_boundary_durability_tied_at_transient_local() -> None:
-    """Reader and writer tied at TRANSIENT_LOCAL → compatible. Boundary case
+    """Reader and writer tied at TRANSIENT_LOCAL -> compatible. Boundary case
     for the strict > comparison in _DURABILITY_ORDER."""
     reader = _profile(durability="TRANSIENT_LOCAL")
     writer = _profile(durability="TRANSIENT_LOCAL")
@@ -175,7 +175,7 @@ def test_boundary_durability_tied_at_transient_local() -> None:
 
 
 def test_boundary_durability_tied_at_persistent() -> None:
-    """Highest rank, both sides equal — compatible."""
+    """Highest rank, both sides equal: compatible."""
     reader = _profile(durability="PERSISTENT")
     writer = _profile(durability="PERSISTENT")
     assert detect_mismatches(reader, writer) is None
@@ -208,7 +208,7 @@ def test_canonical_enums_required_by_pydantic_constructor() -> None:
     canonical form) raises at QosProfile construction time, before
     detect_mismatches ever runs. That's the vendor-neutral contract.
     """
-    # lowercase form — adapter must normalize before constructing QosProfile.
+    # lowercase form: adapter must normalize before constructing QosProfile.
     with pytest.raises(ValidationError):
         QosProfile(
             reliability="reliable",  # type: ignore[arg-type]
@@ -216,7 +216,7 @@ def test_canonical_enums_required_by_pydantic_constructor() -> None:
             history="KEEP_LAST",
             history_depth=10,
         )
-    # PascalCase form (the Cyclone Policy.* class name) — same rejection.
+    # PascalCase form (the Cyclone Policy.* class name): same rejection.
     with pytest.raises(ValidationError):
         QosProfile(
             reliability="Reliable",  # type: ignore[arg-type]
@@ -234,13 +234,13 @@ def test_zero_deadline_treated_as_zero_not_none() -> None:
     behavior here as a no-regression guard."""
     reader = _profile(deadline_ns=0)
     writer = _profile(deadline_ns=0)
-    # Equal deadlines, both 0 → compatible.
+    # Equal deadlines, both 0 -> compatible.
     assert detect_mismatches(reader, writer) is None
 
 
 def test_mixed_severity_keeps_all_offending_policies() -> None:
     """When multiple policies fire across both severities, the report lists
-    them all — caller decides which to surface first."""
+    them all: caller decides which to surface first."""
     reader = _profile(
         reliability="RELIABLE",  # incompatible
         durability="TRANSIENT_LOCAL",  # incompatible (writer is VOLATILE)
@@ -277,7 +277,7 @@ def test_reader_finite_deadline_writer_none_incompatible() -> None:
 
 
 def test_both_deadline_none_compatible() -> None:
-    """Both infinite → no deadline constraint on either side → compatible."""
+    """Both infinite -> no deadline constraint on either side -> compatible."""
     reader = _profile(deadline_ns=None)
     writer = _profile(deadline_ns=None)
     assert detect_mismatches(reader, writer) is None

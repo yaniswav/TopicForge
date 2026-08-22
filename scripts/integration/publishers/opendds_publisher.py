@@ -29,8 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "[opendds_publisher] OpenDDS Python bindings are not yet maintained "
         "on PyPI (v0.4.0 Phase 2.2). Install pyopendds manually or wait "
-        "for upstream release — see docs/projet-file/mcp-02-spec.md "
-        "§11 for the v0.5+ roadmap. This scaffold exits without "
+        "for upstream release: see docs/projet-file/mcp-02-spec.md "
+        "section 11 for the v0.5+ roadmap. This scaffold exits without "
         "publishing so the scenarios_runner can report the skip.",
         file=sys.stderr,
     )

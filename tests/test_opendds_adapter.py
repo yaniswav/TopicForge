@@ -1,4 +1,4 @@
-"""Tests for `topicforge.adapters.dds_opendds.OpenDdsAdapter` — v0.4.0 stub.
+"""Tests for `topicforge.adapters.dds_opendds.OpenDdsAdapter`: v0.4.0 stub.
 
 `pyopendds` is not yet maintained on PyPI. The stub adapter exists to
 keep the auto-detect framework symmetric across all OSS vendors. These
@@ -27,8 +27,8 @@ def test_constructor_succeeds_for_valid_domain() -> None:
 
 
 def test_is_available_always_false_for_stub() -> None:
-    """Audit S1: a stub must never report available — even if a `pyopendds`
-    module is importable — because the factory selects on is_available() and
+    """Audit S1: a stub must never report available (even if a `pyopendds`
+    module is importable) because the factory selects on is_available() and
     every method here raises. The Dust stub follows the same rule."""
     adapter = OpenDdsAdapter(domain_id=0)
     assert adapter.is_available() is False

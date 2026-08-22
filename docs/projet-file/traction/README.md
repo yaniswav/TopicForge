@@ -1,7 +1,7 @@
 # Traction snapshots
 
 Weekly snapshots of the signals that inform TopicForge's decision gates
-(`docs/product-plan.md §12`). Snapshots are JSON; a human-readable summary
+(`docs/product-plan.md section 12`). Snapshots are JSON; a human-readable summary
 of the latest run is regenerated in `latest-summary.md` on every snapshot.
 
 This folder **is** versioned (allowlisted in `.gitignore`). Everything
@@ -13,12 +13,12 @@ look at when a gate decision is on the table.
 
 ## Files in this folder
 
-- `YYYY-MM-DD.json` — one snapshot per day the script runs. Re-running on
+- `YYYY-MM-DD.json`: one snapshot per day the script runs. Re-running on
   the same UTC date overwrites that day's file (idempotent).
-- `latest-summary.md` — markdown summary of the most recent snapshot,
+- `latest-summary.md`: markdown summary of the most recent snapshot,
   regenerated every run. Read this first; drill into the JSON when you
   need history.
-- `README.md` — this file.
+- `README.md`: this file.
 
 ---
 
@@ -37,31 +37,31 @@ look at when a gate decision is on the table.
 - `pypi.status` / `github.status` are `"ok"` when the API responded with a
   parseable payload; `"unavailable"` if the call failed (network, rate
   limit, transient 5xx). When a status is `unavailable` the corresponding
-  numeric fields are `null`, not zero — **never read `null` as "zero
+  numeric fields are `null`, not zero: **never read `null` as "zero
   installs"**.
-- `pypi.last_week` is the rolling 7-day installs from `pypistats.org` —
+- `pypi.last_week` is the rolling 7-day installs from `pypistats.org`:
   what G2 thresholds on.
 - `pro.slots_reserved` is hardcoded to `0` until a real lookup exists
   (mailing list / Stripe metadata). Update the constant in
   `scripts/traction-snapshot.sh` when this stops being a stub.
-- `gates.G3_dds_activation` is permanently `"manual"` — it depends on
+- `gates.G3_dds_activation` is permanently `"manual"`: it depends on
   qualitative signals (named OSS logos, enterprise inbound) that no
   weekly script can evaluate honestly. The snapshot exposes the inputs;
   the verdict lives in your head.
 
 ---
 
-## Decision-gate thresholds (mirror of `product-plan.md §12`)
+## Decision-gate thresholds (mirror of `product-plan.md section 12`)
 
 | Gate | Trigger                                                                                                                                              | Auto-evaluated by snapshot? |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | G1   | All Phase 1 items shipped **and** 10 Pro early-access slots reserved                                                                                 | Pro slots: yes. Phase 1: no |
-| G2   | PyPI weekly install count ≥ 100 sustained over a month **and** MCP 02 spec ratified                                                                  | Week threshold: yes. Sustained: needs 4 consecutive weekly snapshots ≥ 100. Spec ratification: manual |
-| G3   | ≥ 3 named OSS logos (teams using TopicForge / a pack MCP and willing to be cited) **and** a credible enterprise inbound — same quarter               | No, qualitative only         |
+| G2   | PyPI weekly install count >= 100 sustained over a month **and** MCP 02 spec ratified                                                                  | Week threshold: yes. Sustained: needs 4 consecutive weekly snapshots >= 100. Spec ratification: manual |
+| G3   | >= 3 named OSS logos (teams using TopicForge / a pack MCP and willing to be cited) **and** a credible enterprise inbound, same quarter               | No, qualitative only         |
 
 The snapshot prints `G2_week_threshold_met: true` the moment a single
 week hits 100. **That is not the gate**: the gate requires four
-consecutive snapshots ≥ 100. Check the last four JSON files manually
+consecutive snapshots >= 100. Check the last four JSON files manually
 before declaring G2 cleared. The single-week flag is a "watch from here"
 trigger, not a green light.
 
@@ -69,18 +69,18 @@ trigger, not a green light.
 
 ## When to act on a snapshot
 
-- **G2 weekly threshold cleared (single snapshot)** → start watching the
+- **G2 weekly threshold cleared (single snapshot)** -> start watching the
   next three weeks. Don't kick off the TopicForge DDS module yet.
-- **G2 weekly threshold cleared for 4 consecutive weeks** → kick off the
+- **G2 weekly threshold cleared for 4 consecutive weeks** -> kick off the
   TopicForge DDS module implementation from `docs/projet-file/mcp-02-spec.md`
   (v0.2.0 = `MiddlewareAdapter` protocol prep, v0.3.0 = `CycloneDdsAdapter`
   + the 3 new tools).
-- **G2 below 100 for 8+ weeks** → the issue is reach, not surface area.
-  Re-read `product-plan.md §11 Positioning collapse` risk. Audit hook
+- **G2 below 100 for 8+ weeks** -> the issue is reach, not surface area.
+  Re-read `product-plan.md section 11 Positioning collapse` risk. Audit hook
   drift in the README before adding any feature.
-- **G1 Pro slots ≥ 10** → start Phase 2 Pro feature work (URDF
+- **G1 Pro slots >= 10** -> start Phase 2 Pro feature work (URDF
   Inspector, Bag Anomaly Detector, Multi-bag Diff) per `docs/pro.md`.
-- **Snapshot `pypi.status = unavailable` for 2+ consecutive runs** →
+- **Snapshot `pypi.status = unavailable` for 2+ consecutive runs** ->
   pypistats.org or our outbound network is broken; investigate before
   trusting the next snapshot.
 
@@ -103,7 +103,7 @@ happening that week. Both files are tracked by the allowlist.
 
 ---
 
-## Setup — make the script run weekly
+## Setup: make the script run weekly
 
 The script itself is hand-runnable any time:
 
@@ -113,7 +113,7 @@ bash scripts/traction-snapshot.sh
 
 To automate it on Monday 09:00 local time:
 
-### Linux / macOS — cron
+### Linux / macOS: cron
 
 ```bash
 crontab -e
@@ -121,11 +121,11 @@ crontab -e
 0 9 * * 1 cd /path/to/TopicForge && bash scripts/traction-snapshot.sh >> /tmp/topicforge-traction.log 2>&1
 ```
 
-### Windows — Task Scheduler
+### Windows: Task Scheduler
 
-Open *Task Scheduler* → *Create Basic Task*:
+Open *Task Scheduler* -> *Create Basic Task*:
 
-- **Name**: `TopicForge — weekly traction snapshot`
+- **Name**: `TopicForge: weekly traction snapshot`
 - **Trigger**: Weekly, every Monday at 09:00
 - **Action**: Start a program
   - Program/script: `C:\Program Files\Git\bin\bash.exe`
@@ -156,12 +156,12 @@ JSON and summary are written.
 
 ## Prerequisites
 
-- `bash`, `curl`, `jq` — present by default on Linux / macOS; on Windows
+- `bash`, `curl`, `jq`: present by default on Linux / macOS; on Windows
   installed by Git for Windows (`bash`, `curl`) and via `winget install
   jqlang.jq` (`jq`).
 - No PyPI / GitHub credentials needed. The script uses the public
   unauthenticated endpoints (`pypistats.org` and `api.github.com`), which
   is enough for one call per week.
 - Authenticated `gh` would lift the GitHub API rate limit from 60/h to
-  5000/h, but is overkill at this cadence — keep the script credentials-
+  5000/h, but is overkill at this cadence. Keep the script credentials-
   free for portability across the future MCP pack.

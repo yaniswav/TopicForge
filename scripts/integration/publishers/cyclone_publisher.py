@@ -13,7 +13,7 @@ Publishes a `Beat { uint32 seq; }`-like message at `rate_hz` for
 is provided, the publisher skips that sequence number so the
 `topic_metrics_sequence_gaps` scenario can detect the gap.
 
-The script does NOT subscribe — TopicForge is the read-only observer.
+The script does NOT subscribe: TopicForge is the read-only observer.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    # v0.4.0 Phase 2.2 scaffold — the actual IDL-typed message
+    # v0.4.0 Phase 2.2 scaffold: the actual IDL-typed message
     # construction needs `cyclonedds.idl` generated code or a
     # `@dataclasses.dataclass` decorated `IdlStruct` subclass.
     # The maintainer customizes this per scenario when running

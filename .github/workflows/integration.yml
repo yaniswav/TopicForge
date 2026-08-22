@@ -1,6 +1,6 @@
 name: Integration (real-bus)
 
-# Manual label trigger only — runs are intentional and cost-bound.
+# Manual label trigger only: runs are intentional and cost-bound.
 # The default CI workflow (ci.yml) keeps running on every push and
 # covers lint + unit tests. This workflow ONLY fires when a maintainer
 # attaches the `integration-tests` label to a PR.

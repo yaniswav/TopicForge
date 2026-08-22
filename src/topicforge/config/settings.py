@@ -1,7 +1,7 @@
 """Runtime settings, resolved from environment variables.
 
 Settings are immutable and constructed once at startup. The `auto` mode is
-resolved against the current environment by `Settings.effective_mode` —
+resolved against the current environment by `Settings.effective_mode`:
 keeping that decision in one place avoids drift between callers.
 """
 
@@ -63,7 +63,7 @@ _TELEMETRY_OFF_VALUES: frozenset[str] = frozenset({"", "off", "0", "false", "no"
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
 
-# Canonical vendor → Python module mapping used by both `auto` resolution
+# Canonical vendor -> Python module mapping used by both `auto` resolution
 # (this file) and `HealthService` (`services/health.py`). Defined here so
 # the two callers cannot drift.
 #
@@ -73,12 +73,12 @@ _DDS_DOMAIN_MAX = 232
 # imports the vendor's binding directly. OSS vendors keep the historical
 # direct probe.
 _DDS_BACKEND_MODULES: dict[str, str] = {
-    # Pro tier — probed via the Pro plugin package, not the vendor module.
+    # Pro tier: probed via the Pro plugin package, not the vendor module.
     "rti": "topicforge_pro.adapters.rti_connext",
     "opensplice": "topicforge_pro.adapters.opensplice",
     "coredx": "topicforge_pro.adapters.coredx",
     "intercom": "topicforge_pro.adapters.intercom",
-    # OSS tier — probed via the vendor's own Python package.
+    # OSS tier: probed via the vendor's own Python package.
     "opendds": "pyopendds",
     "fast": "fastdds",
     "cyclone": "cyclonedds",
@@ -91,7 +91,7 @@ _DDS_BACKEND_MODULES: dict[str, str] = {
 # `"mock"` which is always available.
 #
 # Rationale:
-# * Pro vendors first — a paying customer who installed `topicforge-pro`
+# * Pro vendors first: a paying customer who installed `topicforge-pro`
 #   wants their own stack used.
 # * OSS internal order preserves v0.3.0 behavior (Fast > Cyclone) plus
 #   OpenDDS slotted above as the Apache-licensed default outside the ROS2
@@ -116,7 +116,7 @@ class Settings:
     log_level: str
     ros2_executable: str
     telemetry_enabled: bool
-    # DDS module knobs — added in v0.2.0. Defaults keep backward-compat
+    # DDS module knobs: added in v0.2.0. Defaults keep backward-compat
     # with code constructing `Settings(...)` positionally before v0.2.0.
     dds_backend: DdsBackend = "mock"
     dds_domain_id: int = 0
@@ -143,7 +143,7 @@ class Settings:
         """Resolve the DDS backend against the current environment.
 
         - If global `TOPICFORGE_MODE` resolves to `mock`, force the DDS
-          backend to `mock` as well — mock global mode means no live
+          backend to `mock` as well: mock global mode means no live
           access of any kind.
         - Explicit values (`mock`, `cyclone`, `fast`, `rti`, `opensplice`,
           `coredx`, `intercom`, `opendds`, `dust`) are returned as-is
@@ -158,7 +158,7 @@ class Settings:
         `opensplice`, `coredx`, `intercom`) are probed first via the
         `topicforge_pro` plugin package ; OSS vendors follow with the
         v0.3.0 internal order preserved (Fast > Cyclone). `opendds` and
-        `dust` are stubs at this version — their probes will keep
+        `dust` are stubs at this version: their probes will keep
         returning False until upstream maintains a Python binding on PyPI.
 
         Predictive resolution only. The factory may still fall back to

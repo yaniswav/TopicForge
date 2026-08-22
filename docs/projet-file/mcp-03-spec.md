@@ -1,14 +1,14 @@
-# MCP 02 — Vision Dataset Inspector (DatasetForge)
+# MCP 02: Vision Dataset Inspector (DatasetForge)
 
 > Spec draft for the second product of the 2-MCP pack (sibling to TopicForge).
-> Working name: **DatasetForge**. Brand TBD — naming is the maintainer's call;
+> Working name: **DatasetForge**. Brand TBD: naming is the maintainer's call;
 > the spec describes the product.
 
 > **Note on slot.** This spec was drafted on 2026-05-13. Originally slotted
 > MCP 02, briefly re-slotted MCP 03 when DdsForge took the MCP 02 slot, and
 > re-slotted again to **MCP 02** on 2026-05-14 when the mono-MCP pivot
 > collapsed DdsForge into a TopicForge module (see `mcp-02-spec.md`, now
-> titled "TopicForge DDS Module — Specification"). DatasetForge remains the
+> titled "TopicForge DDS Module: Specification"). DatasetForge remains the
 > second standalone product of the 2-MCP pack ; the spec content below is
 > structurally unchanged. The filename `mcp-03-spec.md` is retained for
 > historical continuity ; the slot is MCP 02.
@@ -17,13 +17,13 @@ This is a strategic-internal document (`docs/projet-file/`), not a user-facing
 README. It exists so the next Claude Code session can pick up the build with
 zero re-derivation. Conventions reuse TopicForge verbatim; only genuine
 differences are flagged. When a section says "same as TopicForge", that is
-load-bearing — do not re-invent.
+load-bearing: do not re-invent.
 
 ---
 
 ## 1. Identity
 
-**DatasetForge** — *Computer-vision dataset inspector MCP for AI agents.*
+**DatasetForge**: *Computer-vision dataset inspector MCP for AI agents.*
 
 Read images + annotations from a local directory (COCO at MVP; YOLO / HF
 Datasets on the roadmap) and answer structured questions about class
@@ -34,12 +34,12 @@ segmentation / pose models for the robots whose topics they introspect
 with MCP 01.
 
 **Pack position.** MCP 02 of a 2-MCP pack (sibling to TopicForge).
-TopicForge umbrella grounds the agent on the *runtime* robot stack — ROS2
+TopicForge umbrella grounds the agent on the *runtime* robot stack: ROS2
 today, with the *DDS layer beneath ROS or beyond ROS* added as a module
 in TopicForge v0.3.0+ (see `mcp-02-spec.md`, TopicForge DDS Module
 Specification). DatasetForge grounds the agent on the *training data*
 that produced the perception models running on that stack. Read-only by
-design — no editing, no relabeling.
+design: no editing, no relabeling.
 
 ---
 
@@ -47,7 +47,7 @@ design — no editing, no relabeling.
 
 | Tool             | Purpose                                                       |
 | ---------------- | ------------------------------------------------------------- |
-| `health_check`   | Environment & mode introspection — always succeeds            |
+| `health_check`   | Environment & mode introspection: always succeeds            |
 | `list_datasets`  | Discover dataset roots under the configured directory         |
 | `get_dataset_info` | Structured info for one dataset (counts, format, splits)   |
 | `class_balance`  | Per-class image / instance counts (incl. zero-count classes)  |
@@ -55,7 +55,7 @@ design — no editing, no relabeling.
 
 Do not expand. New tools follow the `add-mcp-tool` skill pattern lifted from
 TopicForge. The write path (annotation editing, dataset mutation, model
-training) is **out of scope on purpose** — same safety / trust / liability
+training) is **out of scope on purpose**: same safety / trust / liability
 posture as TopicForge.
 
 Pro-tier candidates already identified (do not ship in MVP): near-duplicate
@@ -70,14 +70,14 @@ Same layer separation as TopicForge. This is the load-bearing decision; do
 not bypass it.
 
 ```
-MCP client → server (FastMCP) → tools/ → services/ → adapters/ → (COCO | mock fixtures)
-                  │                │              ↑
-                  │            telemetry/    models/ (Pydantic schemas)
-                  ▼
+MCP client -> server (FastMCP) -> tools/ -> services/ -> adapters/ -> (COCO | mock fixtures)
+                  |                |              ^
+                  |            telemetry/    models/ (Pydantic schemas)
+                  v
       pro/ (optional, auto-detected, license-gated)
 ```
 
-Layer responsibilities mirror TopicForge §3 verbatim. The only renamed
+Layer responsibilities mirror TopicForge section 3 verbatim. The only renamed
 piece is the adapter protocol:
 
 ```python
@@ -93,14 +93,14 @@ class DatasetAdapter(Protocol):
 ```
 
 `effective_mode` propagation through every tool response is inherited from
-TopicForge v0.1.2 (Stream B) — `mode_effective` is a required field on every
+TopicForge v0.1.2 (Stream B): `mode_effective` is a required field on every
 response carrier so a downstream LLM cannot confuse a live response with a
 mock one. **This is not optional**; it is part of the pack-wide contract.
 
 Adapter implementations at MVP:
-- `MockAdapter` — deterministic in-memory tiny COCO-shaped dataset (5
+- `MockAdapter`: deterministic in-memory tiny COCO-shaped dataset (5
   classes, ~20 images, two splits). Always available.
-- `CocoAdapter` — reads `instances_<split>.json` and the matching image
+- `CocoAdapter`: reads `instances_<split>.json` and the matching image
   directory. No PyTorch / no Pillow at import time; Pillow is lazy-imported
   only inside `sample_images` for image dimensions, and absence falls back
   to `width=null, height=null`.
@@ -122,18 +122,18 @@ Same triplet as TopicForge, selected via `DATASETFORGE_MODE`:
 | `auto`  | Detect a dataset root; fall back to mock if absent (default) | Best available         |
 
 The `auto` resolution lives in `Settings.effective_mode` (`config/settings.py`).
-Final fallback (live → mock when the configured root is missing) lives in
-`services/factory.py`. **One place each** — same constraint as TopicForge §4.
+Final fallback (live -> mock when the configured root is missing) lives in
+`services/factory.py`. **One place each**: same constraint as TopicForge section 4.
 
 Runtime env vars:
 
-- `DATASETFORGE_LOG_LEVEL` — `DEBUG | INFO | WARNING | ERROR`, default `INFO`.
-- `DATASETFORGE_ROOT` — absolute path to the directory containing one or
+- `DATASETFORGE_LOG_LEVEL`: `DEBUG | INFO | WARNING | ERROR`, default `INFO`.
+- `DATASETFORGE_ROOT`: absolute path to the directory containing one or
   more dataset roots. Required for `live`. Validated at adapter
-  construction; non-existent path → fall back to mock with a warning.
-- `DATASETFORGE_TELEMETRY` — opt-in anonymous telemetry, same payload
+  construction; non-existent path -> fall back to mock with a warning.
+- `DATASETFORGE_TELEMETRY`: opt-in anonymous telemetry, same payload
   contract as TopicForge (six-field event, OFF means verified no-op).
-- `DATASETFORGE_LICENSE_KEY` — `dsf_*`-prefixed key, consumed only by the
+- `DATASETFORGE_LICENSE_KEY`: `dsf_*`-prefixed key, consumed only by the
   optional `datasetforge_pro` add-on.
 
 Naming pattern (`<PACK>_<KNOB>`) is the pack-wide convention. When the third
@@ -144,29 +144,29 @@ duplicating the resolver three times.
 
 ## 5. Stack (locked)
 
-Same as TopicForge §5: Python 3.11+, `mcp >= 1.0.0`, `pydantic >= 2.6`
+Same as TopicForge section 5: Python 3.11+, `mcp >= 1.0.0`, `pydantic >= 2.6`
 (`extra="forbid"`, `frozen=True` via shared `_CONFIG`), `pytest`, `ruff`,
 Hatchling. No alternatives without strong justification.
 
 **One optional dep**: `Pillow`, lazy-imported only inside `sample_images`
-for image dimension probing. Absence tolerated (width/height → `null`).
-Not declared as a hard dep — adding ~3 MB to every install for an optional
+for image dimension probing. Absence tolerated (width/height -> `null`).
+Not declared as a hard dep: adding ~3 MB to every install for an optional
 return field is dishonest.
 
 ---
 
 ## 6. Engineering principles
 
-Inherit verbatim from `topicforge/CLAUDE.md §6` (clean architecture, type
+Inherit verbatim from `topicforge/CLAUDE.md section 6` (clean architecture, type
 hints, structured outputs, graceful degradation, mock mode is mandatory,
 no giant files, no premature abstraction). Two DatasetForge-specific
 deltas:
 
 - All filesystem reads go through adapters. Handlers never call `open()`;
   services never parse annotation JSON. The `DatasetAdapter` protocol is
-  the only abstraction that earns its keep at MVP — no premature `Class`,
+  the only abstraction that earns its keep at MVP: no premature `Class`,
   `Annotation`, `Split` interfaces.
-- Cross-platform via `pathlib` only — no `subprocess` layer to worry about,
+- Cross-platform via `pathlib` only: no `subprocess` layer to worry about,
   which is the one place DatasetForge is simpler than TopicForge.
 
 ---
@@ -176,10 +176,10 @@ deltas:
 The MVP bootstrap = the entire Phase 1 here, deliberately scoped to fit in
 two weeks of part-time work.
 
-- **v0.1.0** — MVP ship on PyPI. Five MCP tools, mock + COCO adapter,
+- **v0.1.0**: MVP ship on PyPI. Five MCP tools, mock + COCO adapter,
   Pydantic schemas with `mode_effective`, `ruff` + `pytest`, CI on Python
   3.11 + 3.12, GitHub Action publishing on tag `v*`.
-- **v0.1.1** — Opt-in anonymous telemetry (`DATASETFORGE_TELEMETRY=on`).
+- **v0.1.1**: Opt-in anonymous telemetry (`DATASETFORGE_TELEMETRY=on`).
   Same six-field payload as TopicForge so a future shared endpoint can
   serve both. Identical OFF-means-no-network pin via a unit test.
 - **v0.1.2 candidates** (one per release, only if real user demand):
@@ -197,7 +197,7 @@ code and the corresponding entry here.
 ## 8. Risk register
 
 Pack-wide risks (MCP churn, time dilution) inherit from
-`topicforge/docs/product-plan.md §11`. DatasetForge-specific risks:
+`topicforge/docs/product-plan.md section 11`. DatasetForge-specific risks:
 
 - **COCO format drift.** Wild-COCO-ish exports from Roboflow / Label Studio
   / CVAT diverge from the canonical 2014/2017 shape. Mitigation: pure
@@ -205,45 +205,45 @@ Pack-wide risks (MCP churn, time dilution) inherit from
 - **Persona split (robotics ML vs pure CV).** Targets the former first for
   pack synergy. Mitigation: track sign-up free-text answers; revisit
   positioning at the G2 gate if pure-CV signal dominates.
-- **Pillow optionality.** Lazy-imported; absence → `width/height = null`.
+- **Pillow optionality.** Lazy-imported; absence -> `width/height = null`.
   Pin with a stubbed-import test.
 - **Dataset size.** 50 GB roots can't be parsed synchronously. MVP cap:
   refuse `instances_*.json` files > 200 MB with a clear `AdapterError`,
   exposed via `health_check.max_annotation_bytes` (mirrors TopicForge's
   `max_sample_count`). Streaming parsers are roadmap.
 - **Pro-tier overlap with FiftyOne / Voxel51 / Roboflow.** The MCP angle
-  is the wedge — LLM-grounded inspection from inside Claude / Cursor /
+  is the wedge: LLM-grounded inspection from inside Claude / Cursor /
   Cline. Do not chase UI parity; if a year in we are, positioning is wrong.
 
 ---
 
 ## 9. Monetization
 
-Same three-tier model as TopicForge §9 (Free MIT / Pro commercial /
+Same three-tier model as TopicForge section 9 (Free MIT / Pro commercial /
 Enterprise inbound-only). Pricing terms reused verbatim from `docs/pro.md`
-— $12/mo locked-for-life for the first 10 Pro customers, $19/mo after.
+: $12/mo locked-for-life for the first 10 Pro customers, $19/mo after.
 License gating via `DATASETFORGE_LICENSE_KEY`, fails closed on
 missing/invalid keys. **No Pro feature ships until 10 early-access slots
 are reserved** (pack-wide rule, not per-MCP).
 
 Pro-tier headline candidates (under evaluation, do not commit):
 
-- **Near-duplicate detection** — perceptual hashing, returns ranked
+- **Near-duplicate detection**: perceptual hashing, returns ranked
   clusters with `(image_id, hash_distance, sample_neighbors)`.
-- **Annotation-quality score** — per-image confidence from bbox-size
+- **Annotation-quality score**: per-image confidence from bbox-size
   outliers, mask-edge entropy, class-cooccurrence priors.
-- **Multi-version dataset diff** — surface added/removed/relabeled images
+- **Multi-version dataset diff**: surface added/removed/relabeled images
   between two snapshots.
 
 Enterprise is gated by the pack-wide G3 trigger
-(`product-plan.md §12`) — three open-source logos + inbound-with-budget,
+(`product-plan.md section 12`): three open-source logos + inbound-with-budget,
 *both MCPs* triggered together, not per-MCP.
 
 ---
 
 ## 10. What to avoid
 
-Inherit verbatim from `topicforge/CLAUDE.md §11` (no generic framework, no
+Inherit verbatim from `topicforge/CLAUDE.md section 11` (no generic framework, no
 UI, no hardcoded paths, tests have no external deps, no vague exceptions,
 respect layer separation, never break mock mode). DatasetForge-specific
 additions:
@@ -252,7 +252,7 @@ additions:
   `sample_images` returns paths + labels + optional dimensions, never
   pixel data. Pixel access is the trainer's job, not the inspector's.
 - Do not annotate / re-label / re-export. Read-only is the safety
-  contract — same posture as TopicForge's no-publish rule.
+  contract: same posture as TopicForge's no-publish rule.
 - Do not chase FiftyOne / Voxel51 feature parity. The wedge is MCP-native
   LLM grounding, not a richer Python API.
 
@@ -260,7 +260,7 @@ additions:
 
 ## 11. Open questions (resolve before v0.1.0)
 
-Deliberate gaps for the maintainer — not roadmap items.
+Deliberate gaps for the maintainer: not roadmap items.
 
 - **Naming.** `DatasetForge` matches the pack pattern but is broader than
   the CV scope. Alternative: `VisionForge`. Decision before launch.
@@ -274,38 +274,38 @@ Deliberate gaps for the maintainer — not roadmap items.
   product is ever planned ; otherwise, fork-and-tweak from TopicForge is
   acceptable for a 2-product pack. The mono-MCP pivot of 2026-05-14
   (which folded DdsForge into a TopicForge module) means the rule-of-
-  three trigger is unlikely to fire — there are only 2 products in the
+  three trigger is unlikely to fire: there are only 2 products in the
   pack.
 
 ---
 
 ## 12. References
 
-- `topicforge/CLAUDE.md` — operating manual; §3 / §5 / §6 / §7 / §8 / §11
+- `topicforge/CLAUDE.md`: operating manual; section 3 / section 5 / section 6 / section 7 / section 8 / section 11
   inherit verbatim.
-- `topicforge/docs/product-plan.md` — pack vision (§4), monetization (§9),
-  decision gates G2/G3 (§12).
-- `topicforge/docs/pro.md` — pricing terms reused for the Pro tier.
-- `topicforge/.claude/skills/topicforge/` — `add-mcp-tool`,
+- `topicforge/docs/product-plan.md`: pack vision (section 4), monetization (section 9),
+  decision gates G2/G3 (section 12).
+- `topicforge/docs/pro.md`: pricing terms reused for the Pro tier.
+- `topicforge/.claude/skills/topicforge/`: `add-mcp-tool`,
   `write-pure-parser`, `update-mock-fixtures`, `release-checklist` apply
   near-verbatim. Fork-and-tweak at DatasetForge kickoff ; the
   rule-of-three trigger for lifting to a shared `pack-template/` repo
-  is unlikely to fire at 2 products (see §11 Pack-shared infrastructure
-  and `topicforge/docs/product-plan.md §4`).
+  is unlikely to fire at 2 products (see section 11 Pack-shared infrastructure
+  and `topicforge/docs/product-plan.md section 4`).
 
 ---
 
 ## Reviewer notes (2026-05-13, superseded 2026-05-14)
 
 > This section was added by the spec-reviewer agent during the v0.1.2 prep
-> review. The 2026-05-14 mono-MCP pivot rewrote §11 and several other
+> review. The 2026-05-14 mono-MCP pivot rewrote section 11 and several other
 > sections of this spec ; the issues flagged below are either resolved
 > by the pivot or remain as deliberate open questions deferred to
 > DatasetForge kickoff. Kept for audit-trail continuity.
 
-### Issue 1 — Contradictory phrasing in §11 (Pack-shared infrastructure) — **RESOLVED 2026-05-14**
+### Issue 1: Contradictory phrasing in section 11 (Pack-shared infrastructure) (**RESOLVED 2026-05-14**)
 
-**Location.** §11, "Pack-shared infrastructure" bullet:
+**Location.** section 11, "Pack-shared infrastructure" bullet:
 > "Phase 1 of DatasetForge duplicates TopicForge's telemetry / license /
 > settings resolver. MCP 03 must not. Lift to a `pack-template/` repo when
 > MCP 03 starts, not before."
@@ -313,13 +313,13 @@ Deliberate gaps for the maintainer — not roadmap items.
 **Problem.** The first sentence says Phase 1 of DatasetForge *will* duplicate
 the infrastructure. The second sentence says MCP 03 *must not* duplicate it.
 This is self-contradictory and leaves the implementer without a clear
-sequence. The intent (per `mcp-02-spec.md §11`) is that DatasetForge, as the
+sequence. The intent (per `mcp-02-spec.md section 11`) is that DatasetForge, as the
 third user of the pattern, triggers the extraction *before* its own Phase 1
-implementation begins — so DatasetForge Phase 1 builds on the shared template
+implementation begins: DatasetForge Phase 1 builds on the shared template
 rather than duplicating it again. The current phrasing inverts this.
 
 **Suggested resolution.** Rewrite to: "DatasetForge is the third user of the
-pattern — the rule-of-three trigger for extraction. Lift the telemetry /
+pattern: the rule-of-three trigger for extraction. Lift the telemetry /
 license / settings resolver to a `pack-template/` repo at DatasetForge
 kickoff, before Phase 1 implementation. DatasetForge Phase 1 then builds on
 the shared template rather than duplicating it."
@@ -327,29 +327,29 @@ the shared template rather than duplicating it."
 **Resolution applied (2026-05-14).** The mono-MCP pivot collapsed
 DdsForge into a TopicForge module, leaving only 2 products in the pack
 (TopicForge + DatasetForge). The rule-of-three trigger no longer applies,
-and §11 has been rewritten accordingly: fork-and-tweak from TopicForge
+and section 11 has been rewritten accordingly: fork-and-tweak from TopicForge
 is now the acceptable default ; the `pack-template/` extraction is
 conditional on a third standalone product ever being planned.
 
-### Issue 2 — Two open questions implicitly resolved by product-plan.md §4
+### Issue 2: Two open questions implicitly resolved by product-plan.md section 4
 
-**Location.** §11, "Naming" and "First live adapter" bullets.
+**Location.** section 11, "Naming" and "First live adapter" bullets.
 
 **Problem.**
 
-- **Naming.** `product-plan.md §4` already uses "DatasetForge" as the
-  canonical name throughout ("MCP 03 — DatasetForge", "DatasetForge becomes
-  MCP 03 in the pack"). The §11 open question asks for a decision between
+- **Naming.** `product-plan.md section 4` already uses "DatasetForge" as the
+  canonical name throughout ("MCP 03: DatasetForge", "DatasetForge becomes
+  MCP 03 in the pack"). The section 11 open question asks for a decision between
   `DatasetForge` and `VisionForge`, but the strategic plan has already
   committed to `DatasetForge`. This question is implicitly resolved and
   should be formally closed to avoid confusion at kickoff.
 
-- **First live adapter.** `product-plan.md §4` states "Read images +
-  annotations (COCO at MVP; YOLO / HF Datasets on roadmap)" — COCO is locked
-  as the first live adapter at the strategic level. The §11 gate ("Block on
+- **First live adapter.** `product-plan.md section 4` states "Read images +
+  annotations (COCO at MVP; YOLO / HF Datasets on roadmap)": COCO is locked
+  as the first live adapter at the strategic level. The section 11 gate ("Block on
   signal from 3 robotics MLE DMs") contradicts this commitment, implying the
   decision is still open when the product plan has already closed it.
 
-**Suggested resolution.** Mark both bullets as resolved in §11 (or remove
-them), noting that `product-plan.md §4` is the authority: DatasetForge is the
+**Suggested resolution.** Mark both bullets as resolved in section 11 (or remove
+them), noting that `product-plan.md section 4` is the authority: DatasetForge is the
 locked name, COCO is the locked first live adapter.

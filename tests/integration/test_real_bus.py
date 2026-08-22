@@ -1,7 +1,7 @@
-"""Real-bus integration tests — gated by `@pytest.mark.integration`.
+"""Real-bus integration tests: gated by `@pytest.mark.integration`.
 
 Parametrized over the scenario JSON files. The default
-`pytest` invocation **does not** run these — the
+`pytest` invocation **does not** run these: the
 `pyproject.toml` `addopts = "-ra --strict-markers"` plus the
 explicit `-m integration` selection are required. CI exercises them
 only when the `integration-tests` PR label is set
@@ -36,7 +36,7 @@ def test_runner_script_exists() -> None:
     """Sanity: the scenarios runner is on disk where we expect it."""
     runner = Path(__file__).parent.parent.parent / "scripts" / "integration" / "scenarios_runner.py"
     assert runner.is_file(), (
-        f"scenarios runner missing at {runner} — see scripts/integration/README.md"
+        f"scenarios runner missing at {runner}: see scripts/integration/README.md"
     )
 
 

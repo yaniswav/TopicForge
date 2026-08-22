@@ -1,4 +1,4 @@
-"""Health service — environment & mode introspection."""
+"""Health service: environment & mode introspection."""
 
 from __future__ import annotations
 
@@ -10,18 +10,18 @@ from typing import Literal
 from topicforge import __version__
 from topicforge.config import Settings
 
-# Map effective DDS backend → the Python module the adapter imports lazily.
+# Map effective DDS backend -> the Python module the adapter imports lazily.
 # Used to decide `middleware_available` without actually constructing the
-# adapter — a separate concern from the factory's instantiation fallback.
+# adapter: a separate concern from the factory's instantiation fallback.
 #
 # Imports the canonical table from `config.settings` so the lookup cannot
 # drift between the auto-detect chain and the health report. The health
-# check uses the SAME module name a `find_spec` probe targets — for Pro
+# check uses the SAME module name a `find_spec` probe targets: for Pro
 # vendors that means the `topicforge_pro.adapters.<vendor>` plugin, not
 # the underlying commercial SDK module (which the OSS core never imports
 # directly). For RTI specifically, we also probe the upstream
 # `rti.connextdds` module so a user who has RTI installed but no
-# `topicforge-pro` package still sees `middleware_available=True` —
+# `topicforge-pro` package still sees `middleware_available=True`:
 # they just need the Pro package to actually use it.
 from topicforge.config.settings import _DDS_BACKEND_MODULES
 from topicforge.constants import MAX_SAMPLE_COUNT
@@ -70,7 +70,7 @@ def _middleware_available(backend: str) -> bool:
     table shared with the auto-detect chain (`_DDS_BACKEND_MODULES`).
     For Pro vendors, a fallback probe against the upstream SDK module
     (e.g. `rti.connextdds`) reports True when the SDK is installed but
-    the `topicforge-pro` plugin is not — making the missing piece visible
+    the `topicforge-pro` plugin is not: making the missing piece visible
     to the user.
     """
     if backend == "mock":
@@ -85,8 +85,8 @@ def _middleware_available(backend: str) -> bool:
 def _ros_backend(settings: Settings, ros2_path: str | None) -> Literal["mock", "ros2_cli", "none"]:
     """Resolve the ROS2 half of the runtime to a wire tag.
 
-    Mirrors the factory's decision tree: mock global mode → `"mock"` ;
-    live with `ros2` on PATH → `"ros2_cli"` ; live without `ros2` →
+    Mirrors the factory's decision tree: mock global mode -> `"mock"` ;
+    live with `ros2` on PATH -> `"ros2_cli"` ; live without `ros2` ->
     `"none"` (the factory falls back to DDS-only or mock).
     """
     if settings.effective_mode == "mock":

@@ -1,12 +1,12 @@
-"""Vendor QoS → canonical `QosProfile` normalization — binding-free, testable.
+"""Vendor QoS -> canonical `QosProfile` normalization: binding-free, testable.
 
 Extracted from `dds_cyclone/adapter.py` and `dds_fast/adapter.py`
 (Lot 0, audit 2026-07-08) so the QoS normalization that feeds
-`detect_qos_mismatches` — the flagship DDS diagnostic — is unit-testable
+`detect_qos_mismatches` (the flagship DDS diagnostic) is unit-testable
 **without** the `cyclonedds` / `fastdds` bindings installed. Previously
 these functions lived below a top-level `import fastdds` / `from cyclonedds
 ...` in their adapters, so the entire QoS normalization path (and the bug
-class where a renamed policy key silently returns `None` → no mismatch ever
+class where a renamed policy key silently returns `None` -> no mismatch ever
 reported) was unreachable by the test suite.
 
 Both adapters import these and alias them back to their original
@@ -15,8 +15,8 @@ sites are unchanged.
 
 The Cyclone path keys policies by their binding class name (pure string
 constants below). The Fast path keys by integer enum value, and those
-integers come from the `fastdds` module — so `fast_qos_to_profile` takes
-the three int→str maps as parameters (the adapter builds them from
+integers come from the `fastdds` module: so `fast_qos_to_profile` takes
+the three int->str maps as parameters (the adapter builds them from
 `fastdds` and passes them in), keeping this module free of any binding
 import.
 """
@@ -29,7 +29,7 @@ from typing import Any
 from topicforge.models import QosProfile
 
 # CycloneDDS exposes QoS policies as instances of nested classes under
-# `cyclonedds.qos.Policy.*` — we read them by simple class name to stay
+# `cyclonedds.qos.Policy.*`: we read them by simple class name to stay
 # binding-version-agnostic.
 CYCLONE_RELIABILITY_NAMES: dict[str, str] = {"Reliable": "RELIABLE", "BestEffort": "BEST_EFFORT"}
 CYCLONE_DURABILITY_NAMES: dict[str, str] = {
@@ -45,7 +45,7 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
     """Map a Cyclone discovery sample's QoS into the canonical QosProfile.
 
     Returns `None` when essential QoS policies (reliability, durability,
-    history) are missing — the analyzer needs all three present to
+    history) are missing: the analyzer needs all three present to
     produce a meaningful pair report.
     """
     qos = getattr(sample, "qos", None)
@@ -103,12 +103,12 @@ def fast_qos_to_profile(
     """Map a Fast DDS discovery sample's QoS into the canonical QosProfile.
 
     `reliability_map` / `durability_map` / `history_map` are the binding's
-    integer-enum → canonical-string tables. The adapter builds them from
+    integer-enum -> canonical-string tables. The adapter builds them from
     `fastdds` constants and passes them in, so this function stays free of
     any binding import and is testable with synthetic maps.
 
     Returns `None` when reliability, durability, or history cannot be
-    resolved — the analyzer needs all three.
+    resolved: the analyzer needs all three.
     """
     qos = getattr(sample, "qos", None)
     if qos is None:

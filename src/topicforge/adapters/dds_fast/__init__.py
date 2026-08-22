@@ -1,4 +1,4 @@
-"""eProsima Fast DDS adapter — lazy-imported when DDS module is active.
+"""eProsima Fast DDS adapter: lazy-imported when DDS module is active.
 
 This package is **never imported** unless `services.factory` resolves
 the DDS backend to `fast` (or `auto` with fastdds installable).

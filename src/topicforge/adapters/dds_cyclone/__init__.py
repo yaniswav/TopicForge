@@ -1,4 +1,4 @@
-"""Cyclone DDS adapter — lazy-imported when DDS module is active.
+"""Cyclone DDS adapter: lazy-imported when DDS module is active.
 
 This package is **never imported** unless `services.factory` resolves
 the DDS backend to `cyclone` (or `auto` with cyclonedds installable).

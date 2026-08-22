@@ -1,5 +1,5 @@
 # =========================================================================
-# TopicForge — .gitignore
+# TopicForge .gitignore
 #
 # Anything matched here is local-only: it must never appear in a clone,
 # a sdist, a wheel, or a screen share with a client. Add new patterns
@@ -98,7 +98,7 @@ $RECYCLE.BIN/
 
 
 # -------------------------------------------------------------------------
-# Secrets — NEVER commit
+# Secrets: NEVER commit
 # Use `.env.example` for documentation; real `.env` files stay local.
 # -------------------------------------------------------------------------
 .env
@@ -154,7 +154,7 @@ dump.rdb
 
 
 # -------------------------------------------------------------------------
-# ROS / robotics recordings — often huge and frequently confidential
+# ROS / robotics recordings: often huge and frequently confidential
 # -------------------------------------------------------------------------
 *.bag
 *.db3
@@ -199,12 +199,12 @@ CLAUDE*.md
 !/docs/projet-file/*-spec.md
 # Traction snapshots are versioned: weekly JSON + summary + folder README.
 # This is the historical curve that informs decision gates G1/G2/G3
-# (product-plan §12). Numeric history must survive across machines.
+# (product-plan section 12). Numeric history must survive across machines.
 !/docs/projet-file/traction/
 !/docs/projet-file/traction/**
 # Launch-post drafts (Reddit, LinkedIn, X). Versioned so the maintainer
 # can diff drafts across releases and keep marketing history auditable.
-# Drafts, not production copy — never the public README.
+# Drafts, not production copy, never the public README.
 !/docs/projet-file/launch-posts/
 !/docs/projet-file/launch-posts/**
 # Audit reports (security, architecture) + audit-followup triage docs.
@@ -227,6 +227,6 @@ CLAUDE*.md
 
 
 # -------------------------------------------------------------------------
-# Pro tier — paid features kept out of the open-source repo
+# Pro tier: paid features kept out of the open-source repo
 # -------------------------------------------------------------------------
 pro/

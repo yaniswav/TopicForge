@@ -1,10 +1,10 @@
 {
   "date": "2026-08-22",
   "pypi": {
-    "status": "unavailable",
-    "last_day": null,
-    "last_week": null,
-    "last_month": null
+    "status": "ok",
+    "last_day": 0,
+    "last_week": 1,
+    "last_month": 12
   },
   "github": {
     "status": "ok",

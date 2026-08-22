@@ -1,6 +1,6 @@
 """Unit tests for `adapters/common/dds_helpers`.
 
-Pure tests — no DDS middleware needed, no monkeypatching, no fixtures.
+Pure tests: no DDS middleware needed, no monkeypatching, no fixtures.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def test_validate_domain_id_rejects_out_of_range() -> None:
 
 
 # ---------------------------------------------------------------------------
-# canonicalize_vendor_id — OMG vendor_id mapping
+# canonicalize_vendor_id: OMG vendor_id mapping
 # ---------------------------------------------------------------------------
 
 
@@ -46,7 +46,7 @@ def test_rti_vendor_id() -> None:
 
 
 def test_unknown_vendor_id_collapses_to_unknown() -> None:
-    """Any vendor not in the lookup table falls back to 'unknown' — never raises."""
+    """Any vendor not in the lookup table falls back to 'unknown': never raises."""
     assert canonicalize_vendor_id((0x99, 0x99)) == "unknown"
 
 
@@ -61,7 +61,7 @@ def test_opendds_collapses_to_unknown() -> None:
 
 
 def test_dust_dds_collapses_to_unknown() -> None:
-    """Dust DDS (Rust) is observed but reports as 'unknown' — no Python adapter."""
+    """Dust DDS (Rust) is observed but reports as 'unknown': no Python adapter."""
     assert canonicalize_vendor_id((0x01, 0x11)) == "unknown"
 
 
@@ -83,7 +83,7 @@ def test_vendor_id_none_collapses_to_unknown() -> None:
 
 
 # ---------------------------------------------------------------------------
-# format_guid — OMG GUID rendering
+# format_guid: OMG GUID rendering
 # ---------------------------------------------------------------------------
 
 
@@ -110,7 +110,7 @@ def test_format_guid_none_returns_unknown() -> None:
 
 
 def test_format_guid_short_bytes_zero_padded() -> None:
-    """A 4-byte input pads with zeros instead of raising — defensive against
+    """A 4-byte input pads with zeros instead of raising: defensive against
     edge-case bindings that return partial GUIDs."""
     assert format_guid(b"\x01\x02\x03\x04") == ("01020304.00000000.00000000.00000000")
 
@@ -123,7 +123,7 @@ def test_format_guid_truncates_long_bytes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DDS_ONLY_ERROR_MSG — remediation contract
+# DDS_ONLY_ERROR_MSG: remediation contract
 # ---------------------------------------------------------------------------
 
 
