@@ -129,8 +129,8 @@ Open *Task Scheduler* → *Create Basic Task*:
 - **Trigger**: Weekly, every Monday at 09:00
 - **Action**: Start a program
   - Program/script: `C:\Program Files\Git\bin\bash.exe`
-  - Add arguments: `-lc "cd /c/Users/Yanis/Documents/TopicForge && bash scripts/traction-snapshot.sh"`
-  - Start in: `C:\Users\Yanis\Documents\TopicForge`
+  - Add arguments: `-lc "cd /c/Users/Yanis/Documents/Projects/TopicForge && bash scripts/traction-snapshot.sh"`
+  - Start in: `C:\Users\Yanis\Documents\Projects\TopicForge`
 
 Verify the first run by checking that a fresh `YYYY-MM-DD.json` appears
 in this folder the next Monday. If it doesn't, run the script manually
