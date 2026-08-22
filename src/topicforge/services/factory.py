@@ -1,8 +1,8 @@
 """Adapter selection.
 
 This is the only place that knows how to map a `Settings` to a concrete
-adapter, and where graceful degradation (`live` → `mock`, any DDS
-vendor → `ros2_cli`) happens.
+adapter, and where graceful degradation (`live` -> `mock`, any DDS
+vendor -> `ros2_cli`) happens.
 
 v0.4.0 Phase 1.5 widens the DDS vendor matrix from 2 (Cyclone, Fast)
 to 8 (Cyclone, Fast, OpenDDS, Dust + the Pro-tier RTI, OpenSplice,
@@ -53,7 +53,7 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
         return CompositeAdapter(ros_adapter, dds_adapter)
 
     if dds_adapter is not None:
-        # ROS2 CLI not available but a DDS backend is — DDS-only live.
+        # ROS2 CLI not available but a DDS backend is: DDS-only live.
         log.info("DDS-only live adapter active: %s", dds_adapter.name)
         return dds_adapter
 
@@ -174,7 +174,7 @@ def _try_build_opendds(settings: Settings) -> MiddlewareAdapter | None:
     adapter = OpenDdsAdapter(domain_id=settings.dds_domain_id)
     if not adapter.is_available():
         log.warning(
-            "OpenDdsAdapter reports not available — `pyopendds` Python "
+            "OpenDdsAdapter reports not available: `pyopendds` Python "
             "bindings are not installed on this host (no maintained PyPI "
             "package at v0.4.0). Falling back to ROS2 CLI alone."
         )
@@ -201,7 +201,7 @@ def _try_build_dust(settings: Settings) -> MiddlewareAdapter | None:
     adapter = DustDdsAdapter(domain_id=settings.dds_domain_id)
     if not adapter.is_available():
         log.warning(
-            "DustDdsAdapter reports not available — no maintained "
+            "DustDdsAdapter reports not available: no maintained "
             "Python binding for Dust DDS at v0.4.0. Falling back to "
             "ROS2 CLI alone."
         )

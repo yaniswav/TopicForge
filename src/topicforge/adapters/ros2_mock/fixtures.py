@@ -150,14 +150,14 @@ def mock_samples_for(topic: str, count: int) -> list[MessageSample]:
 
 
 # ---------------------------------------------------------------------------
-# DDS module fixtures — exercise list_participants, detect_qos_mismatches,
+# DDS module fixtures: exercise list_participants, detect_qos_mismatches,
 # peek_dds_samples. Two participants on a single domain ; one well-matched
 # topic (reader & writer compatible) and one deliberately mismatched topic
 # (Reliability incompatibility, since RELIABLE reader cannot match a
 # BEST_EFFORT writer).
 # ---------------------------------------------------------------------------
 
-# v0.4.0 Phase 1 — deterministic lifecycle timeline anchored on this
+# v0.4.0 Phase 1: deterministic lifecycle timeline anchored on this
 # wall-clock value (2024-01-01T00:00:00Z) so tests can assert exact
 # first_seen / last_seen / event timestamps without relying on the
 # system clock. The chosen base sits comfortably inside any plausible
@@ -187,7 +187,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         status="active",
         seen_count=2,
     ),
-    # v0.3.0: third participant exercises the multi-vendor positioning —
+    # v0.3.0: third participant exercises the multi-vendor positioning:
     # an eProsima Fast DDS participant alongside Cyclone, as the OMG-DDS
     # interop matrix promises (see docs/dds-interop-matrix.md).
     ParticipantInfo(
@@ -255,10 +255,10 @@ def mock_participant_events_for(domain_id: int, lookback_seconds: int) -> list[P
     return filtered
 
 
-# MOCK_DDS_TOPICS — v0.4.0 Phase 1 adds two user-topic fixtures
+# MOCK_DDS_TOPICS: v0.4.0 Phase 1 adds two user-topic fixtures
 # exercising the XTypes/IDL decode paths in `peek_dds_samples`:
-#   * `/dds/ddsforge/example`     — `_decode_status="full"` path
-#   * `/dds/ddsforge/opaque`      — `_decode_status="raw"` fallback path
+#   * `/dds/ddsforge/example`: `_decode_status="full"` path
+#   * `/dds/ddsforge/opaque`: `_decode_status="raw"` fallback path
 # The two existing topics (well_matched / qos_mismatch) keep the v0.3.0
 # builtin-style payload (no `_decode_status` key) so backward
 # compatibility with the v0.3.0 wire contract is preserved.
@@ -315,7 +315,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             for i in range(min(count, 3))
         ]
     elif topic == "/dds/qos_mismatch":
-        # The mismatched topic still has a writer producing samples — the
+        # The mismatched topic still has a writer producing samples: the
         # mismatch only prevents one reader from matching, not the bus
         # from carrying traffic.
         samples = [
@@ -327,7 +327,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             )
         ][:count]
     elif topic == "/dds/ddsforge/example":
-        # v0.4.0 Phase 1 — user topic with `_decode_status="full"`. The
+        # v0.4.0 Phase 1: user topic with `_decode_status="full"`. The
         # IDL is synthetic: a struct{ uint32 seq; string status; float32
         # battery_pct; } resolved cleanly by `cyclonedds.dynamic` /
         # `fastdds.DynamicData` (in the real adapters).
@@ -349,7 +349,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             for i in range(min(count, 3))
         ]
     elif topic == "/dds/ddsforge/opaque":
-        # v0.4.0 Phase 1 — user topic with `_decode_status="raw"`. Models
+        # v0.4.0 Phase 1: user topic with `_decode_status="raw"`. Models
         # the binding-XTypes-unavailable fallback path: payload bytes
         # preserved as hex with a short diagnostic note.
         from topicforge.adapters.common.xtypes import annotate_raw
@@ -411,7 +411,7 @@ def _build_mock_metrics_buffer() -> MetricsBuffer:
             publish_ns=receive_ns - 50_000_000,  # 50 ms before receive
             domain_id=0,
         )
-    # A second topic with a single sample — tests that
+    # A second topic with a single sample: tests that
     # `frequency_hz_observed` returns None when fewer than 2 samples.
     buf.record(
         topic="/dds/singleton",
@@ -420,7 +420,7 @@ def _build_mock_metrics_buffer() -> MetricsBuffer:
         publish_ns=None,
         domain_id=0,
     )
-    # A topic on a different domain — domain filtering.
+    # A topic on a different domain: domain filtering.
     buf.record(
         topic="/dds/cross_domain",
         receive_ns=_METRICS_BASE_TS_NS,
@@ -438,7 +438,7 @@ def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> T
     """Deterministic TopicMetrics computed against `_MOCK_METRICS_BUFFER`.
 
     `now_ns` is pinned at `_METRICS_NOW_NS` so the same call always
-    returns the same numbers regardless of wall clock — required for
+    returns the same numbers regardless of wall clock: required for
     test assertions.
     """
     return _MOCK_METRICS_BUFFER.compute_metrics(
@@ -482,11 +482,11 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
             frequency_hz=0.28,
         ),
     ],
-    # TODO(roadmap): bag anomaly detection — replace these canned strings with
+    # TODO(roadmap): bag anomaly detection: replace these canned strings with
     # output from a real anomaly detector (clock jumps, frame drops, TF gaps).
     anomalies=[
         "/scan: 3 frames dropped between t=10.1s and t=10.4s",
-        "/tf: static transforms only — no dynamic updates during recording",
+        "/tf: static transforms only; no dynamic updates during recording",
     ],
     mode_effective="mock",
     # v0.4.0 Phase 3: enriched fields populated deterministically.
@@ -497,7 +497,7 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
 )
 
 
-# v0.4.0 Phase 3 — deterministic per-topic mock samples for peek_bag_samples.
+# v0.4.0 Phase 3: deterministic per-topic mock samples for peek_bag_samples.
 # Same topic names as MOCK_BAG_ANALYSIS so tests can correlate. Each sample
 # carries a `_decode_status="full"` annotation produced by the shared
 # decoder convention.
@@ -536,7 +536,7 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
 def mock_bag_samples_for(topic: str, count: int) -> list[MessageSample]:
     """Return up to `count` deterministic mock samples for `topic`.
 
-    Returns empty list for unknown topics — mirrors the
+    Returns empty list for unknown topics: mirrors the
     `mock_samples_for` convention.
     """
     return list(MOCK_BAG_SAMPLES.get(topic, [])[:count])

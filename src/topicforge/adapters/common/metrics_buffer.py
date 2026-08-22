@@ -1,4 +1,4 @@
-"""Metrics buffer — per-topic temporal metrics accumulated across sample flows.
+"""Metrics buffer: per-topic temporal metrics accumulated across sample flows.
 
 A bounded, RLock-protected ring buffer per topic, used by the v0.4.0
 Phase 2 `topic_metrics` MCP tool to surface frequency, sequence gaps,
@@ -8,22 +8,22 @@ existing pull paths (`peek_dds_samples`).
 Design rules (mirror `lifecycle.py`):
 
 * **Pure logic at module level.** No DDS dependency. Tests pin
-  behavior against synthetic input — same convention as
+  behavior against synthetic input: same convention as
   `parse_topic_list`, `detect_mismatches`, `LifecycleBuffer`.
 * **Bounded per-topic and in topic count.** Each topic's ring caps at
   `MAX_SAMPLES_PER_TOPIC` (default 1000) ; older samples drop out
   when new ones arrive. The number of distinct topics tracked caps at
   `MAX_TOPICS` (default 4096), oldest-inserted evicted on overflow, so a
   churny bus cannot grow the map without bound. Memory footprint is bounded
-  by `O(min(topics, 4096) x 1000 x sample_record_size)` — at 50 topics
+  by `O(min(topics, 4096) x 1000 x sample_record_size)`: at 50 topics
   roughly 10 MB worst case.
 * **Thread-safe.** Cyclone and Fast adapters today fill the buffer
   on the tool-call thread (synchronous), but a future rclpy adapter
-  (roadmapped in `docs/product-plan.md §5`) will fire callbacks
+  (roadmapped in `docs/product-plan.md` section 5) will fire callbacks
   from a binding worker thread. RLock cost is negligible.
 * **Opportunistic fill.** The buffer accumulates samples only as
   the existing `peek_dds_samples` path flows them through. No
-  background polling thread — same caveat as `LifecycleBuffer`
+  background polling thread: same caveat as `LifecycleBuffer`
   for Cyclone in Phase 1. The `topic_metrics` tool description
   surfaces this to LLM callers explicitly.
 """
@@ -53,10 +53,10 @@ class MetricsSample:
 
     All fields are produced inside the adapter where the binding
     surfaces the sample. `receive_ns` is `time.time_ns()` at capture
-    moment (wall clock, NOT DDS-RTPS receive timestamp — neither
+    moment (wall clock, NOT DDS-RTPS receive timestamp; neither
     binding exposes the underlying RTPS timestamp through Python
     reliably). `sequence_number`, `publish_ns`, and `writer_guid` are
-    best-effort — `None` when the sample type / binding doesn't expose
+    best-effort: `None` when the sample type / binding doesn't expose
     them. `writer_guid` lets `compute_metrics` count sequence gaps per
     writer instead of merging independent counters (Audit C6).
     """
@@ -156,7 +156,7 @@ class MetricsBuffer:
 
         samples_observed = len(samples)
         if samples_observed == 0:
-            # Empty path — every metric collapses to its zero-value.
+            # Empty path: every metric collapses to its zero-value.
             return TopicMetrics(
                 topic=topic,
                 window_seconds=window_seconds,
@@ -174,7 +174,7 @@ class MetricsBuffer:
             )
 
         # window_seconds_actual reflects the actual elapsed range
-        # within the window — useful when the buffer is younger than
+        # within the window: useful when the buffer is younger than
         # `window_seconds` (e.g., server just started).
         receive_times = [s.receive_ns for s in samples]
         oldest_ns = min(receive_times)
@@ -183,7 +183,7 @@ class MetricsBuffer:
         window_actual_s = elapsed_ns / 1_000_000_000
 
         # Frequency is measured from the span of the samples' own arrival
-        # instants (newest - oldest) over N-1 intervals — NOT from
+        # instants (newest - oldest) over N-1 intervals: NOT from
         # (now - oldest), which would fold in idle time since the last peek.
         # Samples surfaced by one opportunistic peek share a single
         # receive_ns (span 0), so a snapshot legitimately yields no
@@ -241,20 +241,20 @@ class MetricsBuffer:
             return list(self._samples.keys())
 
     def sample_count(self, topic: str) -> int:
-        """Diagnostic helper — number of samples currently buffered for `topic`."""
+        """Diagnostic helper: number of samples currently buffered for `topic`."""
         with self._lock:
             ring = self._samples.get(topic)
             return len(ring) if ring is not None else 0
 
 
 # ---------------------------------------------------------------------------
-# Pure helpers — testable without the buffer
+# Pure helpers: testable without the buffer
 # ---------------------------------------------------------------------------
 
 
 # A hole wider than this between two consecutive observed sequence numbers is
 # treated as a publisher restart / counter wrap (a discontinuity), not as that
-# many genuinely lost samples — so a 16-bit wrap (65535→0) or a restart is not
+# many genuinely lost samples: so a 16-bit wrap (65535->0) or a restart is not
 # reported as tens of thousands of gaps. (Audit C6.)
 _MAX_PLAUSIBLE_GAP = 10_000
 
@@ -268,11 +268,11 @@ def _count_sequence_gaps(seq_numbers: list[int]) -> int:
     is treated as a reset/wrap discontinuity and skipped rather than
     counted as that many losses.
 
-    Callers pass one writer's sequence numbers — cross-writer merging is
+    Callers pass one writer's sequence numbers: cross-writer merging is
     handled in `compute_metrics` by grouping on writer GUID first, so an
     independent writer's counter offset is never read as a phantom gap.
 
-    Example: [0, 1, 2, 5, 6] → 2 gaps (3 and 4 missing).
+    Example: [0, 1, 2, 5, 6] -> 2 gaps (3 and 4 missing).
     """
     if len(seq_numbers) < 2:
         return 0

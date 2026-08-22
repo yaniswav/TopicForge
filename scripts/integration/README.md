@@ -3,9 +3,9 @@
 Real-bus validation of the TopicForge multi-vendor OMG-DDS-RTPS claim.
 Two ways to run :
 
-1. **Locally with whatever SDK you have installed** — fastest, partial
+1. **Locally with whatever SDK you have installed**: fastest, partial
    coverage, no Docker required.
-2. **Via Docker compose** — full multi-vendor coverage, requires
+2. **Via Docker compose**: full multi-vendor coverage, requires
    Docker + bandwidth to pull the publisher images.
 
 The integration tests are **gated behind `pytest.mark.integration`** so
@@ -15,7 +15,7 @@ triggers `.github/workflows/integration.yml`) exercises them.
 
 ---
 
-## Quick start — local
+## Quick start: local
 
 ```bash
 # Install whichever SDK you have a license for / want to test against.
@@ -23,7 +23,7 @@ pip install "topicforge[dds-cyclone]"
 # Or:
 pip install "topicforge[dds-fast]"
 
-# Run all scenarios — those whose `required_vendors` is not installed
+# Run all scenarios: those whose `required_vendors` is not installed
 # locally are skipped with a clear log line.
 ./scripts/integration/run-local.sh
 # Windows:
@@ -32,7 +32,7 @@ pip install "topicforge[dds-fast]"
 
 ---
 
-## Quick start — Docker (maintainer's full-coverage path)
+## Quick start: Docker (maintainer's full-coverage path)
 
 ```bash
 docker compose -f scripts/integration/docker-compose.yml up -d
@@ -50,11 +50,11 @@ Six scenarios ship under `tests/integration/scenarios/` :
 
 | Name                              | Required vendors            | Tests |
 | --------------------------------- | --------------------------- | ----- |
-| `multi_vendor_basic`              | cyclone, fast, opendds      | `list_participants` returns ≥ 3 |
+| `multi_vendor_basic`              | cyclone, fast, opendds      | `list_participants` returns >= 3 |
 | `lifecycle_tracking`              | cyclone                     | `participant_events` reports discovered + lost |
 | `qos_mismatch_detection`          | cyclone                     | `detect_qos_mismatches` returns Reliability incompatibility |
 | `xtypes_decode`                   | cyclone                     | `peek_dds_samples` returns `_decode_status` payloads |
-| `topic_metrics_frequency`         | cyclone                     | `topic_metrics(window=60)` returns ≈ 10 Hz |
+| `topic_metrics_frequency`         | cyclone                     | `topic_metrics(window=60)` returns ~ 10 Hz |
 | `topic_metrics_sequence_gaps`     | cyclone                     | `topic_metrics` reports a sequence gap |
 
 Scenario JSON schema :
@@ -62,7 +62,7 @@ Scenario JSON schema :
 ```json
 {
   "name": "kebab_case_scenario_name",
-  "description": "1–2 sentence purpose statement.",
+  "description": "1-2 sentence purpose statement.",
   "required_vendors": ["cyclone", "fast", ...],
   "setup": {
     "domain_id": 0,
@@ -85,7 +85,7 @@ schema validation that runs in default CI.
 
 1. Create `tests/integration/scenarios/<name>.json` following the
    schema above.
-2. Run `pytest tests/integration/test_scenarios_schema.py` — every
+2. Run `pytest tests/integration/test_scenarios_schema.py`: every
    structural check must pass before the scenario is dispatched.
 3. (Optional, for live validation) extend `scenarios_runner.py` if
    your scenario needs a new assertion verb beyond the existing
@@ -111,7 +111,7 @@ The OSS-CI default pipeline does NOT :
 
 The maintainer validates the live path on their workstation before
 merging Phase 2.2. The `.github/workflows/integration.yml` workflow
-exists for the `integration-tests` PR label path — runs are
+exists for the `integration-tests` PR label path: runs are
 intentional and cost-bound to avoid compounding CI minutes.
 
 ---
@@ -121,6 +121,6 @@ intentional and cost-bound to avoid compounding CI minutes.
 Phase 2.2 ships the structural rig. Real-bus assertion evaluation
 (the part of `scenarios_runner.py` that spawns publishers, polls
 TopicForge, and reports per-assertion pass/fail) is wired enough to
-dispatch — full live validation is the maintainer's follow-up
+dispatch: full live validation is the maintainer's follow-up
 before the v0.4.0 tag. See `docs/projet-file/mcp-02-spec.md` for
 the canonical scope.

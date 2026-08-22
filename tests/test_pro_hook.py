@@ -5,14 +5,14 @@ import an optional `topicforge_pro` plugin package at startup and call
 its `register(mcp)` entrypoint. This test pins the contract of that
 hook without depending on a real Pro package install:
 
-* When `topicforge_pro` is not importable → return False, no exception.
+* When `topicforge_pro` is not importable -> return False, no exception.
 * When `topicforge_pro` is importable AND exposes a `register(mcp)`
-  callable → call it and return True.
-* When `topicforge_pro.register` raises → log and return False (the
+  callable -> call it and return True.
+* When `topicforge_pro.register` raises -> log and return False (the
   OSS surface keeps working).
 
 We use `monkeypatch.setitem(sys.modules, ...)` to inject a fake
-package rather than mocking the import — same convention as
+package rather than mocking the import: same convention as
 `tests/test_health.py` for `importlib.util.find_spec` patches.
 """
 
@@ -34,7 +34,7 @@ def _make_fake_pro_package(register_fn: object) -> types.ModuleType:
 
 
 def test_returns_false_when_pro_package_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No `topicforge_pro` installed → the OSS server boots without Pro."""
+    """No `topicforge_pro` installed -> the OSS server boots without Pro."""
     monkeypatch.delitem(sys.modules, "topicforge_pro", raising=False)
 
     # Stub the module finder so an actual import attempt fails fast.

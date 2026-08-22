@@ -1,6 +1,6 @@
 """MCP server bootstrap.
 
-Wires settings → adapter → services → tools → FastMCP. This module is the
+Wires settings -> adapter -> services -> tools -> FastMCP. This module is the
 only place that knows the full dependency graph; everything else stays
 narrowly scoped.
 """

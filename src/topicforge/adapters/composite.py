@@ -1,4 +1,4 @@
-"""Composite adapter — routes ROS2 graph calls to one adapter, DDS calls to another.
+"""Composite adapter: routes ROS2 graph calls to one adapter, DDS calls to another.
 
 v0.4.0 Phase 1 introduces a runtime where `TOPICFORGE_MODE=live` and
 `TOPICFORGE_DDS_BACKEND=cyclone|fast` are **orthogonal** rather than
@@ -10,12 +10,12 @@ The wrapper itself implements `MiddlewareAdapter` and dispatches per
 method category:
 
   * `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`
-    → `self._ros`
+    -> `self._ros`
   * `list_participants`, `detect_qos_mismatches`, `peek_dds_samples`
-    → `self._dds`
+    -> `self._dds`
 
 `AdapterError` from either side propagates unchanged. The composite
-never swallows or remaps errors — that would defeat the underlying
+never swallows or remaps errors: that would defeat the underlying
 adapter's diagnostic messages.
 """
 
@@ -61,7 +61,7 @@ class CompositeAdapter:
     def is_available(self) -> bool:
         return self._ros.is_available() and self._dds.is_available()
 
-    # ----- ROS2 graph surface → ROS adapter -----
+    # ----- ROS2 graph surface -> ROS adapter -----
 
     def list_topics(self) -> list[TopicInfo]:
         return self._ros.list_topics()
@@ -75,7 +75,7 @@ class CompositeAdapter:
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._ros.analyze_bag(path)
 
-    # ----- DDS surface → DDS adapter -----
+    # ----- DDS surface -> DDS adapter -----
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         return self._dds.list_participants(domain_id)
@@ -97,6 +97,6 @@ class CompositeAdapter:
         return self._dds.topic_metrics(topic, window_seconds, domain_id)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
-        # Bag analysis lives on the ROS half — MCAP is the canonical
+        # Bag analysis lives on the ROS half: MCAP is the canonical
         # ROS2 recording format, and rosbags is a ROS-native library.
         return self._ros.peek_bag_samples(path, topic, count)

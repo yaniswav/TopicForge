@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for the report. Two minutes of structured detail saves a 30-minute back-and-forth.
 
-        Security vulnerabilities → please use the email in `SECURITY.md`, not this form.
+        Security vulnerabilities -> please use the email in `SECURITY.md`, not this form.
 
   - type: input
     id: version
@@ -39,7 +39,7 @@ body:
       label: DDS backend (if relevant)
       description: "Skip if the bug doesn't touch the DDS module."
       options:
-        - "n/a — bug is on the ROS2 side"
+        - "n/a: bug is on the ROS2 side"
         - mock
         - cyclone
         - fast
@@ -97,7 +97,7 @@ body:
       label: Minimal reproducer
       description: |
         A failing pytest is gold. A copy-pastable shell session is silver.
-        "It happens sometimes" is bronze — please include the env vars and command line at minimum.
+        "It happens sometimes" is bronze: please include the env vars and command line at minimum.
       render: shell
     validations:
       required: false

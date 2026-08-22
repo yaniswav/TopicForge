@@ -1,11 +1,11 @@
-# 04 — Monitor topic frequency and participant lifecycle
+# 04: Monitor topic frequency and participant lifecycle
 
 **Scenario.** A robotics integrator complains that a 10 Hz heartbeat
-topic "seems jittery". You want concrete numbers — observed
-frequency, sequence gaps, latency percentiles — plus visibility on
+topic "seems jittery". You want concrete numbers (observed
+frequency, sequence gaps, latency percentiles) plus visibility on
 participants joining and leaving the bus during the observation
 window. **Tools exercised.** `topic_metrics`, `participant_events`.
-**Mode.** Mock — exercises the deterministic 10 Hz heartbeat fixture.
+**Mode.** Mock: exercises the deterministic 10 Hz heartbeat fixture.
 
 ## Setup
 
@@ -16,7 +16,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 
 The mock observability fixture ships :
 
-- `/dds/heartbeat_10hz` — 100 samples spaced 100 ms apart with
+- `/dds/heartbeat_10hz`: 100 samples spaced 100 ms apart with
   synthetic 50 ms latency and contiguous sequence numbers 0..99
 - A singleton topic (one sample) for low-traffic edge-case testing
 - A cross-domain topic exercising the `domain_id` filter
@@ -29,11 +29,11 @@ The mock observability fixture ships :
 > `/dds/heartbeat_10hz` over the last minute.
 
 **Claude calls:** `topic_metrics(topic="/dds/heartbeat_10hz",
-window_seconds=60, domain_id=0)` → returns `TopicMetrics` with
-`samples_observed=100`, `frequency_hz_observed≈10.0`,
+window_seconds=60, domain_id=0)` -> returns `TopicMetrics` with
+`samples_observed=100`, `frequency_hz_observed~10.0`,
 `frequency_hz_declared=10.0` (from QoS Deadline),
-`sequence_gaps_count=0`, `latency_ns_p50≈50_000_000`,
-`latency_ns_p95≈50_000_000`, `latency_ns_p99≈50_000_000`, and
+`sequence_gaps_count=0`, `latency_ns_p50~50_000_000`,
+`latency_ns_p95~50_000_000`, `latency_ns_p99~50_000_000`, and
 boolean availability flags for each conditional metric.
 
 **You:**
@@ -41,7 +41,7 @@ boolean availability flags for each conditional metric.
 > Did any participants come or go on the bus during that window?
 
 **Claude calls:** `participant_events(domain_id=0,
-lookback_seconds=60)` → returns a list of `ParticipantEvent` with
+lookback_seconds=60)` -> returns a list of `ParticipantEvent` with
 `event_type="discovered"` or `"lost"`, `timestamp_ns`, and the full
 embedded `ParticipantInfo` (vendor, hostname, GUID, lifecycle
 fields).
@@ -51,14 +51,14 @@ fields).
 > Over the last 60 seconds I observed 100 samples on
 > `/dds/heartbeat_10hz`, exactly matching the declared 10 Hz QoS
 > Deadline. Sequence numbers were contiguous (0 gaps), and end-to-end
-> latency p50/p95/p99 all sat at ~50 ms — uniform, no jitter.
-> Three participants stayed active throughout the window — no
+> latency p50/p95/p99 all sat at ~50 ms: uniform, no jitter.
+> Three participants stayed active throughout the window: no
 > discovery or loss events fired. The "jittery heartbeat" report
-> isn't reproducing here — recommend checking the **complainant's
-> subscriber** end (publisher → bus → subscriber is fine ;
-> subscriber → application callback might be the bottleneck).
+> isn't reproducing here: recommend checking the **complainant's
+> subscriber** end (publisher -> bus -> subscriber is fine ;
+> subscriber -> application callback might be the bottleneck).
 
-## Caveats — opportunistic fill
+## Caveats: opportunistic fill
 
 **`topic_metrics` is opportunistic.** Neither `cyclonedds` nor
 `fastdds` 2.6.x Python bindings expose at-sample-receive callbacks,
@@ -85,4 +85,4 @@ TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=fast python -m topicforge
 On Fast DDS, `participant_events` captures every `discovered` /
 `lost` event natively. On Cyclone, periodic `list_participants`
 calls keep the lifecycle buffer warm. Either backend serves
-`topic_metrics` identically — the buffer is vendor-neutral.
+`topic_metrics` identically: the buffer is vendor-neutral.

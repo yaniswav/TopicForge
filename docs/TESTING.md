@@ -6,7 +6,7 @@ This document is the single source of truth for "how do I actually try
 this thing"; the top-level `README.md` only covers the basics.
 
 If you find a step that doesn't work, please [open an issue](https://github.com/yaniswav/TopicForge/issues)
-— that's the highest-signal feedback for the current release.
+: that's the highest-signal feedback for the current release.
 
 ---
 
@@ -14,11 +14,11 @@ If you find a step that doesn't work, please [open an issue](https://github.com/
 
 | You want to... | Time | Path |
 | --- | --- | --- |
-| See the eleven MCP tools work end-to-end without installing ROS2 | 5 min | [Path 1 — Mock mode](#path-1--mock-mode-no-ros2-required) |
-| Validate live mode against real ROS2 traffic on Windows | 45 min | [Path 2 — WSL2 + Humble](#path-2--wsl2--ros2-humble-windows-recommended) |
-| Same as Path 2, but you're already on Ubuntu/Debian | 20 min | [Path 3 — Linux native](#path-3--linux-native) |
-| Reproducible throwaway environment | 15 min | [Path 4 — Docker](#path-4--docker-throwaway) |
-| Native Windows ROS2 install (no virtualization) | 1–2 h | [Path 5 — Windows native (advanced)](#path-5--windows-native-advanced) |
+| See the eleven MCP tools work end-to-end without installing ROS2 | 5 min | [Path 1: Mock mode](#path-1-mock-mode-no-ros2-required) |
+| Validate live mode against real ROS2 traffic on Windows | 45 min | [Path 2: WSL2 + Humble](#path-2-wsl2--ros2-humble-windows-recommended) |
+| Same as Path 2, but you're already on Ubuntu/Debian | 20 min | [Path 3: Linux native](#path-3-linux-native) |
+| Reproducible throwaway environment | 15 min | [Path 4: Docker](#path-4-docker-throwaway) |
+| Native Windows ROS2 install (no virtualization) | 1-2 h | [Path 5: Windows native (advanced)](#path-5-windows-native-advanced) |
 
 Once any path is set up, jump to [Test scenarios](#test-scenarios) to
 exercise the eleven tools, then [Connect an MCP client](#connect-an-mcp-client)
@@ -35,7 +35,7 @@ to use TopicForge from Claude Desktop, Claude Code, Cursor, etc.
 
 ---
 
-## Path 1 — Mock mode (no ROS2 required)
+## Path 1: Mock mode (no ROS2 required)
 
 The fastest way to confirm the server starts, registers all eleven tools,
 and serves typed payloads to an MCP client.
@@ -49,10 +49,10 @@ source .venv/bin/activate          # Linux / macOS / WSL
 pip install topicforge
 
 # Sanity check
-python -m topicforge --version     # → topicforge 0.1.2
+python -m topicforge --version     # -> topicforge 0.1.2
 python -m topicforge --help
 
-# Run the server (it blocks on stdio — that's normal, MCP clients spawn it)
+# Run the server (it blocks on stdio; that's normal, MCP clients spawn it)
 # Linux / macOS / WSL:
 TOPICFORGE_MODE=mock python -m topicforge
 
@@ -71,10 +71,10 @@ LIDAR + RGB camera. Outputs are deterministic across runs.
 
 ---
 
-## Path 2 — WSL2 + ROS2 Humble (Windows, recommended)
+## Path 2: WSL2 + ROS2 Humble (Windows, recommended)
 
 This is what most Windows ROS2 developers do in practice. The investment
-pays off beyond TopicForge — you get a proper ROS2 environment for any
+pays off beyond TopicForge: you get a proper ROS2 environment for any
 future robotics work.
 
 ### 2.1 Install WSL2 with Ubuntu 22.04
@@ -113,8 +113,8 @@ echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 
 # Verify
-ros2 --help                        # → usage info
-ros2 doctor                        # → some warnings are OK on WSL
+ros2 --help                        # -> usage info
+ros2 doctor                        # -> some warnings are OK on WSL
 ```
 
 ### 2.3 Install TopicForge inside WSL
@@ -124,21 +124,21 @@ sudo apt install -y python3-pip python3-venv
 python3 -m venv ~/topicforge-venv
 source ~/topicforge-venv/bin/activate
 pip install topicforge
-topicforge --version               # → topicforge 0.1.2
+topicforge --version               # -> topicforge 0.1.2
 ```
 
 ### 2.4 Run live mode end-to-end
 
 You'll need three WSL terminals.
 
-**Terminal A — publish something on the graph:**
+**Terminal A: publish something on the graph:**
 
 ```bash
 source /opt/ros/humble/setup.bash
 ros2 run demo_nodes_cpp talker     # publishes /chatter at ~1 Hz
 ```
 
-**Terminal B — confirm ROS2 sees the publisher:**
+**Terminal B: confirm ROS2 sees the publisher:**
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -146,7 +146,7 @@ ros2 topic list                    # should include /chatter
 ros2 topic echo --once /chatter    # one message, then exits
 ```
 
-**Terminal C — run TopicForge in live mode:**
+**Terminal C: run TopicForge in live mode:**
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -160,7 +160,7 @@ From here, an MCP client connected over stdio can call `list_topics`,
 
 ---
 
-## Path 3 — Linux native
+## Path 3: Linux native
 
 Same as Path 2.2 onward, skipping WSL setup. Tested on Ubuntu 22.04 (Humble),
 Ubuntu 24.04 (Jazzy). Adjust the distro name in the apt repo line accordingly.
@@ -170,7 +170,7 @@ For Jazzy: replace `ros-humble-*` packages with `ros-jazzy-*` and source
 
 ---
 
-## Path 4 — Docker (throwaway)
+## Path 4: Docker (throwaway)
 
 Fastest way to a clean ROS2 environment if you don't want to install
 anything natively. Both the publisher and TopicForge run inside the
@@ -199,7 +199,7 @@ it's worth for a demo.
 
 ---
 
-## Path 5 — Windows native (advanced)
+## Path 5: Windows native (advanced)
 
 The official [ROS2 Humble binary install for
 Windows](https://docs.ros.org/en/humble/Installation/Windows-Install-Binary.html)
@@ -225,7 +225,7 @@ extra config is needed beyond having the ROS2 install on PATH.
 These three scenarios are what to demo in a 90-second screencast and
 what an early adopter will try first.
 
-### Scenario A — Discover the graph
+### Scenario A: Discover the graph
 
 In your MCP client:
 
@@ -236,18 +236,18 @@ In live mode you'll see `/chatter` plus the usual ROS2 system topics
 (`/rosout`, `/parameter_events`). In mock mode you'll see the five
 fixture topics (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw`).
 
-### Scenario B — Inspect a topic and sample a message
+### Scenario B: Inspect a topic and sample a message
 
 > "Show me the latest message on /chatter."
 
 Expected: `get_topic_info /chatter` then `sample_messages /chatter`.
 The `samples[0].payload` will contain the parsed top-level keys from
 `ros2 topic echo --once` plus a `_raw_text` field with the verbatim
-CLI output. In live mode `samples[i].timestamp_ns` is always `0` — the
+CLI output. In live mode `samples[i].timestamp_ns` is always `0`: the
 CLI does not expose receive times. A future `rclpy`-backed adapter
 will fix that.
 
-### Scenario C — Record and analyze a bag
+### Scenario C: Record and analyze a bag
 
 In a WSL or Linux shell:
 
@@ -265,7 +265,7 @@ Then in your MCP client:
 Expected: `analyze_bag` returns a `BagAnalysis` with `duration_seconds`,
 `message_count`, per-topic stats, and (mock mode only) a list of canned
 anomalies. Live mode parses `ros2 bag info` output and currently does
-not detect anomalies — that's mock-only until a real anomaly detector
+not detect anomalies: that's mock-only until a real anomaly detector
 ships in v0.2.
 
 ---
@@ -277,7 +277,7 @@ it. The minimum config is the same shape everywhere: a command + env vars.
 
 ### Claude Desktop
 
-Add to `claude_desktop_config.json` (location varies by OS — Claude
+Add to `claude_desktop_config.json` (location varies by OS; Claude
 Desktop's docs cover it):
 
 ```json
@@ -338,7 +338,7 @@ where.exe ros2      # Windows
 
 If ROS2 is installed but not on PATH, source the setup file in the
 parent shell **before** launching the MCP client. On Windows native,
-`ros2.cmd` is what `shutil.which` resolves — TopicForge handles it.
+`ros2.cmd` is what `shutil.which` resolves: TopicForge handles it.
 
 You can also override the binary explicitly:
 
@@ -356,7 +356,7 @@ nothing comes back. Confirm with `ros2 topic info -v <topic>` that
 ### `analyze_bag` fails with `Bag path does not exist`
 
 The path is resolved in the shell where TopicForge runs. On WSL, a
-path like `C:\demos\run.mcap` is not valid — use `/mnt/c/demos/run.mcap`.
+path like `C:\demos\run.mcap` is not valid: use `/mnt/c/demos/run.mcap`.
 On Windows native, both `C:\demos\run.mcap` and `C:/demos/run.mcap`
 work (TopicForge uses `pathlib`).
 
@@ -368,10 +368,10 @@ adapter would refuse. Use a path with one of those suffixes.
 
 ### Claude Desktop doesn't show the tools
 
-1. Check the Claude Desktop logs (Help → View Logs → MCP).
+1. Check the Claude Desktop logs (Help -> View Logs -> MCP).
 2. Confirm `topicforge --version` runs from the same shell that spawned
    Claude Desktop. PATH and venv activation are not inherited across
-   GUI launchers — you may need to point the config at the absolute
+   GUI launchers: you may need to point the config at the absolute
    path of the `topicforge` binary inside your venv.
 3. JSON syntax errors silently drop the whole config. Validate with
    `cat claude_desktop_config.json | python -m json.tool`.
@@ -380,7 +380,7 @@ adapter would refuse. Use a path with one of those suffixes.
 
 The first call to a `list_topics` in live mode shells out to
 `ros2 topic list -t`, which initializes the DDS middleware. Expect a
-1–2 s warm-up. Subsequent calls are fast.
+1-2 s warm-up. Subsequent calls are fast.
 
 ---
 
@@ -405,8 +405,8 @@ If you got here, you already invested 15 minutes in evaluating
 TopicForge. The two highest-value things you can do next:
 
 1. Try it against your own ROS2 graph and tell me which tool's output
-   was useful, useless, or wrong on your stack — via [GitHub
+   was useful, useless, or wrong on your stack, via [GitHub
    Issues](https://github.com/yaniswav/TopicForge/issues).
 2. Tell me what other read-only introspection your AI agent would
-   actually need to be useful — TF tree health, QoS diff, message-
+   actually need to be useful: TF tree health, QoS diff, message-
    field schema, anything.

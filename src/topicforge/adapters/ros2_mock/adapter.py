@@ -1,4 +1,4 @@
-"""Mock adapter — deterministic fixtures for development, tests, and demos.
+"""Mock adapter: deterministic fixtures for development, tests, and demos.
 
 Always available. Outputs are stable across runs so tests can assert on
 exact values.
@@ -24,7 +24,7 @@ from topicforge.models import (
 
 # Extensions the live `ros2 bag info` accepts. The mock mirrors this list so
 # a test that passes `/tmp/demo.txt` fails in mock the same way it would in
-# live — otherwise mock mode would hide a real-world UX problem until the
+# live: otherwise mock mode would hide a real-world UX problem until the
 # first ROS2 install.
 _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
 

@@ -27,7 +27,7 @@ def test_topic_metrics_returns_topic_metrics_shape(inspector: Inspector) -> None
 
 
 def test_topic_metrics_heartbeat_fixture_frequency_in_range(inspector: Inspector) -> None:
-    """Mock fixture is 100 samples spaced 100 ms apart → ~10 Hz."""
+    """Mock fixture is 100 samples spaced 100 ms apart -> ~10 Hz."""
     result = inspector.topic_metrics("/dds/heartbeat_10hz", window_seconds=60)
     assert result.samples_observed == 100
     # window_seconds_actual = 10 s (from first to fixture_now); 100/10 = 10
@@ -67,7 +67,7 @@ def test_topic_metrics_singleton_returns_none_frequency(inspector: Inspector) ->
 
 
 def test_topic_metrics_domain_filter(inspector: Inspector) -> None:
-    """`/dds/cross_domain` exists on domain 42 only ; domain 0 → empty."""
+    """`/dds/cross_domain` exists on domain 42 only ; domain 0 -> empty."""
     on_d0 = inspector.topic_metrics("/dds/cross_domain", domain_id=0)
     on_d42 = inspector.topic_metrics("/dds/cross_domain", domain_id=42)
     assert on_d0.samples_observed == 0

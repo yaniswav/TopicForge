@@ -1,4 +1,4 @@
-"""OpenDDS adapter — v0.4.0 Phase 1.5 stub implementation.
+"""OpenDDS adapter: v0.4.0 Phase 1.5 stub implementation.
 
 `pyopendds` is not currently maintained on PyPI. This stub implements
 the full `MiddlewareAdapter` protocol so the auto-detect framework
@@ -7,8 +7,8 @@ methods raise `AdapterError(_OPENDDS_ROADMAP_MSG)` with a clear pointer
 to the v0.5+ roadmap if a user reaches them.
 
 `is_available()` always returns False while this is a stub (Audit S1):
-the factory selects backends on `is_available()`, so reporting True —
-even when a `pyopendds` module happens to be importable — would make the
+the factory selects backends on `is_available()`, so reporting True
+(even when a `pyopendds` module happens to be importable) would make the
 factory pick OpenDDS and then every tool call would raise. The Dust stub
 follows the same rule. When a real binding ships, the replacement adapter
 sets this from an actual capability probe.
@@ -41,7 +41,7 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _OPENDDS_ROADMAP_MSG = (
-    "OpenDDS adapter is a stub at TopicForge v0.4.0 Phase 1.5 — the "
+    "OpenDDS adapter is a stub at TopicForge v0.4.0 Phase 1.5: the "
     "`pyopendds` Python binding is not yet maintained on PyPI. Track "
     "OpenDDS Python binding progress upstream or contribute to the "
     "TopicForge OpenDDS adapter under `src/topicforge/adapters/dds_opendds/`. "
@@ -65,7 +65,7 @@ class OpenDdsAdapter:
         return "live"
 
     def is_available(self) -> bool:
-        # Always False while this is a stub — even if a `pyopendds` module is
+        # Always False while this is a stub: even if a `pyopendds` module is
         # importable, this adapter cannot serve any request, and the factory
         # selects on is_available(). (Audit S1.)
         return False

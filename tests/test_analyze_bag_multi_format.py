@@ -26,7 +26,7 @@ def test_mock_analyze_bag_returns_enriched_fields() -> None:
 
 
 def test_mock_analyze_bag_path_echo() -> None:
-    """model_copy(update=path) — the mock fixture's path field reflects the request."""
+    """model_copy(update=path): the mock fixture's path field reflects the request."""
     adapter = MockAdapter()
     paths = [
         "/tmp/a.mcap",

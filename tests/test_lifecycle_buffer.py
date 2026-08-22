@@ -1,6 +1,6 @@
 """Unit tests for `topicforge.adapters.common.lifecycle.LifecycleBuffer`.
 
-Pure logic — no DDS dependency. Same convention as
+Pure logic: no DDS dependency. Same convention as
 `tests/test_qos_analyzer.py` (the analyzer it joins in `adapters/common/`).
 """
 
@@ -176,7 +176,7 @@ def test_ring_buffer_drops_oldest_at_overflow() -> None:
 
     events = buf.events_since(lookback_seconds=100, now_ns=10_000)
     assert len(events) == 5
-    # Newest first — the 5 most recent: g9, g8, g7, g6, g5.
+    # Newest first: the 5 most recent: g9, g8, g7, g6, g5.
     assert [e.guid for e in events] == ["g9", "g8", "g7", "g6", "g5"]
 
 
@@ -218,7 +218,7 @@ def test_thread_safety_smoke() -> None:
 
 
 def test_default_max_events_is_200() -> None:
-    """Pin the constant — it is documented in the tool description."""
+    """Pin the constant: it is documented in the tool description."""
     assert MAX_EVENTS == 200
 
 
@@ -239,9 +239,9 @@ def test_eviction_prefers_left_tombstones_over_active() -> None:
     buf = LifecycleBuffer(max_participants=3)
     for i in range(3):
         buf.record_seen(guid=f"g{i}", vendor="cyclone", hostname=None, domain_id=0, now_ns=i)
-    # Tombstone g1 (status → "left"); dict still holds 3 entries.
+    # Tombstone g1 (status -> "left"); dict still holds 3 entries.
     buf.record_lost(guid="g1", now_ns=100)
-    # New arrival at cap → the tombstone is evicted, actives survive.
+    # New arrival at cap -> the tombstone is evicted, actives survive.
     buf.record_seen(guid="g_new", vendor="cyclone", hostname=None, domain_id=0, now_ns=200)
     guids = {p.guid for p in buf.snapshot_participants()}
     assert guids == {"g0", "g2", "g_new"}
@@ -251,5 +251,5 @@ def test_eviction_falls_back_to_oldest_when_all_active() -> None:
     buf = LifecycleBuffer(max_participants=2)
     for guid, ts in (("a", 1), ("b", 2), ("c", 3)):
         buf.record_seen(guid=guid, vendor="cyclone", hostname=None, domain_id=0, now_ns=ts)
-    # No tombstones → oldest-inserted ("a") evicted.
+    # No tombstones -> oldest-inserted ("a") evicted.
     assert {p.guid for p in buf.snapshot_participants()} == {"b", "c"}

@@ -6,7 +6,7 @@ for a substring of the error text and land in the right place.
 
 If your situation isn't covered here, open an issue at
 [github.com/yaniswav/TopicForge/issues](https://github.com/yaniswav/TopicForge/issues)
-— the troubleshooting list grows from real reports.
+: the troubleshooting list grows from real reports.
 
 ---
 
@@ -14,11 +14,11 @@ If your situation isn't covered here, open an issue at
 
 **Full message** (paraphrased):
 
-> This adapter serves DDS observability only — it cannot run the ROS2
+> This adapter serves DDS observability only: it cannot run the ROS2
 > graph tools (`list_topics`, `get_topic_info`, `sample_messages`,
 > `analyze_bag`, `peek_bag_samples`). To get both surfaces in one
 > process: install ROS2 and source the workspace so `ros2` is on PATH,
-> then re-run with `TOPICFORGE_MODE=live` — the v0.4.0 CompositeAdapter
+> then re-run with `TOPICFORGE_MODE=live`: the v0.4.0 CompositeAdapter
 > routes ROS2 tools to the CLI and DDS tools to your
 > `TOPICFORGE_DDS_BACKEND` automatically. For offline development use
 > `TOPICFORGE_MODE=mock`.
@@ -38,7 +38,7 @@ brought up.
 2. Re-run with `TOPICFORGE_MODE=live` and your existing
    `TOPICFORGE_DDS_BACKEND`. The factory will detect both halves and
    construct a `CompositeAdapter`.
-3. Inspect `health_check` — `ros_backend` should now be `"ros2_cli"`
+3. Inspect `health_check`: `ros_backend` should now be `"ros2_cli"`
    and `dds_backend` should be your selected vendor.
 
 If you genuinely want a DDS-only deployment (no ROS2), use
@@ -60,7 +60,7 @@ adapter and only call the 6 DDS / observability tools
 
 **What it means.** You called `peek_bag_samples` (or `analyze_bag` on
 a non-CLI path) without the optional `rosbags` Apache-2.0 library
-installed. The library is intentionally optional — base
+installed. The library is intentionally optional: base
 `pip install topicforge` keeps the install footprint small.
 
 **How to fix.**
@@ -70,7 +70,7 @@ pip install topicforge[bags]
 ```
 
 This pulls `rosbags>=0.9` (pure-Python, no native deps, works on all
-supported Python/OS combos). Re-run the tool — no env-var change
+supported Python/OS combos). Re-run the tool: no env-var change
 needed.
 
 If you cannot install rosbags (sandboxed CI, restricted package
@@ -94,7 +94,7 @@ fields populate at safe defaults. `peek_bag_samples` is rosbags-only.
 1. **Domain mismatch.** TopicForge joins the domain set by
    `TOPICFORGE_DDS_DOMAIN_ID` (default `0`). Your publishers must be
    on the same domain. Check with `echo $ROS_DOMAIN_ID` or by reading
-   the publisher's config — they must match TopicForge's domain id.
+   the publisher's config: they must match TopicForge's domain id.
 2. **Firewall / multicast.** RTPS uses multicast on `239.255.0.x` by
    default. If your firewall blocks multicast (common on corp Wi-Fi),
    discovery times out silently. Either allow multicast on the
@@ -106,7 +106,7 @@ fields populate at safe defaults. `peek_bag_samples` is rosbags-only.
    confirm whether the var itself is the culprit.
 
 The error message carries the underlying Python exception type and
-text — that's usually the most informative starting point. A `Timeout`
+text: that's usually the most informative starting point. A `Timeout`
 exception points at #1 or #2 ; a `FileNotFoundError` or `OSError`
 points at #3.
 
@@ -118,7 +118,7 @@ points at #3.
 
 > Fast DDS DomainParticipant creation returned None on domain `{id}`.
 > Likely an ABI mismatch between the `fastdds` Python binding and the
-> installed Fast DDS core library — pin `fastdds>=2.6.1,<3` and
+> installed Fast DDS core library: pin `fastdds>=2.6.1,<3` and
 > reinstall, or check the `FastDDS_DEFAULT_PROFILES_FILE` env var if
 > you set one.
 
@@ -134,7 +134,7 @@ library on the host.
    pip uninstall -y fastdds
    pip install "fastdds>=2.6.1,<3"
    ```
-2. If you set `FastDDS_DEFAULT_PROFILES_FILE`, unset it and retry — a
+2. If you set `FastDDS_DEFAULT_PROFILES_FILE`, unset it and retry: a
    broken profile XML triggers the same symptom.
 3. If you have a system-wide Fast DDS native install (CMake / vcpkg /
    apt), make sure `LD_LIBRARY_PATH` (or `PATH` on Windows) does not
@@ -174,7 +174,7 @@ the 300 s default.
 **What it means.** `topic_metrics` accepts a window from 1 second to
 3600 seconds (1 hour). The `MetricsBuffer` cap is
 `MAX_SAMPLES_PER_TOPIC=1000` drop-oldest, which on a 1 kHz topic
-covers about 1 second of data — be aware that the observed frequency
+covers about 1 second of data: be aware that the observed frequency
 is computed from buffered samples, not from a true rolling time
 window.
 
@@ -185,7 +185,7 @@ the 60 s default.
 
 ## "count must be >= 0"
 
-Trivial — the parameter accepts non-negative integers only. Most
+Trivial: the parameter accepts non-negative integers only. Most
 sampling tools silently clamp to `MAX_SAMPLE_COUNT=50` so a request
 for `1000` returns 50 with the actual `SampleResult.count` field
 reflecting the truth.
@@ -202,7 +202,7 @@ still rejects whitespace, shell metacharacters, and dashes.
 
 **How to fix.** Strip dashes / spaces from the topic name. ROS2 topic
 names always start with `/` and use `_` (never `-`) for word
-separation, so the typical fix is `my-topic` → `my_topic` or
+separation, so the typical fix is `my-topic` -> `my_topic` or
 `/my_topic`.
 
 ---
@@ -215,11 +215,11 @@ though you set `TOPICFORGE_MODE=live` or `auto`.
 **Diagnostics.**
 
 1. From the **same shell** that spawned TopicForge (this is critical
-   for desktop MCP clients — PATH and venv activation are not
+   for desktop MCP clients: PATH and venv activation are not
    inherited across GUI launchers) :
    ```bash
-   which ros2          # Linux / WSL — should print /opt/ros/<distro>/bin/ros2
-   where.exe ros2      # Windows — should print a .cmd / .bat path
+   which ros2          # Linux / WSL: should print /opt/ros/<distro>/bin/ros2
+   where.exe ros2      # Windows: should print a .cmd / .bat path
    ```
 2. If `ros2` is not on PATH, source the ROS2 setup file in the parent
    shell **before** launching the MCP client.
@@ -228,7 +228,7 @@ though you set `TOPICFORGE_MODE=live` or `auto`.
    TOPICFORGE_ROS2_BIN=/opt/ros/humble/bin/ros2 python -m topicforge
    ```
 
-On Windows native, `ros2.cmd` is what `shutil.which` resolves —
+On Windows native, `ros2.cmd` is what `shutil.which` resolves:
 TopicForge handles the shell-shim resolution. Make sure the install
 directory containing `ros2.cmd` is on `%PATH%`.
 
@@ -236,10 +236,10 @@ directory containing `ros2.cmd` is on `%PATH%`.
 
 ## Where to look next
 
-- [README.md](../README.md) — install, run, configure
-- [docs/DDS_QUICKSTART.md](DDS_QUICKSTART.md) — 5-minute DDS walkthrough
-- [docs/TESTING.md](TESTING.md) — five-path setup guide
-- [docs/MIGRATION_v0.3_to_v0.4.md](MIGRATION_v0.3_to_v0.4.md) — most recent migration
-- [docs/product-plan.md](product-plan.md) — strategic roadmap (Phase 3 hosted endpoint reopens many security caveats)
+- [README.md](../README.md): install, run, configure
+- [docs/DDS_QUICKSTART.md](DDS_QUICKSTART.md): 5-minute DDS walkthrough
+- [docs/TESTING.md](TESTING.md): five-path setup guide
+- [docs/MIGRATION_v0.3_to_v0.4.md](MIGRATION_v0.3_to_v0.4.md): most recent migration
+- [docs/product-plan.md](product-plan.md): strategic roadmap (Phase 3 hosted endpoint reopens many security caveats)
 
 Open issues : https://github.com/yaniswav/TopicForge/issues.

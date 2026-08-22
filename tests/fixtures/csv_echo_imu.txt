@@ -1,6 +1,6 @@
 # Synthesized sample of `ros2 topic echo --csv --once /imu` for a
 # `sensor_msgs/msg/Imu` message. The first two columns are
-# `header.stamp.sec` and `header.stamp.nanosec` — ros2cli's `message_to_csv`
+# `header.stamp.sec` and `header.stamp.nanosec`; ros2cli's `message_to_csv`
 # walks the message in declaration order and emits each scalar field as a
 # CSV column. Imu starts with `Header header` whose first two fields are
 # the timestamp, so the leading two columns are reliably the publish-time

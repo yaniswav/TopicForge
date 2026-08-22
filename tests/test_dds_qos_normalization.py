@@ -1,15 +1,15 @@
-"""Tests for the vendor QoS → canonical QosProfile normalizers.
+"""Tests for the vendor QoS -> canonical QosProfile normalizers.
 
 These were extracted from the Cyclone and Fast adapters (Lot 0, audit
 2026-07-08) precisely so they can be tested WITHOUT the `cyclonedds` /
 `fastdds` bindings installed. Before the extraction the entire QoS
-normalization path — the feeder of `detect_qos_mismatches`, the flagship
-DDS diagnostic — was unreachable by the suite, so a renamed policy key
-would silently make every QoS profile resolve to `None` (→ no mismatch
+normalization path (the feeder of `detect_qos_mismatches`, the flagship
+DDS diagnostic) was unreachable by the suite, so a renamed policy key
+would silently make every QoS profile resolve to `None` (-> no mismatch
 ever reported) with the suite still green. The `*_returns_none` cases
 below pin exactly that failure mode.
 
-Synthetic duck-typed objects only — no DDS middleware required.
+Synthetic duck-typed objects only: no DDS middleware required.
 """
 
 from __future__ import annotations
@@ -100,16 +100,16 @@ def test_cyclone_no_qos_attr_returns_none():
 
 
 def test_cyclone_non_iterable_qos_returns_none():
-    # `for policy in qos` raises TypeError → defensively swallowed → None.
+    # `for policy in qos` raises TypeError -> defensively swallowed -> None.
     assert cyclone_qos_to_profile(_CycloneSample(qos=42)) is None
 
 
 def test_cyclone_renamed_policy_class_returns_none():
-    # Regression guard: a binding that renames "Reliable" → "Reliability"
+    # Regression guard: a binding that renames "Reliable" -> "Reliability"
     # must make the profile resolve to None (no false mismatch), NOT
     # silently pass. This is the exact failure mode the audit flagged as
     # previously untestable.
-    class Reliability:  # wrong name — not the spec-canonical "Reliable"
+    class Reliability:  # wrong name: not the spec-canonical "Reliable"
         pass
 
     assert cyclone_qos_to_profile(_CycloneSample([Reliability(), Volatile(), KeepLast()])) is None
@@ -117,7 +117,7 @@ def test_cyclone_renamed_policy_class_returns_none():
 
 # ---------------------------------------------------------------------------
 # Fast: QoS is a struct with .reliability/.durability/.history/.deadline,
-# each exposing an integer `.kind` mapped via binding-derived int→str maps.
+# each exposing an integer `.kind` mapped via binding-derived int->str maps.
 # ---------------------------------------------------------------------------
 
 _REL = {1: "RELIABLE", 0: "BEST_EFFORT"}
@@ -266,7 +266,7 @@ def test_fast_qos_missing_reliability_object_returns_none():
 
 def test_fast_deadline_alt_period_field_names():
     # Some bindings expose `.sec` / `.nanoseconds` instead of
-    # `.seconds` / `.nanosec` — the normalizer falls back to both.
+    # `.seconds` / `.nanosec`: the normalizer falls back to both.
     class _Period:
         sec = 2
         nanoseconds = 250

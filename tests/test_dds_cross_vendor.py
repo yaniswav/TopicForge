@@ -2,7 +2,7 @@
 
 The same test runs once with CycloneDdsAdapter and once with FastDdsAdapter
 via `@pytest.fixture(params=["cyclone", "fast"])`. Each backend auto-skips
-when its binding is not installed — the fixture calls `importorskip`
+when its binding is not installed: the fixture calls `importorskip`
 inside the parameter branch, so the parametrize matrix surfaces an
 explicit "skipped" entry per backend rather than failing at collection.
 
@@ -70,7 +70,7 @@ def test_adapter_is_available(dds_adapter: Any) -> None:
 
 def test_list_participants_returns_pydantic_participantinfo(dds_adapter: Any) -> None:
     """Output shape: list of frozen Pydantic ParticipantInfo with canonical
-    vendor enum. Vendor-agnostic — works regardless of which backend
+    vendor enum. Vendor-agnostic: works regardless of which backend
     happened to do the discovery."""
     participants = dds_adapter.list_participants()
     assert isinstance(participants, list)

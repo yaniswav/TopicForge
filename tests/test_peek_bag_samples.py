@@ -36,7 +36,7 @@ def test_peek_bag_samples_carries_decode_status_full(inspector: Inspector) -> No
 
 
 def test_peek_bag_samples_unknown_topic_returns_empty(inspector: Inspector) -> None:
-    """Mirror `peek_dds_samples` semantics: unknown topic → empty result."""
+    """Mirror `peek_dds_samples` semantics: unknown topic -> empty result."""
     result = inspector.peek_bag_samples("/tmp/demo.mcap", "/never/recorded", count=5)
     assert result.count == 0
     assert result.samples == []

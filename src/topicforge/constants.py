@@ -11,7 +11,7 @@ through `services/__init__.py`).
 History : v0.2.0 moved `MAX_SAMPLE_COUNT` out of `services.inspector`
 into `services.constants` (audit-2026-05-14 item A4). v0.5.x relocated
 to this root module so the mock adapter and bag service can reuse it
-without crossing the services→adapters layer in reverse.
+without crossing the services->adapters layer in reverse.
 
 If a constant graduates to runtime-configurable, move it onto
 `Settings` and update callers accordingly.

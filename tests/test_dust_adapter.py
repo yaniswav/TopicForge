@@ -1,4 +1,4 @@
-"""Tests for `topicforge.adapters.dds_dust.DustDdsAdapter` — v0.4.0 stub.
+"""Tests for `topicforge.adapters.dds_dust.DustDdsAdapter`: v0.4.0 stub.
 
 Dust DDS is Rust-native, no Python binding maintained. `is_available()`
 is always False ; every protocol method raises AdapterError. The stub
@@ -27,7 +27,7 @@ def test_constructor_succeeds_for_valid_domain() -> None:
 
 
 def test_is_available_is_always_false() -> None:
-    """No Python binding maintained — the stub never becomes available."""
+    """No Python binding maintained: the stub never becomes available."""
     assert DustDdsAdapter(domain_id=0).is_available() is False
 
 

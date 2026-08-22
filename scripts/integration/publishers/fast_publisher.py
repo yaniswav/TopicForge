@@ -1,6 +1,6 @@
 """Minimal Fast DDS publisher for the integration rig.
 
-Symmetric to `cyclone_publisher.py` — same CLI surface, different
+Symmetric to `cyclone_publisher.py`: same CLI surface, different
 binding. Fast DDS 2.6.x Python publisher dispatch loop is sketched
 here ; the IDL-typed write wiring is the maintainer's customization
 point per scenario.

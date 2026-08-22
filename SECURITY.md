@@ -1,6 +1,6 @@
 # Security policy
 
-## Threat model — local trust by design
+## Threat model: local trust by design
 
 TopicForge is **read-only by architecture**, not by configuration.
 There is no write path in the protocol or in any shipped adapter ;
@@ -16,14 +16,14 @@ files. It is not hardened for adversarial inputs.
 
 Consequences :
 
-- `TOPICFORGE_ROS2_BIN` accepts an arbitrary path — if you point it
+- `TOPICFORGE_ROS2_BIN` accepts an arbitrary path: if you point it
   at a malicious binary, TopicForge will execute it. Treat the
   variable the way you treat `PATH`.
 - `analyze_bag` opens whatever path the MCP client passes (no
   workspace isolation, no symlink restriction). The threat model
   assumes the client is your trusted agent acting on your behalf.
 - All `ros2` CLI invocations use `subprocess.run` with an argument
-  list — never `shell=True`. Topic names are validated against a
+  list: never `shell=True`. Topic names are validated against a
   strict allowlist before being passed to the CLI.
 - No outbound network calls by default. Opt-in anonymous usage
   telemetry is available behind `TOPICFORGE_TELEMETRY=on` ; when
@@ -32,8 +32,8 @@ Consequences :
 
 The roadmap to harden TopicForge for hosted / multi-tenant
 deployments lives in
-[`docs/product-plan.md §5`](docs/product-plan.md) under
-"Audit-driven v0.3+ candidates" — `TOPICFORGE_ROS2_BIN` allowlist,
+[`docs/product-plan.md section 5`](docs/product-plan.md) under
+"Audit-driven v0.3+ candidates": `TOPICFORGE_ROS2_BIN` allowlist,
 `subprocess.run` env scrub, `analyze_bag` workspace-root sandbox,
 path traversal rejection, signed Pro plugin entry point. Those land
 when the hosted MCP endpoint sprint (Phase 3) opens.
@@ -47,7 +47,7 @@ security]`. Include :
 
 - A short description of the issue (what fails, what could be
   exploited, who is at risk).
-- A reproduction if possible — versions, env vars, minimal sequence
+- A reproduction if possible: versions, env vars, minimal sequence
   of MCP tool calls. A failing pytest is ideal.
 - Your preferred attribution wording for the public disclosure (or
   "anonymous" if you prefer).
@@ -70,7 +70,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 Only the latest minor release receives security patches. As of
 2026-05-18, that's the `v0.4.x` line. Migrating from older versions
-is generally a small effort — see the `docs/MIGRATION_v0.x_to_v0.y.md`
+is generally a small effort: see the `docs/MIGRATION_v0.x_to_v0.y.md`
 guides.
 
 ## Disclosure

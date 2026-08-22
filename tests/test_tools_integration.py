@@ -26,15 +26,15 @@ MVP_TOOLS = {
     "list_participants",
     "detect_qos_mismatches",
     "peek_dds_samples",
-    # DDS lifecycle tool (v0.4.0 Phase 1) — the 9th tool, breaks the
-    # 8-tool ceiling documented in docs/projet-file/mcp-02-spec.md §2.
+    # DDS lifecycle tool (v0.4.0 Phase 1): the 9th tool, breaks the
+    # 8-tool ceiling documented in docs/projet-file/mcp-02-spec.md section 2.
     "participant_events",
-    # DDS temporal diagnostics (v0.4.0 Phase 2) — the 10th tool ;
+    # DDS temporal diagnostics (v0.4.0 Phase 2): the 10th tool ;
     # second explicit ceiling break, acknowledged in CHANGELOG.
     "topic_metrics",
-    # Bag post-mortem analysis (v0.4.0 Phase 3) — the 11th tool ;
+    # Bag post-mortem analysis (v0.4.0 Phase 3): the 11th tool ;
     # third explicit ceiling break, acknowledged in CHANGELOG and
-    # docs/projet-file/mcp-02-spec.md §2.
+    # docs/projet-file/mcp-02-spec.md section 2.
     "peek_bag_samples",
 }
 
@@ -67,7 +67,7 @@ def test_registered_tools_have_descriptions() -> None:
 
 
 def test_adapter_error_propagates_as_tool_error() -> None:
-    """Contract (CLAUDE.md §8, audit test-gap #4): handlers are thin —
+    """Contract (CLAUDE.md section 8, audit test-gap #4): handlers are thin:
     `AdapterError` bubbles up to FastMCP, which surfaces it as an MCP-native
     error (isError=true) rather than masking it as a successful result. At the
     FastMCP `call_tool` layer this manifests as a `ToolError` carrying the
