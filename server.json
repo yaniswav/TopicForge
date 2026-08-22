@@ -1,0 +1,56 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.yaniswav/topicforge",
+  "title": "TopicForge",
+  "description": "Read-only MCP server for ROS2 and DDS: topics, participants, QoS mismatches, bags.",
+  "repository": {
+    "url": "https://github.com/yaniswav/TopicForge",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/yaniswav/TopicForge#readme",
+  "version": "0.5.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "topicforge",
+      "version": "0.5.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "TOPICFORGE_MODE",
+          "description": "mock (deterministic fixtures, no ROS2 needed), live, or auto. Defaults to auto.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "auto"
+        },
+        {
+          "name": "TOPICFORGE_DDS_BACKEND",
+          "description": "DDS backend: mock, cyclone, fast, or auto. Requires the matching extra, e.g. pip install topicforge[dds].",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "mock"
+        },
+        {
+          "name": "TOPICFORGE_DDS_DOMAIN_ID",
+          "description": "DDS domain id to observe, 0-232. Joined at startup; changing it requires a restart.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "number",
+          "default": "0"
+        },
+        {
+          "name": "TOPICFORGE_TELEMETRY",
+          "description": "Opt-in anonymous telemetry, off by default. When off, no network code path executes.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "off"
+        }
+      ]
+    }
+  ]
+}
