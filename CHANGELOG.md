@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [0.5.1] - 2026-08-22
 
-### Fixed
+### Fixed (hotfix — MCP SDK 2.0 incompatibility)
 
 - **Hard-pinned `mcp < 2` — TopicForge was uninstallable from 2026-07-28
   to 2026-08-22.** The MCP Python SDK released `2.0.0` on 2026-07-28
