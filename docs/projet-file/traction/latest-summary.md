@@ -1,15 +1,15 @@
-# Traction snapshot — 2026-05-14
+# Traction snapshot — 2026-08-22
 
 | Signal                       | Value                       | Gate context                                  |
 | ---------------------------- | --------------------------- | --------------------------------------------- |
-| PyPI installs / day          | 90     | rolling                                       |
-| PyPI installs / week         | 90    | **G2 needs ≥ 100/week sustained over a month** |
-| PyPI installs / month        | 90   | rolling baseline                              |
+| PyPI installs / day          | —     | rolling                                       |
+| PyPI installs / week         | —    | **G2 needs ≥ 100/week sustained over a month** |
+| PyPI installs / month        | —   | rolling baseline                              |
 | GitHub stars                 | 2             | weak proxy; G3 needs *named OSS logos*, not stars |
 | GitHub open issues           | 0            | hygiene signal                                |
 | GitHub forks                 | 0             | weak proxy                                    |
 | Pro early-access slots       | 0 / 10             | **G1 needs 10**                               |
-| pypistats.org reachable      | ok                | data quality                                  |
+| pypistats.org reachable      | unavailable                | data quality                                  |
 | api.github.com reachable     | ok                  | data quality                                  |
 
 ## Gate verdicts (auto-computed where possible)
@@ -24,4 +24,4 @@
 - If G2 is **below** for two consecutive snapshots: the issue is reach, not surface area. Audit hook drift in README per §11 *Positioning collapse* risk, not pile on features.
 - If G1 is **MET** but Phase 1 items are not all shipped: revisit the Phase 1 remaining list in `docs/product-plan.md §5` and re-sequence.
 
-Latest snapshot file: `2026-05-14.json`. Full archive: `docs/projet-file/traction/`.
+Latest snapshot file: `2026-08-22.json`. Full archive: `docs/projet-file/traction/`.
