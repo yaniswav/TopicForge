@@ -1,4 +1,4 @@
-"""Dust DDS adapter — v0.4.0 Phase 1.5 stub implementation.
+"""Dust DDS adapter: v0.4.0 Phase 1.5 stub implementation.
 
 Dust DDS is the Rust-native conformant DDS-RTPS stack from the OMG
 May 2025 interop matrix (`docs/dds-interop-matrix.md`). It does not
@@ -33,7 +33,7 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _DUST_ROADMAP_MSG = (
-    "Dust DDS adapter is a stub at TopicForge v0.4.0 Phase 1.5 — Dust "
+    "Dust DDS adapter is a stub at TopicForge v0.4.0 Phase 1.5: Dust "
     "DDS is a Rust-native implementation with no maintained Python "
     "binding on PyPI. The auto-detect chain treats it as the lowest "
     "OSS priority ; the factory falls back to Fast / Cyclone / Mock "
@@ -43,7 +43,7 @@ _DUST_ROADMAP_MSG = (
 
 
 class DustDdsAdapter:
-    """Stub adapter — always unavailable in v0.4.0 Phase 1.5."""
+    """Stub adapter: always unavailable in v0.4.0 Phase 1.5."""
 
     name: AdapterName = "dust"
 
@@ -56,7 +56,7 @@ class DustDdsAdapter:
         return "live"
 
     def is_available(self) -> bool:
-        return False  # Always — no Python binding maintained.
+        return False  # Always: no Python binding maintained.
 
     # ----- ROS2 surface: not served by this adapter -----
 

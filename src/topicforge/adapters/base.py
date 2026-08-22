@@ -43,7 +43,7 @@ AdapterName = Literal[
 ]
 """Implementation tag for the active adapter.
 
-Internal — used by factory wiring and logging. Distinct from
+Internal: used by factory wiring and logging. Distinct from
 `EffectiveMode`, which is the MCP wire contract surfaced to clients.
 `"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; the Pro tier
 vendor names (`"rti"`, `"opensplice"`, `"coredx"`, `"intercom"`) and
@@ -56,7 +56,7 @@ serve the bus simultaneously.
 EffectiveMode = Literal["mock", "live"]
 """Runtime mode surfaced to MCP clients via the `mode_effective` field.
 
-Stable across implementation changes — a new live adapter (`cyclone`,
+Stable across implementation changes: a new live adapter (`cyclone`,
 `rti`, future `rclpy`) reports `effective_mode == "live"` while carrying
 a distinct `name`. Adding a new value here would be a wire-breaking
 change for MCP clients ; do not.
@@ -80,12 +80,12 @@ class MiddlewareAdapter(Protocol):
     contract. The ROS2 methods (`list_topics`, `get_topic_info`,
     `sample_messages`, `analyze_bag`) and the DDS methods
     (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`)
-    are both required by the protocol — but backends are free to raise
+    are both required by the protocol; but backends are free to raise
     `AdapterError` on the half they do not natively serve. The
     `Ros2CliAdapter`, for example, raises on the DDS methods ; a
     `CycloneDdsAdapter` raises on `analyze_bag`.
 
-    Implementations must be safe to construct lazily — `is_available()`
+    Implementations must be safe to construct lazily: `is_available()`
     is the contract for "can this adapter actually serve requests right
     now?".
     """

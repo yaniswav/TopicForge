@@ -1,6 +1,6 @@
 """Pure-Python schema validation of the scenario JSON files.
 
-Runs in the default `make check` pipeline — no SDK, no Docker, no
+Runs in the default `make check` pipeline: no SDK, no Docker, no
 running bus. Pins the structural contract every scenario file must
 follow ; future scenario authors get a fast feedback loop.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# All 11 tools we ship as of v0.4.0 Phase 3 — every scenario assertion must
+# All 11 tools we ship as of v0.4.0 Phase 3: every scenario assertion must
 # target one of these. Mirrors `tests/test_tools_integration.py::MVP_TOOLS`.
 _KNOWN_TOOLS: set[str] = {
     "health_check",
@@ -46,7 +46,7 @@ def test_scenarios_directory_is_non_empty(scenarios_dir: Path) -> None:
     files = list(scenarios_dir.glob("*.json"))
     assert len(files) >= 4, (
         f"Expected at least 4 scenario JSON files, found {len(files)}. "
-        "Phase 2.2 ships 6 scenarios — see docs/projet-file/mcp-02-spec.md "
+        "Phase 2.2 ships 6 scenarios: see docs/projet-file/mcp-02-spec.md "
         "for the canonical scope."
     )
 

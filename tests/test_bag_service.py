@@ -20,7 +20,7 @@ from topicforge.services.bag_service import (
 )
 
 # --------------------------------------------------------------------------
-# Pure-Python — run in default make check
+# Pure-Python: run in default make check
 # --------------------------------------------------------------------------
 
 
@@ -34,7 +34,7 @@ def test_detect_bag_format_db3() -> None:
 
 
 def test_detect_bag_format_bag() -> None:
-    """ROS1 legacy bag — extension-only detection."""
+    """ROS1 legacy bag: extension-only detection."""
     assert detect_bag_format("/home/me/old.bag") == "bag"
 
 
@@ -50,7 +50,7 @@ def test_is_rosbags_available_matches_find_spec() -> None:
 
 
 def test_bag_service_constructs_without_rosbags() -> None:
-    """Constructor never raises — only methods raise when rosbags is absent."""
+    """Constructor never raises: only methods raise when rosbags is absent."""
     BagService()
 
 
@@ -144,14 +144,14 @@ def test_bag_service_peek_surfaces_exception_type_in_error(
 
 
 # --------------------------------------------------------------------------
-# requires_rosbags — auto-skipped without the library
+# requires_rosbags: auto-skipped without the library
 # --------------------------------------------------------------------------
 
 
 @pytest.mark.requires_rosbags
 def test_bag_service_analyze_returns_enriched_bag_analysis_db3(
     tmp_path: pytest.TempPathFactory,
-) -> None:  # pragma: no cover — exercised on rosbags-installed hosts
+) -> None:  # pragma: no cover (exercised on rosbags-installed hosts)
     """Generate a tiny ROS2 .db3 bag and assert analyze() returns enriched fields."""
     pytest.importorskip("rosbags")
     from rosbags.rosbag2 import Writer  # type: ignore[import-not-found]

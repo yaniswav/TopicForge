@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Module name probe per vendor — same table as
+# Module name probe per vendor: same table as
 # `tests/integration/conftest.py::_VENDOR_MODULES`.
 _VENDOR_MODULES: dict[str, str] = {
     "cyclone": "cyclonedds",
@@ -101,7 +101,7 @@ def _run_scenario(scenario: dict[str, Any], available_vendors: set[str]) -> list
     # actual implementation. The publisher spawn + assertion evaluation
     # require a live DDS bus and the per-vendor publisher modules
     # under `publishers/`. The maintainer validates this branch by
-    # running the full Docker compose rig — at the OSS-CI level
+    # running the full Docker compose rig: at the OSS-CI level
     # we only assert the runner can dispatch without crashing.
     results: list[AssertionResult] = []
     for assertion in scenario.get("assertions", []):
@@ -132,7 +132,7 @@ def _print_report(all_results: list[AssertionResult]) -> int:
     print("=" * 70)
     for r in all_results:
         status = "PASS" if r.passed else "SKIP/PEND"
-        print(f"[{status}] {r.scenario}::{r.tool} — {r.detail}")
+        print(f"[{status}] {r.scenario}::{r.tool}: {r.detail}")
     print()
     return 0 if failed == 0 else 1
 

@@ -1,4 +1,4 @@
-"""Defensive field extraction from DDS discovery samples — binding-free.
+"""Defensive field extraction from DDS discovery samples: binding-free.
 
 Extracted from the Cyclone and Fast adapters (Lot 0, audit 2026-07-08) so
 the `getattr`-with-fallback sample introspection is unit-testable without
@@ -6,12 +6,12 @@ the `cyclonedds` / `fastdds` bindings installed.
 
 The two vendors expose subtly different discovery-sample shapes, so the
 helpers stay **vendor-qualified** (`cyclone_*` / `fast_*`) and preserve each
-adapter's exact behavior byte-for-byte — unifying them into a single set is
+adapter's exact behavior byte-for-byte: unifying them into a single set is
 deliberately deferred to the Lot 5 adapter-dedup work, which the real-bus
 integration rig can verify. Merging untested extraction paths blind (no
 bindings here) is exactly the silent-regression risk the audit flagged.
 
-Every helper returns `None` / safe defaults rather than raising — a single
+Every helper returns `None` / safe defaults rather than raising: a single
 odd discovery sample must never break a whole tool call.
 """
 
@@ -89,7 +89,7 @@ def cyclone_extract_topic_name(sample: Any) -> str | None:
 def is_removal(status: Any) -> bool:
     """Detect a 'participant/endpoint removed' discovery status across
     binding versions. Fast DDS exposes status as either an enum value
-    or a string label — accept both.
+    or a string label: accept both.
     """
     if status is None:
         return False

@@ -8,4 +8,4 @@ contact_links:
     about: Common AdapterError messages and their remediation paths.
   - name: DDS quickstart
     url: https://github.com/yaniswav/TopicForge/blob/main/docs/DDS_QUICKSTART.md
-    about: 5-minute walkthrough for the DDS module — backend selection, QoS mismatch scenario.
+    about: 5-minute walkthrough for the DDS module; backend selection, QoS mismatch scenario.

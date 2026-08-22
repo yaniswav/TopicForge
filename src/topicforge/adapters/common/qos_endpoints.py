@@ -1,10 +1,10 @@
 """Pair discovered reader/writer endpoints by topic and report QoS mismatches.
 
-Binding-free — extracted from the identical `detect_qos_mismatches` bodies of
+Binding-free: extracted from the identical `detect_qos_mismatches` bodies of
 `dds_cyclone/adapter.py` and `dds_fast/adapter.py` (Lot 5, audit 2026-07-08).
 Both adapters had ~40 lines of the same "group endpoints by topic, pair each
 reader against each writer, run the pure analyzer, build a `MismatchReport`"
-logic — differing only in the vendor's `qos_to_profile` / `extract_*`
+logic: differing only in the vendor's `qos_to_profile` / `extract_*`
 callables and the endpoint source. That logic now lives here, once, and is
 unit-testable with synthetic endpoint objects (no `cyclonedds` / `fastdds`).
 
@@ -41,7 +41,7 @@ def detect_mismatches_across_endpoints(
     scope to a single topic, or `None` for an exhaustive scan.
 
     Endpoints whose topic name cannot be resolved, or whose QoS cannot be
-    normalized to a `QosProfile`, are skipped — the analyzer needs a full
+    normalized to a `QosProfile`, are skipped: the analyzer needs a full
     profile on both sides to make a meaningful claim.
     """
     by_topic: dict[str, tuple[list[Any], list[Any]]] = {}
@@ -62,7 +62,7 @@ def detect_mismatches_across_endpoints(
 
     reports: list[MismatchReport] = []
     for tname, (readers, writers) in by_topic.items():
-        # Precompute each writer's profile once per topic — the pre-audit code
+        # Precompute each writer's profile once per topic: the pre-audit code
         # re-parsed every writer inside the reader loop (O(R*W)). (Audit P2/M7.)
         writer_profiles: list[tuple[Any, QosProfile]] = []
         for writer_sample in writers:

@@ -1,40 +1,40 @@
-"""Cyclone DDS adapter — real implementation (v0.3.0+).
+"""Cyclone DDS adapter: real implementation (v0.3.0+).
 
 Joins the bus as a read-only DDS-RTPS participant on the configured
 domain via the `cyclonedds.builtin` builtin data readers, and observes
-every conformant vendor on the wire — see `docs/dds-interop-matrix.md`
+every conformant vendor on the wire: see `docs/dds-interop-matrix.md`
 for the canonical multi-vendor positioning.
 
 The DDS / observability methods call into the CycloneDDS Python
 bindings ; the ROS2 graph methods raise `AdapterError(DDS_ONLY_ERROR_MSG)`
-(this adapter is DDS-only — pair with `Ros2CliAdapter` via the
+(this adapter is DDS-only; pair with `Ros2CliAdapter` via the
 v0.4.0 `CompositeAdapter` to get both surfaces simultaneously). The
 factory only loads this module when `TOPICFORGE_DDS_BACKEND=cyclone`
-(or `auto` resolving to cyclone) — see `services/factory.py`.
+(or `auto` resolving to cyclone): see `services/factory.py`.
 
 Current scope (v0.4.0+):
 
-* `list_participants` — DCPSParticipant discovery via builtin reader,
+* `list_participants`: DCPSParticipant discovery via builtin reader,
   enriched with `LifecycleBuffer` reconciliation (first/last seen,
   status, seen_count).
-* `detect_qos_mismatches` — DCPSSubscription + DCPSPublication paired by
+* `detect_qos_mismatches`: DCPSSubscription + DCPSPublication paired by
   topic, run through the vendor-neutral pure analyzer in
   `adapters/common/qos_analyzer.py`.
-* `peek_dds_samples` — full-fidelity on the 4 builtin DCPS topics ;
+* `peek_dds_samples`: full-fidelity on the 4 builtin DCPS topics ;
   arbitrary user topics go through `_peek_user_topic` with best-effort
   `cyclonedds.dynamic` XTypes decode (Phase 1.5). Each sample carries a
   `_decode_status` annotation (`"full"` / `"partial"` / `"raw"`) so the
   LLM caller knows whether to trust the payload or fall back on
   `_raw_bytes_hex`.
-* `participant_events` — `discovered` / `lost` events from the
+* `participant_events`: `discovered` / `lost` events from the
   `LifecycleBuffer`. Caveat : Cyclone updates the buffer only on
   `list_participants` poll calls (no native at-discovery callbacks).
-* `topic_metrics` — opportunistic frequency / sequence-gap / latency
+* `topic_metrics`: opportunistic frequency / sequence-gap / latency
   metrics buffered as `peek_dds_samples` surfaces samples (no native
   at-sample-receive callback in cyclonedds 2.6.x Python).
 
 Sample-introspection helpers below are defensive against binding-version
-shape variations — they read attributes via `getattr` with fallbacks and
+shape variations: they read attributes via `getattr` with fallbacks and
 collapse missing data to `None` / `"unknown"` rather than raising. A
 single odd discovery sample must not break the whole tool call.
 """
@@ -44,7 +44,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-# Top-level imports — the factory only loads this module when the
+# Top-level imports: the factory only loads this module when the
 # cyclonedds bindings are importable. ImportError here propagates to
 # the factory which falls back to mock with a logged warning.
 from cyclonedds.builtin import (
@@ -114,11 +114,11 @@ _extract_publish_ns_from_payload = extract_publish_ns_from_payload
 
 log = logging.getLogger(__name__)
 
-# Tunables — kept module-level so a future env-var hook is a one-line
+# Tunables: kept module-level so a future env-var hook is a one-line
 # change. Discovery + sample reads use `read_iter` (non-destructive) rather
 # than `take_iter`, so observing the builtin discovery topics does not drain
 # the reader cache and cause spurious lost / re-discovered participant
-# flapping across polls. (Audit P1-5 — the read-vs-take semantics on a real
+# flapping across polls. (Audit P1-5; the read-vs-take semantics on a real
 # bus must be confirmed on the `scripts/integration/` rig before this ships.)
 _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
@@ -127,7 +127,7 @@ _MAX_ENDPOINTS = 1024
 
 # Builtin DCPS topics that `peek_dds_samples` serves with full-fidelity
 # structured payloads. Arbitrary user topics route through
-# `_peek_user_topic` (Phase 1.5 best-effort XTypes decode → annotated
+# `_peek_user_topic` (Phase 1.5 best-effort XTypes decode -> annotated
 # raw-bytes fallback).
 _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
     "DCPSParticipant": BuiltinTopicDcpsParticipant,
@@ -185,7 +185,7 @@ def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[Message
 
     try:
         type_object = type_resolver(type_id)
-    except Exception:  # pragma: no cover — binding-side error
+    except Exception:  # pragma: no cover: binding-side error
         log.debug("dynamic type resolution failed for topic %r", topic, exc_info=True)
         return None
     if type_object is None:
@@ -239,7 +239,7 @@ def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:
                 tid = getattr(sample, attr, None)
                 if tid is not None:
                     return tid
-    except Exception:  # pragma: no cover — defensive
+    except Exception:  # pragma: no cover: defensive
         log.debug("type-id discovery probe failed for topic %r", topic, exc_info=True)
     return None
 
@@ -258,7 +258,7 @@ def _collect_dynamic_samples(dp: Any, topic: str, type_object: Any, count: int) 
         dynamic_topic = DynamicTopic(dp, topic, type_object)
         reader = DynamicDataReader(dp, dynamic_topic)
         return list(reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)))[:count]
-    except Exception:  # pragma: no cover — binding-side error
+    except Exception:  # pragma: no cover: binding-side error
         log.debug("typed reader construction failed for topic %r", topic, exc_info=True)
         return None
 
@@ -289,7 +289,7 @@ class CycloneDdsAdapter:
         validate_domain_id(domain_id)
         self._domain_id = domain_id
         # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
-        # reconciliation — see `list_participants` for the feed pattern.
+        # reconciliation: see `list_participants` for the feed pattern.
         self._lifecycle = LifecycleBuffer()
         # v0.4.0 Phase 2: metrics buffer fed opportunistically by
         # `peek_dds_samples` flows. See `_peek_builtin` / `_peek_user_topic`.
@@ -334,7 +334,7 @@ class CycloneDdsAdapter:
         The `domain_id` argument is accepted for protocol uniformity but
         the adapter only observes the domain it joined at construction
         time. Callers asking for a different domain receive what *this*
-        participant sees — spinning up a second participant on the fly
+        participant sees: spinning up a second participant on the fly
         would violate the "one bus join per adapter instance" rule.
 
         v0.4.0 Phase 1: each call feeds the `LifecycleBuffer`. GUIDs seen
@@ -428,7 +428,7 @@ class CycloneDdsAdapter:
         return self._peek_user_topic(topic, count)
 
     def _peek_builtin(self, topic: str, count: int) -> SampleResult:
-        """Builtin DCPS topic peek — unchanged from v0.3.0."""
+        """Builtin DCPS topic peek: unchanged from v0.3.0."""
         topic_class = _BUILTIN_DCPS_TOPICS[topic]
         try:
             reader = BuiltinDataReader(self._dp, topic_class)
@@ -477,11 +477,11 @@ class CycloneDdsAdapter:
         )
 
     def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
-        """User-topic peek — dynamic XTypes decode with raw-bytes fallback.
+        """User-topic peek: dynamic XTypes decode with raw-bytes fallback.
 
         Strategy (D2 from `floating-napping-meteor.md`):
           1. Confirm the topic is announced on the bus (subscription
-             or publication present). If not → `AdapterError`.
+             or publication present). If not -> `AdapterError`.
           2. Attempt `cyclonedds.dynamic.get_types_for_typeid` against
              the discovered endpoint metadata. On success, build a
              typed reader and decode samples.
@@ -506,7 +506,7 @@ class CycloneDdsAdapter:
         if decoded is not None:
             # v0.4.0 Phase 2: opportunistic metrics fill on the
             # decoded user-topic path. Pull seq# and publish_ns from
-            # the decoded payload when available — best-effort.
+            # the decoded payload when available: best-effort.
             import time
 
             now_ns = time.time_ns()
@@ -562,7 +562,7 @@ class CycloneDdsAdapter:
             pubs = list(pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)))[
                 :_MAX_ENDPOINTS
             ]
-        except Exception:  # pragma: no cover — defensive
+        except Exception:  # pragma: no cover: defensive
             log.exception("cyclone discovery probe for topic %r failed", topic)
             return False
         return any(_extract_topic_name(sample) == topic for sample in subs + pubs)
@@ -573,7 +573,7 @@ class CycloneDdsAdapter:
         """Return lifecycle events for `self._domain_id` within the window.
 
         Cyclone's lifecycle log is populated lazily by `list_participants`
-        calls — see the docstring there. A GUID that joined and left
+        calls: see the docstring there. A GUID that joined and left
         between two `list_participants` calls will not produce events.
         The `participant_events` tool description makes this explicit.
         """

@@ -1,4 +1,4 @@
-# `docs/projet-file/references/` — external reference material
+# `docs/projet-file/references/`: external reference material
 
 This folder pins external documents that informed strategic decisions, kept in git so any future Claude Code or human contributor can reproduce the reasoning without depending on a live URL.
 
@@ -10,6 +10,6 @@ This folder pins external documents that informed strategic decisions, kept in g
 
 ## Convention
 
-External reference files (xlsx, pdf, json snapshots from standard bodies) live here. Sized to ~100 KB max each — if larger, link instead of vendoring. Each file is tracked in git via the `.gitignore` allowlist `!/docs/projet-file/references/**`. They are excluded from the PyPI sdist via `[tool.hatch.build.targets.sdist].exclude` so end users never download them.
+External reference files (xlsx, pdf, json snapshots from standard bodies) live here. Sized to ~100 KB max each. If larger, link instead of vendoring. Each file is tracked in git via the `.gitignore` allowlist `!/docs/projet-file/references/**`. They are excluded from the PyPI sdist via `[tool.hatch.build.targets.sdist].exclude` so end users never download them.
 
 When a reference becomes stale (new OMG report, updated spec), update both the file here and the markdown summary in `docs/` that derives from it. The date in the filename helps audit which snapshot informed which release.

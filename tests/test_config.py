@@ -116,7 +116,7 @@ def test_explicit_dds_backend_intercom_accepted() -> None:
 
 
 def test_explicit_dds_backend_opendds_accepted() -> None:
-    """OSS stub adapter — value still parses."""
+    """OSS stub adapter: value still parses."""
     s = load_settings(env={"TOPICFORGE_DDS_BACKEND": "opendds", "TOPICFORGE_MODE": "live"})
     assert s.effective_dds_backend == "opendds"
 
@@ -127,7 +127,7 @@ def test_explicit_dds_backend_dust_accepted() -> None:
 
 
 def test_dds_backend_mock_global_forces_dds_mock() -> None:
-    """Global mock mode collapses every DDS backend to mock — no live access."""
+    """Global mock mode collapses every DDS backend to mock: no live access."""
     s = load_settings(env={"TOPICFORGE_MODE": "mock", "TOPICFORGE_DDS_BACKEND": "cyclone"})
     assert s.effective_dds_backend == "mock"
 
@@ -283,7 +283,7 @@ def test_dds_auto_picks_fast_over_cyclone_when_no_pro_no_opendds(
 
 
 def test_dds_auto_picks_dust_only_when_alone(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dust is lowest priority — only picked when no other OSS binding present."""
+    """Dust is lowest priority: only picked when no other OSS binding present."""
     _patch_find_spec(monkeypatch, present={"dust_dds_python"})
     s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
     assert s.effective_dds_backend == "dust"

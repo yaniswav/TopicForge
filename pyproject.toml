@@ -33,7 +33,7 @@ dev = [
     "ruff>=0.4",
     # rosbags (Apache-2.0, pure-Python) is a *dev* dependency so the
     # bag-analysis I/O tests actually run in CI instead of self-skipping on
-    # `requires_rosbags`. It is NOT a runtime dependency — end users opt in
+    # `requires_rosbags`. It is NOT a runtime dependency: end users opt in
     # via `topicforge[bags]`.
     "rosbags>=0.9",
 ]
@@ -43,7 +43,7 @@ dev = [
 #
 # v0.4.0 Phase 1.5: added `[dds-opendds]` and `[dds-dust]` for the OSS
 # stubs. **The pyopendds / dust-dds-python packages are placeholder
-# pins** — they are not yet maintained on PyPI as of 2026-05-14. A
+# pins**: they are not yet maintained on PyPI as of 2026-05-14. A
 # user running `pip install topicforge[dds-opendds]` today will get an
 # install failure with a clear error message ; the extra exists so the
 # auto-detect framework has a known module name to probe and so a future
@@ -73,7 +73,7 @@ dds-all-oss = [
     "topicforge[dds-opendds]",
     "topicforge[dds-dust]",
 ]
-# v0.4.0 Phase 3 — bag analysis via `rosbags` (Apache 2.0, pure-Python,
+# v0.4.0 Phase 3: bag analysis via `rosbags` (Apache 2.0, pure-Python,
 # covers MCAP + ROS2 .db3 + ROS1 .bag legacy through a single API).
 # Optional because rosbags pulls in SQLite / msgpack / zstd-side deps
 # users without bag analysis don't need.
@@ -109,7 +109,7 @@ markers = [
     "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
     "requires_opendds: tests needing the `pyopendds` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
     "requires_dust: tests needing the `dust_dds_python` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
-    "integration: real-bus DDS scenarios — only run with `-m integration` (v0.4.0 Phase 2.2+)",
+    "integration: real-bus DDS scenarios; only run with `-m integration` (v0.4.0 Phase 2.2+)",
     "requires_rosbags: tests needing the `rosbags` Python library; auto-skip without it (v0.4.0 Phase 3+)",
 ]
 
@@ -146,7 +146,7 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-# Note: TC (typing-only imports) rules are intentionally omitted — Pydantic
+# Note: TC (typing-only imports) rules are intentionally omitted: Pydantic
 # models and `@runtime_checkable` Protocols need runtime imports, and the
 # TYPE_CHECKING dance buys us nothing here.
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -156,7 +156,7 @@ ignore = ["E501"]
 "tests/*" = ["B011"]
 # test_cyclone_adapter.py and test_fast_adapter.py gate their imports
 # behind `pytest.importorskip` at module top, so adapter imports must
-# come after — E402 is intentional.
+# come after: E402 is intentional.
 "tests/test_cyclone_adapter.py" = ["B011", "E402"]
 "tests/test_fast_adapter.py" = ["B011", "E402"]
 

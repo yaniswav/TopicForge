@@ -49,10 +49,10 @@ _TOPIC_PARAM_DESC = (
 
 _COUNT_PARAM_DESC = (
     "Maximum number of recent messages to return. Defaults to 5; silently "
-    "clamped to 50 (the hard cap that keeps tool output bounded — read it "
+    "clamped to 50 (the hard cap that keeps tool output bounded; read it "
     "from `health_check.max_sample_count`). Negative values raise an error. "
     "The returned `SampleResult.count` reflects the actual number of "
-    "samples produced — it can be lower than the request (empty topic, "
+    "samples produced: it can be lower than the request (empty topic, "
     "timeout, mock fixture shorter than requested)."
 )
 
@@ -80,12 +80,12 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "Report TopicForge environment state — effective runtime mode "
+            "Report TopicForge environment state: effective runtime mode "
             '(`"live"` or `"mock"`), whether the `ros2` CLI is on PATH, '
             "`ROS_DISTRO`, the server version, the server-side sample cap, "
             "the active DDS backend (`mock`/`cyclone`/`rti`/`none`), and "
             "the observed DDS domain id when applicable. Returns a "
-            "`HealthReport`. **Always succeeds** — call this first when "
+            "`HealthReport`. **Always succeeds**. Call this first when "
             "something looks wrong, since every other tool may raise. "
             "Read-only ; no side effects."
         )
@@ -97,7 +97,7 @@ def register_tools(
     @mcp.tool(
         description=(
             "List every ROS2 topic on the current graph (or the deterministic "
-            "mock graph in mock mode). Returns `list[TopicInfo]` — each entry "
+            "mock graph in mock mode). Returns `list[TopicInfo]`: each entry "
             "carries `name`, `message_type`, `publisher_count`, "
             '`subscriber_count`, `qos_reliability`, and `mode_effective` (`"live"` '
             'or `"mock"`) so a downstream LLM can distinguish a real graph from '
@@ -130,7 +130,7 @@ def register_tools(
             "Peek up to `count` recent ROS2 messages from `topic`, sampled "
             "from the runtime graph. `topic` must be a fully qualified name "
             "(see the `topic` parameter description). `count` defaults to 5 "
-            "and is silently clamped to 50 — request more and you receive at "
+            "and is silently clamped to 50: request more and you receive at "
             "most 50 without warning. Returns a `SampleResult` envelope "
             "`{topic, count, samples, mode_effective}` where `count` is the "
             "actual number of samples returned (may be 0) and `mode_effective` "
@@ -147,7 +147,7 @@ def register_tools(
             "for the fictional demo robot (and no `_raw_text` key, since the "
             "payload is already structured). "
             "Read-only ; never publishes to the bus. **Distinct from "
-            "`peek_dds_samples`** — that tool reads the raw DDS layer ; this "
+            "`peek_dds_samples`**: that tool reads the raw DDS layer ; this "
             "one reads the ROS2 graph."
         )
     )
@@ -189,13 +189,13 @@ def register_tools(
     @mcp.tool(
         description=(
             "List DDS participants observed on a domain. Returns "
-            "`list[ParticipantInfo]` — each entry carries `guid`, `vendor` "
+            "`list[ParticipantInfo]`: each entry carries `guid`, `vendor` "
             "(`cyclone`/`rti`/`mock`/`unknown`), optional `hostname`, "
             '`domain_id`, and `mode_effective` (`"live"`/`"mock"`). '
-            "**Distinct from ROS2 graph nodes** — operates at the raw DDS "
+            "**Distinct from ROS2 graph nodes**: operates at the raw DDS "
             "layer beneath ROS, useful for non-ROS DDS stacks or for "
             "diagnosing why a participant isn't seen by the ROS graph. "
-            "**Read-only by architecture** — the underlying "
+            "**Read-only by architecture**: the underlying "
             "`MiddlewareAdapter` protocol does not expose a write method, "
             "so this tool cannot publish, modify QoS, or alter the bus. "
             "**Raises an MCP error** when no DDS module is active "
@@ -211,7 +211,7 @@ def register_tools(
             int,
             Field(
                 description=(
-                    "DDS domain id to observe (0..232). Defaults to 0 — "
+                    "DDS domain id to observe (0..232). Defaults to 0: "
                     "the same default used by `cyclonedds` and the "
                     "implicit default of most ROS2 setups."
                 ),
@@ -225,7 +225,7 @@ def register_tools(
     @mcp.tool(
         description=(
             "Detect DDS QoS incompatibilities between reader and writer "
-            "endpoints on the bus. Returns `list[MismatchReport]` — one "
+            "endpoints on the bus. Returns `list[MismatchReport]`: one "
             "entry per incompatible (reader, writer) pair, listing the "
             "policies that block or risk degrading communication "
             "(Reliability, Durability, History, Deadline at MVP). Each "
@@ -235,7 +235,7 @@ def register_tools(
             '`"mock"`). Pass `topic` to scope to a single topic ; omit '
             "for an exhaustive scan. **Use this when** an LLM is "
             "debugging why a subscriber doesn't receive. **Read-only "
-            "by architecture** — the analyzer compares observed QoS "
+            "by architecture**: the analyzer compares observed QoS "
             "profiles ; no method on this tool can rewrite QoS or "
             "alter the bus. **Raises an MCP error** when no DDS module "
             "is active or, in v0.2.0, when the `CycloneDdsAdapter` "
@@ -262,12 +262,12 @@ def register_tools(
     @mcp.tool(
         description=(
             "Peek up to `count` recent samples on a raw DDS topic. "
-            "**Distinct from `sample_messages`** — `sample_messages` "
+            "**Distinct from `sample_messages`**: `sample_messages` "
             "operates on the ROS2 graph via `ros2 topic echo` ; this "
             "tool reads directly from the DDS layer (Cyclone / Fast / "
             "RTI / mock). Use this for non-ROS DDS topics or when the "
             "ROS2 CLI is not available. Returns a `SampleResult` "
-            "envelope `{topic, count, samples, mode_effective}` — "
+            "envelope `{topic, count, samples, mode_effective}`: "
             "identical shape to `sample_messages`. `count` defaults to "
             "5 and is silently clamped to 50. "
             "**Topic categories** (v0.4.0 Phase 1): "
@@ -275,17 +275,17 @@ def register_tools(
             "`DCPSSubscription`, `DCPSPublication`) always return "
             "structured discovery payloads. "
             "(b) User-defined topics return best-effort decoded "
-            "payloads — each sample's payload may carry "
+            "payloads: each sample's payload may carry "
             "`_decode_status` (`full`/`partial`/`raw`), `_decode_note` "
             "(short diagnostic when not `full`), and `_raw_bytes_hex` "
             "(serialized-bytes preview). **Caveat**: on the current "
-            "user-topic `raw` path this preview is empty — a `raw` status "
+            "user-topic `raw` path this preview is empty: a `raw` status "
             "means 'topic present on the bus but not decoded', not 'here "
             "are the bytes to re-decode' (capturing the on-wire CDR bytes "
             "is roadmapped). Cyclone uses `cyclonedds.dynamic` for "
             "full/partial decode ; Fast DDS 2.6.x lands on the raw path "
             "more often because its dynamic XTypes binding is partial. "
-            "**Read-only by architecture** — the "
+            "**Read-only by architecture**: the "
             "`MiddlewareAdapter` protocol does not expose a write "
             "method. **Raises an MCP error** when no DDS module is "
             "active OR when the topic is not announced on the bus."
@@ -304,13 +304,13 @@ def register_tools(
             "captured over a recent window. Use this when an LLM needs to "
             "answer *'who was on the bus 5 minutes ago and left?'* or "
             '*"when did this participant first appear?"*. Returns '
-            "`list[ParticipantEvent]` — each entry carries `guid`, "
+            "`list[ParticipantEvent]`: each entry carries `guid`, "
             "`event_type`, `vendor`, `timestamp_ns` (wall-clock ns since "
             "epoch), optional `hostname`, `domain_id`, and `mode_effective` "
             '(`"live"`/`"mock"`). Sorted newest-first. Hard cap at 200 '
             "events (silent truncation, mirrors `sample_messages`'s 50 cap "
-            "— reduce `lookback_seconds` if you hit it). "
-            "**Read-only by architecture** — the underlying "
+            "; reduce `lookback_seconds` if you hit it). "
+            "**Read-only by architecture**: the underlying "
             "`MiddlewareAdapter` protocol does not expose a write method. "
             "**Backend caveats**: Fast DDS captures arrivals AND removals "
             "via listener callbacks ; Cyclone tracks lifecycle only across "
@@ -319,7 +319,7 @@ def register_tools(
             "fixture timeline. **Raises an MCP error** when no DDS module "
             "is active (install `pip install topicforge[dds]` and set "
             "`TOPICFORGE_DDS_BACKEND=cyclone|fast`). Added in v0.4.0 "
-            "Phase 1 — the 9th MCP tool ; v0.3.0 clients are unaffected "
+            "Phase 1: the 9th MCP tool ; v0.3.0 clients are unaffected "
             "until they call it."
         )
     )
@@ -330,7 +330,7 @@ def register_tools(
             Field(
                 description=(
                     "DDS domain id to filter events on (0..232). Defaults "
-                    "to 0 — the same default used by `cyclonedds` and "
+                    "to 0: the same default used by `cyclonedds` and "
                     "most ROS2 setups."
                 ),
                 ge=0,
@@ -344,7 +344,7 @@ def register_tools(
                     "Window (in seconds) over which to return events. "
                     "Defaults to 300 (5 minutes). Range: 1..86400 (1 second "
                     "to 24 hours). Larger windows may hit the 200-event "
-                    "cap — narrow the window or filter on `domain_id` "
+                    "cap: narrow the window or filter on `domain_id` "
                     "when that happens."
                 ),
                 ge=1,
@@ -367,16 +367,16 @@ def register_tools(
             "`sequence_gaps_count`, `latency_ns_p50/p95/p99`, and "
             "boolean availability flags. **Opportunistic fill caveat**: "
             "the metrics buffer accumulates samples only as "
-            "`peek_dds_samples` flows them through the adapter — neither "
+            "`peek_dds_samples` flows them through the adapter: neither "
             "cyclonedds nor fastdds 2.6.x Python bindings expose "
             "at-sample-receive callbacks, so a topic that hasn't been "
             "peeked recently returns `samples_observed=0`. To get useful "
             "metrics, call `peek_dds_samples` on the topic first, then "
-            "this tool. **Read-only by architecture** — no method on "
+            "this tool. **Read-only by architecture**: no method on "
             "this tool writes to the bus. **Raises an MCP error** when "
             "no DDS module is active or `window_seconds` is out of "
             "range (1..3600). Added in v0.4.0 Phase 2 ; the 10th MCP "
-            "tool — the 8-tool ceiling from mcp-02-spec.md §2 was first "
+            "tool: the 8-tool ceiling from mcp-02-spec.md section 2 was first "
             "broken at Phase 1 (`participant_events`), this is the "
             "second explicit acknowledgement."
         )
@@ -402,7 +402,7 @@ def register_tools(
             Field(
                 description=(
                     "DDS domain id to scope the metrics to (0..232). "
-                    "Defaults to 0 — the same default as the rest of "
+                    "Defaults to 0: the same default as the rest of "
                     "the DDS tools."
                 ),
                 ge=0,
@@ -416,24 +416,24 @@ def register_tools(
         description=(
             "Peek up to `count` recent samples from a recorded bag file. "
             "**Distinct from `peek_dds_samples`** (live bus introspection) "
-            "and `sample_messages` (ROS2 graph live peek) — this tool "
+            "and `sample_messages` (ROS2 graph live peek): this tool "
             "operates on **offline bag content** for post-mortem analysis. "
             "Supported formats: MCAP (`.mcap`), ROS2 rosbag2 SQLite "
             "(`.db3`), ROS1 legacy chunked binary (`.bag`). The reader "
             "auto-detects format from the file extension. Returns a "
             "`SampleResult` envelope identical in shape to "
-            "`peek_dds_samples` — each sample's `payload` carries the "
+            "`peek_dds_samples`: each sample's `payload` carries the "
             "same `_decode_status` annotation (`full` / `partial` / "
             "`raw`) so an LLM consumer reads one shape across live and "
             "recorded sources. `count` defaults to 5 and is silently "
             "clamped to 50. **Requires the `rosbags` library** "
-            "(`pip install topicforge[bags]`) — without it, raises an "
+            "(`pip install topicforge[bags]`): without it, raises an "
             "`AdapterError` with the install command. The mock backend "
             "returns deterministic fixture samples on canned bag paths. "
-            "**Read-only by architecture** — no method writes to the "
+            "**Read-only by architecture**: no method writes to the "
             "bag file. **Raises an MCP error** when the bag path does "
             "not exist, the topic is not present in the bag, or rosbags "
-            "is not installed. Added in v0.4.0 Phase 3 — the 11th MCP "
+            "is not installed. Added in v0.4.0 Phase 3: the 11th MCP "
             "tool ; 8-tool ceiling break #3, acknowledged in CHANGELOG."
         )
     )
@@ -445,7 +445,7 @@ def register_tools(
     ) -> SampleResult:
         return inspector.peek_bag_samples(path, topic, count)
 
-    # TODO(roadmap): URDF tools — validate / inspect / generate URDF & xacro.
-    # TODO(roadmap): bag anomaly detection — clock jumps, frame drops, TF gaps.
-    # TODO(roadmap): dataset export — rosbag → COCO / Hugging Face Datasets.
-    # TODO(roadmap): synthetic data pipeline — Blender / Gazebo / Isaac control.
+    # TODO(roadmap): URDF tools: validate / inspect / generate URDF & xacro.
+    # TODO(roadmap): bag anomaly detection: clock jumps, frame drops, TF gaps.
+    # TODO(roadmap): dataset export: rosbag -> COCO / Hugging Face Datasets.
+    # TODO(roadmap): synthetic data pipeline: Blender / Gazebo / Isaac control.

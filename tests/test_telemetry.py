@@ -122,7 +122,7 @@ def test_transport_exception_does_not_propagate() -> None:
         raise RuntimeError("network down")
 
     client = TelemetryClient(enabled=True, mode="mock", version="0.0.0", transport=boom)
-    # Must not raise — telemetry can never break a tool call.
+    # Must not raise: telemetry can never break a tool call.
     client.emit(tool_name="health_check", latency_ms=1.0, success=True)
 
 
@@ -220,7 +220,7 @@ def test_payload_contains_only_whitelisted_keys() -> None:
 
 def test_payload_never_contains_user_supplied_input() -> None:
     """Even if a tool is called with sensitive arguments, telemetry only
-    carries the tool name — never the argument values.
+    carries the tool name: never the argument values.
     """
     transport = _SpyTransport()
     client = TelemetryClient(enabled=True, mode="mock", version="0.0.0", transport=transport)
@@ -277,7 +277,7 @@ def test_build_app_on_emits_one_event_per_tool_call() -> None:
 def test_default_log_transport_writes_one_record_per_event(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """No transport injected — the default log transport must still fire.
+    """No transport injected: the default log transport must still fire.
 
     Pins the MVP behaviour: opt-in users can verify what was sent by
     reading the `topicforge.telemetry` logger.

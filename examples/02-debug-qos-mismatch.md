@@ -1,9 +1,9 @@
-# 02 — Debug a QoS mismatch on the DDS bus
+# 02: Debug a QoS mismatch on the DDS bus
 
 **Scenario.** A subscriber reports "no data" but `ros2 topic list` shows
 the topic and a publisher. Classic DDS QoS incompatibility. **Tools
 exercised.** `list_participants`, `detect_qos_mismatches`,
-`peek_dds_samples`. **Mode.** Mock — exercises the canonical fixture.
+`peek_dds_samples`. **Mode.** Mock: exercises the canonical fixture.
 
 ## Setup
 
@@ -15,7 +15,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 The mock DDS fixture ships three deterministic participants
 (two Cyclone-tagged, one Fast-tagged) on domain `0`, with two topics :
 `/dds/well_matched` (compatible QoS) and `/dds/qos_mismatch`
-(deliberate Reliability incompatibility — RELIABLE reader vs
+(deliberate Reliability incompatibility ; RELIABLE reader vs
 BEST_EFFORT writer).
 
 ## Conversation
@@ -25,11 +25,11 @@ BEST_EFFORT writer).
 > Who is on the DDS bus right now, and is there a topic where readers
 > and writers don't agree on QoS?
 
-**Claude calls:** `list_participants(domain_id=0)` → returns 3
+**Claude calls:** `list_participants(domain_id=0)` -> returns 3
 participants with `vendor`, `hostname`, `guid`, lifecycle fields
 (`first_seen_ns`, `status="active"`, `seen_count`). The
 multi-vendor mix exercises the OMG-DDS-RTPS protocol guarantee in
-fixture form. Then `detect_qos_mismatches(topic=None)` → returns 1
+fixture form. Then `detect_qos_mismatches(topic=None)` -> returns 1
 `MismatchReport` for `/dds/qos_mismatch` with
 `incompatible_policies=["Reliability"]` and
 `severity="incompatible"`.
@@ -43,7 +43,7 @@ fixture form. Then `detect_qos_mismatches(topic=None)` → returns 1
 > The `/dds/qos_mismatch` topic has a reader requesting
 > `Reliability: RELIABLE` and a writer offering
 > `Reliability: BEST_EFFORT`. By the OMG-DDS-RTPS Request-vs-Offered
-> rule, BEST_EFFORT writers cannot satisfy RELIABLE readers — the
+> rule, BEST_EFFORT writers cannot satisfy RELIABLE readers: the
 > match is rejected at discovery and no samples flow. Two fixes :
 >
 > 1. Relax the reader to `BEST_EFFORT` (if data loss is acceptable).
@@ -57,7 +57,7 @@ fixture form. Then `detect_qos_mismatches(topic=None)` → returns 1
 > Peek what's actually flowing on `/dds/well_matched`.
 
 **Claude calls:** `peek_dds_samples(topic="/dds/well_matched",
-count=3)` → returns 3 deterministic samples with full payload. The
+count=3)` -> returns 3 deterministic samples with full payload. The
 mock fixture also includes two user-topic exemplars exercising the
 v0.4.0 decode story : `/dds/ddsforge/example` returns
 `_decode_status="full"`, `/dds/ddsforge/opaque` returns
@@ -70,7 +70,7 @@ pip install topicforge[dds-cyclone]    # or [dds-fast] / [dds]
 TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-The same three tool calls work against any real DDS domain — Cyclone
+The same three tool calls work against any real DDS domain: Cyclone
 and Fast both observe every conformant vendor on the wire (RTI
 Connext, OpenDDS, CoreDX, Dust DDS, etc.) via the OMG protocol
 guarantee. See [`docs/dds-interop-matrix.md`](../docs/dds-interop-matrix.md).

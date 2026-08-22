@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir "cyclonedds>=0.10"
 
 COPY scripts/integration/publishers/cyclone_publisher.py /app/
 
-# Run as a non-root user — the default in slim is root, which is
+# Run as a non-root user: the default in slim is root, which is
 # acceptable for a single-purpose throwaway container but cleaner
 # to drop down explicitly.
 RUN useradd --create-home --uid 1000 publisher

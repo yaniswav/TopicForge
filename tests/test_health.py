@@ -44,7 +44,7 @@ def test_health_report_serializes_to_dict() -> None:
         mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
     )
     payload = HealthService(settings).report().model_dump()
-    # Tool handlers rely on this shape — pin it.
+    # Tool handlers rely on this shape: pin it.
     assert {
         "mode",
         "requested_mode",
@@ -63,7 +63,7 @@ def test_health_report_serializes_to_dict() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DDS fields (v0.3.0 — previously defaults regardless of configuration)
+# DDS fields (v0.3.0 ; previously defaults regardless of configuration)
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +93,7 @@ def test_health_report_populates_dds_backend_fast_when_settings_say_so() -> None
 
 
 def test_health_report_middleware_available_for_mock() -> None:
-    """Mock backend is always available — no Python bindings needed."""
+    """Mock backend is always available: no Python bindings needed."""
     settings = Settings(
         mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
     )
@@ -112,7 +112,7 @@ def test_health_report_middleware_available_false_without_binding() -> None:
     import importlib.util
 
     if importlib.util.find_spec("fastdds") is not None:
-        pytest.skip("fastdds installed — this test asserts the negative path")
+        pytest.skip("fastdds installed: this test asserts the negative path")
 
     settings = Settings(
         mode="live",
@@ -125,10 +125,10 @@ def test_health_report_middleware_available_false_without_binding() -> None:
     assert report.middleware_available is False
 
 
-import pytest  # noqa: E402 — used above only in the skipped path
+import pytest  # noqa: E402 (used above only in the skipped path)
 
 # ---------------------------------------------------------------------------
-# ros_backend (v0.4.0 Phase 1 — symmetric to dds_backend, supports composite)
+# ros_backend (v0.4.0 Phase 1 ; symmetric to dds_backend, supports composite)
 # ---------------------------------------------------------------------------
 
 
@@ -141,7 +141,7 @@ def test_health_report_ros_backend_mock_in_mock_mode() -> None:
 
 
 def test_health_report_ros_backend_none_when_live_but_no_ros2() -> None:
-    """Live mode requested but `ros2` not on PATH — ros_backend == 'none'.
+    """Live mode requested but `ros2` not on PATH: ros_backend == 'none'.
 
     The composite path may still build a DDS-only adapter ; the health
     field is purely a description of which ROS half resolves, not which
@@ -248,7 +248,7 @@ def test_health_report_middleware_available_rti_via_upstream_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """RTI shows as available even when only the upstream SDK is installed
-    (Pro plugin missing) — the health fallback probes rti.connextdds."""
+    (Pro plugin missing): the health fallback probes rti.connextdds."""
     import importlib.util
 
     monkeypatch.setattr(

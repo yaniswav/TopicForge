@@ -1,6 +1,6 @@
 # Migrating from TopicForge v0.3.0 to v0.4.0
 
-Reading time : 8 minutes. v0.4.0 is the **observability + bag-analysis maturation** release. The tool surface grows from 8 to 11 ; the v0.3.0 single-adapter limitation is lifted by `CompositeAdapter` ; the DDS auto-detect chain widens from 3 to 8 vendor candidates ; `peek_dds_samples` no longer raises on arbitrary user topics. Every v0.3.0 producer keeps working — schema changes are additive optional, env vars are widened not replaced.
+Reading time : 8 minutes. v0.4.0 is the **observability + bag-analysis maturation** release. The tool surface grows from 8 to 11 ; the v0.3.0 single-adapter limitation is lifted by `CompositeAdapter` ; the DDS auto-detect chain widens from 3 to 8 vendor candidates ; `peek_dds_samples` no longer raises on arbitrary user topics. Every v0.3.0 producer keeps working: schema changes are additive optional, env vars are widened not replaced.
 
 ---
 
@@ -8,21 +8,21 @@ Reading time : 8 minutes. v0.4.0 is the **observability + bag-analysis maturatio
 
 | Setup | Action |
 | ----- | ------ |
-| You use TopicForge through Claude Desktop / Claude Code / Cursor / Cline with `pip install topicforge` and no custom code | **Read §1 and §2 only.** Everything else is producer-side. |
+| You use TopicForge through Claude Desktop / Claude Code / Cursor / Cline with `pip install topicforge` and no custom code | **Read section 1 and section 2 only.** Everything else is producer-side. |
 | You import `topicforge` modules in your own Python code | **Read all sections.** Three new MCP tools, four `ParticipantInfo` lifecycle fields, four `BagAnalysis` enrichment fields, and a new `MiddlewareAdapter` method group. |
-| You validate MCP responses against a pinned JSON Schema with `additionalProperties: false` | **Read §3 carefully.** `ParticipantInfo`, `BagAnalysis`, `HealthReport`, `AdapterName`, `DdsBackend` all widened. |
-| You ran TopicForge v0.3.0 with `TOPICFORGE_MODE=live` + `TOPICFORGE_DDS_BACKEND=cyclone` and got DDS-only-mode errors on the 5 ROS2 tools | **§4 — the CompositeAdapter now serves both surfaces simultaneously.** Source ROS2 and re-run ; the errors disappear. |
-| You ran TopicForge v0.3.0 against arbitrary user topics with `peek_dds_samples` and got the "v0.3.x roadmap" `AdapterError` | **§5 — the error is gone.** The tool now returns best-effort decoded samples with a `_decode_status` annotation. |
+| You validate MCP responses against a pinned JSON Schema with `additionalProperties: false` | **Read section 3 carefully.** `ParticipantInfo`, `BagAnalysis`, `HealthReport`, `AdapterName`, `DdsBackend` all widened. |
+| You ran TopicForge v0.3.0 with `TOPICFORGE_MODE=live` + `TOPICFORGE_DDS_BACKEND=cyclone` and got DDS-only-mode errors on the 5 ROS2 tools | **section 4: the CompositeAdapter now serves both surfaces simultaneously.** Source ROS2 and re-run ; the errors disappear. |
+| You ran TopicForge v0.3.0 against arbitrary user topics with `peek_dds_samples` and got the "v0.3.x roadmap" `AdapterError` | **section 5: the error is gone.** The tool now returns best-effort decoded samples with a `_decode_status` annotation. |
 
 ---
 
 ## 1. Three new MCP tools (additive)
 
-v0.4.0 explicitly breaks the documented 8-tool ceiling three times — each break is acknowledged in `docs/projet-file/mcp-02-spec.md §2` and in the CHANGELOG `[0.4.0]` section.
+v0.4.0 explicitly breaks the documented 8-tool ceiling three times: each break is acknowledged in `docs/projet-file/mcp-02-spec.md section 2` and in the CHANGELOG `[0.4.0]` section.
 
-- **`participant_events(domain_id, lookback_seconds)`** (Phase 1) — DDS participant `discovered` / `lost` events over a configurable window. Default lookback 300 s, range 1..86400, hard cap 200 events newest-first. Backed by the new `LifecycleBuffer` shared between Cyclone (polling reconciliation) and Fast DDS (listener callbacks).
-- **`topic_metrics(topic, window_seconds, domain_id)`** (Phase 2) — temporal metrics : observed frequency, sequence gaps, latency p50/p95/p99 over a sliding window. Default window 60 s, range 1..3600. Buffer cap `MAX_SAMPLES_PER_TOPIC=1000`, drop-oldest. Opportunistic fill : the metrics buffer accumulates ONLY as `peek_dds_samples` is exercised (Cyclone + Fast 2.6.x Python bindings do not expose at-sample-receive callbacks).
-- **`peek_bag_samples(path, topic, count)`** (Phase 3) — post-mortem inspection : decoded samples from a recorded `.mcap` / `.db3` / `.bag` file. Distinct from `peek_dds_samples` (live bus) and `sample_messages` (ROS2 graph live peek). Same `SampleResult` envelope as the other two so an LLM caller reads one schema. Requires `pip install topicforge[bags]` (rosbags Apache 2.0 pure-Python library).
+- **`participant_events(domain_id, lookback_seconds)`** (Phase 1): DDS participant `discovered` / `lost` events over a configurable window. Default lookback 300 s, range 1..86400, hard cap 200 events newest-first. Backed by the new `LifecycleBuffer` shared between Cyclone (polling reconciliation) and Fast DDS (listener callbacks).
+- **`topic_metrics(topic, window_seconds, domain_id)`** (Phase 2): temporal metrics : observed frequency, sequence gaps, latency p50/p95/p99 over a sliding window. Default window 60 s, range 1..3600. Buffer cap `MAX_SAMPLES_PER_TOPIC=1000`, drop-oldest. Opportunistic fill : the metrics buffer accumulates ONLY as `peek_dds_samples` is exercised (Cyclone + Fast 2.6.x Python bindings do not expose at-sample-receive callbacks).
+- **`peek_bag_samples(path, topic, count)`** (Phase 3): post-mortem inspection : decoded samples from a recorded `.mcap` / `.db3` / `.bag` file. Distinct from `peek_dds_samples` (live bus) and `sample_messages` (ROS2 graph live peek). Same `SampleResult` envelope as the other two so an LLM caller reads one schema. Requires `pip install topicforge[bags]` (rosbags Apache 2.0 pure-Python library).
 
 If you maintain a local tool allowlist for the MCP client, add these three names. If you pin against the `tests/test_tools_integration.py::MVP_TOOLS` set, it grew from 8 to 11.
 
@@ -41,8 +41,8 @@ v0.4.0 accepted : mock | cyclone | fast | rti | opensplice | coredx | intercom |
 
 The 5 new values target the OMG vendor space :
 
-- `opendds` and `dust` ship as **OSS stubs** — `is_available()` returns False because the upstream Python bindings (`pyopendds`, `dust-dds-python`) are not on PyPI yet. The extras `[dds-opendds]` and `[dds-dust]` are placeholder pins anchoring the auto-detect probe for the day the upstream packages ship. `pip install topicforge[dds-opendds]` today produces a clean install failure.
-- `opensplice`, `coredx`, `intercom` are **Pro tier targets** — probed against `topicforge_pro.adapters.<vendor>` rather than the upstream SDK. The OSS core never imports a commercial vendor binding.
+- `opendds` and `dust` ship as **OSS stubs**: `is_available()` returns False because the upstream Python bindings (`pyopendds`, `dust-dds-python`) are not on PyPI yet. The extras `[dds-opendds]` and `[dds-dust]` are placeholder pins anchoring the auto-detect probe for the day the upstream packages ship. `pip install topicforge[dds-opendds]` today produces a clean install failure.
+- `opensplice`, `coredx`, `intercom` are **Pro tier targets**: probed against `topicforge_pro.adapters.<vendor>` rather than the upstream SDK. The OSS core never imports a commercial vendor binding.
 
 ### 2.2 `auto` resolution chain widened
 
@@ -52,21 +52,21 @@ v0.4.0 : RTI > OpenSplice > CoreDX > InterCOM (Pro tier, if installed)
          > OpenDDS > Fast > Cyclone > Dust > Mock (OSS)
 ```
 
-**Backward compat** : Pro tier candidates are only considered when the `topicforge_pro` package is importable on the host. v0.3.0 users without Pro see the chain collapse to `OpenDDS > Fast > Cyclone > Dust > Mock`. Since `opendds` and `dust` are stubs that report `is_available()=False`, the practical effective order remains `Fast > Cyclone > Mock` — unchanged from v0.3.0 unless you've explicitly added a Pro tier package.
+**Backward compat** : Pro tier candidates are only considered when the `topicforge_pro` package is importable on the host. v0.3.0 users without Pro see the chain collapse to `OpenDDS > Fast > Cyclone > Dust > Mock`. Since `opendds` and `dust` are stubs that report `is_available()=False`, the practical effective order remains `Fast > Cyclone > Mock`: unchanged from v0.3.0 unless you've explicitly added a Pro tier package.
 
 ### 2.3 New pyproject extras
 
-- `[bags]` — `rosbags>=0.9` (Phase 3, optional bag analysis). **Not** bundled in `[all]` to keep the default footprint small.
-- `[dds-opendds]` — `pyopendds>=0.1` placeholder pin (Phase 1.5).
-- `[dds-dust]` — `dust-dds-python>=0.1` placeholder pin (Phase 1.5).
-- `[dds-all-oss]` — `topicforge[dds] + dds-opendds + dds-dust` for users opting into the stubs.
+- `[bags]`: `rosbags>=0.9` (Phase 3, optional bag analysis). **Not** bundled in `[all]` to keep the default footprint small.
+- `[dds-opendds]`: `pyopendds>=0.1` placeholder pin (Phase 1.5).
+- `[dds-dust]`: `dust-dds-python>=0.1` placeholder pin (Phase 1.5).
+- `[dds-all-oss]`: `topicforge[dds] + dds-opendds + dds-dust` for users opting into the stubs.
 
 ### 2.4 New pytest markers
 
-- `integration` — real-bus DDS scenarios. Gated out of the default invocation ; run with `pytest -m integration` or the labeled CI workflow.
-- `requires_opendds` — auto-skip without the binding (same convention as `requires_cyclonedds`).
-- `requires_dust` — same shape.
-- `requires_rosbags` — Phase 3 bag tests.
+- `integration`: real-bus DDS scenarios. Gated out of the default invocation ; run with `pytest -m integration` or the labeled CI workflow.
+- `requires_opendds`: auto-skip without the binding (same convention as `requires_cyclonedds`).
+- `requires_dust`: same shape.
+- `requires_rosbags`: Phase 3 bag tests.
 
 ---
 
@@ -74,7 +74,7 @@ v0.4.0 : RTI > OpenSplice > CoreDX > InterCOM (Pro tier, if installed)
 
 All changes are **additive optional with safe defaults** ; every v0.3.0 producer keeps working. Strict MCP clients pinned to v0.3.0 JSON Schemas with `additionalProperties: false` need to regenerate, like at every minor.
 
-### 3.1 `ParticipantInfo` — 4 lifecycle fields
+### 3.1 `ParticipantInfo`: 4 lifecycle fields
 
 ```python
 # v0.3.0
@@ -100,7 +100,7 @@ class ParticipantInfo(BaseModel):
 
 Backed by `LifecycleBuffer` on Cyclone (polling reconciliation) and Fast DDS (listener-callback native, including `lost` events).
 
-### 3.2 `BagAnalysis` — 4 enrichment fields
+### 3.2 `BagAnalysis`: 4 enrichment fields
 
 ```python
 # v0.4.0
@@ -114,7 +114,7 @@ class BagAnalysis(BaseModel):
 
 `analyze_bag` retains the v0.3.0 `ros2 bag info` text-parse fallback on `Ros2CliAdapter` when rosbags is absent ; the enriched fields populate at their safe defaults in that path.
 
-### 3.3 `HealthReport.ros_backend` — new field
+### 3.3 `HealthReport.ros_backend`: new field
 
 ```python
 # v0.4.0
@@ -134,7 +134,7 @@ v0.4.0 : "mock" | "cyclone" | "fast" | "rti" | "opensplice" | "coredx" | "interc
 
 Internal type (no MCP-wire impact), but listed for code-level type-checkers. Now includes 5 new vendor tags (`opensplice`, `coredx`, `intercom`, `opendds`, `dust`) and 7 composite tags (`ros2_cli+cyclone`, `ros2_cli+fast`, `ros2_cli+rti`, `ros2_cli+opensplice`, `ros2_cli+coredx`, `ros2_cli+intercom`, `ros2_cli+opendds`).
 
-### 3.6 `TopicMetrics` schema (new — Phase 2)
+### 3.6 `TopicMetrics` schema (new; Phase 2)
 
 ```python
 class TopicMetrics(BaseModel):
@@ -153,7 +153,7 @@ class TopicMetrics(BaseModel):
 
 Frozen, `extra="forbid"`. The None / 0 semantics surface partial-data scenarios cleanly to LLM callers.
 
-### 3.7 `ParticipantEvent` schema (new — Phase 1)
+### 3.7 `ParticipantEvent` schema (new; Phase 1)
 
 ```python
 class ParticipantEvent(BaseModel):
@@ -165,7 +165,7 @@ class ParticipantEvent(BaseModel):
 
 ---
 
-## 4. `CompositeAdapter` — the single-adapter limitation is lifted
+## 4. `CompositeAdapter`: the single-adapter limitation is lifted
 
 v0.3.0 selected one adapter at a time : `Ros2CliAdapter` OR a DDS adapter. The 5 ROS2 tools worked on the former and raised `AdapterError(DDS_ONLY_ERROR_MSG)` on the latter ; the 3 DDS tools worked on the latter and raised the inverse error on the former.
 
@@ -178,23 +178,23 @@ The composite's `name` collapses to `"ros2_cli+cyclone"` or `"ros2_cli+fast"`. `
 
 **Graceful degradation paths preserved** :
 
-- DDS binding missing → `Ros2CliAdapter` alone (the v0.3.0 fallback).
-- ROS2 CLI missing on PATH → DDS-only adapter with the polished `DDS_ONLY_ERROR_MSG` on the 5 ROS2 methods. The v0.5.0 message lists the affected tools and points at the `CompositeAdapter` remediation.
-- Neither available → `MockAdapter` (auto mode only).
+- DDS binding missing -> `Ros2CliAdapter` alone (the v0.3.0 fallback).
+- ROS2 CLI missing on PATH -> DDS-only adapter with the polished `DDS_ONLY_ERROR_MSG` on the 5 ROS2 methods. The v0.5.0 message lists the affected tools and points at the `CompositeAdapter` remediation.
+- Neither available -> `MockAdapter` (auto mode only).
 
-If your deployment relied on the v0.3.0 error to detect "DDS adapter is selected", switch to inspecting `HealthReport.dds_backend` and `ros_backend` instead — both are populated correctly when a composite is live.
+If your deployment relied on the v0.3.0 error to detect "DDS adapter is selected", switch to inspecting `HealthReport.dds_backend` and `ros_backend` instead: both are populated correctly when a composite is live.
 
 ---
 
-## 5. `peek_dds_samples` on user topics — no more `AdapterError`
+## 5. `peek_dds_samples` on user topics: no more `AdapterError`
 
-v0.3.0 raised `AdapterError("v0.3.x roadmap — XTypes/IDL discovery missing")` for any non-builtin topic. v0.4.0 Phase 1 returns best-effort decoded samples with three reserved annotation keys :
+v0.3.0 raised `AdapterError("v0.3.x roadmap: XTypes/IDL discovery missing")` for any non-builtin topic. v0.4.0 Phase 1 returns best-effort decoded samples with three reserved annotation keys :
 
 - `_decode_status` : `"full"` / `"partial"` / `"raw"`
 - `_decode_note` : short diagnostic when the status is non-`full`
 - `_raw_bytes_hex` : hex-encoded serialized payload preview when `_decode_status="raw"` (capped at 4096 hex chars ; `_raw_bytes_truncated=True` flags clipping)
 
-The wire shape is identical across Cyclone and Fast DDS. Phase 1.5 added the Cyclone XTypes pipeline ; Fast DDS 2.6.x bindings still ship a partial dynamic XTypes Python surface so the `"raw"` fallback is the common path on Fast user topics — the structural plumbing is identical, the upstream binding completion is the gating factor.
+The wire shape is identical across Cyclone and Fast DDS. Phase 1.5 added the Cyclone XTypes pipeline ; Fast DDS 2.6.x bindings still ship a partial dynamic XTypes Python surface so the `"raw"` fallback is the common path on Fast user topics: the structural plumbing is identical, the upstream binding completion is the gating factor.
 
 If your code parsed the v0.3.0 `AdapterError` text to detect this case, replace the `try/except` with a `samples[i].payload["_decode_status"]` check.
 
@@ -226,7 +226,7 @@ If you implement a custom adapter (third-party `MiddlewareAdapter` shim, integra
 
 ## 7. No code change to the 5 ROS2 tools
 
-`health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag` behave identically to v0.3.0 — except `analyze_bag` now populates the new `BagAnalysis` enrichment fields when rosbags is installed (and leaves them at safe defaults otherwise). The `mode_effective` wire contract is unchanged.
+`health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag` behave identically to v0.3.0, except `analyze_bag` now populates the new `BagAnalysis` enrichment fields when rosbags is installed (and leaves them at safe defaults otherwise). The `mode_effective` wire contract is unchanged.
 
 ---
 
@@ -234,9 +234,9 @@ If you implement a custom adapter (third-party `MiddlewareAdapter` shim, integra
 
 - [ ] Verified the eleven-tool set is allowlisted in your MCP client config (if you allowlist).
 - [ ] Regenerated any pinned JSON Schemas for `ParticipantInfo`, `BagAnalysis`, `HealthReport`.
-- [ ] Removed any v0.3.x `try/except AdapterError` around `peek_dds_samples` on user topics — replace with `_decode_status` checks.
+- [ ] Removed any v0.3.x `try/except AdapterError` around `peek_dds_samples` on user topics: replace with `_decode_status` checks.
 - [ ] Confirmed `pip install topicforge[bags]` is added wherever `peek_bag_samples` is exercised.
 - [ ] If you implemented a custom `MiddlewareAdapter`, added `participant_events`, `topic_metrics`, `peek_bag_samples`.
-- [ ] Read the polished `DDS_ONLY_ERROR_MSG` once — its wording changed in v0.5.0 polish.
+- [ ] Read the polished `DDS_ONLY_ERROR_MSG` once: its wording changed in v0.5.0 polish.
 
 Questions or migration friction : open an issue at https://github.com/yaniswav/TopicForge/issues.

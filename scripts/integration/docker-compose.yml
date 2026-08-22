@@ -5,7 +5,7 @@
 # via host networking (DDS multicast discovery requires it).
 #
 # Validation reality: this file ships lint-clean YAML, but the actual
-# build/run is the maintainer's responsibility — neither pulling the
+# build/run is the maintainer's responsibility: neither pulling the
 # images nor spinning the containers happens in the OSS-CI default
 # pipeline. The `integration-tests` PR label triggers CI which then
 # runs `docker compose up -d` on a runner with Docker available.

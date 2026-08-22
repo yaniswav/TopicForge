@@ -3,7 +3,7 @@
 Pure-Python tests of the 6 helpers extracted from `dds_cyclone/adapter.py`
 in v0.4.0 Phase 3. No DDS dependency. The Phase 1.5 XTypes Cyclone tests
 (gated by `requires_cyclonedds`) continue to exercise the same logic
-through their full pipeline — these tests pin the extracted contract
+through their full pipeline: these tests pin the extracted contract
 in isolation.
 """
 
@@ -144,7 +144,7 @@ def test_decode_dynamic_sample_partial_path() -> None:
 
         def __init__(self) -> None:
             self.good = 1
-            # bad is left unset → AttributeError on getattr
+            # bad is left unset -> AttributeError on getattr
 
     payload = decode_dynamic_sample(_PartiallyBroken())
     assert payload["_decode_status"] == "partial"

@@ -139,7 +139,7 @@ def test_fast_extract_vendor_id_missing_returns_none():
 
 
 def test_fast_extract_hostname_reads_name_attr():
-    # Fast checks `name` (Cyclone does not) — pin the difference.
+    # Fast checks `name` (Cyclone does not): pin the difference.
     assert fast_extract_hostname(_Obj(name="node_x")) == "node_x"
 
 
@@ -160,12 +160,12 @@ def test_common_reexports_are_importable():
 
 # ------------------ defensive fallback branches (binding-shape variance) ----
 # These pin the getattr-fallback paths that exist precisely to absorb
-# cross-binding-version shape differences — the branches the audit flagged as
+# cross-binding-version shape differences: the branches the audit flagged as
 # the silent-failure risk if they ever regress.
 
 
 def test_cyclone_extract_guid_skips_absent_attrs_then_finds_guid():
-    # key / participant_key absent → loop continues to the `guid` attr.
+    # key / participant_key absent -> loop continues to the `guid` attr.
     assert cyclone_extract_guid(_Obj(guid=b"\x07" * 16)) == b"\x07" * 16
 
 
@@ -195,7 +195,7 @@ def test_fast_extract_guid_inner_guidprefix_sequence():
 
 
 def test_fast_extract_guid_non_coercible_sequence_returns_none():
-    # A sequence of non-ints can't be coerced to bytes → None, no raise.
+    # A sequence of non-ints can't be coerced to bytes -> None, no raise.
     assert fast_extract_guid(_Obj(guid=["x", "y"])) is None
 
 

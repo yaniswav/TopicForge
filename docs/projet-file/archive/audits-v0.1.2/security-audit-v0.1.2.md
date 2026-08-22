@@ -1,4 +1,4 @@
-# Security audit — TopicForge v0.1.2
+# Security audit: TopicForge v0.1.2
 
 _Read-only audit on branch `audit/security`. No source files modified, no tests run._
 
@@ -13,19 +13,19 @@ _Read-only audit on branch `audit/security`. No source files modified, no tests 
 
 ## Hardening opportunities
 _Medium impact, non-blocking for v0.2._
-- `TOPICFORGE_ROS2_BIN` is unbounded (`settings.py:72`) — any string is accepted then exec'd via `shutil.which`. README "Security model" line 239 calls this out, but consider rejecting values containing path separators when running under a hosted/multi-tenant context.
-- `subprocess.run` inherits the parent process environment by default at `adapter.py:147` — a poisoned `PATH` or `ROS_DOMAIN_ID` in the parent leaks in. For local-trust threat model this is fine; document if/when TopicForge moves to a hosted endpoint.
+- `TOPICFORGE_ROS2_BIN` is unbounded (`settings.py:72`). Any string is accepted then exec'd via `shutil.which`. README "Security model" line 239 calls this out, but consider rejecting values containing path separators when running under a hosted/multi-tenant context.
+- `subprocess.run` inherits the parent process environment by default at `adapter.py:147`: a poisoned `PATH` or `ROS_DOMAIN_ID` in the parent leaks in. For local-trust threat model this is fine; document if/when TopicForge moves to a hosted endpoint.
 - `analyze_bag` opens any path the client gives, no workspace root, no symlink restriction (acknowledged in README:240). For a hosted endpoint, wrap with a `--workspace-root` allowlist before live exec.
-- `_validate_bag_path` strips whitespace but does not normalize via `Path.resolve()` — a relative `../../etc/passwd.mcap` passes the regex. Acceptable under local trust, worth tightening before hosted deployment.
+- `_validate_bag_path` strips whitespace but does not normalize via `Path.resolve()`: a relative `../../etc/passwd.mcap` passes the regex. Acceptable under local trust, worth tightening before hosted deployment.
 - `stderr_tail` (`adapter.py:166`) surfaces the last non-empty stderr line to the MCP client. ROS2 stderr is usually benign, but a future adapter that runs user-supplied commands should sanitize this more aggressively.
-- `health.py:29` reads `ROS_DISTRO` from the parent env and returns it verbatim in `HealthReport`. Low-sensitivity but reachable by any MCP client — fine for now; tag as "env disclosure, by design" in the schema docstring.
+- `health.py:29` reads `ROS_DISTRO` from the parent env and returns it verbatim in `HealthReport`. Low-sensitivity but reachable by any MCP client (fine for now); tag as "env disclosure, by design" in the schema docstring.
 
 ## Issues found
 _None._
 
-## Roadmap v0.3+ — security
+## Roadmap v0.3+: security
 - Sandbox `analyze_bag` reads under an explicit `--workspace-root` allowlist (config-driven, default = cwd).
 - Add `Path.resolve()` + traversal-rejection in `_validate_bag_path` once a workspace root exists.
-- Optional `TOPICFORGE_ROS2_BIN_ALLOWLIST` for hosted deployments — reject values not in the allowlist before `shutil.which`.
+- Optional `TOPICFORGE_ROS2_BIN_ALLOWLIST` for hosted deployments: reject values not in the allowlist before `shutil.which`.
 - Spawn `subprocess.run` with a scrubbed `env={}` (only `PATH`, `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`) instead of inheriting the full parent environment.
 - Sign-and-pin the optional `topicforge_pro` plugin entry point once it ships, so a name-squat on PyPI cannot inject code into `_try_register_pro`.

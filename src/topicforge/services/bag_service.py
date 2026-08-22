@@ -1,4 +1,4 @@
-"""Bag analysis service — wraps the `rosbags` library.
+"""Bag analysis service: wraps the `rosbags` library.
 
 v0.4.0 Phase 3 surface for analyzing recorded bags across the three
 formats the OMG / ROS ecosystem actually ships :
@@ -11,10 +11,10 @@ formats the OMG / ROS ecosystem actually ships :
 `AnyReader` API. We lazy-import it so the OSS core stays installable
 without `rosbags` ; the factory and Ros2CliAdapter fall back to the
 v0.3.0 text-parsed `ros2 bag info` behavior when the library is
-absent. `peek_bag_samples` requires `rosbags` (no graceful fallback —
+absent. `peek_bag_samples` requires `rosbags` (no graceful fallback;
 the tool description tells the LLM exactly what to ask the user).
 
-The decoded sample shape mirrors `peek_dds_samples` — the CDR
+The decoded sample shape mirrors `peek_dds_samples`: the CDR
 decoder in `adapters/common/cdr_decoder.py` is the shared decode
 core (Phase 3 sub-milestone 3.1).
 """
@@ -54,7 +54,7 @@ def detect_bag_format(path: str) -> str:
     """Best-effort format classification from the path extension.
 
     Returns one of `"mcap"`, `"db3"`, `"bag"`, `"unknown"`. Pure
-    string operation — does not touch the filesystem.
+    string operation: does not touch the filesystem.
     """
     suffix = Path(path).suffix.lower()
     return _BAG_FORMAT_BY_EXTENSION.get(suffix, "unknown")
@@ -78,7 +78,7 @@ class BagService:
     * `analyze(path)` returns an enriched `BagAnalysis` with per-topic
       stats, format detection, decoded sample counts, recording
       duration. Falls through to a "rosbags-not-installed" error when
-      the library is absent — callers (Ros2CliAdapter) should check
+      the library is absent: callers (Ros2CliAdapter) should check
       `is_rosbags_available()` first and fall back to their v0.3.0
       text-parse path when False.
     * `peek_samples(path, topic, count)` returns up to `count` decoded
@@ -88,7 +88,7 @@ class BagService:
 
     def __init__(self) -> None:
         if not is_rosbags_available():
-            # Constructor does NOT raise — we want callers to be able to
+            # Constructor does NOT raise: we want callers to be able to
             # introspect the service without crashing. Methods raise
             # AdapterError when actually called.
             log.debug("BagService instantiated without `rosbags` ; methods will raise.")
@@ -112,7 +112,7 @@ class BagService:
             reader_data = _read_with_rosbags(resolved)
         except AdapterError:
             raise
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:  # pragma: no cover: defensive
             raise AdapterError(
                 f"failed to open bag {path!r} ({type(exc).__name__}: {exc})"
             ) from exc
@@ -154,7 +154,7 @@ class BagService:
             samples = _peek_with_rosbags(resolved, topic, clamped)
         except AdapterError:
             raise
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:  # pragma: no cover: defensive
             raise AdapterError(
                 f"failed to peek samples from {path!r} ({type(exc).__name__}: {exc})"
             ) from exc
@@ -168,7 +168,7 @@ class BagService:
 
 
 # ---------------------------------------------------------------------------
-# rosbags I/O — lazy-imported helpers
+# rosbags I/O: lazy-imported helpers
 # ---------------------------------------------------------------------------
 
 
@@ -179,7 +179,7 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
     `topics` (list[BagTopicStats]), `samples_decoded_count`,
     `recording_duration_ns`.
     """
-    # Lazy import — this function is only reached after
+    # Lazy import: this function is only reached after
     # is_rosbags_available() returned True.
     from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
 
@@ -255,7 +255,7 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
     """
     try:
         deserialized = reader.deserialize(raw, connection.msgtype)
-    except Exception as exc:  # pragma: no cover — binding-side error
+    except Exception as exc:  # pragma: no cover: binding-side error
         return annotate_raw(
             raw if isinstance(raw, (bytes, bytearray)) else b"",
             note=f"rosbags deserialize failed: {exc}",

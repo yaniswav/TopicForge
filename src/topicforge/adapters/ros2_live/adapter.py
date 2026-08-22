@@ -1,7 +1,7 @@
-"""Live adapter — defensive wrappers over the `ros2` CLI.
+"""Live adapter: defensive wrappers over the `ros2` CLI.
 
 Why CLI and not `rclpy`?
-  * `rclpy` is hard to depend on portably — distro-pinned, requires a sourced
+  * `rclpy` is hard to depend on portably: distro-pinned, requires a sourced
     setup file, and ships with the ROS2 install rather than from PyPI.
   * The `ros2` CLI is stable, widely available wherever ROS2 is installed,
     and trivial to mock in tests by stubbing `subprocess.run`.
@@ -99,7 +99,7 @@ class Ros2CliAdapter:
         which wraps the `rosbags` library. Raises `AdapterError` when
         rosbags is not installed (clear `pip install topicforge[bags]`
         remediation in the message). No silent fallback for sample
-        peek — the LLM tool description tells the user what to do.
+        peek: the LLM tool description tells the user what to do.
         """
         from topicforge.services.bag_service import BagService
 
@@ -140,9 +140,9 @@ class Ros2CliAdapter:
         # `header.stamp.nanosec`. That gives a real publish-time timestamp
         # without depending on rclpy. Headerless messages (e.g.
         # `std_msgs/String`, `geometry_msgs/Twist`) have no embedded
-        # timestamp and the parser returns 0 for those rows — documented in
+        # timestamp and the parser returns 0 for those rows: documented in
         # the `MessageSample.timestamp_ns` schema.
-        # TODO(roadmap): rclpy-backed adapter — windowed echo, time-range,
+        # TODO(roadmap): rclpy-backed adapter: windowed echo, time-range,
         # access to rmw receive timestamps (vs publish-time from Header),
         # better deserialization of complex message payloads.
         if count <= 0:
@@ -229,7 +229,7 @@ class Ros2CliAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Pure parsers — unit-testable without ROS2 present.
+# Pure parsers: unit-testable without ROS2 present.
 # ---------------------------------------------------------------------------
 
 _LIST_LINE = re.compile(r"^(\S+)\s+\[(.+)\]\s*$")
@@ -277,7 +277,7 @@ def parse_topic_info(
     "topic not found".
 
     `mode_effective` is kwarg-only and injected by the adapter (not parsed
-    from the CLI output) — same pattern as `fallback_name`.
+    from the CLI output): same pattern as `fallback_name`.
     """
     msg_type: str | None = None
     pub = sub = 0
@@ -300,11 +300,11 @@ def parse_topic_info(
 
 
 # Status, post-v0.1.2: this parser is **no longer called by the live
-# adapter** — `sample_messages` switched to `parse_csv_echo` against
+# adapter**: `sample_messages` switched to `parse_csv_echo` against
 # `ros2 topic echo --csv --once`, which exposes Header timestamps cleanly
 # (see `parse_csv_echo` below). `parse_echo_yaml` is kept for two reasons:
 #   1. Its test coverage in `tests/test_live_adapter_parse.py` documents
-#      the YAML-ish shape ROS2's plain echo produces — useful reference if
+#      the YAML-ish shape ROS2's plain echo produces: useful reference if
 #      we ever need to fall back from CSV.
 #   2. An rclpy-backed adapter will eventually return native typed payloads
 #      and obsolete both parsers (see `docs/product-plan.md` Phase 1).
@@ -313,7 +313,7 @@ def parse_topic_info(
 def parse_echo_yaml(stdout: str) -> dict[str, object]:
     """Best-effort parse of `ros2 topic echo --once` YAML-ish output.
 
-    We deliberately avoid a hard YAML dependency for the MVP — instead we emit
+    We deliberately avoid a hard YAML dependency for the MVP: instead we emit
     a flat `{key: value}` dict (top-level keys only) plus the raw text under
     a reserved `_raw_text` key. LLMs can still reason over the raw text, and
     downstream tools can upgrade this parser without changing the contract.
@@ -351,20 +351,20 @@ _TS_NSEC_MAX = 1_000_000_000
 def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
     """Parse `ros2 topic echo --csv [--once]` output.
 
-    Returns a list of `(timestamp_ns, payload)` tuples — one per CSV row.
+    Returns a list of `(timestamp_ns, payload)` tuples: one per CSV row.
 
     `ros2cli`'s `message_to_csv` flattens the message in declaration order,
     so for any message whose first field is a `std_msgs/Header` the first
     two columns are `header.stamp.sec` and `header.stamp.nanosec`. We
     detect that shape by checking whether the leading two columns parse as
-    a plausible epoch-second / nanosec pair (`2000-01-01` ≤ sec <
-    `2100-01-01`, `0` ≤ nanosec < `1e9`). When they do, `timestamp_ns` is
+    a plausible epoch-second / nanosec pair (`2000-01-01` <= sec <
+    `2100-01-01`, `0` <= nanosec < `1e9`). When they do, `timestamp_ns` is
     `sec * 1_000_000_000 + nanosec` and those two columns are dropped from
     the payload. When they don't, the row is a headerless message and
     `timestamp_ns` is 0 (documented behavior in
     `MessageSample.timestamp_ns`).
 
-    Tolerant to blank lines and comment lines starting with `#` — both are
+    Tolerant to blank lines and comment lines starting with `#`: both are
     skipped. Rows with fewer than two columns are skipped silently (no
     raise), matching the convention of the other parsers in this module:
     a malformed CLI artifact must not break the whole sample call.
@@ -375,7 +375,7 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
                                 "_raw_text": "..."})]`
 
     The post-strip payload re-indexes from `col_0` after the two timestamp
-    columns are removed — see `tests/test_live_adapter_parse.py`.
+    columns are removed: see `tests/test_live_adapter_parse.py`.
     """
     rows: list[tuple[int, dict[str, object]]] = []
     for raw in stdout.splitlines():
@@ -385,7 +385,7 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
         parts = [p.strip() for p in line.split(",")]
         if len(parts) < 2:
             # Single-column rows can't carry a Header timestamp and aren't
-            # useful payloads either — skip rather than emit a degenerate
+            # useful payloads either: skip rather than emit a degenerate
             # sample.
             continue
 
@@ -412,7 +412,7 @@ def parse_bag_info(
     """Parse `ros2 bag info <path>` text output into a BagAnalysis.
 
     `mode_effective` is kwarg-only and injected by the adapter (not parsed
-    from the CLI output) — same pattern as `fallback_path`.
+    from the CLI output): same pattern as `fallback_path`.
     """
     duration = 0.0
     msg_count = 0

@@ -8,7 +8,7 @@ Design notes:
   is the load-bearing property of this module and is tested explicitly.
 - **No user payload.** Only `tool_name`, `latency_ms`, `mode`, `version`,
   `session_id`, and `success` are sent. The `Inspector` and adapter
-  layers never touch this module — by construction they cannot leak
+  layers never touch this module: by construction they cannot leak
   topic names, message bodies, or bag paths into telemetry.
 - **Pluggable transport.** Default transport writes a structured log
   line; a future HTTP transport (Fly.io, S3-backed endpoint) will plug
@@ -39,7 +39,7 @@ class TelemetryEvent:
     """The complete event shape sent over the transport.
 
     These five fields are the *only* data points telemetry ever carries.
-    Adding a field here is a privacy decision — document it in the README
+    Adding a field here is a privacy decision: document it in the README
     Telemetry section in the same change.
     """
 
@@ -62,7 +62,7 @@ class TelemetryEvent:
 
 
 def _log_transport(payload: dict[str, Any]) -> None:
-    """Default transport — writes the payload to the `topicforge.telemetry` logger."""
+    """Default transport: writes the payload to the `topicforge.telemetry` logger."""
     log.info("telemetry event: %s", payload)
 
 
@@ -122,7 +122,7 @@ def instrument(client: TelemetryClient, tool_name: str) -> Callable[[F], F]:
     """Wrap a tool handler with timing + emit.
 
     When `client.enabled` is False, the decorator returns the handler
-    unchanged — zero overhead and, more importantly, zero possibility of
+    unchanged: zero overhead and, more importantly, zero possibility of
     a network call. This is the property `test_off_mode_no_network`
     pins.
 

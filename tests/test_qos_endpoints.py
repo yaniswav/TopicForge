@@ -1,6 +1,6 @@
 """Tests for `common.qos_endpoints.detect_mismatches_across_endpoints`.
 
-The endpoint-pairing logic extracted from both DDS adapters (Lot 5) — tested
+The endpoint-pairing logic extracted from both DDS adapters (Lot 5): tested
 in isolation with synthetic endpoint objects, and once through the real
 Cyclone helpers to pin the exact call shape the adapter makes. No binding.
 """
@@ -92,12 +92,12 @@ def test_topic_scoping_filters_other_topics() -> None:
 def test_endpoint_with_unresolvable_topic_skipped() -> None:
     reader = _Endpoint(None, b"\x01" * 16, _profile(reliability="RELIABLE"))
     writer = _Endpoint("/t", b"\x02" * 16, _profile(reliability="BEST_EFFORT"))
-    # reader has no topic → no pairing possible.
+    # reader has no topic -> no pairing possible.
     assert _detect([reader], [writer]) == []
 
 
 def test_endpoint_with_unresolvable_qos_skipped() -> None:
-    reader = _Endpoint("/t", b"\x01" * 16, None)  # qos_to_profile → None
+    reader = _Endpoint("/t", b"\x01" * 16, None)  # qos_to_profile -> None
     writer = _Endpoint("/t", b"\x02" * 16, _profile(reliability="BEST_EFFORT"))
     assert _detect([reader], [writer]) == []
 

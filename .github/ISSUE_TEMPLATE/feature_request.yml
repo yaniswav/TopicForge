@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Before opening : TopicForge is intentionally small. The tool surface is capped at 11
-        as of v0.4.0 ; each new tool needs an explicit scope discussion (see `docs/product-plan.md §11`
+        as of v0.4.0 ; each new tool needs an explicit scope discussion (see `docs/product-plan.md section 11`
         "Scope creep within the TopicForge umbrella"). Many ideas land better in the Pro tier
         roadmap (URDF inspection, bag anomaly detection) than as OSS additions.
 
@@ -20,7 +20,7 @@ body:
       description: Concrete, user-facing. Avoid solution language at this stage.
       placeholder: |
         "When I bring up a new robot stack I cannot tell from `list_topics` alone
-        which nodes own which topics — I have to cross-reference `ros2 node list`
+        which nodes own which topics: I have to cross-reference `ros2 node list`
         manually."
     validations:
       required: true
@@ -31,7 +31,7 @@ body:
       label: Proposed shape
       description: |
         Tool name, parameters, return shape if you have a concrete idea.
-        Drop a Pydantic-like sketch if it helps — the maintainer will refine.
+        Drop a Pydantic-like sketch if it helps: the maintainer will refine.
       placeholder: |
         `list_nodes(name_filter: str | None = None) -> list[NodeInfo]`
         where `NodeInfo` carries `name`, `namespace`, `publishers`, `subscribers`, `services`.
@@ -45,7 +45,7 @@ body:
       options:
         - "OSS (core)"
         - "Pro tier (URDF / bag anomaly / multi-bag diff family)"
-        - "I don't know — maintainer decides"
+        - "I don't know: maintainer decides"
     validations:
       required: true
 
