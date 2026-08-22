@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-22
+
+### Fixed
+
+- **Hard-pinned `mcp < 2` — TopicForge was uninstallable from 2026-07-28
+  to 2026-08-22.** The MCP Python SDK released `2.0.0` on 2026-07-28
+  alongside the `2026-07-28` protocol revision. That release removes the
+  `mcp.server.fastmcp` module entirely (`mcp/server/` now ships `auth`,
+  `lowlevel`, and `mcpserver`), so `server/app.py`'s
+  `from mcp.server.fastmcp import FastMCP` raises `ImportError` against
+  it. The dependency was declared as an unbounded `mcp>=1.0.0`, so every
+  fresh `pip install topicforge` resolved to `2.0.0` and produced a
+  server that could not start. Local development and CI both masked the
+  break — the dev environment had `mcp 1.27.1` already installed, and
+  the last CI run predates the SDK release. Pinning `<2` restores
+  installability on the 1.x line; migrating to the 2.x API
+  (`FastMCP` -> `MCPServer`, transport options moved from the
+  constructor to `.run()`, stateless protocol) is tracked separately and
+  is deliberately **not** bundled into this hotfix.
+
+### Note on scope
+
+- This release also publishes the external-audit work (Lots 0-5,
+  2026-07-08) that had accumulated under `[Unreleased]`. The Cyclone
+  `take_iter` -> `read_iter` change documented below is still **validated
+  by static analysis only** (`ruff` + `py_compile`); it has not been
+  exercised against a real multi-vendor DDS bus. It ships here because
+  leaving the package uninstallable was the larger harm — a broken
+  install affects every user, while this change can only affect users
+  running the Cyclone backend against a live bus. Real-bus validation
+  remains open.
+
 ### Changed
 
 - **DDS pure logic extracted for testability (Lot 0, external audit
@@ -846,7 +878,8 @@ Initial MVP release of TopicForge — ROS Topic Inspector & Bag Analyzer MCP ser
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/yaniswav/TopicForge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/yaniswav/TopicForge/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yaniswav/TopicForge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yaniswav/TopicForge/compare/v0.2.0...v0.3.0
