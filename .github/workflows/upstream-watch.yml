@@ -1,0 +1,90 @@
+name: Upstream watch
+
+# Why this exists: between 2026-07-28 and 2026-08-22 the published package
+# could not start. The `mcp` SDK released 2.0.0, which removed the
+# `mcp.server.fastmcp` module the server imports, and the dependency was
+# declared as an unbounded `mcp>=1.0.0`. Nothing caught it: the dev machine
+# already had 1.x installed, and CI only runs on push or pull request, so the
+# last green run predated the SDK release by three weeks.
+#
+# This job installs from PyPI the way a new user does, on a schedule, so an
+# upstream break surfaces within a week instead of within a month.
+
+on:
+  schedule:
+    # Mondays at 06:00 UTC, before the maintainer's weekly traction snapshot.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fresh-install:
+    name: Fresh install from PyPI
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # No checkout and no cache on purpose. This must resolve against the
+      # live index exactly as `pip install topicforge` would for a stranger.
+      - name: Install the published package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir topicforge
+
+      - name: Report what resolved
+        run: python -m pip list
+
+      - name: Server must import and build
+        run: |
+          python -c "import topicforge; print('topicforge', topicforge.__version__)"
+          python -c "from topicforge.server.app import build_app; print('build_app importable')"
+
+      - name: Server must actually start in mock mode
+        env:
+          TOPICFORGE_MODE: mock
+        run: |
+          python -c "from topicforge.config import load_settings; from topicforge.server.app import build_app; build_app(load_settings()); print('build_app OK in mock mode')"
+
+  resolve-latest:
+    name: Warn when a pinned dependency has a newer major
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Informational, never fails the run. The point is a visible signal that
+      # an upper bound is now holding a major version back, so the migration
+      # gets scheduled deliberately rather than discovered by a user.
+      - name: Compare pinned bounds against the current index
+        run: |
+          python - <<'PY'
+          import json, re, tomllib, urllib.request
+
+          with open("pyproject.toml", "rb") as fh:
+              deps = tomllib.load(fh)["project"]["dependencies"]
+
+          for spec in deps:
+              name = re.split(r"[<>=!~\[]", spec, 1)[0].strip()
+              url = f"https://pypi.org/pypi/{name}/json"
+              latest = json.load(urllib.request.urlopen(url))["info"]["version"]
+              upper = re.search(r"<\s*(\d+)", spec)
+              flag = ""
+              if upper and latest.split(".")[0] >= upper.group(1):
+                  flag = "  <-- pinned below the current major"
+              print(f"{spec:32} latest on PyPI: {latest}{flag}")
+          PY
