@@ -19,7 +19,7 @@ set -u
 
 PKG="topicforge"
 GH_OWNER_REPO="yaniswav/TopicForge"
-PRO_SLOTS=0  # hardcoded until a real mailing-list / Stripe lookup exists
+ENGAGEMENTS_CLOSED=0  # hardcoded; no billing system exists to query
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$REPO_ROOT/docs/projet-file/traction"
@@ -63,12 +63,17 @@ fi
 
 # ---- Decision-gate evaluation -------------------------------------------
 # G1 / G2 / G3 are defined in docs/product-plan.md section 12. We only auto-evaluate
-# what is measurable from this snapshot. G1 (10 Pro slots) and G3 (qualitative
-# logos + inbound) stay manual: the snapshot exposes the inputs anyway.
+# what is measurable from this snapshot. G1 and G3 stay manual: the snapshot
+# exposes the inputs anyway.
+#
+# G1 changed on 2026-09-05. It used to require ten Pro early-access slots; the
+# license-gated subscription that was reserving them is abandoned, so the gate
+# now asks for one closed commercial-support engagement instead. Snapshots
+# before that date carry the old `pro.slots_reserved` shape.
 g2_week_threshold_met="$(jq -n --argjson v "$pypi_last_week" \
   'if ($v != null) and ($v >= 100) then true else false end')"
-g1_pro_slots_met="$(jq -n --argjson v "$PRO_SLOTS" \
-  'if $v >= 10 then true else false end')"
+g1_engagement_met="$(jq -n --argjson v "$ENGAGEMENTS_CLOSED" \
+  'if $v >= 1 then true else false end')"
 
 # ---- Compose JSON snapshot ----------------------------------------------
 jq -n \
@@ -81,8 +86,8 @@ jq -n \
   --argjson stars             "$stars" \
   --argjson issues            "$issues" \
   --argjson forks             "$forks" \
-  --argjson pro_slots         "$PRO_SLOTS" \
-  --argjson g1_pro            "$g1_pro_slots_met" \
+  --argjson engagements       "$ENGAGEMENTS_CLOSED" \
+  --argjson g1_engagement     "$g1_engagement_met" \
   --argjson g2_week           "$g2_week_threshold_met" \
   '{
      date: $date,
@@ -98,12 +103,12 @@ jq -n \
        open_issues: $issues,
        forks: $forks
      },
-     pro: {
-       slots_reserved: $pro_slots,
-       slots_target: 10
+     commercial: {
+       engagements_closed: $engagements,
+       engagements_target: 1
      },
      gates: {
-       G1_pro_slots_met: $g1_pro,
+       G1_engagement_met: $g1_engagement,
        G2_week_threshold_met: $g2_week,
        G3_dds_activation: "manual"
      }
@@ -121,10 +126,10 @@ verdict_g2() {
 }
 
 verdict_g1() {
-  if [ "$g1_pro_slots_met" = "true" ]; then
-    echo "**MET**: 10 Pro early-access slots reserved; Phase 2 Pro feature work can start"
+  if [ "$g1_engagement_met" = "true" ]; then
+    echo "**engagement side MET**: a commercial engagement has closed; the Phase 1 shipping half still applies"
   else
-    echo "$PRO_SLOTS / 10 Pro slots reserved; no Pro feature ships before threshold (per docs/pro.md)"
+    echo "$ENGAGEMENTS_CLOSED / 1 commercial engagement closed, and Phase 1 items still open (rclpy adapter, native MCAP reader, windowed sampling, telemetry endpoint)"
   fi
 }
 
@@ -139,7 +144,7 @@ cat > "$OUT_SUMMARY" <<EOF
 | GitHub stars                 | $(fmt "$stars")             | weak proxy; G3 needs *named OSS logos*, not stars |
 | GitHub open issues           | $(fmt "$issues")            | hygiene signal                                |
 | GitHub forks                 | $(fmt "$forks")             | weak proxy                                    |
-| Pro early-access slots       | $PRO_SLOTS / 10             | **G1 needs 10**                               |
+| Commercial engagements       | $ENGAGEMENTS_CLOSED / 1     | **G1 needs 1, plus Phase 1 shipped**          |
 | pypistats.org reachable      | $pypi_status                | data quality                                  |
 | api.github.com reachable     | $gh_status                  | data quality                                  |
 

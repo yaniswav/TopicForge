@@ -1,115 +1,65 @@
 ---
 layout: default
-title: TopicForge Pro: coming July 2026
-description: Commercial DDS adapters + advanced diagnostics for AI-driven robotics: read-only by design.
+title: TopicForge: commercial support and integration
+description: What the free tier already covers through multi-vendor DDS-RTPS observation, what actually requires the RTI Connext binding, and how to reach out for integration or support work.
 ---
 
-# TopicForge Pro: coming July 2026
+# TopicForge: commercial support and integration
 
-### Commercial DDS adapters + advanced diagnostics for AI-driven robotics: read-only by design.
-
-TopicForge (open source, MIT) covers the **community DDS adapters** (Eclipse CycloneDDS, eProsima Fast DDS; plus OpenDDS / Dust DDS stubs as their Python bindings mature) and the ROS2 graph introspection surface. **TopicForge Pro** adds the **commercial DDS adapters** that defense, aerospace, automotive, and naval teams actually deploy in production, plus advanced diagnostic features: without ever giving an LLM a write path to your bus.
-
----
-
-## What's coming in Pro
-
-### Commercial DDS adapters
-
-The OSS core uses the OMG-DDS-RTPS protocol guarantee to *observe* every vendor on the bus, but to *join* the bus on top of a commercial stack you need that vendor's own SDK and license. Pro ships TopicForge-shaped adapters for the four commercial DDS implementations from the [OMG May 2025 interop matrix](dds-interop-matrix.md):
-
-| Adapter            | Vendor                       | License                       | Status            |
-| ------------------ | ---------------------------- | ----------------------------- | ----------------- |
-| **RTI Connext**    | Real-Time Innovations        | BYO RTI Connext DDS license   | Phase 2 (priority)|
-| **OpenSplice**     | ADLink / EOL                 | BYO (legacy support only)     | Stub: see notes   |
-| **CoreDX DDS**     | Twin Oaks Computing          | BYO CoreDX license            | Phase 2+          |
-| **InterCOM DDS**   | TechSoft (Gurum line)        | BYO InterCOM license          | Phase 2+          |
-
-Each adapter joins the bus as a **read-only DDS-RTPS participant** using its vendor's own native bindings, and like the OSS adapters, observes every conformant participant on the domain regardless of vendor. The same nine MCP tools (`health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`, `list_participants`, `detect_qos_mismatches`, `peek_dds_samples`, `participant_events`) work identically across all four commercial backends and the four OSS backends. **No write path on any adapter.**
-
-### URDF Inspector
-
-Parse `.urdf` and `.xacro` files, return a structured view of links, joints, inertias, collision geometry, and common failure modes (zero inertias, self-collisions, broken `mesh://` paths, dangling parents). Lets your AI agent reason about a robot's kinematics before it touches a controller.
-
-### Bag Anomaly Detector
-
-Statistical + rule-based scan of `.mcap` / `.db3` recordings: clock jumps, frame drops, TF tree breaks, frequency drift, stale transforms, sensor desync. Returns a ranked list of anomalies with `(timestamp, severity, topic, evidence)`, the kind of report you'd ask a junior engineer to produce after a failed run.
-
-### Multi-bag Diff
-
-Compare two recordings from the same scenario (before/after a code change, sim vs real, two hardware revisions) and surface meaningful deltas: missing topics, frequency changes, payload shape drift, trajectory divergence. The diff most teams currently produce with throwaway Python scripts, exposed as a single MCP tool.
-
-All features are **read-only**. TopicForge Pro will not ship a write path to a real robot, ever. Safety, trust, and liability win over convenience here, and the `MiddlewareAdapter` protocol shape physically forbids a write method.
+TopicForge (open source, MIT) is read-only by architecture: there is no write path to a robot or a DDS bus, on any tier. This page is for teams that need something past what the open-source package already does - integration work, native RTI Connext access, or a support arrangement. There is no separate paid product today: no published price, no license key gate, no self-serve checkout. Everything below is arranged directly, by email.
 
 ---
 
-## OSS vs Pro at a glance
+## What the free tier already does
 
-| Capability                          | OSS (`pip install topicforge`)                    | Pro (`pip install topicforge-pro`)              |
-| ----------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
-| ROS2 graph introspection (5 tools)  | Yes                                                | Yes                                              |
-| Bare DDS observability (4 tools)    | Yes (Cyclone, Fast; OpenDDS / Dust stubs)         | Yes (RTI Connext, OpenSplice, CoreDX, InterCOM) |
-| Auto-detect installed SDK            | Yes (8-vendor priority chain)                     | Yes (Pro vendors get priority over OSS)         |
-| Composite adapter (ROS + DDS)        | Yes                                                | Yes                                              |
-| Read-only by architecture            | Yes                                                | Yes                                              |
-| URDF Inspector                       | -                                                  | Yes                                              |
-| Bag Anomaly Detector                 | -                                                  | Yes                                              |
-| Multi-bag Diff                       | -                                                  | Yes                                              |
-| License                              | MIT                                               | Commercial (per-seat or annual)                 |
-| Vendor SDK                           | OSS Python bindings (BSD / Apache)                | BYO commercial license per vendor               |
+`pip install topicforge[dds]` gets you the community DDS adapters (Eclipse CycloneDDS, eProsima Fast DDS). Either one joins a DDS domain as a read-only DDS-RTPS participant, and the OMG DDS-RTPS interoperability guarantee means that participant discovers and reports every conformant vendor on the domain through the builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) - RTI Connext included. If your goal is to *observe* what is on the bus (participants, topics, QoS mismatches, samples, lifecycle events, metrics), the free tier already does that against an RTI-based system: you do not need RTI's own SDK, and you do not need a license, to see an RTI publisher from a Cyclone or Fast DDS participant. See [`dds-interop-matrix.md`](dds-interop-matrix.md) for how that works and its known gaps.
 
-Pro and OSS install side-by-side. The OSS core never imports a Pro adapter directly ; the Pro plugin registers itself via the `_try_register_pro(mcp)` hook in `server/app.py` at startup. Uninstall `topicforge-pro` and the server keeps working with the OSS surface only: no half-broken intermediate state.
+The ROS2 graph introspection tools are plain OSS as well and unaffected by anything below.
+
+If that covers your use case, you most likely need nothing on this page.
 
 ---
 
-## Pricing
+## When you need the RTI Connext adapter specifically
 
-> **Early access: $12/mo, locked in for life** for the **first 10 customers**.
-> After that: **$19/mo**.
-> Cancel anytime. No payment is collected today.
+Observing an RTI bus from a Cyclone or Fast DDS participant covers the common case, but it is still a foreign participant on that bus: RTI-proprietary transports and security modes that never touch standard RTPS discovery stay invisible to it. Concretely, reach for the native `topicforge_pro` RTI Connext adapter instead of the free path when your domain runs RTI's own DDS Security plugin with credentials, uses a pure shared-memory transport, or depends on RTI-only proprietary extensions.
 
-The early-access rate covers the full Pro feature set (commercial DDS adapters + URDF / Bag Anomaly / Multi-bag Diff) as features ship. You bring your own vendor license for whichever commercial DDS stack you operate (RTI, OpenSplice, etc.): TopicForge Pro does not bundle or redistribute vendor SDKs.
+That adapter exists and works, but it is bring-your-own-everything: you supply the `rti.connextdds` Python binding and a valid RTI Connext DDS license yourself. TopicForge does not bundle, resell, or otherwise redistribute either. Email if this is your situation and we will work out the setup together.
+
+No other commercial DDS vendor adapter is implemented today. A couple of other vendor slots exist in the `topicforge_pro` package layout for future work, but they carry no working code - do not plan around them.
 
 ---
 
-## Reserve an early access slot
+## What's available on request
 
-**0 / 10 slots claimed.**
+- Integration and adaptation to a specific ROS2 / DDS environment.
+- Native RTI Connext adapter setup, as described above.
+- A support arrangement for teams running TopicForge in production.
 
-To reserve a slot, send a one-line email: your name, your team, the DDS stack you're running. That's it.
+None of this has a published price. Email with what you need and it gets scoped from there.
+
+---
+
+## Known limitations
+
+- DDS Security is not implemented on any adapter, free or otherwise. If your domain requires authenticated or encrypted RTPS, TopicForge cannot join it today.
+- `detect_qos_mismatches` covers four QoS policies: Reliability, Durability, History, and Deadline. Liveliness, Ownership, and Partition are not checked.
+
+---
+
+## Contact
 
 <p>
   <a
-    href="mailto:ethvignot.yanis@gmail.com?subject=TopicForge%20Pro%20-%20early%20access%20slot&body=Hi%20Yanis%2C%0A%0AI%27d%20like%20to%20reserve%20one%20of%20the%2010%20TopicForge%20Pro%20early%20access%20slots.%0A%0AName%3A%0ATeam%2Forg%3A%0ADDS%20stack%20%28vendor%2C%20license%20held%2C%20deployment%20environment%29%3A%0AROS2%20distro%20%28if%20applicable%29%3A%0AMost%20painful%20diagnostic%20task%20today%3A%0A%0AThanks%21"
+    href="mailto:ethvignot.yanis@gmail.com?subject=TopicForge%20-%20commercial%20support%20inquiry&body=Hi%20Yanis%2C%0A%0AI%27m%20interested%20in%20TopicForge%20commercial%20support.%0A%0AWhat%20I%20need%3A%0ADDS%20vendor%28s%29%20in%20use%3A%0AROS2%20distro%20%28if%20applicable%29%3A%0ADeployment%20environment%20%28secure%20domain%2C%20shared%20memory%2C%20other%29%3A%0A%0AThanks%21"
     style="display:inline-block;padding:12px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;"
   >
-    Reserve my slot ->
+    Get in touch ->
   </a>
 </p>
 
-Prefer a form? A Tally embed will land here before the public launch.
+Inbound only - there is no outbound sales process. If you are unsure whether you need anything at all, re-read the free tier section above first.
 
 ---
 
-## Honest disclaimer
-
-I'm building this in the open and on a sane schedule. So the deal is simple:
-
-- **No Pro feature ships until 10+ teams sign up.** If demand isn't there, the open-source MVP stays the product and you owe me nothing.
-- **No payment is collected until at least one Pro feature is in your hands.** Reserving a slot is a non-binding intent, not a charge.
-- **The $12/mo lifetime rate is honored for everyone in the first 10**, even if a feature slips by a month.
-- **OpenSplice is EOL upstream** and shipped as a stub for legacy support only: the priority Pro deliverable is RTI Connext, with CoreDX and InterCOM following based on customer demand.
-
-If those terms don't fit your purchasing process, [let's talk](mailto:ethvignot.yanis@gmail.com?subject=TopicForge%20Pro%20-%20procurement%20question) before signing up: happy to issue an annual invoice or work through your vendor onboarding.
-
----
-
-## In the meantime
-
-- **Use the MVP.** TopicForge v0.3.0+ is shipping on PyPI. Mock mode runs without ROS2 or DDS ; install `topicforge[dds]` to get the two OSS DDS adapters and the multi-vendor wire observability they unlock via the OMG-DDS-RTPS protocol. [GitHub repo](https://github.com/yaniswav/TopicForge).
-- **Read the roadmap.** Full strategy and phase plan in [`docs/product-plan.md`](https://github.com/yaniswav/TopicForge/blob/main/docs/product-plan.md).
-- **File an issue** for any Pro adapter or diagnostic feature you'd actually use: input shapes the build order.
-
----
-
-<sub>TopicForge is built by Yanis ETHVIGNOT. The open-source MVP is MIT-licensed and covers the community DDS adapters (Cyclone, Fast; OpenDDS / Dust stubs). Pro features (commercial DDS adapters + advanced diagnostics) will be distributed under a separate commercial license: terms published when the first Pro feature ships.</sub>
+<sub>TopicForge is built by Yanis ETHVIGNOT. The open-source core is MIT-licensed. The RTI Connext adapter and any support arrangement described on this page are handled case by case, by direct agreement, with no published terms.</sub>

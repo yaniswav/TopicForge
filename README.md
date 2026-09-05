@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/yaniswav/TopicForge/blob/main/LICENSE)
 [![Read-only by architecture](https://img.shields.io/badge/safety-read--only_by_architecture-2563eb)](https://github.com/yaniswav/TopicForge#security-model)
 
-> **The safety-first read-only MCP for ROS2 robotics: observability + multi-vendor OMG DDS-RTPS (v0.4.0).** TopicForge lets AI agents inspect your ROS2 graph, recorded bag files, and the raw DDS layer beneath ROS, without ever publishing back to the bus. **Eleven typed read-only tools** (5 ROS2 graph + 3 DDS + 3 observability/bag) share a single Pydantic envelope so an LLM caller reads one schema across the whole stack. v0.4.0 adds participant lifecycle tracking (`participant_events`), temporal metrics (`topic_metrics`), and post-mortem bag sample peek (`peek_bag_samples`) on top of v0.3.0's two OSS Python DDS participants (Eclipse CycloneDDS and eProsima Fast DDS) each observing **every conformant vendor on the wire** (RTI Connext, OpenDDS, CoreDX, Dust DDS in Rust, etc.) via the OMG protocol guarantee. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md) for the canonical multi-vendor positioning and the OMG May 2025 interop reference.
+> **The safety-first read-only MCP for ROS2 robotics: graph introspection, bag analysis, and multi-vendor OMG DDS-RTPS observability.** TopicForge lets AI agents inspect your ROS2 graph, recorded bag files, and the raw DDS layer beneath ROS, without ever publishing back to the bus. **Eleven typed read-only tools** (5 ROS2 graph + 3 DDS + 3 observability/bag) share a single Pydantic envelope so an LLM caller reads one schema across the whole stack. It joins a domain through one OSS Python participant (Eclipse CycloneDDS or eProsima Fast DDS) and reads the builtin discovery topics the OMG protocol standardizes, so it observes **every conformant vendor on the wire** (RTI Connext, OpenDDS, CoreDX, Dust DDS in Rust) with no proprietary binding. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md) for the canonical multi-vendor positioning and the OMG May 2025 interop reference.
 
 TopicForge is a production-minded MCP (Model Context Protocol) server that lets AI agents (such as Claude) inspect ROS2 topics, analyze ROS bag files, and (since v0.2.0) observe the raw DDS layer through a clean, structured tool interface. It is read-only by **architecture**, not by configuration: there is no write path to misconfigure, no permission system to audit, no liability conversation to have. The MCP client can see the robot stack; it cannot touch it.
 
@@ -167,12 +167,19 @@ TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=fast python -m topicforge
 TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=auto python -m topicforge
 ```
 
-**OSS vs Pro tier (v0.4.0+).** The OSS install above covers the community
-DDS adapters (Cyclone, Fast; plus OpenDDS / Dust stubs awaiting upstream
-Python bindings). The commercial DDS adapters (RTI Connext, OpenSplice,
-CoreDX, InterCOM) ship under the optional `topicforge-pro` package with
-BYO vendor license. See [`docs/pro.md`](docs/pro.md) for the early-access
-slot and pricing terms ; nothing is collected today.
+**What the OSS install covers.** Cyclone and Fast DDS are the two working
+backends; OpenDDS and Dust are stubs whose upstream Python bindings do not
+exist yet, and their install extras fail today. That is not a limitation on
+what you can observe: because discovery runs over the OMG-standardized wire
+protocol, a Cyclone participant already sees RTI Connext, OpenDDS, CoreDX and
+Fast endpoints on the same domain. **You do not need a commercial adapter to
+observe a commercial bus.**
+
+A native RTI Connext adapter exists for the cases where the standard route is
+not enough (secure domains needing vendor credentials, shared-memory-only
+deployments, vendor-specific extensions). It requires the RTI Python binding
+and an RTI license you already hold. See [`docs/pro.md`](docs/pro.md) for
+commercial support and integration.
 
 Six DDS / observability tools (in addition to the five ROS2 tools above) :
 
