@@ -1,11 +1,11 @@
-# Traction snapshot for 2026-08-22
+# Traction snapshot for 2026-08-31
 
 | Signal                       | Value                       | Gate context                                  |
 | ---------------------------- | --------------------------- | --------------------------------------------- |
-| PyPI installs / day          | 0     | rolling                                       |
-| PyPI installs / week         | 1    | **G2 needs >= 100/week sustained over a month** |
-| PyPI installs / month        | 12   | rolling baseline                              |
-| GitHub stars                 | 2             | weak proxy; G3 needs *named OSS logos*, not stars |
+| PyPI installs / day          | 1     | rolling                                       |
+| PyPI installs / week         | 66    | **G2 needs >= 100/week sustained over a month** |
+| PyPI installs / month        | 265   | rolling baseline                              |
+| GitHub stars                 | 3             | weak proxy; G3 needs *named OSS logos*, not stars |
 | GitHub open issues           | 0            | hygiene signal                                |
 | GitHub forks                 | 0             | weak proxy                                    |
 | Pro early-access slots       | 0 / 10             | **G1 needs 10**                               |
@@ -24,4 +24,4 @@
 - If G2 is **below** for two consecutive snapshots: the issue is reach, not surface area. Audit hook drift in README per section 11 *Positioning collapse* risk, not pile on features.
 - If G1 is **MET** but Phase 1 items are not all shipped: revisit the Phase 1 remaining list in `docs/product-plan.md section 5` and re-sequence.
 
-Latest snapshot file: `2026-08-22.json`. Full archive: `docs/projet-file/traction/`.
+Latest snapshot file: `2026-08-31.json`. Full archive: `docs/projet-file/traction/`.
