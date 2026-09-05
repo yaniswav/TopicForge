@@ -67,20 +67,21 @@ The umbrella commits TopicForge to a broader scope than first drafted: the DDS m
 - Server-side telemetry endpoint. The `Transport` callable is already pluggable; this is the day Fly.io / S3 lands.
 - Hardening pass: improved error messages, performance budgets, additional cross-distro parser robustness (`parse_topic_list` etc. on Iron / Kilted).
 
-**Audit-driven v0.3 candidates (from 2026-05-14 audits).** Sourced from `docs/projet-file/audit-followup-triage-v0.2.0.md`. Each item is a B-classified follow-up from the v0.1.2 security or architecture audit ; bundled here so the v0.3+ plan has the full picture in one place.
+**Audit-driven v0.3 candidates (from 2026-05-14 audits).** Sourced from `docs/projet-file/audit-followup-triage-v0.2.0.md`, which is the canonical tracker. Each item is a B-classified follow-up from the v0.1.2 security or architecture audit. The audits number their own findings, so the B-labels are given here to bridge the two schemes; dispositions below were re-verified against the code on 2026-09-05.
 
 - **Security hardening (deferred ; all hosted-context-only or future-adapter-only).**
-  - `TOPICFORGE_ROS2_BIN` allowlist for hosted multi-tenant contexts (security audit "Hardening" #1).
-  - Scrubbed `subprocess.run(env=...)` instead of inheriting the full parent env (security audit "Hardening" #2).
-  - `analyze_bag` workspace-root sandbox with `--workspace-root` allowlist (security audit "Hardening" #3).
-  - `_validate_bag_path` Path.resolve traversal rejection, bundled with the workspace-root work (security audit "Hardening" #4).
-  - Stricter `stderr_tail` sanitization once a user-supplied-command adapter is on the table (security audit "Hardening" #5).
+  - `TOPICFORGE_ROS2_BIN` allowlist for hosted multi-tenant contexts (security audit "Hardening" #1 = B1; DEFER).
+  - Scrubbed `subprocess.run(env=...)` instead of inheriting the full parent env (security audit "Hardening" #2 = B2; DEFER).
+  - `analyze_bag` workspace-root sandbox with `--workspace-root` allowlist (security audit "Hardening" #3 = B3; DEFER).
+  - `_validate_bag_path` Path.resolve traversal rejection, bundled with the workspace-root work (security audit "Hardening" #4 = B4; DEFER).
+  - Stricter `stderr_tail` sanitization once a user-supplied-command adapter is on the table (security audit "Hardening" #5 = B5; DEFER).
   - Security audit's "Roadmap v0.3+" section: 5 additional items covering sandboxed `analyze_bag`, the `TOPICFORGE_ROS2_BIN_ALLOWLIST` env, env-scrub for subprocess, and signed `topicforge_pro` plugin entry point.
-- **Architecture refactors (deferred ; design or wire-contract decisions).**
-  - Collapse `Mode` / `ResolvedMode` / `AdapterName` into a unified `RuntimeMode` hierarchy (architecture audit "Refactor" #3).
-  - Tighten `HealthReport.mode` / `requested_mode` from `str` to `Literal` (architecture audit "Refactor" #4 ; wire soft-breaking, plan with v0.3 contract review).
-  - DDS topic-name regex relaxation to accept `::` separators and DDS-native shapes: couples with the real `CycloneDdsAdapter` implementation in v0.2.x (architecture audit "Refactor" #5 ; inline `TODO(roadmap, audit-2026-05-14)` in `services/inspector.py`).
-  - Inspector validation symmetry across pass-through tools: review when new tools land (architecture audit "Refactor" #7 ; inline `TODO(roadmap, audit-2026-05-14)` in `services/inspector.py`).
+- **Architecture refactors, still open (wire-contract decisions).**
+  - Collapse `Mode` / `ResolvedMode` / `AdapterName` into a unified `RuntimeMode` hierarchy (architecture audit "Refactor" #3 = B7; DEFER). Open question: which module owns the canonical Literal. Plan alongside B8 at the next wire-contract review.
+  - Tighten `HealthReport.mode` / `requested_mode` from `str` to `Literal` (architecture audit "Refactor" #4 = B8; DEFER). Soft-breaking on the wire: strict clients validating against the v0.2.0 schema would need to regenerate.
+- **Architecture refactors, closed. Kept for the audit trail, not work items.**
+  - DDS topic-name regex relaxed to accept `::` and DDS-native shapes (architecture audit "Refactor" #5 = B9). **Closed in v0.3.0**: `_validate_topic_name_dds` ships at `services/inspector.py:51` with the resolving comment. The strict ROS2 validator stays for the five ROS2 graph methods.
+  - Inspector validation symmetry across pass-through tools (architecture audit "Refactor" #7 = B10). **Closed in v0.5.0 as WONT-FIX by design**: `list_topics` takes no MCP-level arguments, so an Inspector-side gate would have nothing to validate. The asymmetry is structural. The inline TODO was retired and replaced by a permanent design note at `services/inspector.py:72`. Reopen only if a future variant ships with arguments to normalize.
 
 Each Phase 1 item retires its matching `# TODO(roadmap):` marker in the code when it ships.
 
