@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout
@@ -38,5 +38,40 @@ jobs:
       - name: Format check (ruff format --check)
         run: python -m ruff format --check src tests
 
-      - name: Tests (pytest)
-        run: python -m pytest -q
+      # --cov makes the `fail_under` floor in pyproject.toml actually apply.
+      # Without it the threshold was configuration nobody enforced.
+      - name: Tests (pytest + coverage floor)
+        run: python -m pytest -q --cov=topicforge --cov-report=term
+
+  extras-resolve:
+    name: Every declared extra resolves on PyPI
+    runs-on: ubuntu-latest
+
+    # `fastdds` sat in the recommended `[dds]` extra for five releases although
+    # no such package exists on PyPI: the install failed, and the unclaimed name
+    # was a dependency-confusion risk. This resolves every extra against the
+    # live index on each change, so an orphan name cannot ship again.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve each extra without installing
+        run: |
+          python -m pip install --upgrade pip
+          python - <<'PY'
+          import subprocess, sys, tomllib
+          extras = tomllib.load(open("pyproject.toml", "rb"))["project"]["optional-dependencies"]
+          failed = []
+          for name in extras:
+              cmd = [sys.executable, "-m", "pip", "install", "--dry-run", "--quiet", f".[{name}]"]
+              rc = subprocess.run(cmd).returncode
+              print(f"[{'ok' if rc == 0 else 'FAIL'}] .[{name}]")
+              if rc:
+                  failed.append(name)
+          sys.exit(1 if failed else 0)
+          PY

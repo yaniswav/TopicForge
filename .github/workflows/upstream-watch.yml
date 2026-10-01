@@ -43,6 +43,15 @@ jobs:
       - name: Report what resolved
         run: python -m pip list
 
+      # The base install alone missed the broken `[dds]` extra for months.
+      # Resolve every extra the docs tell users to install, as a stranger would.
+      - name: Documented extras must resolve
+        shell: bash
+        run: |
+          for extra in dds-cyclone dds bags all; do
+            python -m pip install --dry-run --quiet "topicforge[$extra]" && echo "[ok] [$extra]" || { echo "[FAIL] [$extra]"; exit 1; }
+          done
+
       - name: Server must import and build
         run: |
           python -c "import topicforge; print('topicforge', topicforge.__version__)"
@@ -76,7 +85,12 @@ jobs:
           import json, re, tomllib, urllib.request
 
           with open("pyproject.toml", "rb") as fh:
-              deps = tomllib.load(fh)["project"]["dependencies"]
+              project = tomllib.load(fh)["project"]
+          deps = list(project["dependencies"])
+          for name, extra in project.get("optional-dependencies", {}).items():
+              if name == "dev":
+                  continue
+              deps += [d for d in extra if not d.startswith("topicforge")]
 
           for spec in deps:
               name = re.split(r"[<>=!~\[]", spec, 1)[0].strip()
@@ -84,7 +98,7 @@ jobs:
               latest = json.load(urllib.request.urlopen(url))["info"]["version"]
               upper = re.search(r"<\s*(\d+)", spec)
               flag = ""
-              if upper and latest.split(".")[0] >= upper.group(1):
+              if upper and int(latest.split(".")[0]) >= int(upper.group(1)):
                   flag = "  <-- pinned below the current major"
               print(f"{spec:32} latest on PyPI: {latest}{flag}")
           PY

@@ -24,7 +24,7 @@ Once any path is set up, jump to [Test scenarios](#test-scenarios) to
 exercise the eleven tools, then [Connect an MCP client](#connect-an-mcp-client)
 to use TopicForge from Claude Desktop, Claude Code, Cursor, etc.
 
-> **Tool surface as of v0.4.0.** 5 ROS2 graph tools (`health_check`,
+> **Tool surface (unchanged since v0.4.0).** 5 ROS2 graph tools (`health_check`,
 > `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`) +
 > 3 DDS tools (`list_participants`, `detect_qos_mismatches`,
 > `peek_dds_samples`) + 3 observability tools (`participant_events`,
@@ -41,7 +41,7 @@ The fastest way to confirm the server starts, registers all eleven tools,
 and serves typed payloads to an MCP client.
 
 ```bash
-# Python 3.11+ required
+# Python 3.10+ required
 python -m venv .venv
 source .venv/bin/activate          # Linux / macOS / WSL
 # .venv\Scripts\Activate.ps1       # Windows PowerShell
@@ -49,7 +49,7 @@ source .venv/bin/activate          # Linux / macOS / WSL
 pip install topicforge
 
 # Sanity check
-python -m topicforge --version     # -> topicforge 0.1.2
+python -m topicforge --version     # -> topicforge 0.5.3
 python -m topicforge --help
 
 # Run the server (it blocks on stdio; that's normal, MCP clients spawn it)
@@ -124,8 +124,11 @@ sudo apt install -y python3-pip python3-venv
 python3 -m venv ~/topicforge-venv
 source ~/topicforge-venv/bin/activate
 pip install topicforge
-topicforge --version               # -> topicforge 0.1.2
+topicforge --version               # -> topicforge 0.5.3
 ```
+
+Ubuntu 22.04 ships Python 3.10, which is enough since 0.5.3 (earlier
+releases required 3.11 and could not be installed on this setup).
 
 ### 2.4 Run live mode end-to-end
 
@@ -154,8 +157,10 @@ source ~/topicforge-venv/bin/activate
 TOPICFORGE_MODE=live python -m topicforge
 ```
 
-TopicForge will log `topicforge 0.1.2 ready (mode=live, adapter=live)`.
-From here, an MCP client connected over stdio can call `list_topics`,
+TopicForge will log a line like `topicforge 0.5.3 ready (mode=live,
+requested_mode=live, adapter=ros2_cli, telemetry=off)`. If it says
+`mode=mock` instead, `ros2` was not found and the server fell back to
+fixtures. From here, an MCP client connected over stdio can call `list_topics`,
 `sample_messages /chatter`, etc., against the real graph.
 
 ---
@@ -215,8 +220,11 @@ $env:TOPICFORGE_MODE = "live"
 python -m topicforge
 ```
 
-TopicForge resolves `ros2.cmd` / `ros2.bat` via `shutil.which`, so no
-extra config is needed beyond having the ROS2 install on PATH.
+TopicForge resolves the `ros2` launcher with `shutil.which` and runs it
+by absolute path (never through a shell), so no extra config is needed
+beyond having the ROS2 install on PATH. On a standard Windows install
+that launcher is `ros2.exe`; `TOPICFORGE_ROS2_BIN` overrides the name
+or path if yours differs.
 
 ---
 
@@ -241,11 +249,12 @@ fixture topics (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw`).
 > "Show me the latest message on /chatter."
 
 Expected: `get_topic_info /chatter` then `sample_messages /chatter`.
-The `samples[0].payload` will contain the parsed top-level keys from
-`ros2 topic echo --once` plus a `_raw_text` field with the verbatim
-CLI output. In live mode `samples[i].timestamp_ns` is always `0`: the
-CLI does not expose receive times. A future `rclpy`-backed adapter
-will fix that.
+The `samples[0].payload` will expose the message fields as positional
+CSV columns (`col_0`, `col_1`, ...) plus a `_raw_text` field with the
+verbatim CSV row from `ros2 topic echo --csv --once`. In live mode `samples[i].timestamp_ns` is the message's
+`header.stamp` for `Header`-stamped types and `0` for headerless ones
+such as `std_msgs/String` (so `0` for `/chatter`): the CLI does not
+expose receive times. A future `rclpy`-backed adapter would fix that.
 
 ### Scenario C: Record and analyze a bag
 
@@ -264,9 +273,11 @@ Then in your MCP client:
 
 Expected: `analyze_bag` returns a `BagAnalysis` with `duration_seconds`,
 `message_count`, per-topic stats, and (mock mode only) a list of canned
-anomalies. Live mode parses `ros2 bag info` output and currently does
-not detect anomalies: that's mock-only until a real anomaly detector
-ships in v0.2.
+anomalies. Live mode parses `ros2 bag info` output and does not
+detect anomalies: that stays mock-only until a real anomaly detector
+exists, which is not scheduled. To read actual messages from the
+recording, install `topicforge[bags]` and ask for samples; that calls
+`peek_bag_samples`.
 
 ---
 
@@ -291,7 +302,7 @@ Desktop's docs cover it):
 }
 ```
 
-Restart Claude Desktop. The five tools appear under the hammer icon.
+Restart Claude Desktop. The eleven tools appear under the hammer icon.
 
 ### Claude Code
 
@@ -338,7 +349,13 @@ where.exe ros2      # Windows
 
 If ROS2 is installed but not on PATH, source the setup file in the
 parent shell **before** launching the MCP client. On Windows native,
-`ros2.cmd` is what `shutil.which` resolves: TopicForge handles it.
+`shutil.which` resolves the `ros2` launcher (normally `ros2.exe`) and
+TopicForge runs it by absolute path.
+
+If you set `TOPICFORGE_DDS_BACKEND` explicitly (`cyclone` or `fast`),
+auto mode does not fall back to mock when `ros2` is missing: it serves
+the DDS tools through a DDS-only adapter and the ROS2 tools raise a
+"DDS observability only" error.
 
 You can also override the binary explicitly:
 
@@ -390,12 +407,17 @@ The first call to a `list_topics` in live mode shells out to
   design. TopicForge is read-only and there is no roadmap to change that
   without explicit per-tool opt-in and auth.
 - **No `rclpy`-backed adapter yet**. Live mode uses the `ros2` CLI, which
-  is portable across distros but loses the per-message timestamp and
-  caps `sample_messages` at the `--once` semantic. A native `rclpy`
-  adapter is the headline item for v0.2.
-- **No native `.mcap` reader**. `analyze_bag` parses `ros2 bag info`
-  text output. Fine for summarization, not fine for deep inspection of
-  large bags. v0.2 will integrate a direct MCAP reader.
+  is portable across distros but loses the per-message timestamp for
+  headerless types and caps `sample_messages` at the `--once` semantic.
+  A native `rclpy` adapter is open work, gated on external demand.
+- **No native `.mcap` reader behind `analyze_bag`**. `analyze_bag` parses
+  `ros2 bag info` text output. Fine for summarization, not fine for deep
+  inspection of large bags. `peek_bag_samples` does read the file
+  directly through `rosbags`, but only to return samples.
+- **No real-bus validation of the DDS adapters.** The DDS tools are
+  tested against the mock backend and binding-free helpers. Nobody has
+  run them against a live multi-vendor bus yet, so a bug report from one
+  is the most valuable feedback available.
 
 ---
 

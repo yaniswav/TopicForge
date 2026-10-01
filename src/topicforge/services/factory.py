@@ -2,22 +2,23 @@
 
 This is the only place that knows how to map a `Settings` to a concrete
 adapter, and where graceful degradation (`live` -> `mock`, any DDS
-vendor -> `ros2_cli`) happens.
+backend -> `ros2_cli`) happens.
 
-v0.4.0 Phase 1.5 widens the DDS vendor matrix from 2 (Cyclone, Fast)
-to 8 (Cyclone, Fast, OpenDDS, Dust + the Pro-tier RTI, OpenSplice,
-CoreDX, InterCOM). Pro-tier vendors are loaded lazily via the
-`topicforge_pro.adapters.<vendor>` namespace ; OSS vendors keep
-their historical direct import. The composite-adapter top-level
-decision tree is unchanged from Phase 1: when a ROS2 CLI adapter
-and a DDS adapter both come up, they're wrapped in a `CompositeAdapter`.
+Decision tree: explicit `mock` mode returns `MockAdapter`. Otherwise the
+ROS2 CLI adapter and the DDS adapter are each built best-effort; when both
+come up they are wrapped in a `CompositeAdapter`, when only one does it is
+returned alone, and when neither does the factory falls back to
+`MockAdapter`. A DDS backend named explicitly is honored even when `ros2`
+is not installed (`auto` mode included), so DDS-only users get their bus
+rather than fixtures.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
-from topicforge.adapters.base import MiddlewareAdapter
+from topicforge.adapters.base import AdapterError, MiddlewareAdapter
 from topicforge.adapters.composite import CompositeAdapter
 from topicforge.adapters.ros2_live import Ros2CliAdapter
 from topicforge.adapters.ros2_mock import MockAdapter
@@ -35,9 +36,9 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
 
     Predictive resolution (`auto`) lives in
     `config/settings.py:Settings.effective_mode` and
-    `Settings.effective_dds_backend` (8-vendor auto-detect chain).
+    `Settings.effective_dds_backend`.
     """
-    if settings.effective_mode == "mock":
+    if settings.effective_mode == "mock" and settings.effective_dds_backend == "mock":
         return MockAdapter()
 
     ros_adapter = _try_build_ros2_cli(settings)
@@ -63,8 +64,10 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
         return ros_adapter
 
     log.warning(
-        "live mode requested but neither %r nor a DDS backend is available; falling back to mock",
+        "live backend requested but neither %r nor a DDS backend (%s) is available; "
+        "falling back to mock",
         settings.ros2_executable,
+        settings.effective_dds_backend,
     )
     return MockAdapter()
 
@@ -81,18 +84,12 @@ def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:
     """Best-effort DDS adapter per the resolved backend.
 
     Returns `None` when the backend is `mock`, when the SDK is not
-    importable, or when the adapter reports unavailable at construction.
-    Logged warnings explain each fallback.
+    importable, or when the adapter fails or reports unavailable at
+    construction. Logged warnings explain each fallback.
 
-    OSS vendors (`cyclone`, `fast`, `opendds`, `dust`) lazy-import their
-    adapter from `topicforge.adapters.dds_<vendor>` ; Pro vendors (`rti`,
-    `opensplice`, `coredx`, `intercom`) lazy-import from
-    `topicforge_pro.adapters.<vendor>`. The OSS core never directly
-    imports a Pro adapter.
+    Vendors lazy-import their adapter from `topicforge.adapters.dds_<vendor>`.
     """
     dds_backend = settings.effective_dds_backend
-    if dds_backend == "mock":
-        return None
     if dds_backend == "fast":
         return _try_build_fast(settings)
     if dds_backend == "cyclone":
@@ -101,8 +98,6 @@ def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:
         return _try_build_opendds(settings)
     if dds_backend == "dust":
         return _try_build_dust(settings)
-    if dds_backend in ("rti", "opensplice", "coredx", "intercom"):
-        return _try_build_pro_vendor(settings, dds_backend)
     return None
 
 
@@ -118,16 +113,21 @@ def _try_build_cyclone(settings: Settings) -> MiddlewareAdapter | None:
         log.warning(
             "TOPICFORGE_DDS_BACKEND=cyclone but the `cyclonedds` Python "
             "bindings are not installed. Install with "
-            "`pip install topicforge[dds-cyclone]` (or `[dds]` for both "
-            "OSS backends). Falling back to ROS2 CLI alone."
+            '`pip install "topicforge[dds-cyclone]"`. The DDS module is '
+            "unavailable."
+        )
+        return None
+    except Exception as exc:  # a native library can fail to load (OSError)
+        log.warning(
+            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
+            type(exc).__name__,
+            exc,
         )
         return None
 
-    adapter = CycloneDdsAdapter(domain_id=settings.dds_domain_id)
-    if not adapter.is_available():
-        log.warning("CycloneDdsAdapter reports not available; falling back to ROS2 CLI alone.")
-        return None
-    return adapter
+    return _instantiate(
+        "CycloneDdsAdapter", lambda: CycloneDdsAdapter(domain_id=settings.dds_domain_id)
+    )
 
 
 def _try_build_fast(settings: Settings) -> MiddlewareAdapter | None:
@@ -140,52 +140,52 @@ def _try_build_fast(settings: Settings) -> MiddlewareAdapter | None:
         from topicforge.adapters.dds_fast import FastDdsAdapter
     except ImportError:
         log.warning(
-            "TOPICFORGE_DDS_BACKEND=fast but the `fastdds` Python "
-            "bindings are not installed. Install with "
-            "`pip install topicforge[dds-fast]` (or `[dds]` for both "
-            "OSS backends). Falling back to ROS2 CLI alone."
+            "TOPICFORGE_DDS_BACKEND=fast but the `fastdds` Python binding is "
+            "not installed. It is not published on PyPI: build it from "
+            "eProsima's Fast-DDS-python sources (see docs/DDS_QUICKSTART.md). "
+            "The DDS module is unavailable."
+        )
+        return None
+    except Exception as exc:  # a native library can fail to load (OSError)
+        log.warning(
+            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
+            type(exc).__name__,
+            exc,
         )
         return None
 
-    adapter = FastDdsAdapter(domain_id=settings.dds_domain_id)
-    if not adapter.is_available():
-        log.warning("FastDdsAdapter reports not available; falling back to ROS2 CLI alone.")
-        return None
-    return adapter
+    return _instantiate("FastDdsAdapter", lambda: FastDdsAdapter(domain_id=settings.dds_domain_id))
 
 
 def _try_build_opendds(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort instantiate `OpenDdsAdapter` (v0.4.0 Phase 1.5 stub).
+    """Best-effort instantiate `OpenDdsAdapter` (permanent stub).
 
-    `pyopendds` is not yet maintained on PyPI as of 2026-05-14 ; the
-    stub adapter raises on all 8 protocol methods. The factory still
-    routes here so users running `TOPICFORGE_DDS_BACKEND=opendds`
-    explicitly get a clear error rather than a silent mock fallback.
+    The stub adapter's `is_available()` always returns False. The factory
+    still routes here so users running `TOPICFORGE_DDS_BACKEND=opendds`
+    explicitly get a clear warning rather than a silent mock fallback.
     """
     try:
         from topicforge.adapters.dds_opendds import OpenDdsAdapter
     except ImportError:
         log.warning(
             "TOPICFORGE_DDS_BACKEND=opendds but the OpenDDS adapter "
-            "module is not available. Falling back to ROS2 CLI alone."
+            "module is not available. The DDS module is unavailable."
+        )
+        return None
+    except Exception as exc:  # a native library can fail to load (OSError)
+        log.warning(
+            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
+            type(exc).__name__,
+            exc,
         )
         return None
 
-    adapter = OpenDdsAdapter(domain_id=settings.dds_domain_id)
-    if not adapter.is_available():
-        log.warning(
-            "OpenDdsAdapter reports not available: `pyopendds` Python "
-            "bindings are not installed on this host (no maintained PyPI "
-            "package at v0.4.0). Falling back to ROS2 CLI alone."
-        )
-        return None
-    return adapter
+    return _instantiate("OpenDdsAdapter", lambda: OpenDdsAdapter(domain_id=settings.dds_domain_id))
 
 
 def _try_build_dust(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort instantiate `DustDdsAdapter` (v0.4.0 Phase 1.5 stub).
+    """Best-effort instantiate `DustDdsAdapter` (permanent stub).
 
-    `dust-dds-python` is not yet maintained on PyPI as of 2026-05-14.
     The stub adapter's `is_available()` always returns False ; the
     factory falls back transparently.
     """
@@ -194,72 +194,45 @@ def _try_build_dust(settings: Settings) -> MiddlewareAdapter | None:
     except ImportError:
         log.warning(
             "TOPICFORGE_DDS_BACKEND=dust but the Dust DDS adapter "
-            "module is not available. Falling back to ROS2 CLI alone."
+            "module is not available. The DDS module is unavailable."
         )
         return None
-
-    adapter = DustDdsAdapter(domain_id=settings.dds_domain_id)
-    if not adapter.is_available():
+    except Exception as exc:  # a native library can fail to load (OSError)
         log.warning(
-            "DustDdsAdapter reports not available: no maintained "
-            "Python binding for Dust DDS at v0.4.0. Falling back to "
-            "ROS2 CLI alone."
+            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
+            type(exc).__name__,
+            exc,
         )
         return None
-    return adapter
+
+    return _instantiate("DustDdsAdapter", lambda: DustDdsAdapter(domain_id=settings.dds_domain_id))
 
 
-def _try_build_pro_vendor(settings: Settings, vendor: str) -> MiddlewareAdapter | None:
-    """Best-effort load a Pro-tier adapter from `topicforge_pro.adapters.<vendor>`.
+def _instantiate(label: str, build: Callable[[], MiddlewareAdapter]) -> MiddlewareAdapter | None:
+    """Construct a DDS adapter without ever letting construction escape.
 
-    The Pro package is a separate pip install ; the OSS core never
-    bundles or directly imports a Pro adapter. Each Pro adapter
-    exposes a class named `<Vendor>Adapter` (e.g. `RtiConnextAdapter`,
-    `OpenSpliceAdapter`) constructible with `domain_id`.
-
-    Returns `None` when the Pro package is not installed, the vendor
-    module is missing, or the adapter reports unavailable.
+    Vendor constructors join the DDS domain and raise `AdapterError` when
+    that fails (e.g. an invalid `CYCLONEDDS_URI`). Any other exception is
+    logged with its cause as a last resort: `build_adapter` documents that
+    it never raises, and a crash at startup is worse than a mock fallback.
+    Returns `None` on failure or when the adapter reports unavailable.
     """
-    pro_class_names = {
-        "rti": "RtiConnextAdapter",
-        "opensplice": "OpenSpliceAdapter",
-        "coredx": "CoreDxAdapter",
-        "intercom": "InterComAdapter",
-    }
-    class_name = pro_class_names.get(vendor)
-    if class_name is None:
-        log.warning("Unknown Pro vendor %r ; falling back to ROS2 CLI alone.", vendor)
-        return None
-
-    module_path = f"topicforge_pro.adapters.{vendor if vendor != 'rti' else 'rti_connext'}"
     try:
-        import importlib
-
-        module = importlib.import_module(module_path)
-    except ImportError:
+        adapter = build()
+        available = adapter.is_available()
+    except AdapterError as exc:
+        log.warning("%s could not start: %s. The DDS module is unavailable.", label, exc)
+        return None
+    except Exception as exc:
         log.warning(
-            "TOPICFORGE_DDS_BACKEND=%s requires the Pro tier package "
-            "(`pip install topicforge-pro`) and a valid TOPICFORGE_LICENSE_KEY. "
-            "Falling back to ROS2 CLI alone.",
-            vendor,
+            "%s failed with an unexpected error (%s: %s). The DDS module is unavailable.",
+            label,
+            type(exc).__name__,
+            exc,
+            exc_info=True,
         )
         return None
-
-    adapter_cls = getattr(module, class_name, None)
-    if adapter_cls is None:
-        log.warning(
-            "Pro package present but %s.%s is missing ; falling back to ROS2 CLI alone.",
-            module_path,
-            class_name,
-        )
-        return None
-
-    adapter = adapter_cls(domain_id=settings.dds_domain_id)
-    if not adapter.is_available():
-        log.warning(
-            "%s reports not available (license missing or binding misconfigured); "
-            "falling back to ROS2 CLI alone.",
-            class_name,
-        )
+    if not available:
+        log.warning("%s reports not available. The DDS module is unavailable.", label)
         return None
     return adapter

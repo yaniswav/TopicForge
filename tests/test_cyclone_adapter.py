@@ -74,10 +74,10 @@ def test_detect_qos_mismatches_topic_filter_accepts_unknown_topic() -> None:
     assert result == []
 
 
-def test_peek_arbitrary_user_topic_raises_xtypes_roadmap() -> None:
-    """v0.3.0 limitation: arbitrary user topics raise with a roadmap pointer."""
+def test_peek_user_topic_not_on_bus_raises_not_discovered() -> None:
+    """A user topic nobody announces raises instead of returning a placeholder."""
     adapter = CycloneDdsAdapter(domain_id=0)
-    with pytest.raises(AdapterError, match=r"v0\.3\.x roadmap"):
+    with pytest.raises(AdapterError, match="not discovered on domain"):
         adapter.peek_dds_samples("/foo/user_topic", count=1)
 
 
