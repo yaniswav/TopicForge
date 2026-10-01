@@ -1,0 +1,74 @@
+name: Demo multi-vendor bus
+
+# Runs the multi-vendor demo driver on a real DDS bus inside the runner:
+# Python / Cyclone and Rust / Dust participants, TopicForge as a real MCP
+# server over stdio, the official MCP client asking the questions. This is the
+# only job that exercises the DDS adapters against live traffic. RTI and
+# OpenSplice never run here: RTI needs a license that must stay local, and
+# OpenSplice needs a prebuilt HDE.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/integration/**"
+      - "src/topicforge/adapters/**"
+      - ".github/workflows/demo.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/integration/**"
+      - "src/topicforge/adapters/**"
+      - ".github/workflows/demo.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    name: Cyclone + Dust demo (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            scripts/integration/publishers/dust_publisher/target
+          key: dust-${{ runner.os }}-${{ hashFiles('scripts/integration/publishers/dust_publisher/Cargo.toml', 'scripts/integration/publishers/dust_publisher/src/**') }}
+
+      - name: Install TopicForge with the Cyclone binding
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dds]"
+
+      - name: Build the Rust / Dust participant
+        working-directory: scripts/integration/publishers/dust_publisher
+        run: cargo build --release
+
+      - name: Show what can run on this runner
+        run: python scripts/integration/driver/demo_client.py --list
+
+      - name: Run the demo
+        run: python scripts/integration/driver/demo_client.py

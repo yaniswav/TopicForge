@@ -1,124 +1,184 @@
-# TopicForge integration rig
+# TopicForge multi-vendor demo
 
-Intended purpose: real-bus validation of the TopicForge multi-vendor
-OMG-DDS-RTPS claim.
+One read-only TopicForge participant observes programs from several DDS
+vendors and several languages on the same domain. It sees them through the
+standard RTPS discovery topics, with no vendor-specific binding. The questions
+are asked by the official MCP client over stdio, the same path Claude Desktop
+or Claude Code uses, so the demo exercises the server exactly as an agent
+would.
 
-**Current state, 0.5.3: the rig validates nothing.** The scenario files,
-the schema tests and the dispatch shell exist. The part that would
-spawn publishers, start TopicForge, call its tools and compare the
-results does not. No DDS adapter in this repository has been exercised
-against a live bus. Do not read a green CI run as evidence that the DDS
-module works on a real domain.
+This is the first thing in the repository that runs the DDS adapters against
+live traffic. The status of each participant is listed below, and most of them
+have not been run yet.
 
-What exists, precisely:
+TopicForge never publishes. The participants in `publishers/` are demo
+programs written for this directory; TopicForge itself only reads discovery
+data.
 
-- `scenarios_runner.py` loads a scenario JSON, probes which vendor
-  bindings are importable, and then, for every assertion, records
-  "not evaluated" as a **failure**. It spawns no publisher, launches no
-  TopicForge process, and calls no tool. It exits with code 1 whenever a
-  scenario has at least one assertion, which is every shipped scenario.
-- `tests/integration/test_real_bus.py` shells out to that runner. Its
-  dispatch test is marked `xfail(strict=True)`: it is expected to fail
-  today, and it will report an unexpected pass the day the runner
-  validates something, which is the signal to remove the marker.
-- `pyproject.toml` deselects the `integration` marker by default
-  (`-m "not integration"` in `addopts`), so a plain `pytest` never runs
-  these tests, whether or not a DDS binding is installed.
-- `tests/integration/test_scenarios_schema.py` validates the structure
-  of every scenario file. That is pure Python and runs in the default
-  suite.
-- `docker-compose.yml`, the Dockerfiles and `publishers/` are an
-  unvalidated sketch of a multi-vendor bus.
+## Quick start
 
----
+Windows (PowerShell):
 
-## Running it anyway
+```powershell
+scripts\integration\launch\setup.ps1
+scripts\integration\launch\run_demo.ps1
+```
+
+Linux or WSL:
 
 ```bash
-pip install "topicforge[dds-cyclone]"
-
-# Dispatch every scenario whose required vendors are importable
-# (the others are reported as skipped). Expect exit code 1.
-./scripts/integration/run-local.sh
-# Windows:
-.\scripts\integration\run-local.ps1
-
-# Through pytest (deselected by default; the dispatch test is an xfail)
-pytest -m integration -v
+scripts/integration/launch/setup.sh
+scripts/integration/launch/run_demo.sh
 ```
 
-Only the Cyclone binding can be installed from PyPI. The Fast DDS
-binding is not published there and has to be built from eProsima's
-sources, so scenarios that require `fast` can only be dispatched on a
-machine where you did that. TopicForge has no working OpenDDS or Dust
-DDS adapter to test (both are permanent stubs; `pyopendds` exists on
-PyPI, but the OpenDDS adapter never uses it), so a scenario that requires
-`opendds` can only be dispatched, never satisfied by TopicForge itself.
+`setup` creates `.venv-demo` at the repo root, installs TopicForge with the
+Cyclone binding (`pip install -e ".[dds]"`) and builds the Rust / Dust
+participant if `cargo` is on PATH. It ends by printing what can run on the
+host. `run_demo` starts every participant that is available, runs the checks
+and stops every process it started, including on error or Ctrl+C.
 
-The Docker route (`docker compose -f scripts/integration/docker-compose.yml
-up -d`) is a sketch of the intended full-coverage setup. It has not been
-validated, and the publisher images for Fast DDS and OpenDDS depend on
-bindings that `pip` cannot fetch.
+To see what would start without starting anything:
 
-The `integration-tests` PR label triggers
-`.github/workflows/integration.yml`, which runs the schema tests and
-then `pytest -m integration`. With the runner as it is, that exercises
-the xfail and nothing else.
-
----
-
-## Scenarios
-
-Six scenarios live under `tests/integration/scenarios/`. They describe
-what a validation should check, and two groups of them no longer match
-the behaviour of the code:
-
-| Name                              | Required vendors            | Intended check | Status |
-| --------------------------------- | --------------------------- | -------------- | ------ |
-| `multi_vendor_basic`              | cyclone, fast, opendds      | `list_participants` returns >= 3 | Not affected by 0.5.3; needs a bus that includes an OpenDDS publisher |
-| `lifecycle_tracking`              | cyclone                     | `participant_events` reports discovered + lost | Not affected by 0.5.3 |
-| `qos_mismatch_detection`          | cyclone                     | `detect_qos_mismatches` returns a Reliability incompatibility | Not affected by 0.5.3 |
-| `xtypes_decode`                   | cyclone                     | `peek_dds_samples` returns `_decode_status` payloads | **Outdated.** User-topic decoding is disabled since 0.5.3; the live result is a `"raw"` placeholder, which the scenario's `"raw"` allowance happens to accept, but it no longer tests decoding |
-| `topic_metrics_frequency`         | cyclone                     | `topic_metrics(window=60)` returns ~10 Hz | **Outdated.** `topic_metrics` has no data for user topics since 0.5.3 and its frequency reflects peek cadence |
-| `topic_metrics_sequence_gaps`     | cyclone                     | `topic_metrics` reports a sequence gap | **Outdated.** Same reason; builtin topics carry no sequence number |
-
-Scenario JSON schema :
-
-```json
-{
-  "name": "kebab_case_scenario_name",
-  "description": "1-2 sentence purpose statement.",
-  "required_vendors": ["cyclone", "fast", ...],
-  "setup": {
-    "domain_id": 0,
-    "publishers": [{ "vendor": "...", "topic": "/...", "rate_hz": N, "duration_s": N }],
-    "subscribers": [...],
-    "discovery_wait_s": 5
-  },
-  "assertions": [
-    { "tool": "list_participants", "args": {"domain_id": 0}, "expect": {...} }
-  ]
-}
+```bash
+python scripts/integration/driver/demo_client.py --list
 ```
 
-See `tests/integration/test_scenarios_schema.py` for the pure-Python
-schema validation that runs in default CI.
+Each participant is reported as `ready` or `skipped (<what is missing>)`.
+`--domain N` selects another DDS domain (default 0, or
+`TOPICFORGE_DDS_DOMAIN_ID`).
 
----
+### The minimum
 
-## What it would take to make this real
+Two participants are required, and the driver exits with an error without
+them:
 
-1. Implement the runner: spawn each publisher, start the TopicForge
-   server with the right `TOPICFORGE_DDS_BACKEND`, call the tools over
-   MCP stdio, evaluate each `expect` block, and exit 0 only when every
-   assertion actually passed.
-2. Run it against at least a Cyclone publisher and an independent
-   vendor's publisher on one domain, and keep the output.
-3. Rewrite the three outdated scenarios around what the tools do today
-   (builtin-topic metrics, presence-only user topics).
-4. Remove the `xfail(strict=True)` marker.
+- Python / Cyclone: `pip install "topicforge[dds]"`.
+- Rust / Dust: `cargo build --release` in `publishers/dust_publisher`.
 
-Until then, treat every claim about live-bus behaviour in this
-repository's documentation as design intent. See
-[`docs/DDS_QUICKSTART.md`](../../docs/DDS_QUICKSTART.md) and
-`docs/projet-file/mcp-02-spec.md` for the intended scope.
+Every other participant is optional. It joins the bus automatically when its
+artifact is present, and the checks adapt to what was actually started.
+
+## Participants
+
+Fourteen programs, one per vendor and language that has a usable binding. The
+contract they all follow (topics, types, QoS, start line) is in
+[`DEMO_CONTRACT.md`](DEMO_CONTRACT.md). The five scenario programs carry the
+QoS story; the nine language participants each write one topic,
+`DemoHeartbeat`, so that `list_participants` shows one entry per vendor and
+language.
+
+Status is stated as of this writing. "Tested" means it ran on the bus and was
+seen by TopicForge, on Windows 11 only. "Written, not run" means the source
+exists and was written from the vendor's documentation or example sources, but
+nobody has built or started it.
+
+| Vendor | Language | Directory under `publishers/` | Role | Status |
+|---|---|---|---|---|
+| Cyclone DDS | Python | `cyclone_publisher.py` | writes `DemoOdom`, reads `DemoLidarScan` | Tested |
+| Dust DDS | Rust | `dust_publisher/` | writes `DemoLidarScan` | Tested |
+| Dust DDS | Python | `dust_py/` | `DemoHeartbeat` | Tested |
+| Dust DDS | C | `dust_c/` | `DemoHeartbeat` | Tested |
+| Fast DDS | C++ | `fast_publisher_cpp/` | writes `DemoImu`, reads `DemoOdom` | Written, not run |
+| Fast DDS | Python | `fast_py/` | `DemoHeartbeat` | Written, not run (Linux only, built from source) |
+| RTI Connext | Python | `rti_publisher.py` | writes `DemoHeartbeat`, reads `DemoImu` | Written, not run (local, license) |
+| RTI Connext | C | `rti_c/` | `DemoHeartbeat` | Written, not run (local, license) |
+| RTI Connext | C++ | `rti_cpp/` | `DemoHeartbeat` | Written, not run (local, license) |
+| RTI Connext | Rust | `rti_rust/` | `DemoHeartbeat` | Written, not run (local, license, experimental crate) |
+| Cyclone DDS | C | `cyclone_c/` | `DemoHeartbeat` | Written, not run |
+| Cyclone DDS | C++ | `cyclone_cpp/` | `DemoHeartbeat` | Written, not run |
+| Cyclone DDS | Rust | `cyclone_rust/` | `DemoHeartbeat` | Written, not run (first build stopped on a missing `libclang`) |
+| OpenSplice | C | `opensplice_publisher/` | writes `DemoStatus` | Written, not run (experimental) |
+
+`.github/workflows/demo-fast.yml` builds the Fast DDS C++ participant and
+starts it for ten seconds. It has no run to show yet.
+
+Four vendor and language combinations have no binding at all and are not
+covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust.
+OpenSplice C++ and Python exist, but the project has had no release since
+2021, so the C program alone stands for OpenSplice.
+
+Each directory has its own README with prerequisites, build commands and the
+exact artifact path the driver looks for. RTI participants also have
+[`publishers/RTI.md`](publishers/RTI.md) for licensing.
+
+## What the driver checks
+
+The driver starts TopicForge with `TOPICFORGE_MODE=live` and
+`TOPICFORGE_DDS_BACKEND=cyclone`, waits six seconds for discovery announcements
+to cross the bus, then calls four tools and checks the answers against the
+participants it actually started:
+
+1. `list_participants`: at least one entry per started program plus
+   TopicForge itself, and a participant tagged with the expected vendor for
+   every vendor that TopicForge can identify (see the known limit below).
+2. `detect_qos_mismatches`: a Reliability mismatch on `DemoLidarScan` (Dust
+   BEST_EFFORT writer, Cyclone RELIABLE reader) and, when both are running, on
+   `DemoImu` (Fast DDS BEST_EFFORT writer, RTI RELIABLE reader). `DemoOdom` is
+   compatible by design and must not be reported.
+3. Departure: it stops the Python / Cyclone participant and polls
+   `list_participants` for up to 40 seconds until that participant shows as
+   `left`, which happens when its lease expires.
+4. `participant_events`: prints the discovered and lost timeline.
+
+It prints `result: PASS` and exits 0, or prints each `FAIL:` line and exits 1.
+With only the two required participants, the Reliability check on
+`DemoLidarScan` and the departure check are the ones that apply.
+
+## Known limits
+
+- **Vendor shown as `unknown` for Dust DDS and RTI Connext.** TopicForge reads
+  the vendor from the first two bytes of the participant GUID prefix, because
+  the Python Cyclone binding does not expose the vendor id from the RTPS
+  header. Dust DDS does not prefix its GUID with its vendor id, and RTI does
+  not by default. The participants are still listed, only the vendor tag is
+  missing. The driver does not require a tag for them.
+- **OpenSplice is experimental.** The last release is from 2021, it cannot be
+  compiled on current toolchains, and the participant needs the prebuilt HDE
+  (`OSPL_HOME`). Its README sets an abandon criterion: try it once, and drop it
+  from the demo if it does not appear on the bus.
+- **RTI runs locally only.** A license is required (`RTI_LICENSE_FILE`). The
+  driver skips every RTI participant when that variable is unset, and RTI never
+  runs in public CI. RTI's Free Use license (agreement #4046) forbids
+  disclosing evaluation results without RTI's prior written consent. No
+  capture, screenshot, recording or result from an RTI run is published
+  without that consent, and there is no benchmarking with these nodes.
+- **Dust DDS discovers over multicast only.** A network that blocks multicast
+  will not show Dust participants.
+- **User-topic payloads are not read.** The demo shows who is on the bus and
+  which pairs cannot communicate. It does not show message contents; that
+  decoding is disabled in the core (see the CHANGELOG, 0.5.3).
+- **Participants and observer run on one host by default.** The driver starts
+  everything locally. Running across machines is the next section.
+
+## Mixed Linux and Windows bus
+
+Multicast discovery often does not cross between two machines (WSL in NAT mode,
+Docker Desktop, some Wi-Fi networks, the Windows firewall). The recommended
+layout, per-vendor unicast peer settings, the Windows firewall rules and the WSL
+caveats are in [`config/MIXED_BUS.md`](config/MIXED_BUS.md). Peer files for
+Cyclone and Fast DDS are in `config/`. Participants on the second machine are
+started by hand; the driver does not launch remote processes.
+
+## CI
+
+- `.github/workflows/demo.yml` runs the driver with the Python / Cyclone and
+  Rust / Dust participants on `ubuntu-latest` and `windows-latest`. It triggers
+  on pushes and pull requests that touch `scripts/integration/**`,
+  `src/topicforge/adapters/**` or the workflow, and on manual dispatch. RTI and
+  OpenSplice never run there.
+- `.github/workflows/demo-fast.yml` builds Fast DDS 3 from pinned tags, builds
+  the C++ participant and starts it for ten seconds. Weekly (Monday) and manual
+  only, because the cold build is long. It checks that the participant starts,
+  not that TopicForge sees it.
+
+A green `demo.yml` run shows that Cyclone and Dust participants are discovered
+and that one QoS mismatch is reported. It says nothing about Fast DDS, RTI or
+OpenSplice.
+
+## Related
+
+- [`DEMO_CONTRACT.md`](DEMO_CONTRACT.md): topics, types, QoS, directory layout.
+- [`docs/DDS_QUICKSTART.md`](../../docs/DDS_QUICKSTART.md): using the DDS tools
+  from an MCP client.
+- [`docs/dds-interop-matrix.md`](../../docs/dds-interop-matrix.md): the
+  multi-vendor positioning and its limits.

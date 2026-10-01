@@ -144,7 +144,7 @@ TopicForge invokes the `ros2` CLI under the hood, so it does **not** require `rc
 
 Beyond ROS2 graph introspection, TopicForge observes the raw DDS bus directly via one of two OSS Python adapters (Eclipse CycloneDDS or eProsima Fast DDS) each joining as a **read-only DDS-RTPS participant**. By the OMG-DDS-RTPS protocol guarantee, both adapters see every conformant participant on the domain (RTI Connext, OpenDDS, CoreDX, Dust DDS in Rust, InterCOM, etc.) regardless of host language. The adapters read discovery data; they do not decode the payload of user topics (see the `peek_dds_samples` paragraph below).
 
-**Validation status.** No DDS adapter has been exercised against a live multi-vendor bus yet. The unit tests run against the mock backend and against binding-free helpers; the real-bus rig under `scripts/integration/` is a dispatch shell that spawns no publisher and validates nothing (see [`scripts/integration/README.md`](scripts/integration/README.md)). The multi-vendor claim rests on the RTPS protocol guarantee, not on a recorded interop run by this project. For the multi-vendor positioning and its limits, see [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md) and the [OMG May 2025 interop reference](docs/projet-file/references/omg-dds-interop-2025-05-08.xlsx).
+**Validation status.** The Cyclone adapter has been run once against a live bus on Windows 11, with Cyclone and Dust DDS participants (see [Multi-vendor demo](#multi-vendor-demo)). The Fast DDS adapter has never been run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed yet. The unit tests run against the mock backend and against binding-free helpers. The multi-vendor claim therefore rests mostly on the RTPS protocol guarantee, not on a recorded interop run across vendors. For the multi-vendor positioning and its limits, see [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md) and the [OMG May 2025 interop reference](docs/projet-file/references/omg-dds-interop-2025-05-08.xlsx).
 
 Useful for non-ROS DDS stacks (defense, aerospace, automotive AUTOSAR Adaptive, industrial integration) and for diagnosing why a ROS2 subscriber isn't receiving when the graph says it should. Same safety-first contract : read-only by **architecture**. The `MiddlewareAdapter` protocol does not expose a write method on any backend.
 
@@ -209,6 +209,17 @@ Six DDS / observability tools (in addition to the five ROS2 tools above) :
 
 **Full 5-minute walkthrough** (backend selection, the canonical QoS-mismatch debugging scenario, troubleshooting) lives in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md). Migration history : [v0.2 -> v0.3](docs/MIGRATION_v0.2_to_v0.3.md), [v0.3 -> v0.4](docs/MIGRATION_v0.3_to_v0.4.md).
 
+### Multi-vendor demo
+
+`scripts/integration/` holds a demo that puts one read-only TopicForge participant on a DDS domain with programs from several vendors and languages (Cyclone, Dust DDS, Fast DDS, RTI Connext, OpenSplice; fourteen programs in all). The official MCP client asks TopicForge who is on the bus, which reader and writer pairs have incompatible QoS, and who leaves when a participant is stopped. The minimum is a Python / Cyclone and a Rust / Dust participant:
+
+```bash
+scripts/integration/launch/setup.sh      # Windows: scripts\integration\launch\setup.ps1
+scripts/integration/launch/run_demo.sh   # Windows: scripts\integration\launch\run_demo.ps1
+```
+
+Only the Cyclone and Dust participants have been run so far, on Windows. The Fast DDS, RTI and OpenSplice ones are written but unrun, and RTI stays local because of its license terms. Details, the participant table and the known limits are in [`scripts/integration/README.md`](scripts/integration/README.md).
+
 ### Configure with Claude Desktop
 
 Add to your `claude_desktop_config.json`:
@@ -233,7 +244,7 @@ pytest
 make test
 ```
 
-Tests run entirely against the mock adapter, the live adapter's pure parsers and the binding-free DDS helpers - they never require a running ROS graph. Tests that need the `cyclonedds` or `fastdds` binding skip themselves when it is absent, and the `integration` marker (real-bus scenarios) is deselected by default; `pytest -m integration` selects it, but the runner behind it is not implemented yet, see [`scripts/integration/README.md`](scripts/integration/README.md).
+Tests run entirely against the mock adapter, the live adapter's pure parsers and the binding-free DDS helpers - they never require a running ROS graph. Tests that need the `cyclonedds` or `fastdds` binding skip themselves when it is absent, and the `integration` marker (real-bus tests) is deselected by default. The multi-vendor demo driver is separate from pytest, see [Multi-vendor demo](#multi-vendor-demo).
 
 ## Lint & format
 
@@ -329,7 +340,7 @@ Before exposing TopicForge to *untrusted* MCP clients (hosted endpoints, shared 
 - `sample_messages` silently clamps `count` to 50 to keep tool output bounded; requests for more than 50 messages return at most 50 (the `SampleResult.count` field reflects what was actually returned).
 - `analyze_bag` in live mode shells out to `ros2 bag info` and parses its text output; it does not use `rosbags`. Deep anomaly detection is mock-only for now. `peek_bag_samples` is the only bag tool that reads the file itself, through `rosbags` (`pip install topicforge[bags]`), and it is served only by the ROS2 CLI adapter (alone or as the ROS half of a composite) or by the mock adapter. In a DDS-only process it raises the "DDS observability only" error.
 - `peek_dds_samples` does not decode user-topic payloads, and `topic_metrics` only has data for the builtin discovery topics (details in [Multi-vendor DDS support](#multi-vendor-dds-support-v030)).
-- No DDS adapter has been validated against a live multi-vendor bus, and DDS Security (authenticated or encrypted domains) is not handled: a participant without credentials sees an empty secure bus.
+- Live-bus validation is thin: only the Cyclone adapter has been run, once, on Windows, against Cyclone and Dust DDS participants. The Fast DDS adapter and every RTI, OpenDDS, CoreDX and OpenSplice participant remain unobserved. DDS Security (authenticated or encrypted domains) is not handled: a participant without credentials sees an empty secure bus.
 - `detect_qos_mismatches` covers four QoS policies (Reliability, Durability, History, Deadline). Liveliness, Ownership and Partition are not checked.
 - No streaming / push subscriptions in the MVP. Tools are strictly request/response.
 - Live adapter is CLI-based, not `rclpy`-based - by design, for portability.
@@ -341,7 +352,7 @@ See [`docs/product-plan.md`](docs/product-plan.md) for the full product trajecto
 Near-term additions on the bench:
 
 - `rclpy`-backed live adapter for faster & richer sampling (per-message rmw receive timestamps, windowed sampling): gated on external user demand
-- Validating the Cyclone and Fast adapters against a real multi-vendor bus, then re-enabling user-topic payload decoding on top of that
+- Extending live-bus validation (Fast DDS, RTI, a Linux and Windows mixed bus) beyond the first Cyclone run, then re-enabling user-topic payload decoding on top of that
 - Migration to the MCP SDK 2.x API (the `mcp>=1.0.0,<2` pin is a stopgap)
 - Extended QoS coverage (Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget)
 - URDF inspector / validator and bag anomaly detection (clock jumps, gaps, dropped frames, TF tree health): candidate engagement deliverables, not a shipped product tier (see [`docs/product-plan.md`](docs/product-plan.md))

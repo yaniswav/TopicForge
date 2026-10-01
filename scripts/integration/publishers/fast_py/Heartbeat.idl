@@ -1,0 +1,3 @@
+struct Heartbeat {
+    unsigned long seq;
+};

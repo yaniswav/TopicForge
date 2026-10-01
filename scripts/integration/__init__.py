@@ -1,7 +1,4 @@
-"""Standalone integration rig for TopicForge real-bus scenarios.
+"""Multi-vendor demo rig for TopicForge.
 
-Entry point: `scenarios_runner.py`. Wraps the parametrized
-`tests/integration/scenarios/*.json` files so the same scenarios
-run from a developer laptop (whichever SDK is installed) and from
-the Docker compose CI rig (`docker-compose.yml`).
+Entry point: `driver/demo_client.py`; see `DEMO_CONTRACT.md`.
 """

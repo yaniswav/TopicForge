@@ -2,7 +2,7 @@
 
 A 5-minute tour of TopicForge's multi-vendor DDS observability module. Both backends (Eclipse CycloneDDS and eProsima Fast DDS) join the bus as **read-only DDS-RTPS participants** and, by the OMG protocol guarantee, observe every conformant vendor on the wire. The `MiddlewareAdapter` protocol does not expose a write method, so the MCP client cannot publish back to the bus on any backend.
 
-**Validation status.** The DDS adapters have never been run against a live multi-vendor bus. The unit tests cover the binding-free logic (QoS analysis, lifecycle and metrics buffers) and the mock backend; the real-bus rig in `scripts/integration/` is a dispatch shell that validates nothing. Treat this guide as a description of what the code is designed to do, and report what you see on a real domain.
+**Validation status.** The Cyclone adapter has been run once against a live bus on Windows 11, with a Python / Cyclone participant and Dust DDS participants in Rust, Python and C, through the demo in [`scripts/integration/`](../scripts/integration/README.md). The Fast DDS adapter has never been run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed yet. The unit tests cover the binding-free logic (QoS analysis, lifecycle and metrics buffers) and the mock backend. Treat the rest of this guide as a description of what the code is designed to do, and report what you see on a real domain.
 
 See [`docs/dds-interop-matrix.md`](dds-interop-matrix.md) for the canonical multi-vendor positioning and the [OMG May 2025 interop reference](projet-file/references/omg-dds-interop-2025-05-08.xlsx).
 
@@ -181,7 +181,7 @@ The other DDS tools (`list_participants`, `detect_qos_mismatches`, `participant_
 
 Open items, in the order they matter. None is scheduled; see [`docs/product-plan.md`](product-plan.md).
 
-- **Real-bus validation** of both adapters against a multi-vendor domain. Until that exists, nothing in the DDS module has been observed working on a live bus, and re-enabling user-topic payload decoding is blocked on it.
+- **Wider real-bus validation.** The Cyclone adapter has had one run against Cyclone and Dust DDS participants ([`scripts/integration/README.md`](../scripts/integration/README.md)). The Fast DDS adapter and the RTI, OpenDDS, CoreDX and OpenSplice participants are still unobserved, and re-enabling user-topic payload decoding is blocked on that.
 - **Extended QoS coverage**: Liveliness, Ownership, Partition, TimeBasedFilter, LatencyBudget.
 - **DDS Security**: not handled at all. A participant without credentials sees an empty secure bus, which excludes authenticated domains.
 
