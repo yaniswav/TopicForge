@@ -1,4 +1,0 @@
-# Ignore everything by default: Docker only sees what's explicitly
-# COPY'd by the Dockerfile.
-**
-!scripts/integration/publishers/cyclone_publisher.py

@@ -1,0 +1,89 @@
+name: Demo Fast DDS participant
+
+# Builds the C++ Fast DDS participant of the multi-vendor demo and proves that
+# it starts. Fast DDS 3 has no apt package on Ubuntu 24.04, so the three
+# eProsima libraries are built from pinned tags into a cached prefix. The cold
+# build takes a while, hence manual and weekly triggers only, never per push.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  # Pinned together: this is the dependency triple of the Fast-DDS v3.6.2 repos file.
+  FOONATHAN_MEMORY_VENDOR_TAG: v1.4.1
+  FAST_CDR_TAG: v2.3.6
+  FAST_DDS_TAG: v3.6.2
+  PREFIX: ${{ github.workspace }}/fastdds-prefix
+
+jobs:
+  build-and-run:
+    name: Build fast_publisher and run it for 10 s
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git libasio-dev libtinyxml2-dev libssl-dev
+
+      - name: Restore Fast DDS prefix
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PREFIX }}
+          key: fastdds-${{ env.FAST_DDS_TAG }}-cdr-${{ env.FAST_CDR_TAG }}-mem-${{ env.FOONATHAN_MEMORY_VENDOR_TAG }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build Fast DDS from source
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/fastdds-src"
+          mkdir -p "$src"
+          build() {  # build <repo> <tag> <dir> [extra cmake args]
+            local repo=$1 tag=$2 dir=$3; shift 3
+            git clone --depth 1 --branch "$tag" "https://github.com/eProsima/$repo.git" "$src/$dir"
+            cmake -S "$src/$dir" -B "$src/$dir/build" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON \
+              -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+              -DCMAKE_PREFIX_PATH="$PREFIX" "$@"
+            cmake --build "$src/$dir/build" --target install -j"$(nproc)"
+          }
+          build foonathan_memory_vendor "$FOONATHAN_MEMORY_VENDOR_TAG" memory
+          build Fast-CDR "$FAST_CDR_TAG" cdr
+          build Fast-DDS "$FAST_DDS_TAG" dds -DCOMPILE_EXAMPLES=OFF -DBUILD_TESTING=OFF
+
+      - name: Build fast_publisher
+        run: |
+          cd scripts/integration/publishers/fast_publisher_cpp
+          cmake -S . -B build -DCMAKE_PREFIX_PATH="$PREFIX"
+          cmake --build build -j"$(nproc)"
+
+      - name: Run fast_publisher for 10 seconds
+        run: |
+          # Library dir is lib or lib/<triplet> depending on the project.
+          libdirs=$(find "$PREFIX" -name '*.so*' -exec dirname {} + | sort -u | paste -sd: -)
+          export LD_LIBRARY_PATH="$libdirs:${LD_LIBRARY_PATH:-}"
+          cd scripts/integration/publishers/fast_publisher_cpp
+          # SIGINT after 10 s is the normal stop. Exit status 124 means it was
+          # still running when the timer fired, which is what we want to see.
+          set +e
+          timeout -s INT 10 ./build/fast_publisher --domain 0 > run.log 2>&1
+          status=$?
+          set -e
+          cat run.log
+          if [ "$status" -ne 124 ]; then
+            echo "fast_publisher exited early with status $status" >&2
+            exit 1
+          fi
+          grep -q '^\[fast_publisher\] domain 0' run.log

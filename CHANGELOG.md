@@ -49,6 +49,31 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
 - A real Rust / Dust DDS participant (`publishers/dust_publisher`) and a real
   Python / Cyclone participant replacing the previous scaffold, which never
   wrote a sample.
+- Fourteen demo participants in total, one per vendor and language that has a
+  usable binding (Cyclone C / C++ / Rust / Python, Dust Rust / Python / C,
+  Fast DDS C++ / Python, RTI Connext C / C++ / Rust / Python, OpenSplice C),
+  all following the contract in `scripts/integration/DEMO_CONTRACT.md`. The
+  driver starts whichever ones are built on the host and adapts its checks;
+  `--list` shows what can run. Only Cyclone Python and Dust Rust / Python / C
+  have been run, on Windows; the rest are written but unrun. RTI participants
+  need a local license and are never run in CI.
+- One-command launch scripts, `scripts/integration/launch/setup` and
+  `run_demo` (`.ps1` and `.sh`), which create `.venv-demo`, install the Cyclone
+  binding and build the Rust participant. `setup.ps1 -Firewall` adds inbound
+  UDP 7400-7500 rules on private networks for multi-machine runs.
+- Unicast peer configuration for Cyclone and Fast DDS and a guide for a mixed
+  Linux and Windows bus (`scripts/integration/config/`).
+- `.github/workflows/demo.yml` runs the driver with the Cyclone and Dust
+  participants on Ubuntu and Windows; `demo-fast.yml` builds Fast DDS 3 from
+  pinned tags and starts the C++ participant (weekly and manual).
+- `scripts/integration/README.md` rewritten around the demo: it previously
+  described the removed docker / scenario rig.
+
+### Removed
+
+- The docker / scenario integration rig (`scenarios_runner.py`, `run-local.*`,
+  `docker-compose.yml`, per-vendor Dockerfiles, scenario JSON files, schema
+  test and `integration.yml`) is removed in favour of the demo driver.
 
 ## [0.5.3] - 2026-10-01
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fast DDS (C++ node) for a bus that spans two machines. Replace the address,
+  then point Fast DDS at this file before starting the node:
+    Linux:   export FASTDDS_DEFAULT_PROFILES_FILE=$PWD/fastdds-peers.xml
+    Windows: $env:FASTDDS_DEFAULT_PROFILES_FILE = "$PWD\fastdds-peers.xml"
+  Multicast discovery stays enabled; the initial peer is added on top of it.
+-->
+<dds xmlns="http://www.eprosima.com">
+  <profiles>
+    <participant profile_name="topicforge_demo_peers" is_default_profile="true">
+      <rtps>
+        <builtin>
+          <initialPeersList>
+            <locator>
+              <udpv4>
+                <address>OTHER_MACHINE_IP</address>
+              </udpv4>
+            </locator>
+          </initialPeersList>
+        </builtin>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>
