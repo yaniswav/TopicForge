@@ -1,11 +1,17 @@
 """Real-bus integration tests: gated by `@pytest.mark.integration`.
 
-Parametrized over the scenario JSON files. The default
-`pytest` invocation **does not** run these: the
-`pyproject.toml` `addopts = "-ra --strict-markers"` plus the
-explicit `-m integration` selection are required. CI exercises them
+Deselected by default: `pyproject.toml` sets `-m "not integration"` in
+`addopts`, so a plain `pytest` never runs this module even when a DDS binding
+is installed. Select it explicitly with `pytest -m integration`. CI runs it
 only when the `integration-tests` PR label is set
 (`.github/workflows/integration.yml`).
+
+**The runner is not implemented yet.** `scripts/integration/scenarios_runner.py`
+dispatches scenarios but spawns neither publishers nor TopicForge, and marks
+every assertion as not evaluated. The dispatch test is therefore a strict
+xfail: it documents the gap instead of failing every run, and it will start
+failing (XPASS) the day the runner really validates something, which is the
+cue to remove the marker.
 
 These tests defer the heavy lifting (spawning publishers, polling
 TopicForge, asserting outputs) to
@@ -40,6 +46,10 @@ def test_runner_script_exists() -> None:
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="scenarios_runner.py is a dispatch shell: it marks every assertion as not evaluated",
+)
 def test_each_scenario_can_be_dispatched_to_runner(
     all_scenarios: list[dict[str, Any]],
     available_vendors: set[str],
@@ -59,15 +69,13 @@ def test_each_scenario_can_be_dispatched_to_runner(
     runner_path = (
         Path(__file__).parent.parent.parent / "scripts" / "integration" / "scenarios_runner.py"
     )
-    for scenario in all_scenarios:
+    runnable = [s for s in all_scenarios if set(s["required_vendors"]).issubset(available_vendors)]
+    if not runnable:
+        pytest.skip(
+            f"no scenario runnable with locally available vendors {sorted(available_vendors)}"
+        )
+    for scenario in runnable:
         scenario_file = scenarios_dir / f"{scenario['name']}.json"
-        required = set(scenario["required_vendors"])
-        if not required.issubset(available_vendors):
-            pytest.skip(
-                f"Scenario {scenario['name']!r} requires {sorted(required)} ; "
-                f"locally available: {sorted(available_vendors)}"
-            )
-            continue
         result = subprocess.run(
             [sys.executable, str(runner_path), "--scenario", str(scenario_file)],
             capture_output=True,

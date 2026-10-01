@@ -23,15 +23,19 @@ Notice: a Rust implementation is in this list. That is the OMG-DDS promise: lang
 
 ## What this means for TopicForge
 
-When you install TopicForge with DDS support (`pip install topicforge[dds]`), it brings in one of the two OSS Python participants (CycloneDDS or Fast DDS) and joins the domain you point it at.
+When you install TopicForge with DDS support (`pip install topicforge[dds]`, which installs the CycloneDDS Python binding), it joins the domain you point it at as a read-only participant. The Fast DDS adapter works the same way, but its Python binding is not on PyPI: you build it from eProsima's sources (see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md)).
 
-From there, TopicForge's MCP tools (`list_participants`, `list_topics`, `detect_qos_mismatches`, `peek_dds_samples`) see **every conformant participant on the bus**, regardless of:
+From there, TopicForge's discovery-based tools (`list_participants`, `detect_qos_mismatches`, `participant_events`, and `peek_dds_samples` on the builtin `DCPS*` topics) see **every conformant participant on the bus**, regardless of:
 
 - **The vendor**: RTI Connext, OpenDDS, CoreDX, Fast DDS, Cyclone, InterCOM, Dust DDS, or any other DDS-RTPS conformant stack
 - **The host language**: C, C++11/14/17/20, Rust, Java, .NET, Python, Ada, anything with a binding
 - **The version**: different versions of the same vendor coexist on the bus as the standard intends
 
 The two known interop gaps from the 2025-05 OMG report (Dust DDS <-> OpenDDS, Dust DDS <-> CoreDX) live at the application layer between those specific implementations: they are not gaps in what TopicForge can observe. TopicForge's participant still discovers the other endpoints; it just reports what is on the bus.
+
+## Limits of this claim
+
+The claim is about **discovery**: which participants, readers and writers exist, and what QoS they announce. It does not extend to user-topic payloads. Since 0.5.3 `peek_dds_samples` reports that a user topic is present on the bus but does not decode its contents, on any vendor's data. The claim has also not been verified by this project on a live multi-vendor bus: it follows from the RTPS standard and from the OMG's published results above, and the project's own real-bus rig is not implemented yet (see [`../scripts/integration/README.md`](../scripts/integration/README.md)). Domains that use DDS Security are not observable at all, because TopicForge joins without credentials.
 
 ## What TopicForge is not
 

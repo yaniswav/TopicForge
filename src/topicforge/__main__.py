@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stderr,
     )
     log = logging.getLogger("topicforge")
-    log.info("starting (mode=%s)", settings.effective_mode)
+    log.info("starting (requested mode=%s)", settings.mode)
 
     app = build_app(settings)
     try:

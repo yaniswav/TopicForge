@@ -21,20 +21,22 @@ camera. Five ROS2 topics, deterministic across runs.
 
 > What runtime is this MCP serving, and what topics are on the graph?
 
-**Claude calls:** `health_check()` -> confirms `mode_effective="mock"`,
-adapter `"mock"`. Then `list_topics()` -> returns 5 `TopicInfo`:
-`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw` with full
-publisher/subscriber counts and message types.
+**Claude calls:** `health_check()` -> confirms `mode="mock"`,
+`requested_mode="mock"`, `ros_backend="mock"`. Then `list_topics()` ->
+returns 5 `TopicInfo`: `/cmd_vel`, `/odom`, `/scan`, `/tf`,
+`/camera/image_raw` with publisher/subscriber counts, message types and
+`qos_reliability`.
 
 **You:**
 
 > Show me the structure of `/scan` and what its messages look like.
 
 **Claude calls:** `get_topic_info(topic="/scan")` -> returns
-`message_type="sensor_msgs/LaserScan"`, `publisher_count=1`,
-`subscriber_count=2`, plus QoS profile when available. Then
+`message_type="sensor_msgs/msg/LaserScan"`, `publisher_count=1`,
+`subscriber_count=1`, `qos_reliability="best_effort"`. Then
 `sample_messages(topic="/scan", count=2)` -> returns 2 deterministic
-`MessageSample` objects.
+`MessageSample` objects (the fixture holds 3, so `count` of 3 or more
+returns 3).
 
 **You:**
 
@@ -43,12 +45,12 @@ publisher/subscriber counts and message types.
 **Claude responds** with something like :
 
 > This is a small mobile robot. Three sensor topics
-> (`/scan` from a 1-D LIDAR, `/camera/image_raw` from an RGB camera,
+> (`/scan` from a 2D LIDAR, `/camera/image_raw` from an RGB camera,
 > `/tf` for transforms), one odometry feedback (`/odom`), and one
 > command input (`/cmd_vel`). All five are mocked from
-> deterministic fixtures: `health_check` reports
-> `mode_effective="mock"`. No DDS module is active (you'd need
-> `TOPICFORGE_DDS_BACKEND` set for that).
+> deterministic fixtures: `health_check` reports `mode="mock"` and
+> every `TopicInfo` carries `mode_effective="mock"`. None of this
+> comes from a real graph.
 
 ## Going live
 
@@ -61,7 +63,10 @@ TOPICFORGE_MODE=live python -m topicforge
 
 The same four tool calls work against any real ROS2 graph: the wire
 shape is identical between mock and live (the `mode_effective` field
-on every response is the only behavioral hint).
+on every response, and `mode` on `health_check`, are the only
+behavioral hints). If `ros2` is not on PATH the server falls back to
+the fixtures and `health_check` says `mode="mock"` while
+`requested_mode` stays `"live"`.
 
 ## Variants
 

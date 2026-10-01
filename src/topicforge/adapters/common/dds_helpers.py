@@ -14,9 +14,13 @@ soft-breaking wire change.
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Iterable
+from itertools import islice
+from typing import Any, Literal
 
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.xtypes import annotate_raw
+from topicforge.models import MessageSample
 
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
@@ -32,6 +36,49 @@ def validate_domain_id(domain_id: int) -> None:
         raise AdapterError(
             f"domain_id must be in {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}, got {domain_id}"
         )
+
+
+def take_bounded(source: Iterable[Any], limit: int) -> list[Any]:
+    """Consume at most `limit` items from `source` and return them as a list.
+
+    Wraps `itertools.islice` so a lazy binding iterator is never fully
+    materialized before truncation. This matters for `read_iter(timeout=...)`
+    on a DataReader: its timeout resets every time a sample arrives, so on a
+    topic publishing faster than the timeout the iterator never ends and
+    `list(read_iter(...))[:n]` would never return. A negative `limit` yields
+    an empty list.
+    """
+    return list(islice(source, max(limit, 0)))
+
+
+DYNAMIC_DECODE_DISABLED_NOTE = (
+    "dynamic XTypes decode is disabled in this release pending real-bus "
+    "validation; topic presence is reported, payload is not decoded"
+)
+"""`_decode_note` carried by the user-topic placeholder sample.
+
+The placeholder says the topic is on the bus. It says nothing about traffic:
+no sample was received, so it must never feed the metrics buffer.
+"""
+
+
+def user_topic_placeholder(topic: str, count: int, *, note: str) -> list[MessageSample]:
+    """Return the single annotated placeholder for an undecodable user topic.
+
+    Empty when `count <= 0`, otherwise exactly one `MessageSample` whose
+    payload is `annotate_raw(b"", note=note)`. The placeholder is not a
+    received sample: callers must not record it into a `MetricsBuffer`.
+    """
+    if count <= 0:
+        return []
+    return [
+        MessageSample(
+            topic=topic,
+            message_type="dds/unknown",
+            timestamp_ns=0,
+            payload=annotate_raw(b"", note=note),
+        )
+    ]
 
 
 VendorTag = Literal["cyclone", "fast", "rti", "mock", "unknown"]

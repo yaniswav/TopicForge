@@ -7,9 +7,10 @@ body:
     attributes:
       value: |
         Before opening : TopicForge is intentionally small. The tool surface is capped at 11
-        as of v0.4.0 ; each new tool needs an explicit scope discussion (see `docs/product-plan.md section 11`
-        "Scope creep within the TopicForge umbrella"). Many ideas land better in the Pro tier
-        roadmap (URDF inspection, bag anomaly detection) than as OSS additions.
+        since v0.4.0 ; each new tool needs an explicit scope discussion (see `docs/product-plan.md section 11`
+        "Scope creep within the TopicForge umbrella"). Some ideas (URDF inspection, bag anomaly
+        detection) are candidate commercial-engagement deliverables rather than core additions;
+        see `docs/pro.md`. The licensed Pro tier no longer exists.
 
         For parser fixes on a new ROS2 distro, please file a bug instead with a failing test.
 
@@ -41,10 +42,10 @@ body:
   - type: dropdown
     id: tier
     attributes:
-      label: Which tier should this live in?
+      label: Where should this live?
       options:
-        - "OSS (core)"
-        - "Pro tier (URDF / bag anomaly / multi-bag diff family)"
+        - "Core (open source)"
+        - "Commercial engagement deliverable (URDF / bag anomaly / multi-bag diff family; see docs/pro.md)"
         - "I don't know: maintainer decides"
     validations:
       required: true
