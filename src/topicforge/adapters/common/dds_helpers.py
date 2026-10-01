@@ -6,7 +6,7 @@ in the canonical OMG textual form, and centralizes the DDS-only error
 message used when a DDS-only adapter is asked for ROS2 introspection.
 
 The vendor_id table comes from the official OMG Vendor IDs document
-(`portals.omg.org/dds/sites/default/files/Vendor%20IDs.pdf`). When a new
+(`omgwiki.org/dds/sites/default/files/Vendor IDs.pdf`). When a new
 vendor is observed in the wild, add a row here ; do NOT widen the
 `ParticipantInfo.vendor` Literal without a CHANGELOG entry: it is a
 soft-breaking wire change.
@@ -81,35 +81,51 @@ def user_topic_placeholder(topic: str, count: int, *, note: str) -> list[Message
     ]
 
 
-VendorTag = Literal["cyclone", "fast", "rti", "mock", "unknown"]
+VendorTag = Literal[
+    "cyclone",
+    "fast",
+    "rti",
+    "rti_micro",
+    "opensplice",
+    "opendds",
+    "coredx",
+    "intercom",
+    "dust",
+    "mock",
+    "unknown",
+]
 """Canonical vendor tag exposed on `ParticipantInfo.vendor`.
 
-Kept in sync with `models/schemas.py:ParticipantInfo.vendor` Literal. A
-mismatch between the two would surface as a Pydantic ValidationError at
-adapter output construction time: caught by the cross-vendor tests.
+Kept in sync with `models/schemas.py:ParticipantInfo.vendor` and
+`ParticipantEvent.vendor` Literals. A mismatch between them would surface as
+a Pydantic ValidationError at adapter output construction time: pinned by
+`tests/test_dds_helpers.py`.
 """
 
 # OMG vendor_id (2-byte octet array) -> canonical tag.
-# Source: portals.omg.org/dds/sites/default/files/Vendor%20IDs.pdf
-# Entries collapse to "unknown" when there is no first-class TopicForge
-# tag for them today ; observers still see those participants on the
-# bus via the OMG protocol guarantee, they just report as "unknown".
+# Source: the official OMG RTPS vendor ID list (omgwiki.org/dds, "Vendor IDs",
+# mirrored at dds-foundation.org/dds-rtps-vendor-and-product-ids), cross-checked
+# against vendor sources: Fast DDS `VendorId_t.hpp` (eProsima = {0x01, 0x0F}),
+# Cyclone `ddsi__vendor.h` (ECLIPSE 0x10, EPROSIMA 0x0f, ADLINK_OSPL 0x02,
+# RTI 0x01) and Dust DDS `types.rs` (S2E = [0x01, 0x14]).
+# Only vendors with a first-class TopicForge tag are listed. Every other id
+# (01.04 MilSoft, 01.07 / 01.08 Lakota and ICOUP, 01.09 ETRI Diamond, 01.0B
+# Vortex Cafe, 01.0C PrismTech, 01.0D Vortex Lite, 01.0E Qeo, 01.11 Gurum,
+# 01.12 RustDDS, 01.13 ZRDDS, 01.15 eProsima Safe DDS, 01.16 Federated Designs
+# and above) falls through to "unknown": observers still see those
+# participants via RTPS discovery, they just report as "unknown". Safe DDS is
+# deliberately not folded into "fast": it is a separate safety-certified
+# implementation, not Fast DDS.
 _VENDOR_ID_MAP: dict[tuple[int, int], VendorTag] = {
-    (0x01, 0x01): "rti",  # Real-Time Innovations Connext
-    (0x01, 0x02): "unknown",  # PrismTech / OpenSplice (EOL)
-    (0x01, 0x03): "unknown",  # OCI / OpenDDS
-    (0x01, 0x04): "unknown",  # MilSoft Open DDS
-    (0x01, 0x05): "fast",  # eProsima Fast DDS
-    (0x01, 0x06): "unknown",  # GurumNetworks GurumDDS
-    (0x01, 0x07): "unknown",  # Twin Oaks Computing CoreDX
-    (0x01, 0x09): "unknown",  # ADLink / Vortex (pre-Cyclone)
-    (0x01, 0x0A): "unknown",  # PrismTech Vortex Lite
-    (0x01, 0x0B): "unknown",  # TechSoft InterCOM
-    (0x01, 0x0C): "unknown",  # Kongsberg Defence & Aerospace
-    (0x01, 0x0F): "unknown",  # ZRDDS
-    (0x01, 0x10): "unknown",  # GurumNetworks GurumDDS-Light
-    (0x01, 0x11): "unknown",  # Dust DDS (Rust)
-    (0x01, 0x16): "cyclone",  # Eclipse CycloneDDS
+    (0x01, 0x01): "rti",  # Real-Time Innovations, RTI Connext DDS
+    (0x01, 0x02): "opensplice",  # ADLink, OpenSplice DDS
+    (0x01, 0x03): "opendds",  # Object Computing Inc. (OCI), OpenDDS
+    (0x01, 0x05): "intercom",  # Kongsberg, InterCOM DDS
+    (0x01, 0x06): "coredx",  # Twin Oaks Computing, CoreDX DDS
+    (0x01, 0x0A): "rti_micro",  # Real-Time Innovations, RTI Connext DDS Micro
+    (0x01, 0x0F): "fast",  # eProsima, FastRTPS / Fast DDS
+    (0x01, 0x10): "cyclone",  # Eclipse Foundation, Eclipse Cyclone DDS
+    (0x01, 0x14): "dust",  # S2E Software Systems, Dust DDS
 }
 
 

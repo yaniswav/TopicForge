@@ -27,7 +27,9 @@ from topicforge.adapters.common.dds_introspection import (
     fast_extract_hostname,
     fast_extract_topic_name,
     fast_extract_vendor_id,
+    is_alive_sample,
     is_removal,
+    vendor_id_from_guid,
 )
 from topicforge.adapters.common.lifecycle import MAX_EVENTS, LifecycleBuffer
 from topicforge.adapters.common.metrics_buffer import (
@@ -80,9 +82,11 @@ __all__ = [
     "fast_extract_vendor_id",
     "fast_qos_to_profile",
     "format_guid",
+    "is_alive_sample",
     "is_removal",
     "iter_field_names",
     "take_bounded",
     "user_topic_placeholder",
     "validate_domain_id",
+    "vendor_id_from_guid",
 ]

@@ -151,7 +151,7 @@ def mock_samples_for(topic: str, count: int) -> list[MessageSample]:
 
 # ---------------------------------------------------------------------------
 # DDS module fixtures: exercise list_participants, detect_qos_mismatches,
-# peek_dds_samples. Two participants on a single domain ; one well-matched
+# peek_dds_samples. Four participants on a single domain ; one well-matched
 # topic (reader & writer compatible) and one deliberately mismatched topic
 # (Reliability incompatibility, since RELIABLE reader cannot match a
 # BEST_EFFORT writer).
@@ -201,9 +201,22 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         status="active",
         seen_count=2,
     ),
+    # A Rust Dust DDS participant (S2E, vendor_id 01.14) rounds out the
+    # multi-vendor demo: three distinct stacks on one bus.
+    ParticipantInfo(
+        guid="010f1c2a-3b4c-5d6e-7f80-000000000004",
+        vendor="dust",
+        hostname="mock-rust-node",
+        domain_id=0,
+        mode_effective="mock",
+        first_seen_ns=_LIFECYCLE_BASE_TS_NS + 15_000_000_000,
+        last_seen_ns=_LIFECYCLE_BASE_TS_NS + 45_000_000_000,
+        status="active",
+        seen_count=2,
+    ),
 )
 
-# Deterministic lifecycle log for the same scenario. Three discovery
+# Deterministic lifecycle log for the same scenario. Four discovery
 # events ordered by timestamp, no `lost` event (steady-state demo).
 MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
     ParticipantEvent(
@@ -230,6 +243,15 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
         vendor="fast",
         timestamp_ns=_LIFECYCLE_BASE_TS_NS + 10_000_000_000,
         hostname="mock-aerospace-node",
+        domain_id=0,
+        mode_effective="mock",
+    ),
+    ParticipantEvent(
+        guid="010f1c2a-3b4c-5d6e-7f80-000000000004",
+        event_type="discovered",
+        vendor="dust",
+        timestamp_ns=_LIFECYCLE_BASE_TS_NS + 15_000_000_000,
+        hostname="mock-rust-node",
         domain_id=0,
         mode_effective="mock",
     ),

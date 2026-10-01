@@ -94,6 +94,9 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     cyclone_qos_to_profile as _cyclone_qos_to_profile,
 )
+from topicforge.adapters.common import (
+    is_alive_sample as _is_alive,
+)
 from topicforge.models import (
     BagAnalysis,
     MessageSample,
@@ -363,10 +366,14 @@ class CycloneDdsAdapter:
         """
         try:
             reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
-            samples = take_bounded(
-                reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_PARTICIPANTS,
-            )
+            samples = [
+                s
+                for s in take_bounded(
+                    reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
+                    _MAX_PARTICIPANTS,
+                )
+                if _is_alive(s)
+            ]
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS participant discovery failed on domain {self._domain_id} "
@@ -406,14 +413,22 @@ class CycloneDdsAdapter:
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = take_bounded(
-                sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
-            pubs = take_bounded(
-                pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
+            subs = [
+                s
+                for s in take_bounded(
+                    sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
+                    _MAX_ENDPOINTS,
+                )
+                if _is_alive(s)
+            ]
+            pubs = [
+                s
+                for s in take_bounded(
+                    pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
+                    _MAX_ENDPOINTS,
+                )
+                if _is_alive(s)
+            ]
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS endpoint discovery failed on domain {self._domain_id} "
@@ -557,14 +572,22 @@ class CycloneDdsAdapter:
         try:
             sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
             pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = take_bounded(
-                sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
-            pubs = take_bounded(
-                pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
+            subs = [
+                s
+                for s in take_bounded(
+                    sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
+                    _MAX_ENDPOINTS,
+                )
+                if _is_alive(s)
+            ]
+            pubs = [
+                s
+                for s in take_bounded(
+                    pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
+                    _MAX_ENDPOINTS,
+                )
+                if _is_alive(s)
+            ]
         except Exception:  # pragma: no cover: defensive
             log.exception("cyclone discovery probe for topic %r failed", topic)
             return False
