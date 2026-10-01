@@ -14,23 +14,40 @@ $Repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
 $Venv = Join-Path $Repo ".venv-demo"
 $Py = Join-Path $Venv "Scripts\python.exe"
 
-Write-Host "[setup] repo: $Repo"
-if (-not (Test-Path $Venv)) {
-    # cyclonedds ships wheels for CPython 3.10 to 3.13 only; take the newest of those.
-    $ver = @("3.13", "3.12", "3.11", "3.10") | Where-Object { py "-$_" -c "pass" 2>$null; $LASTEXITCODE -eq 0 } |
-        Select-Object -First 1
-    if (-not $ver) { throw "Python 3.10 to 3.13 is required (cyclonedds has no wheel for newer versions)" }
-    py "-$ver" -m venv $Venv
+function Invoke-Native([string]$What, [scriptblock]$Command) {
+    # Windows PowerShell 5.1 turns any stderr line of a native program into a
+    # terminating error under "Stop" (pip and cargo print warnings there), so
+    # native calls run under "Continue" and are judged by their exit code.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command } finally { $ErrorActionPreference = $previous }
+    if ($LASTEXITCODE -ne 0) { throw "[setup] $What failed (exit code $LASTEXITCODE)" }
 }
-& $Py -m pip install --quiet --upgrade pip
-& $Py -m pip install --quiet -e "$Repo[dds]"
-& $Py -m pip install --quiet "dust-dds==0.16.0"  # Python / Dust participant
-Write-Host "[setup] TopicForge + cyclonedds installed in $Venv"
+
+Write-Host "[setup] repo: $Repo"
+if (-not (Test-Path $Py)) {
+    if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+        throw "[setup] the Python launcher 'py' is missing: install Python 3.12 from python.org"
+    }
+    # cyclonedds ships wheels for CPython 3.10 to 3.13 only; take the newest of those.
+    $installed = (py -0p) -join "`n"
+    $ver = @("3.13", "3.12", "3.11", "3.10") |
+        Where-Object { $installed -match "[-:]$([regex]::Escape($_))(-64)?\s" } |
+        Select-Object -First 1
+    if (-not $ver) {
+        throw "[setup] Python 3.10 to 3.13 is required (cyclonedds has no wheel for newer ones). Installed:`n$installed"
+    }
+    Write-Host "[setup] creating .venv-demo with Python $ver"
+    Invoke-Native "venv creation" { py "-$ver" -m venv $Venv }
+}
+Invoke-Native "pip upgrade" { & $Py -m pip install --quiet --upgrade pip }
+Invoke-Native "TopicForge install" { & $Py -m pip install --quiet -e "$Repo[dds]" }
+Invoke-Native "dust-dds install" { & $Py -m pip install --quiet "dust-dds==0.16.0" }
+Write-Host "[setup] TopicForge, cyclonedds and dust-dds installed in $Venv"
 
 if (Get-Command cargo -ErrorAction SilentlyContinue) {
     Push-Location (Join-Path $Repo "scripts\integration\publishers\dust_publisher")
-    cargo build --release --quiet
-    Pop-Location
+    try { Invoke-Native "cargo build" { cargo build --release --quiet } } finally { Pop-Location }
     Write-Host "[setup] Rust / Dust participant built"
 } else {
     Write-Host "[setup] cargo not found: install Rust (https://rustup.rs) to build the Dust participant"
@@ -57,5 +74,5 @@ if ($Firewall) {
     }
 }
 
-& $Py (Join-Path $Repo "scripts\integration\driver\demo_client.py") --list
+Invoke-Native "participant listing" { & $Py (Join-Path $Repo "scripts\integration\driver\demo_client.py") --list }
 Write-Host "[setup] done. Run: scripts\integration\launch\run_demo.ps1"
