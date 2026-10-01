@@ -12,12 +12,15 @@ directly with synthetic discovery infos.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 fastdds = pytest.importorskip("fastdds")
 pytestmark = pytest.mark.requires_fastdds
 
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common import VendorTag
 from topicforge.adapters.dds_fast import FastDdsAdapter
 
 
@@ -58,7 +61,7 @@ def test_list_participants_returns_list(adapter: FastDdsAdapter) -> None:
     participants = adapter.list_participants()
     assert isinstance(participants, list)
     for p in participants:
-        assert p.vendor in ("cyclone", "fast", "rti", "mock", "unknown")
+        assert p.vendor in get_args(VendorTag)
         assert p.mode_effective == "live"
         assert p.domain_id == 0
 

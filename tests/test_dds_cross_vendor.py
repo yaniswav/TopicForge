@@ -24,11 +24,12 @@ in action ; the tests deliberately do not pin participant counts.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
+from topicforge.adapters.common import VendorTag
 
 
 @pytest.fixture(params=["cyclone", "fast"])
@@ -76,7 +77,7 @@ def test_list_participants_returns_pydantic_participantinfo(dds_adapter: Any) ->
     assert isinstance(participants, list)
     for p in participants:
         # Canonical vendor Literal must hold on every adapter's output.
-        assert p.vendor in ("cyclone", "fast", "rti", "mock", "unknown")
+        assert p.vendor in get_args(VendorTag)
         assert p.mode_effective == "live"
         assert isinstance(p.guid, str)
         assert isinstance(p.domain_id, int)

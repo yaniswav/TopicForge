@@ -213,3 +213,51 @@ def test_fast_extract_hostname_missing_returns_none():
 
 def test_fast_extract_topic_name_missing_returns_none():
     assert fast_extract_topic_name(_Obj()) is None
+
+
+# --- Regressions found by the first real-bus run (2026-10-01) ----------------
+
+import uuid  # noqa: E402
+
+from topicforge.adapters.common.dds_introspection import (  # noqa: E402
+    is_alive_sample,
+    vendor_id_from_guid,
+)
+
+_ECLIPSE_GUID = uuid.UUID("01107b9a-c109-4b9c-7bcc-95ae000001c1")
+
+
+def test_cyclone_guid_accepts_uuid_key():
+    """cyclonedds 11.0.1 exposes the builtin key as uuid.UUID."""
+    sample = _Obj(key=_ECLIPSE_GUID)
+    assert cyclone_extract_guid(sample) == _ECLIPSE_GUID.bytes
+
+
+def test_cyclone_vendor_falls_back_to_guid_prefix():
+    """No vendor field on the builtin sample: read it from the GUID prefix."""
+    sample = _Obj(key=_ECLIPSE_GUID)
+    assert cyclone_extract_vendor_id(sample) == (0x01, 0x10)
+
+
+def test_vendor_id_from_guid_edge_cases():
+    assert vendor_id_from_guid(None) is None
+    assert vendor_id_from_guid(b"\x01") is None
+    assert vendor_id_from_guid(bytes([0x01, 0x0F]) + bytes(14)) == (0x01, 0x0F)
+
+
+@pytest.mark.parametrize(
+    ("instance_state", "valid_data", "expected"),
+    [
+        (16, True, True),  # ALIVE
+        (32, True, False),  # NOT_ALIVE_DISPOSED
+        (64, True, False),  # NOT_ALIVE_NO_WRITERS: lease expired
+        (16, False, False),  # invalid sample
+    ],
+)
+def test_is_alive_sample(instance_state: int, valid_data: bool, expected: bool):
+    sample = _Obj(sample_info=_Obj(instance_state=instance_state, valid_data=valid_data))
+    assert is_alive_sample(sample) is expected
+
+
+def test_is_alive_sample_without_sample_info_is_kept():
+    assert is_alive_sample(_Obj(key=b"x")) is True

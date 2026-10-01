@@ -149,7 +149,7 @@ def test_participant_events_default_window_returns_all_mock_events(
     mock_adapter: MockAdapter,
 ) -> None:
     events = mock_adapter.participant_events(domain_id=0, lookback_seconds=300)
-    assert len(events) == 3
+    assert len(events) == 4
     assert all(e.event_type == "discovered" for e in events)
     assert all(e.domain_id == 0 for e in events)
     # Newest first by timestamp.
@@ -162,7 +162,7 @@ def test_participant_events_short_lookback_filters_old_events(
 ) -> None:
     # Mock anchor is `now = base + 120s`. A 60s lookback drops events
     # older than `now - 60s = base + 60s`: the fixture only places
-    # discovery events at base..base+10s, so all three drop out.
+    # discovery events at base..base+15s, so all four drop out.
     events = mock_adapter.participant_events(domain_id=0, lookback_seconds=60)
     assert events == []
 
@@ -228,3 +228,9 @@ def test_peek_dds_samples_known_topics_unchanged_payload_shape(
     mismatch = mock_adapter.peek_dds_samples("/dds/qos_mismatch", count=1)
     for sample in mismatch.samples:
         assert "_decode_status" not in sample.payload
+
+
+def test_mock_participants_span_three_vendors(mock_adapter: MockAdapter) -> None:
+    """The mock bus demos multi-vendor discovery: Cyclone, Fast DDS and Dust DDS."""
+    vendors = {p.vendor for p in mock_adapter.list_participants()}
+    assert vendors == {"cyclone", "fast", "dust"}

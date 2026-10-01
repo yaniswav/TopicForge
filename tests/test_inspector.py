@@ -131,9 +131,9 @@ def test_backend_name(inspector: Inspector) -> None:
 
 
 def test_participant_events_default_lookback(inspector: Inspector) -> None:
-    """Default lookback (300s) yields the mock fixture's three events."""
+    """Default lookback (300s) yields the mock fixture's four events."""
     events = inspector.participant_events(domain_id=0)
-    assert len(events) == 3
+    assert len(events) == 4
     assert all(e.event_type == "discovered" for e in events)
 
 
