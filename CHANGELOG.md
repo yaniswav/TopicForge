@@ -23,8 +23,9 @@ the findings.
   because the names are unclaimed anyone could have registered them: users
   following the documented `pip install topicforge[dds]` would then have run
   that code. Those extras are removed; `[dds]` now means Cyclone only. The
-  metadata of 0.3.0 to 0.5.2 is immutable on PyPI, which is why those
-  releases are being yanked and a security advisory published.
+  metadata of 0.3.0 to 0.5.2 is immutable on PyPI, so those releases have
+  been yanked: `pip install topicforge` no longer selects them, although an
+  exact pin such as `topicforge==0.5.2` still installs one.
 - **Removed the automatic `topicforge_pro` plugin hook.** At startup the
   server imported any installed package named `topicforge_pro` and handed it
   the full MCP server instance, so a third-party package with that
