@@ -26,18 +26,10 @@ AdapterName = Literal[
     "ros2_cli",
     "cyclone",
     "fast",
-    "rti",
-    "opensplice",
-    "coredx",
-    "intercom",
     "opendds",
     "dust",
     "ros2_cli+cyclone",
     "ros2_cli+fast",
-    "ros2_cli+rti",
-    "ros2_cli+opensplice",
-    "ros2_cli+coredx",
-    "ros2_cli+intercom",
     "ros2_cli+opendds",
     "ros2_cli+dust",
 ]
@@ -45,19 +37,19 @@ AdapterName = Literal[
 
 Internal: used by factory wiring and logging. Distinct from
 `EffectiveMode`, which is the MCP wire contract surfaced to clients.
-`"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; the Pro tier
-vendor names (`"rti"`, `"opensplice"`, `"coredx"`, `"intercom"`) and
-the OSS stubs (`"opendds"`, `"dust"`) joined in v0.4.0 Phase 1.5 to
-support the 8-vendor auto-detect chain. The hyphenated forms are
-emitted by the `CompositeAdapter` when ROS2 CLI and a DDS backend
-serve the bus simultaneously.
+`"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; the OSS stubs
+(`"opendds"`, `"dust"`) joined in v0.4.0 Phase 1.5. The Pro tier vendor
+names were removed in 0.5.3 with the tier itself. The hyphenated forms
+are emitted by the `CompositeAdapter` when ROS2 CLI and a DDS backend
+serve the bus simultaneously. `HealthService` derives `ros_backend` and
+`dds_backend` from this tag, so new values must stay parseable there.
 """
 
 EffectiveMode = Literal["mock", "live"]
 """Runtime mode surfaced to MCP clients via the `mode_effective` field.
 
 Stable across implementation changes: a new live adapter (`cyclone`,
-`rti`, future `rclpy`) reports `effective_mode == "live"` while carrying
+future `rclpy`) reports `effective_mode == "live"` while carrying
 a distinct `name`. Adding a new value here would be a wire-breaking
 change for MCP clients ; do not.
 """
@@ -97,7 +89,7 @@ class MiddlewareAdapter(Protocol):
         """Runtime mode this adapter serves responses in (`live` or `mock`).
 
         Distinct from `name`: `name` identifies the adapter implementation
-        (`mock`, `ros2_cli`, `cyclone`, `rti`, ...). `effective_mode`
+        (`mock`, `ros2_cli`, `cyclone`, ...). `effective_mode`
         collapses to the wire contract exposed to MCP clients via
         `mode_effective` on every tool response, so different live
         backends all report `effective_mode == "live"`.

@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-01
+
+Fixes from an independent senior review of the whole repository (five
+parallel reviewers, then an adversarial pass that tried to refute each
+finding; 14 of 14 medium-or-higher findings held). Nothing here was
+validated against a live DDS bus: none is available, which is itself one of
+the findings.
+
+### Security
+
+- **Dependency confusion in published extras.** `[dds]`, `[dds-fast]`,
+  `[all]` and `[dds-all-oss]` depended on `fastdds`, and `[dds-dust]` on
+  `dust-dds-python`. Neither name exists on PyPI. The install failed, and
+  because the names are unclaimed anyone could have registered them: users
+  following the documented `pip install topicforge[dds]` would then have run
+  that code. Those extras are removed; `[dds]` now means Cyclone only. The
+  metadata of 0.3.0 to 0.5.2 is immutable on PyPI, which is why those
+  releases are being yanked and a security advisory published.
+- **Removed the automatic `topicforge_pro` plugin hook.** At startup the
+  server imported any installed package named `topicforge_pro` and handed it
+  the full MCP server instance, so a third-party package with that
+  (unclaimed) name could have registered write tools and bypassed the
+  read-only-by-architecture guarantee. The hook never registered a single
+  tool. `TOPICFORGE_LICENSE_KEY` is no longer read by the core.
+
+### Fixed
+
+- **`health_check` reported the configured mode, not the real one.** With
+  `TOPICFORGE_MODE=live` and no `ros2` CLI, the server fell back to mock
+  fixtures while `health_check` (and telemetry) still said `live`. The
+  health service now reads the adapter that was actually built.
+- **An explicit DDS backend was silently ignored without ROS 2.** In the
+  default `auto` mode, `TOPICFORGE_DDS_BACKEND=cyclone` on a host without
+  the `ros2` CLI produced mock fixtures, which is exactly the DDS-only user
+  the module targets. An explicit backend (`cyclone`, `fast` or `auto`) is
+  now honoured with or without ROS 2; only `TOPICFORGE_MODE=mock` forces
+  mock. A missing binding falls back with an explicit warning.
+- **`auto` could pick a stub and lose the real backend.** `pyopendds` exists
+  on PyPI; when importable, `auto` chose the OpenDDS stub, which always
+  reports unavailable, and the server ended on mock even with Cyclone
+  installed. The auto chain now only tries `fast` then `cyclone`.
+- **A broken DDS environment crashed startup.** A failing
+  `DomainParticipant` (for example an invalid `CYCLONEDDS_URI`) or a native
+  library that fails to load raised past `build_adapter`, which documents
+  that it never raises. Both now degrade with a logged cause.
+- **Latent infinite loop in Cyclone reads.** cyclonedds `read_iter` resets
+  its timeout on every received sample, so `list(reader.read_iter(...))`
+  never returned on a topic publishing faster than the timeout. It was only
+  unreachable because of the decoding bug below; fixing that bug alone would
+  have frozen the server on any active topic. Every `read_iter` is now
+  bounded with `islice`.
+- **`topic_metrics` counted samples that were never received.** On Fast DDS
+  each `peek_dds_samples` on a user topic fabricated a placeholder sample and
+  recorded it, so the reported frequency was the user's call rate. Fallback
+  paths no longer record anything.
+
+### Changed
+
+- **User-topic payload decoding is disabled.** It never worked: on Cyclone
+  the call to `get_types_for_typeid` used the wrong arity and its tuple
+  result was not unpacked, both errors swallowed at DEBUG level; on Fast the
+  decoder returned `None` unconditionally. Rather than ship a repair that has
+  never run, `peek_dds_samples` now states plainly that it reports topic
+  presence without decoding the payload. The three builtin DCPS topics are
+  unaffected. Re-enabling it needs a real bus to validate against.
+- **`topic_metrics` scope stated honestly.** It only has data for the
+  builtin discovery topics, its observed frequency reflects how often
+  `peek_dds_samples` is called rather than the publish rate, and
+  `frequency_hz_declared` is not populated. The tool description says so.
+- **Python 3.10 is supported** (was 3.11+). ROS 2 Humble on Ubuntu 22.04
+  ships Python 3.10, so the documented Humble setup paths could not install
+  the package. No 3.11-only syntax or dependency was in use.
+- **Tool descriptions served to the LLM** no longer describe Cyclone as a
+  stub, no longer list RTI as a selectable backend, and the DDS tools'
+  `topic` parameter now documents that builtin topics such as
+  `DCPSParticipant` carry no leading `/` (the previous schema said every
+  name must start with `/`, contradicting the validator).
+- **Integration tests are deselected by default** (`-m "not integration"` in
+  `addopts`). The scenarios runner is still a dispatch shell that spawns no
+  publisher and validates nothing; its test is now a strict `xfail` instead
+  of failing every run on any machine with `cyclonedds` installed.
+- **CI** tests Python 3.10 too, enforces the 85 percent coverage floor that
+  was configured but never applied, and resolves every extra against PyPI on
+  each change so an orphan package name cannot ship again. The weekly
+  upstream watch also resolves the documented extras.
+
+### Removed
+
+- Extras `[dds-fast]`, `[dds-opendds]`, `[dds-dust]`, `[dds-all-oss]`. Fast
+  DDS remains usable with `TOPICFORGE_DDS_BACKEND=fast` once its Python
+  binding is built from eProsima's sources.
+- `TOPICFORGE_DDS_BACKEND` values `rti`, `opensplice`, `coredx`, `intercom`.
+  They now fail with an explicit configuration error. RTI, CoreDX and other
+  vendors are still observed on the bus through standard RTPS discovery, and
+  `rti` remains a valid observed-participant vendor tag.
+
+### Correction to the 0.5.1 notes
+
+- 0.5.1 stated that sequence gaps are now "counted per writer". The buffer
+  supports it, but no adapter ever passes a writer GUID, so in practice all
+  samples of a topic still share one counter. The statement was wrong.
+
 ## [0.5.2] - 2026-08-22
 
 Documentation and metadata only. No code, no schema, and no dependency
@@ -905,7 +1007,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/yaniswav/TopicForge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/yaniswav/TopicForge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/yaniswav/TopicForge/compare/v0.4.0...v0.5.0

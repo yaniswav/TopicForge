@@ -44,6 +44,8 @@ The 5 new values target the OMG vendor space :
 - `opendds` and `dust` ship as **OSS stubs**: `is_available()` returns False because the upstream Python bindings (`pyopendds`, `dust-dds-python`) are not on PyPI yet. The extras `[dds-opendds]` and `[dds-dust]` are placeholder pins anchoring the auto-detect probe for the day the upstream packages ship. `pip install topicforge[dds-opendds]` today produces a clean install failure.
 - `opensplice`, `coredx`, `intercom` are **Pro tier targets**: probed against `topicforge_pro.adapters.<vendor>` rather than the upstream SDK. The OSS core never imports a commercial vendor binding.
 
+> **0.5.3:** this section is out of date. `pyopendds` does exist on PyPI (0.2.0, sdist only), so `[dds-opendds]` attempted a source build rather than failing cleanly; the adapter never used it either way. The `[dds-opendds]` and `[dds-dust]` extras were removed, `auto` no longer probes `opendds` or `dust`, and the `opensplice` / `coredx` / `intercom` (and `rti`) backend values were removed together with the core's `topicforge_pro` hook. See the 0.5.3 entry in `CHANGELOG.md`.
+
 ### 2.2 `auto` resolution chain widened
 
 ```
@@ -53,6 +55,8 @@ v0.4.0 : RTI > OpenSplice > CoreDX > InterCOM (Pro tier, if installed)
 ```
 
 **Backward compat** : Pro tier candidates are only considered when the `topicforge_pro` package is importable on the host. v0.3.0 users without Pro see the chain collapse to `OpenDDS > Fast > Cyclone > Dust > Mock`. Since `opendds` and `dust` are stubs that report `is_available()=False`, the practical effective order remains `Fast > Cyclone > Mock`: unchanged from v0.3.0 unless you've explicitly added a Pro tier package.
+
+> **0.5.3:** this section describes 0.4.0 and is partly obsolete. `TOPICFORGE_DDS_BACKEND` no longer accepts `rti`, `opensplice`, `coredx` or `intercom` (startup fails with a configuration error), the `auto` chain is now `fast > cyclone > mock` only (the stubs and the Pro candidates were dropped), the `topicforge_pro` package is no longer probed, and the extras listed in 2.3 below, except `[bags]`, were removed. See the CHANGELOG `[0.5.3]` entry.
 
 ### 2.3 New pyproject extras
 
@@ -197,6 +201,8 @@ v0.3.0 raised `AdapterError("v0.3.x roadmap: XTypes/IDL discovery missing")` for
 The wire shape is identical across Cyclone and Fast DDS. Phase 1.5 added the Cyclone XTypes pipeline ; Fast DDS 2.6.x bindings still ship a partial dynamic XTypes Python surface so the `"raw"` fallback is the common path on Fast user topics: the structural plumbing is identical, the upstream binding completion is the gating factor.
 
 If your code parsed the v0.3.0 `AdapterError` text to detect this case, replace the `try/except` with a `samples[i].payload["_decode_status"]` check.
+
+> **0.5.3:** the best-effort decoding described here never worked on a live adapter and is disabled. On Cyclone and Fast, `peek_dds_samples` on a user topic announced on the bus returns one placeholder sample with `_decode_status="raw"`, an explanatory `_decode_note` and an empty `_raw_bytes_hex`; the payload is not decoded. See [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md) section 5.
 
 ---
 

@@ -47,6 +47,14 @@ _TOPIC_PARAM_DESC = (
     "`ros2` CLI."
 )
 
+_DDS_TOPIC_PARAM_DESC = (
+    "DDS topic name. Accepts ROS2-style names (`/rt/chatter`) and the "
+    "builtin discovery topics `DCPSParticipant`, `DCPSSubscription`, "
+    "`DCPSPublication`, which have no leading `/`. Letters, digits, `_`, "
+    "`/` and `::` are allowed; anything else is rejected before reaching "
+    "the DDS layer."
+)
+
 _COUNT_PARAM_DESC = (
     "Maximum number of recent messages to return. Defaults to 5; silently "
     "clamped to 50 (the hard cap that keeps tool output bounded; read it "
@@ -83,7 +91,7 @@ def register_tools(
             "Report TopicForge environment state: effective runtime mode "
             '(`"live"` or `"mock"`), whether the `ros2` CLI is on PATH, '
             "`ROS_DISTRO`, the server version, the server-side sample cap, "
-            "the active DDS backend (`mock`/`cyclone`/`rti`/`none`), and "
+            "the active DDS backend (`mock`/`cyclone`/`fast`/`none`), and "
             "the observed DDS domain id when applicable. Returns a "
             "`HealthReport`. **Always succeeds**. Call this first when "
             "something looks wrong, since every other tool may raise. "
@@ -182,7 +190,7 @@ def register_tools(
     # ----- DDS module tools (v0.2.0) -----
     # The 3 tools below address the bare-DDS layer, distinct from the
     # ROS2-graph tools above. They are active when TOPICFORGE_DDS_BACKEND
-    # is `cyclone`, `rti`, or `mock`. With the `ros2_cli` adapter (default
+    # is `cyclone`, `fast`, or `mock`. With the `ros2_cli` adapter (default
     # for ROS2-only installs), they raise AdapterError pointing at the
     # `pip install topicforge[dds]` remediation path.
 
@@ -190,7 +198,8 @@ def register_tools(
         description=(
             "List DDS participants observed on a domain. Returns "
             "`list[ParticipantInfo]`: each entry carries `guid`, `vendor` "
-            "(`cyclone`/`rti`/`mock`/`unknown`), optional `hostname`, "
+            "(`cyclone`/`fast`/`rti`/`mock`/`unknown`, the vendor observed on "
+            "the bus), optional `hostname`, "
             '`domain_id`, and `mode_effective` (`"live"`/`"mock"`). '
             "**Distinct from ROS2 graph nodes**: operates at the raw DDS "
             "layer beneath ROS, useful for non-ROS DDS stacks or for "
@@ -200,9 +209,8 @@ def register_tools(
             "so this tool cannot publish, modify QoS, or alter the bus. "
             "**Raises an MCP error** when no DDS module is active "
             "(install `pip install topicforge[dds]` and set "
-            "`TOPICFORGE_DDS_BACKEND=cyclone`). With the v0.2.0 "
-            "`CycloneDdsAdapter` stub, also raises with a v0.2.x roadmap "
-            "pointer ; mock backend returns deterministic fixtures."
+            "`TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend "
+            "returns deterministic fixtures."
         )
     )
     @instrument(telemetry, "list_participants")
@@ -238,8 +246,7 @@ def register_tools(
             "by architecture**: the analyzer compares observed QoS "
             "profiles ; no method on this tool can rewrite QoS or "
             "alter the bus. **Raises an MCP error** when no DDS module "
-            "is active or, in v0.2.0, when the `CycloneDdsAdapter` "
-            "stub is active ; mock backend returns deterministic "
+            "is active ; the mock backend returns deterministic "
             "fixtures."
         )
     )
@@ -265,26 +272,21 @@ def register_tools(
             "**Distinct from `sample_messages`**: `sample_messages` "
             "operates on the ROS2 graph via `ros2 topic echo` ; this "
             "tool reads directly from the DDS layer (Cyclone / Fast / "
-            "RTI / mock). Use this for non-ROS DDS topics or when the "
+            "mock). Use this for non-ROS DDS topics or when the "
             "ROS2 CLI is not available. Returns a `SampleResult` "
             "envelope `{topic, count, samples, mode_effective}`: "
             "identical shape to `sample_messages`. `count` defaults to "
             "5 and is silently clamped to 50. "
-            "**Topic categories** (v0.4.0 Phase 1): "
-            "(a) The 4 builtin DCPS topics (`DCPSParticipant`, "
-            "`DCPSSubscription`, `DCPSPublication`) always return "
-            "structured discovery payloads. "
-            "(b) User-defined topics return best-effort decoded "
-            "payloads: each sample's payload may carry "
-            "`_decode_status` (`full`/`partial`/`raw`), `_decode_note` "
-            "(short diagnostic when not `full`), and `_raw_bytes_hex` "
-            "(serialized-bytes preview). **Caveat**: on the current "
-            "user-topic `raw` path this preview is empty: a `raw` status "
-            "means 'topic present on the bus but not decoded', not 'here "
-            "are the bytes to re-decode' (capturing the on-wire CDR bytes "
-            "is roadmapped). Cyclone uses `cyclonedds.dynamic` for "
-            "full/partial decode ; Fast DDS 2.6.x lands on the raw path "
-            "more often because its dynamic XTypes binding is partial. "
+            "**Topic categories**: "
+            "(a) The 3 builtin DCPS topics (`DCPSParticipant`, "
+            "`DCPSSubscription`, `DCPSPublication`) return structured "
+            "discovery payloads. "
+            "(b) User-defined topics: payload decoding is DISABLED in "
+            "this release on every backend. The tool confirms the topic "
+            "is announced on the bus and returns one placeholder sample "
+            'with `_decode_status="raw"`, an explanatory `_decode_note` '
+            "and an empty `_raw_bytes_hex`. It does NOT return message "
+            "content for user topics: do not infer field values from it. "
             "**Read-only by architecture**: the "
             "`MiddlewareAdapter` protocol does not expose a write "
             "method. **Raises an MCP error** when no DDS module is "
@@ -293,7 +295,7 @@ def register_tools(
     )
     @instrument(telemetry, "peek_dds_samples")
     def peek_dds_samples(
-        topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
+        topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
     ) -> SampleResult:
         return inspector.peek_dds_samples(topic, count)
@@ -365,25 +367,24 @@ def register_tools(
             "carrying `samples_observed`, `frequency_hz_observed`, "
             "`frequency_hz_declared` (from QoS Deadline when known), "
             "`sequence_gaps_count`, `latency_ns_p50/p95/p99`, and "
-            "boolean availability flags. **Opportunistic fill caveat**: "
-            "the metrics buffer accumulates samples only as "
-            "`peek_dds_samples` flows them through the adapter: neither "
-            "cyclonedds nor fastdds 2.6.x Python bindings expose "
-            "at-sample-receive callbacks, so a topic that hasn't been "
-            "peeked recently returns `samples_observed=0`. To get useful "
-            "metrics, call `peek_dds_samples` on the topic first, then "
-            "this tool. **Read-only by architecture**: no method on "
-            "this tool writes to the bus. **Raises an MCP error** when "
-            "no DDS module is active or `window_seconds` is out of "
-            "range (1..3600). Added in v0.4.0 Phase 2 ; the 10th MCP "
-            "tool: the 8-tool ceiling from mcp-02-spec.md section 2 was first "
-            "broken at Phase 1 (`participant_events`), this is the "
-            "second explicit acknowledgement."
+            "boolean availability flags. **Limits, read before "
+            "concluding anything**: the buffer is filled only when "
+            "`peek_dds_samples` runs on the topic, and only by samples "
+            "actually received, which today means the builtin DCPS "
+            "topics. A user topic always returns `samples_observed=0` "
+            "because its payload is not decoded. `frequency_hz_observed` "
+            "reflects how often `peek_dds_samples` was called, not the "
+            "real publish rate, and `frequency_hz_declared` is not "
+            "populated. Treat the result as a coarse presence signal, "
+            "not a rate measurement. **Read-only by architecture**: no "
+            "method on this tool writes to the bus. **Raises an MCP "
+            "error** when no DDS module is active or `window_seconds` "
+            "is out of range (1..3600)."
         )
     )
     @instrument(telemetry, "topic_metrics")
     def topic_metrics(
-        topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
+        topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
         window_seconds: Annotated[
             int,
             Field(

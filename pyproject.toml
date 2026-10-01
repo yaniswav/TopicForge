@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "topicforge"
-version = "0.5.2"
+version = "0.5.3"
 description = "ROS Topic Inspector & Bag Analyzer MCP server for AI agents"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Yanis ETHVIGNOT", email = "ethvignot.yanis@gmail.com" }]
 keywords = ["mcp", "ros2", "robotics", "ai", "claude", "model-context-protocol"]
@@ -17,6 +17,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -37,41 +38,22 @@ dev = [
     # via `topicforge[bags]`.
     "rosbags>=0.9",
 ]
-# v0.3.0: split DDS extras per vendor. `[dds]` (the union) pulls both
-# OSS Python participants ; granular `[dds-cyclone]` / `[dds-fast]`
-# install only one when disk space or install time matters.
+# DDS extras. Only bindings that are actually published on PyPI and used by
+# a working adapter are declared here.
 #
-# v0.4.0 Phase 1.5: added `[dds-opendds]` and `[dds-dust]` for the OSS
-# stubs. **The pyopendds / dust-dds-python packages are placeholder
-# pins**: they are not yet maintained on PyPI as of 2026-05-14. A
-# user running `pip install topicforge[dds-opendds]` today will get an
-# install failure with a clear error message ; the extra exists so the
-# auto-detect framework has a known module name to probe and so a future
-# upstream release lands cleanly without re-touching pyproject.
-#
-# The union `[dds]` extra remains Cyclone + Fast for deterministic
-# install behavior. Users who explicitly want OpenDDS/Dust slotted in
-# (when the bindings ship) opt into `[dds-all-oss]`.
+# 0.5.3 removed `[dds-fast]`, `[dds-opendds]`, `[dds-dust]` and
+# `[dds-all-oss]`. `fastdds` and `dust-dds-python` do not exist on PyPI, so
+# those extras failed to install, and an unclaimed package name in a published
+# extra is a dependency-confusion risk: anyone could register it. `pyopendds`
+# exists but the OpenDDS adapter is a permanent stub that never imports it.
+# Fast DDS still works if its Python binding is built from eProsima's sources;
+# see docs/DDS_QUICKSTART.md. Do not add a name here without checking it
+# resolves on PyPI and belongs to the upstream project.
 dds-cyclone = [
     "cyclonedds>=0.10",
 ]
-dds-fast = [
-    "fastdds>=2.6.1,<3",
-]
-dds-opendds = [
-    "pyopendds>=0.1",
-]
-dds-dust = [
-    "dust-dds-python>=0.1",
-]
 dds = [
-    "cyclonedds>=0.10",
-    "fastdds>=2.6.1,<3",
-]
-dds-all-oss = [
-    "topicforge[dds]",
-    "topicforge[dds-opendds]",
-    "topicforge[dds-dust]",
+    "topicforge[dds-cyclone]",
 ]
 # v0.4.0 Phase 3: bag analysis via `rosbags` (Apache 2.0, pure-Python,
 # covers MCAP + ROS2 .db3 + ROS1 .bag legacy through a single API).
@@ -102,14 +84,14 @@ exclude = [".claude", "docs/projet-file/**", "docs/projet-file", "CLAUDE.md", "*
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m \"not integration\""
 pythonpath = ["src"]
 markers = [
     "requires_cyclonedds: tests needing the `cyclonedds` Python bindings; auto-skip without them",
     "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
     "requires_opendds: tests needing the `pyopendds` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
     "requires_dust: tests needing the `dust_dds_python` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
-    "integration: real-bus DDS scenarios; only run with `-m integration` (v0.4.0 Phase 2.2+)",
+    "integration: real-bus DDS scenarios; deselected by default via addopts, select with `-m integration`",
     "requires_rosbags: tests needing the `rosbags` Python library; auto-skip without it (v0.4.0 Phase 3+)",
 ]
 
@@ -142,7 +124,7 @@ fail_under = 85
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]

@@ -19,17 +19,18 @@ Current scope (v0.4.0+) mirrors `CycloneDdsAdapter` :
   * `list_participants`: snapshot of discovered participants enriched
     with `LifecycleBuffer` fields (first/last seen, status, seen_count).
   * `detect_qos_mismatches`: paired subs/pubs by topic + pure analyzer.
-  * `peek_dds_samples`: full-fidelity on the 4 builtin DCPS topics ;
-    arbitrary user topics return best-effort samples with a
-    `_decode_status` annotation. Fast DDS 2.6.x ships only a partial
-    dynamic XTypes Python surface, so the `"raw"` fallback with
-    `_raw_bytes_hex` is the common path on user topics until upstream
-    binding completion (v0.5.x patch).
+  * `peek_dds_samples`: structured payloads on the 3 builtin DCPS topics
+    (DCPSParticipant, DCPSSubscription, DCPSPublication). A user topic
+    announced on the bus yields one annotated placeholder
+    (`_decode_status="raw"`, empty bytes): no payload is decoded, because
+    `_try_dynamic_decode_fast` is not implemented. The placeholder is not a
+    received sample and never feeds `topic_metrics`.
   * `participant_events`: `discovered` + `lost` from native listener
     callbacks ; no polling required.
   * `topic_metrics`: opportunistic metrics buffered as `peek_dds_samples`
-    surfaces samples (same caveat as Cyclone; no at-sample-receive
-    callback in fastdds 2.6.x Python).
+    surfaces builtin DCPS samples (same caveat as Cyclone; no
+    at-sample-receive callback in fastdds 2.6.x Python). User topics stay
+    at `samples_observed=0`.
 
 Sample-introspection helpers are defensive against binding-version
 shape variations: same convention as the Cyclone adapter's helpers.
@@ -53,10 +54,10 @@ from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     LifecycleBuffer,
     MetricsBuffer,
-    annotate_raw,
     canonicalize_vendor_id,
     detect_mismatches_across_endpoints,
     format_guid,
+    user_topic_placeholder,
     validate_domain_id,
 )
 from topicforge.adapters.common import (
@@ -98,12 +99,11 @@ _MAX_ENDPOINTS = 1024
 _BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
 
 _USER_TOPIC_FALLBACK_MSG = (
-    "peek_dds_samples could not decode user topic via fastdds dynamic XTypes. "
-    "Fast DDS 2.6.x Python bindings expose DynamicType/DynamicData but "
-    "remote TypeObject lookup is partial ; v0.4.0 Phase 1 surfaces the "
-    "topic as best-effort raw bytes ; a Phase 1+ patch will extend the "
-    "dynamic decode path."
+    "dynamic XTypes decode is not implemented for Fast DDS in this release "
+    "(the fastdds Python binding does not expose a stable remote TypeObject "
+    "lookup); topic presence is reported, payload is not decoded"
 )
+"""`_decode_note` carried by the user-topic placeholder sample."""
 
 
 class _DiscoveryListener:
@@ -319,12 +319,13 @@ class FastDdsAdapter:
         )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
-        """v0.4.0 Phase 1: builtin DCPS snapshots + user-topic raw fallback.
+        """Builtin DCPS snapshots, or a placeholder for a discovered user topic.
 
-        Builtin DCPS topics keep their v0.3.0 structured-payload shape.
-        User topics that have been discovered on the bus return
-        `_decode_status="raw"` payloads (Fast DDS 2.6.x dynamic XTypes
-        is partial). Unknown topics raise `AdapterError`.
+        The 3 builtin DCPS topics keep their v0.3.0 structured-payload
+        shape. A user topic discovered on the bus returns one placeholder
+        sample (`_decode_status="raw"`, empty bytes, with a note saying the
+        payload is not decoded); it is not a received sample and is not
+        recorded for `topic_metrics`. Unknown topics raise `AdapterError`.
         """
         if count < 0:
             raise AdapterError("count must be >= 0")
@@ -374,13 +375,12 @@ class FastDdsAdapter:
         )
 
     def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
-        """Best-effort decode + raw fallback for user-defined topics.
+        """User-topic peek: topic presence plus an annotated placeholder.
 
-        v0.4.0 Phase 1.5: attempt a `fastdds.TypeObjectFactory` probe to
-        resolve the topic's TypeObject. On success, emit `annotate_partial`
-        payloads with whatever fields the binding can surface (Fast DDS
-        2.6.x dynamic XTypes is incomplete; many constructs land as
-        opaque). On miss, the existing raw-bytes fallback runs.
+        Confirms the topic is announced on the bus (else `AdapterError`).
+        `_try_dynamic_decode_fast` always returns `None` today, so the
+        placeholder path runs. The placeholder is not a received sample and
+        is never recorded into `MetricsBuffer`.
         """
         if not self._is_topic_on_bus(topic):
             raise AdapterError(
@@ -399,32 +399,9 @@ class FastDdsAdapter:
                 mode_effective="live",
             )
 
-        fallback_samples: list[MessageSample] = []
-        now_ns = time.time_ns()
-        if count > 0:
-            fallback_samples.append(
-                MessageSample(
-                    topic=topic,
-                    message_type="dds/unknown",
-                    timestamp_ns=0,
-                    payload=annotate_raw(
-                        b"",
-                        note=_USER_TOPIC_FALLBACK_MSG,
-                    ),
-                )
-            )
-        # v0.4.0 Phase 2: even the raw-fallback path records into
-        # the metrics buffer so the user can detect publisher
-        # presence (samples_observed >= 1) even when the IDL cannot
-        # be decoded. seq# and publish_ns are None on the fallback.
-        for _ in fallback_samples:
-            self._metrics.record(
-                topic=topic,
-                receive_ns=now_ns,
-                sequence_number=None,
-                publish_ns=None,
-                domain_id=self._domain_id,
-            )
+        # Placeholder only: nothing was received, so nothing is recorded into
+        # the metrics buffer (a placeholder must never count as a sample).
+        fallback_samples = user_topic_placeholder(topic, count, note=_USER_TOPIC_FALLBACK_MSG)
         return SampleResult(
             topic=topic,
             count=len(fallback_samples),
@@ -463,7 +440,7 @@ class FastDdsAdapter:
 
         Fast DDS shares the same opportunistic-fill semantics as the
         Cyclone adapter: the buffer accumulates only when
-        `peek_dds_samples` is exercised. The listener-driven
+        `peek_dds_samples` surfaces builtin DCPS samples. The listener-driven
         discovery surface does NOT today expose at-sample-receive
         callbacks for Python (Fast DDS 2.6.x), so we cannot push
         samples in the background.
@@ -479,45 +456,23 @@ class FastDdsAdapter:
 
 
 def _try_dynamic_decode_fast(topic: str, count: int) -> list[MessageSample] | None:
-    """Best-effort decode of a user topic via `fastdds.TypeObjectFactory`.
+    """Dynamic decode of a user topic via Fast DDS: NOT IMPLEMENTED, returns `None`.
 
-    Fast DDS 2.6.x dynamic XTypes Python coverage is partial: the C++
-    side exposes `TypeObjectFactory` + `DynamicData` but the SWIG-
-    generated Python wrappers do not fully bridge the remote-type-lookup
-    semantics. We probe the factory ; if any decodable representation
-    surfaces we emit `annotate_partial` payloads with a short note about
-    the binding limitation. Otherwise return None and let the caller
-    fall back to the raw annotation.
+    The fastdds Python binding does not expose a stable remote-TypeObject
+    lookup, so there is nothing to decode with. The caller surfaces the
+    annotated placeholder instead. The probe below only logs whether
+    `fastdds.TypeObjectFactory` exists; it never decodes anything.
 
-    Returns None on every failure path (binding missing, factory probe
-    fails, no decodable samples). Empty list is also a valid response
-    when the factory works but no sample is in the reader cache.
+    TODO(roadmap): wire `TypeObjectFactory` against the discovered
+    TypeIdentifier once the binding exposes it, and validate on a real bus.
     """
-    try:
-        factory_cls = getattr(fastdds, "TypeObjectFactory", None)
-        if factory_cls is None:
-            log.debug("fastdds.TypeObjectFactory missing on this binding ; topic %r", topic)
-            return None
-        factory = factory_cls.get_instance() if hasattr(factory_cls, "get_instance") else None
-        if factory is None:
-            return None
-    except Exception:  # pragma: no cover: binding-side error
-        log.debug("fastdds.TypeObjectFactory probe failed for topic %r", topic, exc_info=True)
-        return None
-
-    # Phase 1.5: the binding's remote-type-lookup surface in Python is
-    # not stable enough to commit a real decode here. The probe succeeds
-    # but we return None so the caller surfaces the annotated raw
-    # fallback. A v0.5+ patch will wire `factory.build_dynamic_type_*`
-    # against the topic's discovered TypeIdentifier when upstream
-    # stabilizes the API ; we will then return `annotate_partial`
-    # payloads here.
-    if count <= 0:
-        return None
+    factory_cls = getattr(fastdds, "TypeObjectFactory", None)
     log.debug(
-        "fastdds dynamic XTypes binding available but decode pipeline "
-        "deferred to v0.5 ; topic %r falls back to annotated raw",
+        "fastdds dynamic XTypes decode not implemented (TypeObjectFactory %s) ; "
+        "topic %r (count=%d) falls back to annotated placeholder",
+        "present" if factory_cls is not None else "missing",
         topic,
+        count,
     )
     return None
 

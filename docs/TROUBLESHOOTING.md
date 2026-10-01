@@ -41,11 +41,15 @@ brought up.
 3. Inspect `health_check`: `ros_backend` should now be `"ros2_cli"`
    and `dds_backend` should be your selected vendor.
 
-If you genuinely want a DDS-only deployment (no ROS2), use
-`TOPICFORGE_MODE=mock` for offline development or stick with the DDS
-adapter and only call the 6 DDS / observability tools
+If you genuinely want a DDS-only deployment (no ROS2), this message is
+expected and harmless: since 0.5.3 an explicit `TOPICFORGE_DDS_BACKEND`
+(`cyclone`, `fast` or `auto`) gives you the DDS adapter alone, even in
+`auto` mode without `ros2`, and you only call the five DDS tools
 (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
-`participant_events`, `topic_metrics`, `peek_bag_samples`).
+`participant_events`, `topic_metrics`). The two bag tools,
+`analyze_bag` and `peek_bag_samples`, are served by the ROS2 half and
+raise this error in a DDS-only process. For offline development use
+`TOPICFORGE_MODE=mock`.
 
 ---
 
@@ -58,10 +62,22 @@ adapter and only call the 6 DDS / observability tools
 > may still fall back to the v0.3.0 `ros2 bag info` text-parse path via
 > the live ROS2 CLI adapter ; `peek_bag_samples` has no fallback.
 
-**What it means.** You called `peek_bag_samples` (or `analyze_bag` on
-a non-CLI path) without the optional `rosbags` Apache-2.0 library
-installed. The library is intentionally optional: base
-`pip install topicforge` keeps the install footprint small.
+**What it means.** You called `peek_bag_samples` without the optional
+`rosbags` Apache-2.0 library installed. The library is intentionally
+optional: base `pip install topicforge` keeps the install footprint
+small. `analyze_bag` does not raise this error: in live mode it runs
+`ros2 bag info` and never touches `rosbags`, whether or not the
+library is installed. The message text above mentions an
+`analyze_bag` fallback for historical reasons; there is no `rosbags`
+path in `analyze_bag` to fall back from.
+
+`peek_bag_samples` is served only by the ROS2 CLI adapter (alone or as
+the ROS half of a composite) and by the mock adapter. With a DDS-only
+adapter (explicit DDS backend, no `ros2` on PATH) it raises the
+"DDS observability only" error instead. Without `ros2` and without a
+DDS backend, the server runs on the mock adapter and returns mock
+fixture samples, not the content of your file: check `health_check`
+(`mode: "mock"`) before trusting bag output.
 
 **How to fix.**
 
@@ -74,9 +90,10 @@ supported Python/OS combos). Re-run the tool: no env-var change
 needed.
 
 If you cannot install rosbags (sandboxed CI, restricted package
-allowlist, etc.), `analyze_bag` still works via the v0.3.0 `ros2 bag
-info` text-parse path when run through `Ros2CliAdapter` ; the enriched
-fields populate at safe defaults. `peek_bag_samples` is rosbags-only.
+allowlist, etc.), `analyze_bag` keeps working through `ros2 bag info`
+text parsing in `Ros2CliAdapter`; the enriched fields (`bag_format`,
+`recording_duration_ns`, ...) stay at their safe defaults.
+`peek_bag_samples` is rosbags-only.
 
 ---
 
@@ -124,26 +141,34 @@ points at #3.
 
 **What it means.** `DomainParticipantFactory.create_participant()`
 returned `None` instead of raising. Almost always an ABI mismatch
-between the Python `fastdds` wheel and the native `libfastdds` shared
-library on the host.
+between the Python `fastdds` binding and the native `libfastdds`
+shared library on the host.
+
+**Ignore the "pin and reinstall" part of the message.** The `fastdds`
+Python binding is not published on PyPI, and TopicForge no longer
+declares it in any extra (0.5.3 removed `[dds-fast]`). Do not
+`pip install fastdds`: there is no official package under that name,
+and installing whatever a registry returns for it is exactly the
+dependency-confusion risk the extra's removal closed.
 
 **How to fix.**
 
-1. Reinstall with the pinned version :
-   ```bash
-   pip uninstall -y fastdds
-   pip install "fastdds>=2.6.1,<3"
-   ```
+1. Rebuild eProsima's Python binding
+   ([eProsima/Fast-DDS-python](https://github.com/eProsima/Fast-DDS-python))
+   against the same Fast DDS native libraries that are installed on the
+   host, then install it into the environment that runs TopicForge.
 2. If you set `FastDDS_DEFAULT_PROFILES_FILE`, unset it and retry: a
    broken profile XML triggers the same symptom.
-3. If you have a system-wide Fast DDS native install (CMake / vcpkg /
-   apt), make sure `LD_LIBRARY_PATH` (or `PATH` on Windows) does not
-   conflict with the pip wheel's bundled shared library.
+3. If more than one Fast DDS native install is present (CMake / vcpkg /
+   apt), make sure `LD_LIBRARY_PATH` (or `PATH` on Windows) points at
+   the one the binding was built against.
 
-Fast DDS 3.x binding wheels are not yet stable on Python 3.11+ for
-Windows / Linux as of v0.4.0 ; TopicForge pins to the 2.6.x line in
-`pyproject.toml`. Stick with that pin until you see the v0.6 CHANGELOG
-note bumping it.
+The adapter was written against the 2.6.x line of the Python binding
+(it uses `fastdds.StatusMask`, `DomainParticipantQos` and a
+duck-typed listener). It has not been run against a live bus, and no
+other version has been tried. If the binding cannot be imported at all
+the server does not fail: it logs a warning and falls back to the
+ROS2 CLI alone, or to the mock fixtures.
 
 ---
 
@@ -209,8 +234,13 @@ separation, so the typical fix is `my-topic` -> `my_topic` or
 
 ## "ROS2 CLI not found on PATH" / mode falls back to `mock`
 
-**Symptom.** `health_check` reports `mode_effective: "mock"` even
-though you set `TOPICFORGE_MODE=live` or `auto`.
+**Symptom.** `health_check` reports `mode: "mock"` (with
+`requested_mode: "live"` or `"auto"`) even though you set
+`TOPICFORGE_MODE=live` or `auto`. Since 0.5.3 `mode` describes the
+adapter that was actually built, so this combination is the signal
+that the server fell back to the mock fixtures. The server log carries
+the matching warning. Before 0.5.3, `health_check` echoed the
+configured mode and could say `live` while serving fixtures.
 
 **Diagnostics.**
 
@@ -219,7 +249,7 @@ though you set `TOPICFORGE_MODE=live` or `auto`.
    inherited across GUI launchers) :
    ```bash
    which ros2          # Linux / WSL: should print /opt/ros/<distro>/bin/ros2
-   where.exe ros2      # Windows: should print a .cmd / .bat path
+   where.exe ros2      # Windows: should print the ros2 launcher (typically ros2.exe)
    ```
 2. If `ros2` is not on PATH, source the ROS2 setup file in the parent
    shell **before** launching the MCP client.
@@ -228,9 +258,46 @@ though you set `TOPICFORGE_MODE=live` or `auto`.
    TOPICFORGE_ROS2_BIN=/opt/ros/humble/bin/ros2 python -m topicforge
    ```
 
-On Windows native, `ros2.cmd` is what `shutil.which` resolves:
-TopicForge handles the shell-shim resolution. Make sure the install
-directory containing `ros2.cmd` is on `%PATH%`.
+On Windows native, TopicForge resolves the executable with
+`shutil.which` and runs it by absolute path, never through a shell.
+Make sure the directory containing the ROS2 launcher is on `%PATH%`
+in the environment that spawns the server.
+
+If `ros2` is missing but you have selected a DDS backend explicitly
+(`TOPICFORGE_DDS_BACKEND=cyclone` or `fast`), the server does not
+fall back to mock: it serves the DDS tools through a DDS-only adapter
+and the ROS2 graph tools raise the "DDS observability only" error
+described at the top of this page.
+
+---
+
+## "topicforge: configuration error: ..." at startup
+
+**Symptom.** The server prints one line to stderr beginning with
+`topicforge: configuration error:` and exits with code 2, so your MCP
+client reports that the server failed to start.
+
+**What it means.** One of the `TOPICFORGE_*` variables holds a value
+the settings loader rejects. It is deliberately strict, so a typo
+cannot silently change behaviour. The three you are most likely to
+meet:
+
+- `Invalid TOPICFORGE_TELEMETRY=...`: only `on`, `1`, `true`, `yes`,
+  `enabled` turn telemetry on, and only unset/empty, `off`, `0`,
+  `false`, `no`, `disabled` turn it off. Before 0.5.3 any other value
+  was treated as off; now it stops the server.
+- `TOPICFORGE_DDS_BACKEND='rti' was removed in 0.5.3 ...` (also
+  `opensplice`, `coredx`, `intercom`): these were values for the
+  retired Pro tier. Use `cyclone`, `fast` or `auto`. A Cyclone
+  participant still discovers RTI, CoreDX and OpenSplice participants
+  through standard RTPS discovery.
+- `Invalid TOPICFORGE_MODE`, `TOPICFORGE_LOG_LEVEL`,
+  `TOPICFORGE_DDS_DOMAIN_ID` (an integer in `0..232`).
+
+**How to fix.** Correct the variable in the `env` block of your MCP
+client configuration (or in the shell that spawns the server) and
+restart the client. Desktop clients show the stderr line in their MCP
+log.
 
 ---
 

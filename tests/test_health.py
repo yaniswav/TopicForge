@@ -1,30 +1,64 @@
-"""Tests for `topicforge.services.HealthService`."""
+"""Tests for `topicforge.services.HealthService`.
+
+`HealthService` reports the adapter that was actually built, so most tests
+inject a minimal adapter stand-in carrying only the two attributes it reads
+(`name`, `effective_mode`).
+"""
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
+import json
+from typing import Any
+
+import pytest
+
+from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
+from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
 from topicforge.constants import MAX_SAMPLE_COUNT
+from topicforge.server import build_app
 from topicforge.services import HealthService
 
 
+class _NamedAdapter:
+    """Adapter stand-in exposing just what `HealthService` reads."""
+
+    def __init__(self, name: AdapterName, effective_mode: EffectiveMode = "live") -> None:
+        self.name = name
+        self._effective_mode = effective_mode
+
+    @property
+    def effective_mode(self) -> EffectiveMode:
+        return self._effective_mode
+
+
+def _adapter(name: AdapterName, effective_mode: EffectiveMode = "live") -> MiddlewareAdapter:
+    return _NamedAdapter(name, effective_mode)  # type: ignore[return-value]
+
+
+def _settings(**overrides: Any) -> Settings:
+    base: dict[str, Any] = {
+        "mode": "mock",
+        "log_level": "INFO",
+        "ros2_executable": "ros2",
+        "telemetry_enabled": False,
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
 def test_health_report_in_mock_mode() -> None:
-    settings = Settings(
-        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    report = HealthService(settings).report()
+    report = HealthService(_settings(), MockAdapter()).report()
     assert report.mode == "mock"
     assert report.requested_mode == "mock"
     assert report.server_version
 
 
 def test_health_report_when_ros2_missing() -> None:
-    settings = Settings(
-        mode="auto",
-        log_level="INFO",
-        ros2_executable="definitely-not-a-real-binary-xyz",
-        telemetry_enabled=False,
-    )
-    report = HealthService(settings).report()
+    settings = _settings(mode="auto", ros2_executable="definitely-not-a-real-binary-xyz")
+    report = HealthService(settings, MockAdapter()).report()
     assert report.ros2_available is False
     # auto with missing ros2 resolves to mock.
     assert report.mode == "mock"
@@ -32,18 +66,12 @@ def test_health_report_when_ros2_missing() -> None:
 
 
 def test_health_report_exposes_sample_cap() -> None:
-    settings = Settings(
-        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    report = HealthService(settings).report()
+    report = HealthService(_settings(), MockAdapter()).report()
     assert report.max_sample_count == MAX_SAMPLE_COUNT == 50
 
 
 def test_health_report_serializes_to_dict() -> None:
-    settings = Settings(
-        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    payload = HealthService(settings).report().model_dump()
+    payload = HealthService(_settings(), MockAdapter()).report().model_dump()
     # Tool handlers rely on this shape: pin it.
     assert {
         "mode",
@@ -52,216 +80,116 @@ def test_health_report_serializes_to_dict() -> None:
         "ros2_distro",
         "server_version",
         "max_sample_count",
-        # v0.3.0: DDS fields now populated by HealthService (v0.2.0 latent bug).
         "dds_backend",
         "dds_domain_id",
         "middleware_available",
-        # v0.4.0 Phase 1: ros_backend symmetric to dds_backend.
         "ros_backend",
     } <= payload.keys()
     assert "bag_tool_available" not in payload
 
 
 # ---------------------------------------------------------------------------
-# DDS fields (v0.3.0 ; previously defaults regardless of configuration)
+# The report follows the adapter that was built, not the requested settings
 # ---------------------------------------------------------------------------
 
 
-def test_health_report_populates_dds_backend_mock_by_default() -> None:
-    settings = Settings(
-        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    report = HealthService(settings).report()
-    # Global mock mode collapses DDS backend to mock.
+def test_mode_follows_adapter_not_requested_mode() -> None:
+    """`live` requested but the factory fell back to mock: report mock."""
+    settings = _settings(mode="live", ros2_executable="definitely-not-a-real-binary-xyz")
+    report = HealthService(settings, MockAdapter()).report()
+    assert report.mode == "mock"
+    assert report.requested_mode == "live"
+
+
+def test_mock_adapter_reports_mock_on_both_halves() -> None:
+    report = HealthService(_settings(), MockAdapter()).report()
+    assert report.ros_backend == "mock"
     assert report.dds_backend == "mock"
-    assert report.dds_domain_id == 0
+    assert report.middleware_available is True
 
 
-def test_health_report_populates_dds_backend_fast_when_settings_say_so() -> None:
-    """If settings say fast and we're in live mode, health reports fast."""
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="ros2",
-        telemetry_enabled=False,
-        dds_backend="fast",
-        dds_domain_id=42,
-    )
-    report = HealthService(settings).report()
-    assert report.dds_backend == "fast"
+@pytest.mark.parametrize(
+    ("name", "ros_backend", "dds_backend"),
+    [
+        ("ros2_cli", "ros2_cli", "none"),
+        ("cyclone", "none", "cyclone"),
+        ("fast", "none", "fast"),
+        ("ros2_cli+cyclone", "ros2_cli", "cyclone"),
+        ("ros2_cli+fast", "ros2_cli", "fast"),
+    ],
+)
+def test_backends_are_deduced_from_adapter_name(
+    name: AdapterName, ros_backend: str, dds_backend: str
+) -> None:
+    settings = _settings(mode="live", dds_domain_id=42)
+    report = HealthService(settings, _adapter(name)).report()
+    assert report.mode == "live"
+    assert report.ros_backend == ros_backend
+    assert report.dds_backend == dds_backend
     assert report.dds_domain_id == 42
 
 
-def test_health_report_middleware_available_for_mock() -> None:
-    """Mock backend is always available: no Python bindings needed."""
-    settings = Settings(
-        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    report = HealthService(settings).report()
+def test_middleware_available_when_a_dds_backend_serves() -> None:
+    """A serving DDS adapter means its binding loaded: no find_spec probe needed."""
+    report = HealthService(_settings(mode="live"), _adapter("cyclone")).report()
     assert report.middleware_available is True
 
 
-def test_health_report_middleware_available_false_without_binding() -> None:
-    """fast/cyclone without bindings reports middleware_available=False.
-
-    On this test host neither `fastdds` nor `cyclonedds` is expected to be
-    installed (CI installs them only for the requires_* gated tests). If
-    they happen to be installed, this assertion still holds because we
-    explicitly request fast and find_spec checks for the right module.
-    """
-    import importlib.util
-
-    if importlib.util.find_spec("fastdds") is not None:
-        pytest.skip("fastdds installed: this test asserts the negative path")
-
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="ros2",
-        telemetry_enabled=False,
-        dds_backend="fast",
-    )
-    report = HealthService(settings).report()
-    assert report.middleware_available is False
-
-
-import pytest  # noqa: E402 (used above only in the skipped path)
-
-# ---------------------------------------------------------------------------
-# ros_backend (v0.4.0 Phase 1 ; symmetric to dds_backend, supports composite)
-# ---------------------------------------------------------------------------
-
-
-def test_health_report_ros_backend_mock_in_mock_mode() -> None:
-    settings = Settings(
-        mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    report = HealthService(settings).report()
-    assert report.ros_backend == "mock"
-
-
-def test_health_report_ros_backend_none_when_live_but_no_ros2() -> None:
-    """Live mode requested but `ros2` not on PATH: ros_backend == 'none'.
-
-    The composite path may still build a DDS-only adapter ; the health
-    field is purely a description of which ROS half resolves, not which
-    adapter actually runs.
-    """
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="definitely-not-a-real-binary-xyz",
-        telemetry_enabled=False,
-    )
-    report = HealthService(settings).report()
-    assert report.ros_backend == "none"
-
-
-def test_health_report_ros_backend_ros2_cli_when_live_and_ros2_present(
+def test_middleware_unavailable_when_requested_binding_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When `ros2` is on PATH in live mode, ros_backend reports 'ros2_cli'."""
-    import shutil
-
-    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ros2")
-    settings = Settings(
-        mode="live", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
-    )
-    report = HealthService(settings).report()
-    assert report.ros_backend == "ros2_cli"
-
-
-# ---------------------------------------------------------------------------
-# middleware_available for v0.4.0 Phase 1.5 new vendors
-# ---------------------------------------------------------------------------
-
-
-def test_health_report_middleware_available_false_for_opendds_without_binding(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import importlib.util
-
+    """Requested `fast`, fell back to ROS2 CLI alone, binding absent: stay visible."""
     real_find_spec = importlib.util.find_spec
     monkeypatch.setattr(
         importlib.util,
         "find_spec",
-        lambda name, *a, **k: None if name == "pyopendds" else real_find_spec(name, *a, **k),
+        lambda name, *a, **k: None if name == "fastdds" else real_find_spec(name, *a, **k),
     )
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="ros2",
-        telemetry_enabled=False,
-        dds_backend="opendds",
-    )
-    report = HealthService(settings).report()
+    settings = _settings(mode="live", dds_backend="fast")
+    report = HealthService(settings, _adapter("ros2_cli")).report()
+    assert report.dds_backend == "none"
     assert report.middleware_available is False
 
 
-def test_health_report_middleware_available_false_for_dust_without_binding(
+def test_middleware_available_when_requested_binding_present_but_not_serving(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import importlib.util
+    """Binding importable but the adapter did not come up: the probe still says True."""
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a, **k: object())
+    settings = _settings(mode="live", dds_backend="cyclone")
+    report = HealthService(settings, _adapter("ros2_cli")).report()
+    assert report.middleware_available is True
 
-    real_find_spec = importlib.util.find_spec
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name, *a, **k: None if name == "dust_dds_python" else real_find_spec(name, *a, **k),
-    )
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="ros2",
-        telemetry_enabled=False,
-        dds_backend="dust",
-    )
-    report = HealthService(settings).report()
+
+def test_middleware_unavailable_without_dds_module() -> None:
+    report = HealthService(_settings(mode="live"), _adapter("ros2_cli")).report()
+    assert report.dds_backend == "none"
     assert report.middleware_available is False
 
 
-def test_health_report_middleware_available_pro_vendor_via_plugin(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When the Pro plugin module is importable, middleware_available=True."""
-    import importlib.util
-
-    real_find_spec = importlib.util.find_spec
-    target = "topicforge_pro.adapters.rti_connext"
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name, *a, **k: object() if name == target else real_find_spec(name, *a, **k),
-    )
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="ros2",
-        telemetry_enabled=False,
-        dds_backend="rti",
-    )
-    report = HealthService(settings).report()
-    assert report.middleware_available is True
+# ---------------------------------------------------------------------------
+# End to end through build_app
+# ---------------------------------------------------------------------------
 
 
-def test_health_report_middleware_available_rti_via_upstream_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """RTI shows as available even when only the upstream SDK is installed
-    (Pro plugin missing): the health fallback probes rti.connextdds."""
-    import importlib.util
+def _call_health_check(app: Any) -> dict[str, Any]:
+    result = asyncio.run(app.call_tool("health_check", {}))
+    # FastMCP returns either (content, structured) or a content list
+    # depending on the SDK version.
+    if isinstance(result, tuple):
+        structured = result[1]
+        if isinstance(structured, dict):
+            return structured
+        result = result[0]
+    return json.loads(result[0].text)
 
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name, *a, **k: object() if name == "rti.connextdds" else None,
-    )
-    settings = Settings(
-        mode="live",
-        log_level="INFO",
-        ros2_executable="ros2",
-        telemetry_enabled=False,
-        dds_backend="rti",
-    )
-    report = HealthService(settings).report()
-    assert report.middleware_available is True
+
+def test_live_without_ros2_reports_the_mock_that_was_built() -> None:
+    """Regression: `TOPICFORGE_MODE=live` without `ros2` builds MockAdapter,
+    and `health_check` must say so rather than echoing the requested mode."""
+    settings = _settings(mode="live", ros2_executable="definitely-not-a-real-binary-xyz")
+    payload = _call_health_check(build_app(settings))
+    assert payload["mode"] == "mock"
+    assert payload["requested_mode"] == "live"
+    assert payload["ros_backend"] == "mock"
+    assert payload["dds_backend"] == "mock"

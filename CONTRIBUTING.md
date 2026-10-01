@@ -17,11 +17,16 @@ maintainer ; the contribution loop is intentionally tight.
   steps. Open a PR directly: these merge fast.
 - **Cross-platform regressions.** TopicForge is Windows-first ; if you
   hit a Mac / Linux-specific breakage, file it with the stack trace.
+- **Reports from a real DDS bus.** The Cyclone and Fast adapters have
+  never been run against a live multi-vendor domain, so what you
+  observe there (what worked, what raised, what looked wrong) is the
+  most useful input available. Include the vendors on your bus and the
+  `health_check` output.
 
 ## What contributions are harder to land
 
-- **New MCP tools.** The tool surface is intentionally capped (11 as
-  of v0.4.0): any expansion is a strategy decision documented in
+- **New MCP tools.** The tool surface is intentionally capped (11
+  since v0.4.0): any expansion is a strategy decision documented in
   `docs/product-plan.md section 11` "Scope creep within the TopicForge
   umbrella". File an issue describing the use case first ; the
   maintainer will close, defer, or sponsor the work.
@@ -35,8 +40,8 @@ maintainer ; the contribution loop is intentionally tight.
 
 ## Development setup
 
-Requires Python 3.11+. Tested on Python 3.11 / 3.12 / 3.13 on Ubuntu
-and Windows.
+Requires Python 3.10+. CI runs Python 3.10 / 3.11 / 3.12 / 3.13 on
+Ubuntu and Windows, so avoid syntax or dependencies newer than 3.10.
 
 ```bash
 git clone https://github.com/yaniswav/TopicForge.git
@@ -68,7 +73,9 @@ Every test must run without a real ROS2 install. The `mock` adapter
 covers the full tool surface with deterministic fixtures. Tests that
 need a binding declare a `requires_*` pytest marker and auto-skip
 when the binding is absent: see `tests/test_cyclone_adapter.py` for
-the pattern.
+the pattern. The `integration` marker (real-bus scenarios) is
+deselected by default; the runner behind it is a dispatch shell that
+validates nothing yet, see `scripts/integration/README.md`.
 
 ### Layer separation
 
@@ -100,9 +107,9 @@ adapter rewrite.
 ## Releasing
 
 The maintainer handles releases. Tagging `v*` on `main` triggers the
-`publish.yml` workflow -> OIDC Trusted Publisher -> PyPI. See
-`.claude/skills/topicforge/release-checklist/` for the internal
-checklist (not shipped to PyPI sdist).
+`publish.yml` workflow -> OIDC Trusted Publisher -> PyPI. The
+maintainer's release checklist is internal and not part of this
+repository.
 
 ## Security
 
