@@ -367,7 +367,7 @@ class TopicInfo(BaseModel):
     """Description of a single ROS2 topic.
 
     Carries optional DDS-side enrichment fields when the active middleware
-    backend can resolve them (CycloneDDS / RTI). The ROS2 CLI adapter and
+    backend can resolve them (CycloneDDS / Fast DDS). The ROS2 CLI adapter and
     the mock ROS2 path leave them `None`.
     """
 
@@ -386,7 +386,7 @@ class TopicInfo(BaseModel):
         ge=0,
         description=(
             "DDS reader-endpoint count when the active backend can resolve "
-            "endpoint-level info (Cyclone / RTI). `None` from the ROS2 CLI "
+            "endpoint-level info (Cyclone / Fast DDS). `None` from the ROS2 CLI "
             "adapter or when the DDS module is inactive."
         ),
     )
@@ -582,7 +582,14 @@ class HealthReport(BaseModel):
 
     model_config = _CONFIG
 
-    mode: str = Field(description="Effective runtime mode: `mock` or `live`.")
+    mode: str = Field(
+        description=(
+            "Runtime mode of the adapter actually serving requests: `mock` "
+            "or `live`. Can differ from `requested_mode` when a live backend "
+            "could not start (e.g. `live` requested without `ros2` installed "
+            "falls back to `mock`)."
+        )
+    )
     requested_mode: str = Field(description="Mode requested via configuration (may be `auto`).")
     ros2_available: bool = Field(description="Whether a `ros2` CLI is on PATH.")
     ros2_distro: str | None = Field(
@@ -613,27 +620,20 @@ class HealthReport(BaseModel):
         "mock",
         "cyclone",
         "fast",
-        "rti",
-        "opensplice",
-        "coredx",
-        "intercom",
         "opendds",
         "dust",
         "none",
     ] = Field(
         default="none",
         description=(
-            "Active DDS module backend. `none` when the DDS module is not "
-            "active (default for ROS2-only installs). `mock` for synthetic "
-            "fixtures. **OSS tier**: `cyclone` requires "
-            "`pip install topicforge[dds-cyclone]` (Eclipse CycloneDDS) ; "
-            "`fast` requires `pip install topicforge[dds-fast]` (eProsima "
-            "Fast DDS) ; `opendds` and `dust` are stub adapters in v0.4.0 "
-            "Phase 1.5 (no maintained Python binding on PyPI yet; install "
-            "`pip install topicforge[dds-opendds]` / `[dds-dust]` to "
-            "exercise the auto-detect hook). **Pro tier**: `rti`, "
-            "`opensplice`, `coredx`, `intercom` require the `topicforge-pro` "
-            "package and a valid `TOPICFORGE_LICENSE_KEY`."
+            "DDS backend of the adapter actually serving requests. `none` "
+            "when the DDS module is not active (default for ROS2-only "
+            "installs). `mock` for synthetic fixtures. `cyclone` requires "
+            '`pip install "topicforge[dds-cyclone]"` (Eclipse CycloneDDS) ; '
+            "`fast` requires a Fast DDS Python binding built from eProsima "
+            "sources (not on PyPI) ; `opendds` and `dust` are permanent stub "
+            "adapters that never serve. The `rti`, `opensplice`, `coredx` "
+            "and `intercom` values were removed in 0.5.3 with the Pro tier."
         ),
     )
     dds_domain_id: int | None = Field(
@@ -645,9 +645,10 @@ class HealthReport(BaseModel):
     middleware_available: bool = Field(
         default=False,
         description=(
-            "Whether the configured DDS backend is importable. False when "
-            "the DDS module is inactive (`dds_backend == 'none'`) or when "
-            "the backend's Python bindings are not installed."
+            "True when a DDS backend is serving (`dds_backend` is not "
+            "`none`). When the DDS module is inactive (`dds_backend == "
+            "'none'`), whether the *configured* backend's Python bindings "
+            "are importable, so a missing binding is visible."
         ),
     )
     ros_backend: Literal["mock", "ros2_cli", "none"] = Field(

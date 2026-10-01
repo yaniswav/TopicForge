@@ -25,5 +25,5 @@ def mock_settings() -> Settings:
 
 
 @pytest.fixture
-def health_service(mock_settings: Settings) -> HealthService:
-    return HealthService(mock_settings)
+def health_service(mock_settings: Settings, mock_adapter: MockAdapter) -> HealthService:
+    return HealthService(mock_settings, mock_adapter)

@@ -92,6 +92,8 @@ pip install topicforge[all]           # alias of [dds]
 
 **v0.2.0 -> v0.3.0 install-footprint compat** : `pip install topicforge[dds]` in v0.3.0 now installs `fastdds` in addition to `cyclonedds`. Migrate to `pip install topicforge[dds-cyclone]` to preserve the v0.2.0 footprint exactly.
 
+> **0.5.3:** the commands above no longer work as written. The `[dds-fast]` extra was removed because `fastdds` is not published on PyPI, and `[dds]` and `[all]` now resolve to Cyclone only. Use `pip install topicforge[dds-cyclone]`; to use Fast DDS, build eProsima's Python binding from source (see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md) section 2.b).
+
 ---
 
 ## 5. `CycloneDdsAdapter` stub -> real implementation
@@ -100,7 +102,7 @@ v0.2.0 shipped `CycloneDdsAdapter` as a protocol-compliant stub : the 3 DDS meth
 
 v0.3.0 replaces the stub with actual CycloneDDS discovery. With `pip install topicforge[dds-cyclone]` and `TOPICFORGE_DDS_BACKEND=cyclone`, the 3 DDS tools serve real results from the bus.
 
-**Caveat: `peek_dds_samples` v0.3.0 scope** : works on the 4 builtin DCPS topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) with full metadata payloads. Arbitrary user topics raise an `AdapterError` pointing at the v0.3.x XTypes/IDL roadmap: IDL discovery for arbitrary types is the next patch.
+**Caveat: `peek_dds_samples` v0.3.0 scope** : works on the 3 builtin DCPS topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) with full metadata payloads. Arbitrary user topics raise an `AdapterError` pointing at the v0.3.x XTypes/IDL roadmap: IDL discovery for arbitrary types is the next patch.
 
 ---
 
@@ -127,6 +129,8 @@ For a real broker test :
 pip install topicforge[dds-cyclone]      # or [dds-fast] or [dds] for both
 TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
+
+> **0.5.3:** `[dds-fast]` no longer exists and `[dds]` means Cyclone only; see the note in section 4.
 
 Then ask Claude to "list DDS participants on the current bus": you should see real participants discovered on domain 0. Follow `docs/DDS_QUICKSTART.md` for a full walkthrough.
 

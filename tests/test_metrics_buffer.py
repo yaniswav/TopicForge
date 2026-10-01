@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import threading
 
+from topicforge.adapters.common.dds_helpers import (
+    DYNAMIC_DECODE_DISABLED_NOTE,
+    take_bounded,
+    user_topic_placeholder,
+)
 from topicforge.adapters.common.metrics_buffer import (
     MAX_SAMPLES_PER_TOPIC,
     MetricsBuffer,
@@ -391,3 +396,56 @@ def test_topic_eviction_is_oldest_inserted() -> None:
     for topic in ("/a", "/b", "/c"):
         buf.record(topic=topic, receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)
     assert set(buf.snapshot_topics()) == {"/b", "/c"}
+
+
+# ---------------------------------------------------------------------------
+# DDS read bounds and the user-topic placeholder (shared adapter helpers)
+# ---------------------------------------------------------------------------
+
+
+def _endless_reader():
+    """Stand-in for `read_iter(timeout=...)` on a topic faster than the timeout."""
+    n = 0
+    while True:
+        yield n
+        n += 1
+
+
+def test_take_bounded_terminates_on_endless_iterator() -> None:
+    # `list(read_iter(...))[:n]` never returns on such a source; take_bounded must.
+    assert take_bounded(_endless_reader(), 3) == [0, 1, 2]
+
+
+def test_take_bounded_does_not_over_consume() -> None:
+    source = iter(range(10))
+    assert take_bounded(source, 4) == [0, 1, 2, 3]
+    assert next(source) == 4
+
+
+def test_take_bounded_zero_and_negative_limit_yield_empty() -> None:
+    assert take_bounded(_endless_reader(), 0) == []
+    assert take_bounded(_endless_reader(), -5) == []
+
+
+def test_take_bounded_short_source_returns_everything() -> None:
+    assert take_bounded([1, 2], 10) == [1, 2]
+
+
+def test_user_topic_placeholder_is_single_annotated_raw_sample() -> None:
+    result = user_topic_placeholder("/scan", 5, note=DYNAMIC_DECODE_DISABLED_NOTE)
+    assert len(result) == 1
+    sample = result[0]
+    assert sample.topic == "/scan"
+    assert sample.message_type == "dds/unknown"
+    assert sample.payload["_decode_status"] == "raw"
+    assert sample.payload["_decode_note"] == DYNAMIC_DECODE_DISABLED_NOTE
+
+
+def test_user_topic_placeholder_empty_when_count_not_positive() -> None:
+    assert user_topic_placeholder("/scan", 0, note="n") == []
+    assert user_topic_placeholder("/scan", -1, note="n") == []
+
+
+def test_disabled_note_tells_the_truth_about_the_payload() -> None:
+    assert "disabled" in DYNAMIC_DECODE_DISABLED_NOTE
+    assert "not decoded" in DYNAMIC_DECODE_DISABLED_NOTE

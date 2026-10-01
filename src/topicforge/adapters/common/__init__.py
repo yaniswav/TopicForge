@@ -10,9 +10,12 @@ from topicforge.adapters.common.cdr_decoder import (
 )
 from topicforge.adapters.common.dds_helpers import (
     DDS_ONLY_ERROR_MSG,
+    DYNAMIC_DECODE_DISABLED_NOTE,
     VendorTag,
     canonicalize_vendor_id,
     format_guid,
+    take_bounded,
+    user_topic_placeholder,
     validate_domain_id,
 )
 from topicforge.adapters.common.dds_introspection import (
@@ -47,6 +50,7 @@ from topicforge.adapters.common.xtypes import (
 
 __all__ = [
     "DDS_ONLY_ERROR_MSG",
+    "DYNAMIC_DECODE_DISABLED_NOTE",
     "MAX_EVENTS",
     "MAX_SAMPLES_PER_TOPIC",
     "DecodeStatus",
@@ -78,5 +82,7 @@ __all__ = [
     "format_guid",
     "is_removal",
     "iter_field_names",
+    "take_bounded",
+    "user_topic_placeholder",
     "validate_domain_id",
 ]

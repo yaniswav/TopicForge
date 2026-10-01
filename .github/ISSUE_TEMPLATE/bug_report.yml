@@ -15,7 +15,7 @@ body:
     attributes:
       label: TopicForge version
       description: "Output of `python -m topicforge --version` or `pip show topicforge`."
-      placeholder: "topicforge 0.4.0"
+      placeholder: "topicforge 0.5.3"
     validations:
       required: true
 
@@ -23,7 +23,7 @@ body:
     id: mode
     attributes:
       label: Runtime mode
-      description: "From your `TOPICFORGE_MODE` env var or `health_check` output."
+      description: "The `mode` field of `health_check` (the mode actually serving), which can differ from your `TOPICFORGE_MODE`."
       options:
         - mock
         - live
@@ -37,16 +37,15 @@ body:
     id: dds-backend
     attributes:
       label: DDS backend (if relevant)
-      description: "Skip if the bug doesn't touch the DDS module."
+      description: "The `dds_backend` field of `health_check`. Skip if the bug doesn't touch the DDS module."
       options:
         - "n/a: bug is on the ROS2 side"
         - mock
         - cyclone
         - fast
-        - rti
-        - opendds
-        - dust
-        - other / Pro tier vendor
+        - opendds (stub)
+        - dust (stub)
+        - none
     validations:
       required: false
 

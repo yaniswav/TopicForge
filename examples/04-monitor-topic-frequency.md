@@ -1,11 +1,19 @@
-# 04: Monitor topic frequency and participant lifecycle
+# 04: Topic metrics and participant lifecycle
 
 **Scenario.** A robotics integrator complains that a 10 Hz heartbeat
-topic "seems jittery". You want concrete numbers (observed
-frequency, sequence gaps, latency percentiles) plus visibility on
-participants joining and leaving the bus during the observation
-window. **Tools exercised.** `topic_metrics`, `participant_events`.
-**Mode.** Mock: exercises the deterministic 10 Hz heartbeat fixture.
+topic "seems jittery". You want numbers (observed frequency, sequence
+gaps, latency percentiles) plus visibility on participants joining and
+leaving the bus. **Tools exercised.** `topic_metrics`,
+`participant_events`. **Mode.** Mock: exercises a pre-filled 10 Hz
+fixture.
+
+**Read this first.** The mock fixture is richer than anything a live
+adapter can produce today. On a live bus `topic_metrics` only has data
+for the builtin discovery topics, and its frequency is the cadence of
+your own `peek_dds_samples` calls, not the publication rate of a topic.
+The jitter question in this scenario cannot be answered with TopicForge
+on a real bus; the last section says what can. The mock run is useful to
+see the response shape, not to learn what your robot is doing.
 
 ## Setup
 
@@ -18,71 +26,103 @@ The mock observability fixture ships :
 
 - `/dds/heartbeat_10hz`: 100 samples spaced 100 ms apart with
   synthetic 50 ms latency and contiguous sequence numbers 0..99
-- A singleton topic (one sample) for low-traffic edge-case testing
-- A cross-domain topic exercising the `domain_id` filter
+- `/dds/singleton`: one sample, for the "fewer than 2 samples" edge case
+- `/dds/cross_domain`: one sample on domain 42, exercising the
+  `domain_id` filter
 
 ## Conversation
 
 **You:**
 
-> Tell me the observed frequency, jitter, and any sequence gaps on
+> Tell me the observed frequency and any sequence gaps on
 > `/dds/heartbeat_10hz` over the last minute.
 
 **Claude calls:** `topic_metrics(topic="/dds/heartbeat_10hz",
-window_seconds=60, domain_id=0)` -> returns `TopicMetrics` with
-`samples_observed=100`, `frequency_hz_observed~10.0`,
-`frequency_hz_declared=10.0` (from QoS Deadline),
-`sequence_gaps_count=0`, `latency_ns_p50~50_000_000`,
-`latency_ns_p95~50_000_000`, `latency_ns_p99~50_000_000`, and
-boolean availability flags for each conditional metric.
+window_seconds=60, domain_id=0)` -> returns a `TopicMetrics`:
+
+```json
+{
+  "topic": "/dds/heartbeat_10hz",
+  "window_seconds": 60,
+  "window_seconds_actual": 10.0,
+  "samples_observed": 100,
+  "frequency_hz_observed": 10.0,
+  "frequency_hz_declared": null,
+  "sequence_gaps_count": 0,
+  "sequence_numbers_available": true,
+  "latency_ns_p50": 50000000,
+  "latency_ns_p95": 50000000,
+  "latency_ns_p99": 50000000,
+  "latency_available": true,
+  "mode_effective": "mock"
+}
+```
+
+`frequency_hz_observed` is 99 intervals over the 9.9 s span of the
+samples, so 10.0 up to floating-point rounding. `frequency_hz_declared`
+is `null` here, as it is in every response: no adapter populates it, so
+there is nothing to compare the observed rate against.
 
 **You:**
 
-> Did any participants come or go on the bus during that window?
+> Did any participants come or go on the bus?
 
 **Claude calls:** `participant_events(domain_id=0,
-lookback_seconds=60)` -> returns a list of `ParticipantEvent` with
-`event_type="discovered"` or `"lost"`, `timestamp_ns`, and the full
-embedded `ParticipantInfo` (vendor, hostname, GUID, lifecycle
-fields).
+lookback_seconds=300)` -> returns 3 `ParticipantEvent` entries, newest
+first, all `event_type="discovered"` and none `"lost"`: the Fast DDS
+participant `mock-aerospace-node`, then the Cyclone participants
+`mock-laptop` and `mock-robot`. Each carries `guid`, `event_type`,
+`vendor`, `timestamp_ns`, `hostname`, `domain_id` and `mode_effective`.
+(The mock clock sits two minutes after the first event, so
+`lookback_seconds=60` returns an empty list and `300` returns all three.)
 
 **Claude responds** with a synthesis :
 
-> Over the last 60 seconds I observed 100 samples on
-> `/dds/heartbeat_10hz`, exactly matching the declared 10 Hz QoS
-> Deadline. Sequence numbers were contiguous (0 gaps), and end-to-end
-> latency p50/p95/p99 all sat at ~50 ms: uniform, no jitter.
-> Three participants stayed active throughout the window: no
-> discovery or loss events fired. The "jittery heartbeat" report
-> isn't reproducing here: recommend checking the **complainant's
-> subscriber** end (publisher -> bus -> subscriber is fine ;
-> subscriber -> application callback might be the bottleneck).
+> The mock buffer holds 100 samples on `/dds/heartbeat_10hz` at about
+> 10 Hz, with contiguous sequence numbers (0 gaps) and a uniform 50 ms
+> publish-to-receive latency, so there is no jitter in this data. I
+> can't check the rate against a declared one, because
+> `frequency_hz_declared` is null. No participant was lost in the
+> window. This is fixture data: it says nothing about a real robot.
 
-## Caveats: opportunistic fill
+## What happens on a live bus
 
-**`topic_metrics` is opportunistic.** Neither `cyclonedds` nor
-`fastdds` 2.6.x Python bindings expose at-sample-receive callbacks,
-so the `MetricsBuffer` accumulates ONLY as `peek_dds_samples` is
-exercised on the same topic. In a production observation loop you'd
-periodically call `peek_dds_samples` to keep the buffer warm. The
-tool description carries this caveat to the LLM ; mock mode hides it
-(deterministic fixtures pre-populate the buffer).
+**`topic_metrics` only has data for the builtin topics.** The buffer is
+filled when `peek_dds_samples` surfaces samples, neither binding exposes
+an at-receive callback, and only the builtin DCPS topics
+(`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) surface any.
+Since 0.5.3 a user topic returns `samples_observed=0` with every metric
+`null`; before that, the Fast adapter counted placeholder samples it had
+made up. On a builtin topic:
 
-**`participant_events` on Cyclone is polling-driven.** Cyclone's
-lifecycle log updates only when `list_participants` (or any internal
-poll of the `DCPSParticipant` builtin reader) is called. A
-participant that joined and left between two tool calls is invisible.
-Fast DDS uses native listener callbacks and captures both arrival
-and removal natively.
+- `frequency_hz_observed` reflects how often you call
+  `peek_dds_samples`. Samples from one call share one capture instant,
+  so a single call gives `null`.
+- `sequence_numbers_available` is `false` and `sequence_gaps_count` is
+  `0`: builtin samples carry no application sequence number.
+- `latency_ns_p50/p95/p99` are `null` and `latency_available` is `false`:
+  builtin samples carry no publish timestamp.
 
-## Going live
+**`participant_events` works on live adapters, with a caveat on
+Cyclone.** Cyclone's lifecycle log updates only when `list_participants`
+runs, so a participant that joined and left between two calls is
+invisible. Fast DDS uses listener callbacks and captures both arrival
+and removal. Neither adapter has been run against a live bus yet.
 
 ```bash
-pip install topicforge[dds-fast]    # listener-callback-driven lifecycle
-TOPICFORGE_MODE=live TOPICFORGE_DDS_BACKEND=fast python -m topicforge
+pip install topicforge[dds-cyclone]
+TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-On Fast DDS, `participant_events` captures every `discovered` /
-`lost` event natively. On Cyclone, periodic `list_participants`
-calls keep the lifecycle buffer warm. Either backend serves
-`topic_metrics` identically: the buffer is vendor-neutral.
+The Fast DDS adapter (`TOPICFORGE_DDS_BACKEND=fast`) needs a Python
+binding built from eProsima's sources; there is no PyPI extra for it.
+
+## What to do about the jittery heartbeat
+
+Inside TopicForge, `participant_events` can tell you whether the
+publisher's participant is flapping, and `list_participants` plus
+`detect_qos_mismatches` can tell you whether a QoS mismatch (Deadline
+included) is in play. Measuring the topic's real rate and jitter needs a
+tool that subscribes to the data: `ros2 topic hz` on a ROS2 graph, or
+your DDS vendor's own tooling. TopicForge does not subscribe to
+user-topic data.
