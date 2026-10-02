@@ -75,8 +75,13 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
   name, type names, `details` (requested and offered value, failed rule) and
   `unchecked`.
 - Hints cover orphan topics whose names differ by at most 2 edits (compared
-  against all topics), path-suffix matches, late joiners and XTypes type id
-  differences (a note, never a mismatch).
+  against all topics), path-suffix matches and XTypes type id differences (a
+  note, never a mismatch). Hints are prioritized and say how many were omitted.
+- A late joiner is not a hint (it is normal on most buses): a `MatchedPair` is
+  flagged `late_joiner` when its writer is VOLATILE and the reader, on the same
+  host, appeared more than 1 s later.
+- `reports`, `matched` and `not_matched` are capped at 200 entries each, with
+  `reports_total`, `matched_total`, `not_matched_total` and `truncated`.
 - `topic_metrics` reports a `status`, and on a user topic says it has no data
   instead of returning zeros. `peek_dds_samples` on a user topic returns count
   0 and a note. `ParticipantInfo` and endpoints gain `is_observer`, and
@@ -91,6 +96,19 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
 - Infinite durations (cyclonedds reports 9223372036854775807) are normalized
   to `None`; an infinite Deadline used to surface as a 9.2e18 ns deadline.
 - The Cyclone discovery tracker is stopped at interpreter exit.
+- A race between the tracker and a tool call could mark a live participant as
+  lost for good; a failed read could drop a participant's departure; endpoints
+  of a participant that had just left could stay listed as live. The tracker
+  and every tool now share one lock, and taken samples are never discarded.
+- If every tracker pass fails, tools no longer wait 3 s each: warm-up is bounded
+  once. `health_check` reports failed passes and cache evictions.
+- An unreadable QoS duration is treated as unknown (`QosProfile.unknown_policies`),
+  not as infinite, so it cannot produce a false Deadline incompatibility.
+- Topic-name typo hints are bounded (banded edit distance, orphan cap, call
+  budget), so a bus with a thousand topics does not stall the call.
+- Partition matching was checked against a live Cyclone bus: `*` and `?` are
+  wildcards, `[...]` is literal, and two wildcard expressions never match each
+  other. Pinned by tests.
 
 ### Known limits
 
