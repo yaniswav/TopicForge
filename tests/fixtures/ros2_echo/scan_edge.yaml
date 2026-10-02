@@ -1,0 +1,38 @@
+header:
+  stamp:
+    sec: 6
+    nanosec: 552618448
+  frame_id: edge_laser
+angle_min: 0.0
+angle_max: 0.0
+angle_increment: 0.0
+time_increment: 0.0
+scan_time: 0.0
+range_min: 0.0
+range_max: 0.0
+ranges:
+- .inf
+- .nan
+- -.inf
+- 1.5
+intensities: []
+---
+header:
+  stamp:
+    sec: 7
+    nanosec: 48923254
+  frame_id: edge_laser
+angle_min: 0.0
+angle_max: 0.0
+angle_increment: 0.0
+time_increment: 0.0
+scan_time: 0.0
+range_min: 0.0
+range_max: 0.0
+ranges:
+- .inf
+- .nan
+- -.inf
+- 1.5
+intensities: []
+---

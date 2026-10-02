@@ -1,0 +1,24 @@
+header:
+  stamp:
+    sec: 29
+    nanosec: 13501527
+  frame_id: camera_link
+height: 480
+width: 640
+encoding: rgb8
+is_bigendian: 0
+step: 1920
+data: '<sequence type: uint8, length: 921600>'
+---
+header:
+  stamp:
+    sec: 29
+    nanosec: 513427612
+  frame_id: camera_link
+height: 480
+width: 640
+encoding: rgb8
+is_bigendian: 0
+step: 1920
+data: '<sequence type: uint8, length: 921600>'
+---

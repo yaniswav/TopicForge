@@ -1,0 +1,30 @@
+header:
+  stamp:
+    sec: 12
+    nanosec: 513271635
+  frame_id: base_laser
+angle_min: -2.356194496154785
+angle_max: 2.356194496154785
+angle_increment: 0.008726646192371845
+time_increment: 0.0
+scan_time: 0.10000000149011612
+range_min: 0.05000000074505806
+range_max: 30.0
+ranges: '<sequence type: float, length: 541>'
+intensities: '<sequence type: float, length: 541>'
+---
+header:
+  stamp:
+    sec: 12
+    nanosec: 613354497
+  frame_id: base_laser
+angle_min: -2.356194496154785
+angle_max: 2.356194496154785
+angle_increment: 0.008726646192371845
+time_increment: 0.0
+scan_time: 0.10000000149011612
+range_min: 0.05000000074505806
+range_max: 30.0
+ranges: '<sequence type: float, length: 541>'
+intensities: '<sequence type: float, length: 541>'
+---

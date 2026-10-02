@@ -72,6 +72,11 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
 _BASE_TS_NS = 1_700_000_000_000_000_000
 
 
+def _stamp(ts_ns: int) -> dict[str, int]:
+    """A `builtin_interfaces/Time` payload, as `ros2 topic echo` prints it."""
+    return {"sec": ts_ns // 1_000_000_000, "nanosec": ts_ns % 1_000_000_000}
+
+
 _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
     "/cmd_vel": [
         MessageSample(
@@ -90,8 +95,9 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/odom",
             message_type="nav_msgs/msg/Odometry",
             timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            stamp_source="header",
             payload={
-                "header": {"frame_id": "odom", "stamp_sec": 1_700_000_000 + i},
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * 100_000_000), "frame_id": "odom"},
                 "pose": {"position": {"x": 0.1 * i, "y": 0.0, "z": 0.0}},
                 "twist": {"linear": {"x": 0.2}, "angular": {"z": 0.0}},
             },
@@ -103,8 +109,9 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/scan",
             message_type="sensor_msgs/msg/LaserScan",
             timestamp_ns=_BASE_TS_NS + i * 50_000_000,
+            stamp_source="header",
             payload={
-                "header": {"frame_id": "laser", "stamp_sec": 1_700_000_000 + i},
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * 50_000_000), "frame_id": "laser"},
                 "angle_min": -3.14,
                 "angle_max": 3.14,
                 "range_min": 0.05,
@@ -133,8 +140,9 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/camera/image_raw",
             message_type="sensor_msgs/msg/Image",
             timestamp_ns=_BASE_TS_NS,
+            stamp_source="header",
             payload={
-                "header": {"frame_id": "camera", "stamp_sec": 1_700_000_000},
+                "header": {"stamp": _stamp(_BASE_TS_NS), "frame_id": "camera"},
                 "width": 640,
                 "height": 480,
                 "encoding": "rgb8",

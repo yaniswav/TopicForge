@@ -69,9 +69,9 @@ the fixtures and `health_check` says `mode="mock"` while
 
 ## Variants
 
-- No publisher on the topic: `sample_messages` in live mode times
-  out after 3 seconds and returns an empty `samples` list; the
-  `SampleResult.count` field says 0.
+- No publisher on the topic: `sample_messages` in live mode waits a
+  short grace period and returns an empty `samples` list; `count` is 0
+  and `note` says no publisher is announced.
 - Headerless message types: `samples[i].timestamp_ns` is `0`
-  for types without a `Header` (e.g. `std_msgs/String`). See the
-  `parse_csv_echo` story in CHANGELOG `[0.1.2]`.
+  for types without a `Header` (e.g. `std_msgs/String`), and
+  `stamp_source` is `none`.

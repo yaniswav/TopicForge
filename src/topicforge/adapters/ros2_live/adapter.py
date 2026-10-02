@@ -20,12 +20,14 @@ import subprocess
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
+from topicforge.adapters.ros2_live.echo_stream import stream_echo
 from topicforge.adapters.ros2_live.parsers import (
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
     summarize_publisher_qos,
 )
-from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
@@ -42,7 +44,8 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SEC = 8.0
-_SAMPLE_TIMEOUT_SEC = 3.0
+# Wait for `sample_messages` on a topic with no announced publisher.
+_NO_PUBLISHER_WAIT_SEC = 3.0
 
 _DEFAULT_DDS_INACTIVE_REASON = (
     "install the Cyclone binding and select it: "
@@ -155,38 +158,79 @@ class Ros2CliAdapter:
         *,
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
-    ) -> list[MessageSample]:
-        # `ros2 topic echo` blocks indefinitely, so use --once with a timeout.
-        # `--csv` flattens the message in declaration order: for a message
-        # starting with a `Header` the first two columns are the stamp, which
-        # gives a publish time without rclpy. Headerless messages
-        # (`std_msgs/String`, `geometry_msgs/Twist`) get timestamp 0.
-        # TODO(roadmap): rclpy-backed adapter: windowed echo, time-range,
-        # access to rmw receive timestamps (vs publish-time from Header),
-        # better deserialization of complex message payloads.
+        timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+    ) -> SampleResult:
+        """Stream `ros2 topic echo` and keep up to `count` messages within `timeout_s`.
+
+        QoS is passed explicitly, derived from the publishers' QoS in
+        `ros2 topic info --verbose`: the CLI's own choice runs once against a
+        possibly cold daemon and can pick a profile that never matches a
+        latched topic. A short result carries a `note` saying why.
+        TODO(roadmap): rclpy-backed adapter: time-range windows and rmw
+        receive timestamps.
+        """
         if count <= 0:
-            return []
+            return self._sample_result(topic, [], None)
 
         info = self.get_topic_info(topic)
-        echo_args = _echo_array_args(max_array_length, arrays_summary_only)
-        try:
-            out = self._run(
-                [self._exe, "topic", "echo", "--csv", "--once", *echo_args, topic],
-                timeout=_SAMPLE_TIMEOUT_SEC,
+        cmd = self._echo_command(
+            topic, info, max_array_length=max_array_length, arrays_summary_only=arrays_summary_only
+        )
+        has_publisher = info.publisher_count > 0
+        deadline = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
+        run = stream_echo(cmd, count=count, deadline_s=deadline)
+        if not run.documents and run.exit_code not in (None, 0):
+            raise AdapterError(
+                f"`ros2 topic echo {topic}` failed (exit {run.exit_code}): "
+                f"{run.stderr_tail or 'no stderr'}"
             )
-        except AdapterError as exc:
-            log.info("sample_messages on %s returned no data: %s", topic, exc)
-            return []
 
-        rows = parse_csv_echo(out, truncate_length=max_array_length)
-        return [
-            MessageSample(
-                topic=topic,
-                message_type=info.message_type,
-                timestamp_ns=ts_ns,
-                payload=payload,
+        samples = []
+        for doc in run.documents:
+            message = parse_echo_document(doc.text, truncate_length=max_array_length)
+            samples.append(
+                MessageSample(
+                    topic=topic,
+                    message_type=info.message_type,
+                    timestamp_ns=message.timestamp_ns,
+                    stamp_source=message.stamp_source,
+                    received_ns=doc.received_ns,
+                    payload=message.payload,
+                )
             )
-            for ts_ns, payload in rows
+        note = _short_result_note(len(samples), count, deadline, has_publisher)
+        return self._sample_result(topic, samples, note)
+
+    def _sample_result(
+        self, topic: str, samples: list[MessageSample], note: str | None
+    ) -> SampleResult:
+        return SampleResult(
+            topic=topic,
+            count=len(samples),
+            samples=samples,
+            mode_effective=self.effective_mode,
+            note=note,
+        )
+
+    def _echo_command(
+        self,
+        topic: str,
+        info: TopicInfo,
+        *,
+        max_array_length: int | None,
+        arrays_summary_only: bool,
+    ) -> list[str]:
+        exe = shutil.which(self._exe)
+        if exe is None:
+            raise AdapterError(f"`{self._exe}` not found on PATH. Source your ROS2 setup file.")
+        return [
+            exe,
+            "topic",
+            "echo",
+            "--no-lost-messages",
+            *_echo_qos_args(info),
+            *_echo_array_args(max_array_length, arrays_summary_only),
+            topic,
         ]
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -280,6 +324,36 @@ def _echo_array_args(max_array_length: int | None, arrays_summary_only: bool) ->
     return args
 
 
+def _echo_qos_args(info: TopicInfo) -> list[str]:
+    """Explicit `--qos-reliability` / `--qos-durability` that match every publisher.
+
+    `reliable` and `transient_local` only when all publishers use them; the
+    permissive `best_effort` / `volatile` otherwise (and when there is no
+    publisher to read), which connects to any publisher.
+    """
+    reliability = "reliable" if info.qos_reliability == "reliable" else "best_effort"
+    durability = "transient_local" if info.qos_durability == "transient_local" else "volatile"
+    return ["--qos-reliability", reliability, "--qos-durability", durability]
+
+
+def _short_result_note(got: int, wanted: int, deadline_s: float, has_publisher: bool) -> str | None:
+    """Why fewer than `wanted` messages arrived; `None` when all did."""
+    if got >= wanted:
+        return None
+    head = f"{got} of {wanted} messages within {deadline_s:g} s."
+    if not has_publisher:
+        return (
+            f"{head} No publisher is announced on this topic, so nothing was "
+            "waited for beyond a short grace period."
+        )
+    return (
+        f"{head} A publisher exists but sent nothing in time: it may publish "
+        "less often than the deadline, be idle, or the message may be too "
+        "large to print (retry with a lower `max_array_length` or "
+        "`arrays_summary_only` true). A larger `timeout_s` waits longer."
+    )
+
+
 # Parsers
 
 _LIST_LINE = re.compile(r"^(\S+)\s+\[(.+)\]\s*$")
@@ -348,131 +422,6 @@ def parse_topic_info(
         qos_reliability=reliability,
         qos_durability=durability,
         mode_effective=mode_effective,
-    )
-
-
-# Not called by the adapter: `sample_messages` uses `parse_csv_echo`. Kept as
-# a fallback for the plain YAML echo format until an rclpy adapter makes both
-# parsers obsolete.
-def parse_echo_yaml(stdout: str) -> dict[str, object]:
-    """Parse `ros2 topic echo --once` output into a flat dict.
-
-    Only top-level keys are kept, and the raw text goes under `_raw_text`.
-    This avoids a YAML dependency.
-    """
-    flat: dict[str, object] = {}
-    for raw in stdout.splitlines():
-        line = raw.rstrip()
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        # Top-level keys only (no indentation).
-        if line == stripped and ":" in line:
-            key, _, value = line.partition(":")
-            flat[key.strip()] = value.strip()
-    flat["_raw_text"] = stdout
-    return flat
-
-
-# Bounds for reading the first two CSV columns as a Header stamp: `sec` between
-# the years 2000 and 2100, `nanosec` below 1e9. Anything else is taken to be
-# the first fields of a headerless message.
-_TS_SEC_MIN = 946_684_800  # 2000-01-01 UTC
-_TS_SEC_MAX = 4_102_444_800  # 2100-01-01 UTC
-_TS_NSEC_MAX = 1_000_000_000
-_CSV_TRUNCATION_MARK = "..."
-# `--no-arr` prints a sequence as one cell whose text contains a comma.
-_CSV_SUMMARY_PREFIX = "<sequence type:"
-
-
-def parse_csv_echo(
-    stdout: str, *, truncate_length: int | None = None
-) -> list[tuple[int, dict[str, object]]]:
-    """Parse `ros2 topic echo --csv [--once]` output into `(timestamp_ns, payload)` rows.
-
-    `message_to_csv` flattens a message in declaration order, so a message
-    that starts with a `Header` begins with `header.stamp.sec,nanosec`. When
-    the first two columns fall within the bounds above they become
-    `timestamp_ns` and are dropped from the payload, which is re-indexed from
-    `col_0`. Otherwise `timestamp_ns` is 0 (see `MessageSample.timestamp_ns`).
-
-    A `...` cell is the CLI's marker for an array cut at `--truncate-length`.
-    It is not a data column: it is dropped and the index of the column before
-    it is listed under `_truncated_after_columns`. With `truncate_length`, a
-    string or bytes cell the CLI cut is `truncate_length` characters plus
-    `...`: those cells are listed under `_truncated_columns` (a cell that
-    happens to have that length and ends in `...` is indistinguishable).
-
-    A `--no-arr` sequence summary (`<sequence type: float, length: 541>`)
-    contains a comma and is rejoined into one cell.
-
-    Blank lines, `#` comments and rows with fewer than two columns are
-    skipped. Example (`sensor_msgs/Imu`):
-        1715600000,123456789,base_link,0.0,...
-    -> `[(1715600000123456789, {"col_0": "base_link", "col_1": "0.0", ...,
-                                "_raw_text": "..."})]`
-    """
-    rows: list[tuple[int, dict[str, object]]] = []
-    for raw in stdout.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 2:
-            continue
-
-        ts_ns = 0
-        value_parts = parts
-        try:
-            sec = int(parts[0])
-            nsec = int(parts[1])
-        except ValueError:
-            sec = nsec = -1
-        if _TS_SEC_MIN <= sec < _TS_SEC_MAX and 0 <= nsec < _TS_NSEC_MAX:
-            ts_ns = sec * 1_000_000_000 + nsec
-            value_parts = parts[2:]
-
-        payload: dict[str, object] = {}
-        truncated_after: list[int] = []
-        truncated_cells: list[int] = []
-        cells = _join_sequence_summaries(value_parts)
-        for value in cells:
-            if value == _CSV_TRUNCATION_MARK:
-                if payload:
-                    truncated_after.append(len(payload) - 1)
-                continue
-            if _is_cut_cell(value, truncate_length):
-                truncated_cells.append(len(payload))
-            payload[f"col_{len(payload)}"] = value
-        if truncated_after:
-            payload["_truncated_after_columns"] = truncated_after
-        if truncated_cells:
-            payload["_truncated_columns"] = truncated_cells
-        payload["_raw_text"] = line
-        rows.append((ts_ns, payload))
-    return rows
-
-
-def _join_sequence_summaries(cells: list[str]) -> list[str]:
-    """Rejoin `<sequence type: T, length: N>` summaries that the comma split in two."""
-    out: list[str] = []
-    i = 0
-    while i < len(cells):
-        cell = cells[i]
-        if cell.startswith(_CSV_SUMMARY_PREFIX) and not cell.endswith(">") and i + 1 < len(cells):
-            cell = f"{cell}, {cells[i + 1]}"
-            i += 1
-        out.append(cell)
-        i += 1
-    return out
-
-
-def _is_cut_cell(value: str, truncate_length: int | None) -> bool:
-    """True for a string cell the CLI cut: `truncate_length` characters plus `...`."""
-    return (
-        truncate_length is not None
-        and len(value) == truncate_length + len(_CSV_TRUNCATION_MARK)
-        and value.endswith(_CSV_TRUNCATION_MARK)
     )
 
 
