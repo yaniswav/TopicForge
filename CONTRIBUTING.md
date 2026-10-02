@@ -92,7 +92,7 @@ so a new-distro fix is a 5-line patch instead of an adapter rewrite.
 ## Commit conventions
 
 - Short, imperative subject (under 70 chars). Lowercase initial verb is
-  fine. `fix: parse_csv_echo handles empty stamp` is the typical
+  fine. `fix: parse_echo_document keeps a zero stamp` is the typical
   shape.
 - Body explains the *why*, not the *what* (the diff is the what).
 - One concern per commit: no "fix tests + add feature + docs" bundles.

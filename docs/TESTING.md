@@ -77,7 +77,7 @@ TopicForge resolves the `ros2` launcher with `shutil.which` (normally `ros2.exe`
 
 Discover the graph. Ask "What topics are currently being published, and what message types do they carry?" TopicForge calls `list_topics`. Live mode shows `/chatter` plus `/rosout` and `/parameter_events`; mock mode shows `/cmd_vel`, `/odom`, `/scan`, `/tf` and `/camera/image_raw`.
 
-Inspect and sample. Ask "Show me the latest message on /chatter." TopicForge calls `get_topic_info` then `sample_messages`. The payload exposes fields as positional CSV columns (`col_0`, `col_1`, ...) plus `_raw_text`, the verbatim row from `ros2 topic echo --csv --once`. `timestamp_ns` is `0` for headerless types such as `std_msgs/String`.
+Inspect and sample. Ask "Show me the latest message on /chatter." TopicForge calls `get_topic_info` then `sample_messages`. The payload has the message fields as nested named values. `timestamp_ns` is the `header.stamp` and `0` for headerless types such as `std_msgs/String` (`stamp_source` says which).
 
 Record and analyze a bag.
 

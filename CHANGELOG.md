@@ -5,6 +5,52 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - Unreleased
+
+`sample_messages` (live) rewritten after the OmniSim team's report (count
+ignored, empty results on latched topics, wrong timestamps and shifted columns
+on simulated time).
+
+### Breaking
+
+- `sample_messages` payloads are nested named fields (`payload.header.stamp.sec`,
+  `payload.ranges`) instead of positional `col_0`, `col_1`, ... columns. The
+  verbatim row under `_raw_text` is gone: it is present only when a message could
+  not be parsed.
+- `_truncated_after_columns` and `_truncated_columns` are replaced by
+  `_truncated_fields`, a list of dotted field paths (`["ranges", "intensities"]`)
+  for arrays, strings or bytes cut at `max_array_length`. A cut array no longer
+  carries the CLI's `'...'` element.
+- `nan`, `inf` and `-inf` floats are returned as the strings `"nan"`, `"inf"`,
+  `"-inf"`.
+- `MiddlewareAdapter.sample_messages` returns a `SampleResult` instead of a list
+  of `MessageSample` and takes `timeout_s`. `parse_csv_echo` and `parse_echo_yaml`
+  are removed.
+- `pyyaml>=6` is a runtime dependency.
+
+### Added
+
+- `sample_messages` parameter `timeout_s` (1..60, default 10): a wall deadline
+  counted from the start of `ros2 topic echo`.
+- `MessageSample.stamp_source` (`header` or `none`) and `received_ns` (wall clock
+  when TopicForge read the message).
+- A short result carries a `note` (`N of M messages within T s`) that tells "no
+  publisher is announced" from "a publisher exists but nothing arrived in time".
+- `count` above 50 is capped with a note, and the tool schema declares the
+  maximum.
+
+### Fixed
+
+- `sample_messages` honours `count`: it streams `ros2 topic echo` and stops at
+  `count` messages or the deadline, then stops the process tree (SIGINT then
+  SIGKILL on POSIX, `taskkill /F /T` on Windows) (OmniSim D3). The echo is
+  started with explicit `--qos-reliability` and `--qos-durability` taken from the
+  publishers, so a latched (`transient_local`) topic is no longer returned empty
+  because the CLI picked its QoS against a cold daemon.
+- `timestamp_ns` is the top-level `header.stamp` whatever its value, so a
+  simulated clock (seconds since the simulation start) no longer falls back to 0
+  and shifts every following column by two (OmniSim D4).
+
 ## [0.5.6] - 2026-10-02
 
 Fixes from a live run of 0.5.3 and 0.5.5 against OmniSim's simulated
