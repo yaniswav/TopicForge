@@ -370,3 +370,57 @@ def test_note_lists_at_most_five_topics() -> None:
 def test_no_partition_policy_is_the_default_partition_everywhere() -> None:
     rec = endpoint_record(_endpoint_sample(key=1), "writer", {}, None)
     assert rec["qos"].partitions == [""]
+
+
+def test_topic_filter_matches_the_alternate_name_form() -> None:
+    recs = [endpoint_record(_endpoint_sample(key=1, topic="scan"), "writer", {}, None)]
+    one = build_endpoint_listing(
+        recs, domain_id=0, mode_effective="live", observer_guid=None, topic="rt/scan"
+    )
+    assert [e.topic for e in one.endpoints] == ["scan"]
+    assert one.note is not None and "alternate name form" in one.note
+    recs = [endpoint_record(_endpoint_sample(key=1, topic="rt/scan"), "writer", {}, None)]
+    two = build_endpoint_listing(
+        recs, domain_id=0, mode_effective="live", observer_guid=None, topic="scan"
+    )
+    assert [e.topic for e in two.endpoints] == ["rt/scan"]
+    exact = build_endpoint_listing(
+        [*recs, endpoint_record(_endpoint_sample(key=2, topic="scan"), "writer", {}, None)],
+        domain_id=0,
+        mode_effective="live",
+        observer_guid=None,
+        topic="scan",
+    )
+    assert [e.topic for e in exact.endpoints] == ["scan"] and exact.note is None
+
+
+def test_no_match_note_mentions_other_topics_not_hidden_endpoints() -> None:
+    note = _listing(topic="/zzz").note
+    assert note is not None and "known topics" in note and "on other topics" in note
+
+
+def _departed(key: int, topic: str, role: str, gone: int) -> dict[str, Any]:
+    rec = endpoint_record(_endpoint_sample(key=key, topic=topic), role, {}, None)  # type: ignore[arg-type]
+    rec["participant_name"] = "safety_monitor"
+    rec["gone_ns"] = gone
+    return rec
+
+
+def test_departed_writer_explains_the_orphan_in_by_topic() -> None:
+    reader = endpoint_record(_endpoint_sample(key=2, topic="estop"), "reader", {}, None)
+    gone = [_departed(1, "estop", "writer", 42)]
+    kw: dict[str, Any] = {"domain_id": 0, "mode_effective": "live", "observer_guid": None}
+    default = build_endpoint_listing([reader], departed_records=gone, **kw)
+    summary = default.by_topic[0]
+    assert summary.writer_count == 0 and summary.orphan == "no_writer"
+    assert [(d.participant_name, d.gone_ns) for d in summary.departed_writers] == [
+        ("safety_monitor", 42)
+    ]
+    assert default.returned == 1 and default.departed_endpoints == 1
+    full = build_endpoint_listing([reader], departed_records=gone, include_departed=True, **kw)
+    assert full.returned == 2 and {e.gone_ns for e in full.endpoints} == {None, 42}
+
+
+def test_health_report_states_the_observed_domain(health_service: Any) -> None:
+    note = health_service.report().observed_domain_note
+    assert note is not None and "another domain is invisible" in note

@@ -290,6 +290,7 @@ class FastDdsAdapter:
         topic: str | None = None,
         participant_guid: str | None = None,
         include_observer: bool = False,
+        include_departed: bool = False,
     ) -> EndpointListing:
         # The Fast listener keeps raw discovery info objects whose layout has
         # never been read on a real bus, so no endpoint record is built from them.

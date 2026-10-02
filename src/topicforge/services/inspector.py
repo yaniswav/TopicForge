@@ -153,6 +153,7 @@ class Inspector:
         participant_guid: str | None = None,
         include_observer: bool = False,
         domain_id: int = 0,
+        include_departed: bool = False,
     ) -> EndpointListing:
         _validate_dds_domain(domain_id)
         if topic is not None:
@@ -161,7 +162,7 @@ class Inspector:
         if participant_guid is not None and not guid:
             raise AdapterError("participant_guid must be a non-empty string when given")
         self._await_dds()
-        return self._adapter.list_endpoints(topic, guid, include_observer)
+        return self._adapter.list_endpoints(topic, guid, include_observer, include_departed)
 
     def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
         clean_path = _validate_bag_path(path)

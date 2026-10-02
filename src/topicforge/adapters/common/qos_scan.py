@@ -18,6 +18,11 @@ from topicforge.adapters.common.qos_analyzer import (
     effective_partitions,
     partitions_match,
 )
+from topicforge.adapters.common.topic_filter import (
+    levenshtein,
+    no_match_note,
+    resolve_topic_filter,
+)
 from topicforge.models import (
     EndpointInfo,
     MatchedPair,
@@ -46,26 +51,15 @@ _MAX_NEAR_DISTANCE = 2
 _LATE_JOIN_NS = 1_000_000_000
 
 
-def levenshtein(a: str, b: str) -> int:
-    """Edit distance between two strings (insert, delete, substitute)."""
-    if a == b:
-        return 0
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
-
-
 def _not_matched(
     reader: EndpointInfo,
     writer: EndpointInfo,
     reason: Literal["partition", "type_name"],
     detail: str,
 ) -> NotMatchedPair:
+    latent = analyze_pair(reader.qos, writer.qos).incompatible if reader.qos and writer.qos else []
     return NotMatchedPair(
+        latent_incompatible_policies=latent,
         topic=reader.topic,
         reader_guid=reader.guid,
         reader_participant_guid=reader.participant_guid,
@@ -263,7 +257,15 @@ def scan_endpoints(
     for ep in endpoints:
         if not ep.is_observer and not _is_builtin(ep.topic):
             by_topic.setdefault(ep.topic, []).append(ep)
-    scope = {t for t in by_topic if topic is None or t == topic}
+    scope_hints: list[str] = []
+    wanted = topic
+    if topic is not None:
+        wanted, form_note = resolve_topic_filter(topic, by_topic)
+        if form_note:
+            scope_hints.append(form_note)
+        elif wanted is None:
+            scope_hints.append(no_match_note(topic, by_topic))
+    scope = {t for t in by_topic if topic is None or t == wanted}
 
     reports: list[MismatchReport] = []
     not_matched: list[NotMatchedPair] = []
@@ -295,7 +297,7 @@ def scan_endpoints(
                     matched.append(_matched(reader, writer))
                     ok_pairs.append((reader, writer))
 
-    hints = _orphan_hints(by_topic, scope) + _type_id_hints(matched_pairs)
+    hints = scope_hints + _orphan_hints(by_topic, scope) + _type_id_hints(matched_pairs)
     hints += _late_joiner_hints(ok_pairs)
     hints += _unchecked_hints(unchecked_counts, skipped)
     return MismatchScan(

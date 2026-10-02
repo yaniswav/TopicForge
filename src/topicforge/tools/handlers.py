@@ -97,7 +97,10 @@ def register_tools(
             "Report TopicForge environment state. Returns a `HealthReport`: "
             "effective runtime `mode` (`live` or `mock`), `ros_backend` and "
             "`dds_backend`, `ros_tools_available`, `ros2_available`, "
-            "`ros2_distro` (fed by the `ROS_DISTRO` env var), the server "
+            "`ros2_distro` (fed by the `ROS_DISTRO` env var), "
+            "`dds_domain_id` and `observed_domain_note` (only that one DDS "
+            "domain, joined at startup, is observed: programs on other domains "
+            "are invisible), the server "
             "version and the server-side sample cap. "
             "**Reading `mode`**: `live` with `ros_backend` `none` means the DDS"
             " tools are live and the ROS 2 tools are not available (a DDS-only "
@@ -240,8 +243,11 @@ def register_tools(
             "dead participant's lease, not ours). Cyclone tracks discovery "
             "continuously in the background, so these stay correct between "
             "calls; right after server start the call waits up to 3 s for "
-            "discovery to warm up. TopicForge observes the domain it joined at "
-            "startup; `domain_id` does not switch domains. Operates at the raw "
+            "discovery to warm up. **Only the domain joined at startup is "
+            "observed** (see `health_check` `dds_domain_id`): a participant "
+            "running on another DDS domain is INVISIBLE here, so a missing "
+            "participant may simply be on a different domain; `domain_id` does "
+            "not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Operates at the raw "
             "DDS layer beneath ROS, so it also sees non-ROS participants. "
             "**Read-only by architecture**: it cannot publish, modify QoS, or "
             "alter the bus. **Raises an MCP error** when no DDS module is "
@@ -274,7 +280,9 @@ def register_tools(
             "offered values and the failed rule in `details`), `not_matched` "
             "(pairs DDS never matches: different partitions or type names; "
             "the QoS rules are NOT evaluated for them, so a partition split "
-            "is not blamed on Reliability), `hints` (orphan topics with a "
+            "is not blamed on Reliability; `latent_incompatible_policies` lists "
+            "the RxO policies that would ALSO be incompatible once the "
+            "partition/type issue is fixed), `hints` (orphan topics with a "
             "near-identical name, i.e. probable typos, and type id notes), "
             "plus `pairs_checked`, `topics_scanned`, `policies_checked` and "
             "`policies_unchecked`. Checked: Partition (with `*` and `?` "
@@ -503,7 +511,18 @@ def register_tools(
             "**Reading `qos`**: a duration of `None` (`deadline_ns`, "
             "`liveliness_lease_ns`, `latency_budget_ns`) means infinite or "
             "not set ; a policy field of `None` means the endpoint did not "
-            "announce it. `announced_ns` is the discovery announcement's "
+            "announce it. **Ownership**: among EXCLUSIVE writers the live one with "
+            "the highest `ownership_strength` delivers to a reader; which writer "
+            "currently owns an instance is reader-side runtime state TopicForge "
+            "cannot observe. **Departed endpoints**: when a participant leaves, "
+            "its endpoints are remembered (last 200, 1 h) and shown in `by_topic` "
+            "as `departed_writers` / `departed_readers` (participant name and "
+            "`gone_ns`), so a topic that lost its only writer is explained in "
+            "one call; they are listed in `endpoints` only with "
+            "`include_departed`. **Topic filter**: `rt/scan` and `scan` match "
+            "each other (exact name first; `note` says which form matched), and "
+            "a filter that matches nothing returns a `note` with the closest "
+            "known topics. `announced_ns` is the discovery announcement's "
             "source timestamp on the announcing side's clock, which can "
             "differ from this host's clock. **This lists discovery facts, not "
             "data flow**: it shows what endpoints exist and how they are "
@@ -526,7 +545,7 @@ def register_tools(
             str | None,
             Field(
                 description=(
-                    "Only endpoints on this DDS topic name (exact match): a bare name such as `scan` or a ROS 2 mangled name such as `rt/scan`. Omit to list every topic."
+                    "Only endpoints on this DDS topic name: a bare name such as `scan` or a ROS 2 mangled name such as `rt/scan` (exact name first, then the alternate form). Omit to list every topic."
                 )
             ),
         ] = None,
@@ -556,8 +575,20 @@ def register_tools(
                 le=232,
             ),
         ] = 0,
+        include_departed: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Also list endpoints whose participant left the bus (flagged "
+                    "with `gone_ns`). Defaults to false; `by_topic` reports them "
+                    "as `departed_writers` / `departed_readers` either way."
+                )
+            ),
+        ] = False,
     ) -> EndpointListing:
-        return inspector.list_endpoints(topic, participant_guid, include_observer, domain_id)
+        return inspector.list_endpoints(
+            topic, participant_guid, include_observer, domain_id, include_departed
+        )
 
     # TODO(roadmap): URDF tools: validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection: clock jumps, frame drops, TF gaps.

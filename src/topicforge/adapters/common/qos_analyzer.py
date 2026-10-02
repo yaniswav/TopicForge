@@ -213,7 +213,10 @@ def _optional_findings(
                 "Ownership",
                 reader.ownership_kind,
                 writer.ownership_kind,
-                "reader and writer must use the same ownership kind (strength is not compared)",
+                "reader and writer must use the same ownership kind (strength is not compared "
+                "here). Among EXCLUSIVE writers the live one with the highest strength "
+                "delivers; which writer currently owns an instance is reader-side runtime "
+                "state that TopicForge cannot observe",
             )
         )
 

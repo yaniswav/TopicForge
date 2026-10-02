@@ -618,6 +618,14 @@ class NotMatchedPair(BaseModel):
         )
     )
     detail: str = Field(description="The two partition lists or the two type names.")
+    latent_incompatible_policies: list[PolicyMismatch] = Field(
+        default_factory=list,
+        description=(
+            "RxO policies that would ALSO be incompatible once the partition / type "
+            "issue is fixed (same shape as `MismatchReport.details`). Empty when the "
+            "QoS of the two endpoints would be compatible, or could not be compared."
+        ),
+    )
 
 
 class MatchedPair(BaseModel):
@@ -969,6 +977,14 @@ class HealthReport(BaseModel):
         le=232,
         description="DDS domain id observed when the DDS module is active.",
     )
+    observed_domain_note: str | None = Field(
+        default=None,
+        description=(
+            "Plain statement of which DDS domain is observed, set when a DDS module "
+            "is active: only the domain joined at startup is visible, a program on "
+            "another domain is invisible."
+        ),
+    )
     middleware_available: bool = Field(
         default=False,
         description=(
@@ -1110,6 +1126,14 @@ class EndpointInfo(BaseModel):
     is_observer: bool = Field(
         description="True when the endpoint belongs to TopicForge's own observer participant."
     )
+    gone_ns: int | None = Field(
+        default=None,
+        description=(
+            "`None` for a live endpoint. For a departed endpoint (only listed with "
+            "`include_departed`): when its participant was lost (the participant's "
+            "`lost_ns`, an upper bound of the death)."
+        ),
+    )
     activity: None = Field(
         default=None,
         description="Reserved for a future liveness signal. Always `None` today.",
@@ -1125,6 +1149,21 @@ class EndpointInfo(BaseModel):
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
+class DepartedEndpoint(BaseModel):
+    """An endpoint whose participant left the bus (crash, clean exit or lease expiry)."""
+
+    model_config = _CONFIG
+
+    guid: str = Field(description="GUID of the departed endpoint.")
+    participant_guid: str = Field(description="GUID of the participant that owned it.")
+    participant_name: str | None = Field(
+        default=None, description="Announced name of that participant, `None` when it set none."
+    )
+    gone_ns: int | None = Field(
+        default=None, description="When the participant was lost, ns since epoch (upper bound)."
+    )
+
+
 class TopicSummary(BaseModel):
     """Per-topic roll-up of the listed endpoints, for spotting orphans."""
 
@@ -1136,6 +1175,18 @@ class TopicSummary(BaseModel):
     reader_count: int = Field(ge=0, description="Number of listed readers.")
     partitions: list[str] = Field(
         description='Union of the endpoints\' partitions, sorted. `""` is the default partition.'
+    )
+    departed_writers: list[DepartedEndpoint] = Field(
+        default_factory=list,
+        description=(
+            "Writers on this topic whose participant left, newest first (bounded "
+            "memory: last 200 departed endpoints, 1 h). Explains a topic that lost "
+            "its only writer."
+        ),
+    )
+    departed_readers: list[DepartedEndpoint] = Field(
+        default_factory=list,
+        description="Readers on this topic whose participant left, newest first.",
     )
     orphan: Literal["no_reader", "no_writer"] | None = Field(
         default=None,
@@ -1165,6 +1216,15 @@ class EndpointListing(BaseModel):
     )
     returned: int = Field(ge=0, description="Length of `endpoints`.")
     truncated: bool = Field(description="True when matching endpoints exceeded the cap.")
+    departed_endpoints: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Departed endpoints (their participant left) matching the filters. They "
+            "are in `endpoints` only with `include_departed`; `by_topic` always "
+            "carries them as `departed_writers` / `departed_readers`."
+        ),
+    )
     excluded_observer_endpoints: int = Field(
         default=0,
         ge=0,

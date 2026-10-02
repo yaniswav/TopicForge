@@ -114,8 +114,9 @@ class CompositeAdapter:
         topic: str | None = None,
         participant_guid: str | None = None,
         include_observer: bool = False,
+        include_departed: bool = False,
     ) -> EndpointListing:
-        return self._dds.list_endpoints(topic, participant_guid, include_observer)
+        return self._dds.list_endpoints(topic, participant_guid, include_observer, include_departed)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         # Bag analysis lives on the ROS half: MCAP is the canonical

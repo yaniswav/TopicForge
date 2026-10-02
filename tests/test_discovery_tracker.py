@@ -264,3 +264,35 @@ def test_thread_runs_until_stopped_and_does_not_leak() -> None:
         time.sleep(0.01)
     assert tracker.status()["running"] is False
     assert not any(t.name == "topicforge-discovery" for t in threading.enumerate())
+
+
+def test_participant_dispose_moves_its_endpoints_to_departed() -> None:
+    caches = DiscoveryCaches()
+    _apply(caches, parts=[_participant(1, name="safety_monitor")], pubs=[_endpoint(5, "estop")])
+    assert caches.departed.records(T0) == []
+    _apply(caches, parts=[_invalid(1, ts=T0 + 5 * SEC)], now=T0 + 6 * SEC)
+    assert caches.publications.values() == []
+    ((guid, rec),) = caches.departed.records(T0 + 6 * SEC)
+    assert rec.role == "writer" and rec.participant_name == "safety_monitor"
+    assert rec.gone_ns == T0 + 5 * SEC and guid.endswith("5")
+
+
+def test_endpoint_disposed_just_before_its_participant_still_departs() -> None:
+    caches = DiscoveryCaches()
+    _apply(caches, parts=[_participant(1, name="n")], subs=[_endpoint(8, "estop")])
+    _apply(caches, subs=[_invalid(8, ts=T0 + SEC)], now=T0 + 2 * SEC)
+    _apply(caches, parts=[_invalid(1, ts=T0 + 2 * SEC)], now=T0 + 3 * SEC)
+    ((_, rec),) = caches.departed.records(T0 + 3 * SEC)
+    assert rec.role == "reader" and rec.participant_name == "n"
+
+
+def test_departed_store_is_bounded_and_expires() -> None:
+    caches = DiscoveryCaches()
+    from topicforge.adapters.common.discovery_tracker import DepartedRecord, DepartedStore
+
+    store = DepartedStore(max_items=2, ttl_ns=10 * SEC)
+    for i in range(3):
+        store.add(f"g{i}", DepartedRecord("writer", None, T0 + i, None))
+    assert [g for g, _ in store.records(T0 + 3)] == ["g1", "g2"]
+    assert store.records(T0 + 60 * SEC) == []
+    assert caches.departed.records(T0) == []
