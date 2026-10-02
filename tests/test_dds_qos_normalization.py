@@ -1,7 +1,6 @@
 """Tests for the vendor QoS -> canonical QosProfile normalizers.
 
-These were extracted from the Cyclone and Fast adapters (Lot 0, audit
-2026-07-08) precisely so they can be tested WITHOUT the `cyclonedds` /
+These were extracted from the Cyclone and Fast adapters so they can be tested WITHOUT the `cyclonedds` /
 `fastdds` bindings installed. Before the extraction the entire QoS
 normalization path (the feeder of `detect_qos_mismatches`, the flagship
 DDS diagnostic) was unreachable by the suite, so a renamed policy key
@@ -108,8 +107,7 @@ def test_cyclone_non_iterable_qos_returns_none():
 def test_cyclone_renamed_policy_class_returns_none():
     # Regression guard: a binding that renames "Reliable" -> "Reliability"
     # must make the profile resolve to None (no false mismatch), NOT
-    # silently pass. This is the exact failure mode the audit flagged as
-    # previously untestable.
+    # silently pass.
     class Reliability:  # wrong name: not the spec-canonical "Reliable"
         pass
 
@@ -291,8 +289,8 @@ def test_fast_history_depth_populated():
 #
 # On a live bus `type(policy).__name__` is "Reliability.BestEffort", not
 # "BestEffort". Matching only the bare name built no profile at all, so
-# detect_qos_mismatches never reported anything (found by the first real-bus
-# run, 2026-10-01). `type()` accepts a dotted name, which reproduces it.
+# detect_qos_mismatches never reported anything. `type()` accepts a dotted
+# name, which reproduces it.
 
 _ScopedBestEffort = type("Reliability.BestEffort", (), {})
 _ScopedReliable = type("Reliability.Reliable", (), {})

@@ -1,14 +1,11 @@
 """Example 04: a late joiner misses the data.
 
-Mission control publishes the robot's mission once, when it starts. The
-navigation planner boots later and still wants that mission, so it asks DDS
-to keep the last value for late joiners (TRANSIENT_LOCAL durability). But
-mission control publishes VOLATILE: it keeps nothing for anyone. A reader
-cannot demand a stronger durability than its writer offers, so DDS refuses
-to connect them, and the planner waits forever.
+Mission control publishes the mission once, VOLATILE. The planner starts later
+and asks for TRANSIENT_LOCAL so it can still get it. A reader cannot demand
+more durability than its writer offers, so DDS refuses to match them.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

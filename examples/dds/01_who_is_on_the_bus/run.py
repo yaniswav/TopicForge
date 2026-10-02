@@ -3,8 +3,8 @@
 A small robot runs three programs from two DDS vendors. You ask TopicForge
 to list them: their names, their vendor, the machine they run on.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

@@ -9,7 +9,7 @@ Requires Fast DDS 3.x and Fast CDR 2.x (not Fast DDS 2.x / `fastrtps`).
 
 ## Install Fast DDS 3
 
-**Linux.** `libfastdds-dev` does not exist in Ubuntu 24.04 and the distro
+Linux. `libfastdds-dev` does not exist in Ubuntu 24.04 and the distro
 packages stop at 2.x, so use one of:
 
 - the eProsima binary installer for Fast DDS 3 (see the Linux installation page of the Fast DDS documentation),
@@ -17,7 +17,7 @@ packages stop at 2.x, so use one of:
   prefix (see `.github/workflows/demo-fast.yml` for a pinned, working recipe;
   needs `libasio-dev libtinyxml2-dev libssl-dev`).
 
-**Windows.** The eProsima installer, or `vcpkg install fastdds`. Make sure the
+Windows. The eProsima installer, or `vcpkg install fastdds`. Make sure the
 Fast DDS and Fast CDR DLL directories are on `PATH` when running.
 
 ## Build

@@ -59,7 +59,7 @@ def test_empty_ros2_executable_defaults_to_ros2() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DDS backend resolution (v0.2.0 added, v0.3.0 widened to include "fast")
+# DDS backend resolution
 # ---------------------------------------------------------------------------
 
 
@@ -80,7 +80,7 @@ def test_explicit_dds_backend_cyclone() -> None:
 
 
 def test_explicit_dds_backend_fast() -> None:
-    """v0.3.0: 'fast' is now an accepted value."""
+    """'fast' is an accepted value."""
     s = load_settings(env={"TOPICFORGE_DDS_BACKEND": "fast", "TOPICFORGE_MODE": "live"})
     assert s.effective_dds_backend == "fast"
 
@@ -92,13 +92,13 @@ def test_invalid_dds_backend_rejected() -> None:
 
 @pytest.mark.parametrize("vendor", ["rti", "opensplice", "coredx", "intercom", "RTI"])
 def test_removed_pro_vendors_rejected_with_explicit_message(vendor: str) -> None:
-    """The Pro tier vendors were removed in 0.5.3: say so, and point at docs/pro.md."""
+    """Removed vendor names are rejected with a message that points at the cyclone backend."""
     with pytest.raises(ValueError) as excinfo:
         load_settings(env={"TOPICFORGE_DDS_BACKEND": vendor, "TOPICFORGE_MODE": "live"})
     message = str(excinfo.value)
     assert "TOPICFORGE_DDS_BACKEND" in message
     assert "removed in 0.5.3" in message
-    assert "docs/pro.md" in message
+    assert "cyclone" in message
 
 
 def test_explicit_dds_backend_opendds_accepted() -> None:
@@ -119,7 +119,7 @@ def test_dds_backend_mock_global_forces_dds_mock() -> None:
 
 
 def test_dds_auto_prefers_fast_when_both_importable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """v0.3.0: auto prefers Fast over Cyclone when both are installed."""
+    """auto prefers Fast over Cyclone when both are installed."""
     import importlib.util
 
     real_find_spec = importlib.util.find_spec
@@ -137,7 +137,7 @@ def test_dds_auto_prefers_fast_when_both_importable(monkeypatch: pytest.MonkeyPa
 def test_dds_auto_falls_back_to_cyclone_when_only_cyclone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Backward compat: v0.2.0 users with only cyclonedds installed still get cyclone."""
+    """auto picks Cyclone when it is the only binding installed."""
     import importlib.util
 
     real_find_spec = importlib.util.find_spec
@@ -199,7 +199,7 @@ def _patch_find_spec(monkeypatch: pytest.MonkeyPatch, present: set[str]) -> None
 
 
 def test_dds_auto_picks_fast_over_cyclone(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Preserves v0.3.0 order: Fast > Cyclone."""
+    """auto order is Fast, then Cyclone."""
     _patch_find_spec(monkeypatch, present={"fastdds", "cyclonedds"})
     s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
     assert s.effective_dds_backend == "fast"

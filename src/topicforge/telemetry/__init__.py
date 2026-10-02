@@ -1,13 +1,8 @@
 """Opt-in, anonymous usage telemetry.
 
-Disabled by default. When enabled via `TOPICFORGE_TELEMETRY=on`, each MCP
-tool call emits a small event describing only the tool name, latency,
-runtime mode, server version, success flag, and a per-process anonymous
-session id. No user payload (topic names, message bodies, bag paths,
-hostnames, environment variables) ever leaves this module.
-
-The transport is pluggable. The default is a structured log line; a future
-HTTP transport will be wired here without touching tool handlers.
+Off by default. With `TOPICFORGE_TELEMETRY=on`, each tool call emits the tool
+name, latency, runtime mode, server version, success flag and a per-process
+anonymous session id, and nothing else. The default transport logs a line.
 """
 
 from topicforge.telemetry.client import (

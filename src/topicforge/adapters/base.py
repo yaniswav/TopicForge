@@ -1,9 +1,8 @@
 """Adapter protocol.
 
-Adapters are the *only* place in the codebase that may know how to talk to a
-specific backend (mock fixtures, the `ros2` CLI, or a DDS middleware binding).
-Services depend on this protocol; tools depend on services. That separation
-is what makes the codebase testable without ROS2 or any DDS SDK installed.
+Adapters are the only code that talks to a specific backend (mock fixtures,
+the `ros2` CLI, a DDS binding). Services depend on this protocol, so the
+codebase is testable without ROS2 or any DDS SDK installed.
 """
 
 from __future__ import annotations
@@ -36,31 +35,26 @@ AdapterName = Literal[
 ]
 """Implementation tag for the active adapter.
 
-Internal: used by factory wiring and logging. Distinct from
-`EffectiveMode`, which is the MCP wire contract surfaced to clients.
-`"fast"` was added in v0.3.0 alongside `FastDdsAdapter` ; the OSS stubs
-(`"opendds"`, `"dust"`) joined in v0.4.0 Phase 1.5. The Pro tier vendor
-names were removed in 0.5.3 with the tier itself. The hyphenated forms
-are emitted by the `CompositeAdapter` when ROS2 CLI and a DDS backend
-serve the bus simultaneously. `HealthService` derives `ros_backend` and
-`dds_backend` from this tag, so new values must stay parseable there.
+Used by factory wiring and logging; `EffectiveMode` is the value clients
+see. The hyphenated forms are emitted by `CompositeAdapter` when the ROS2
+CLI and a DDS backend serve the bus together. `HealthService` derives
+`ros_backend` and `dds_backend` from this tag, so new values must stay
+parseable there.
 """
 
 EffectiveMode = Literal["mock", "live"]
 """Runtime mode surfaced to MCP clients via the `mode_effective` field.
 
-Stable across implementation changes: a new live adapter (`cyclone`,
-future `rclpy`) reports `effective_mode == "live"` while carrying
-a distinct `name`. Adding a new value here would be a wire-breaking
-change for MCP clients ; do not.
+Every live adapter (`cyclone`, a future `rclpy`) reports `"live"` while
+keeping its own `name`. Adding a value here breaks the wire contract.
 """
 
 
 class AdapterError(RuntimeError):
     """Raised when an adapter cannot fulfill a request.
 
-    Carries a clear, user-facing message; tool handlers translate this into
-    a structured error envelope returned to the MCP client.
+    Carries a user-safe message. Handlers do not catch it: FastMCP turns it
+    into an `isError: true` tool result.
     """
 
 
@@ -68,19 +62,13 @@ class AdapterError(RuntimeError):
 class MiddlewareAdapter(Protocol):
     """Uniform read-only interface over a ROS2 or DDS middleware backend.
 
-    Generalizes the earlier `RosAdapter` protocol to cover both ROS2
-    graph introspection and bare DDS observability under a single
-    contract. The ROS2 methods (`list_topics`, `get_topic_info`,
-    `sample_messages`, `analyze_bag`) and the DDS methods
-    (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`)
-    are both required by the protocol; but backends are free to raise
-    `AdapterError` on the half they do not natively serve. The
-    `Ros2CliAdapter`, for example, raises on the DDS methods ; a
-    `CycloneDdsAdapter` raises on `analyze_bag`.
+    Covers ROS2 graph introspection and DDS observability under one
+    contract. Every method is required, but a backend raises `AdapterError`
+    on the half it does not serve: `Ros2CliAdapter` on the DDS methods,
+    `CycloneDdsAdapter` on `analyze_bag`.
 
-    Implementations must be safe to construct lazily: `is_available()`
-    is the contract for "can this adapter actually serve requests right
-    now?".
+    Construction must be cheap and side-effect free; `is_available()`
+    reports whether the adapter can serve requests now.
     """
 
     name: AdapterName
@@ -89,17 +77,13 @@ class MiddlewareAdapter(Protocol):
     def effective_mode(self) -> EffectiveMode:
         """Runtime mode this adapter serves responses in (`live` or `mock`).
 
-        Distinct from `name`: `name` identifies the adapter implementation
-        (`mock`, `ros2_cli`, `cyclone`, ...). `effective_mode`
-        collapses to the wire contract exposed to MCP clients via
-        `mode_effective` on every tool response, so different live
-        backends all report `effective_mode == "live"`.
+        `name` identifies the implementation; this is the `mode_effective`
+        value on every tool response, so all live backends report `"live"`.
         """
 
     def is_available(self) -> bool: ...
 
-    # ROS2 graph methods. Required by the protocol ; DDS-only backends
-    # raise AdapterError on these.
+    # ROS2 graph methods. DDS-only backends raise AdapterError.
     def list_topics(self) -> list[TopicInfo]: ...
 
     def get_topic_info(self, topic: str) -> TopicInfo: ...
@@ -108,9 +92,8 @@ class MiddlewareAdapter(Protocol):
 
     def analyze_bag(self, path: str) -> BagAnalysis: ...
 
-    # DDS module methods. Required by the protocol ; the ROS2 CLI
-    # backend raises AdapterError on these to signal that the DDS
-    # module is not active in the current configuration.
+    # DDS methods. The ROS2 CLI backend raises AdapterError when no DDS
+    # backend is configured.
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]: ...
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan: ...
@@ -136,8 +119,5 @@ class MiddlewareAdapter(Protocol):
     ) -> EndpointListing: ...
 
 
-# Backward-compat alias. External code importing `RosAdapter` continues
-# to type-check against the broader `MiddlewareAdapter` shape. Will be
-# preserved through the v0.2.x line ; future deprecation is documented
-# in CHANGELOG when it happens.
+# Alias kept for external code that imports the old name.
 RosAdapter = MiddlewareAdapter

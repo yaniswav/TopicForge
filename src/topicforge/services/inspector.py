@@ -1,8 +1,4 @@
-"""Inspector: the domain layer between MCP tool handlers and adapters.
-
-Tools call the Inspector. The Inspector validates inputs, delegates to the
-adapter, and ensures outputs are well-formed regardless of backend.
-"""
+"""Inspector: validates tool inputs and delegates to the adapter."""
 
 from __future__ import annotations
 
@@ -34,32 +30,22 @@ _WINDOW_MAX = 3600
 
 __all__ = ["DEFAULT_SAMPLE_COUNT", "Inspector"]
 
-# Strict allowlist mirroring ROS2 topic-name conventions:
-#   * must start with `/`
-#   * one or more segments separated by single `/`
-#   * each segment starts with a letter or underscore, then [A-Za-z0-9_]*
-# This rejects `//`, trailing `/`, digit-leading segments, dashes, dots, and
-# every shell metacharacter before any value reaches the `ros2` CLI.
+# ROS2 topic names: a leading `/`, then segments separated by single `/`, each
+# starting with a letter or underscore. Rejects `//`, a trailing `/`, dashes,
+# dots and shell metacharacters before a value reaches the `ros2` CLI.
 _TOPIC_NAME_RE = re.compile(r"^/[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)*$")
 
-# Relaxed validator for DDS topic names. DDS-native conventions allow:
-#   * topic names without a leading `/` (builtin DCPS topics: `DCPSParticipant`,
-#     `DCPSSubscription`, `DCPSPublication`)
-#   * `::` separators (C++-namespace style for typed user topics)
-#   * leading letter, underscore, or `/`
-# Still rejects whitespace, shell metacharacters, and other glaring oddities
-# so the live adapter's downstream consumers can rely on a clean string.
-# Resolves audit-2026-05-14 "Refactor opportunities" #5.
+# DDS topic names may omit the leading `/` (the builtin `DCPS*` topics) and may
+# use `::` separators. Whitespace and shell metacharacters are still rejected.
 _DDS_TOPIC_NAME_RE = re.compile(r"^[A-Za-z_/][A-Za-z0-9_/:]*$")
 
 
 class Inspector:
-    """Validation and orchestration layer between MCP tool handlers and ROS adapters.
+    """Validation layer between tool handlers and adapters.
 
-    All MCP-level input normalization happens here (topic name format, count clamping,
-    path validation) so adapters can assume well-formed inputs. Today some methods are
-    thin pass-throughs to the adapter; they remain in this layer to keep the contract
-    surface symmetric: every tool goes through the same gate.
+    Topic name format, count clamping and path checks happen here, so
+    adapters can assume well-formed input. Every tool goes through it, even
+    when it only passes the call on.
     """
 
     def __init__(self, adapter: MiddlewareAdapter) -> None:
@@ -70,12 +56,7 @@ class Inspector:
         return self._adapter.name
 
     def list_topics(self) -> list[TopicInfo]:
-        # Validation symmetry note (audit-2026-05-14 "Refactor" #7, resolved
-        # WONT-FIX in v0.5.0): list_topics takes no MCP-level arguments, so
-        # an Inspector-side gate would have nothing to validate. Peer methods
-        # like get_topic_info do validate ; the asymmetry is structural, not
-        # accidental. Reopened only if a future tool variant ships with args
-        # that need normalizing here.
+        # No arguments, so nothing to validate here.
         return self._adapter.list_topics()
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -98,10 +79,8 @@ class Inspector:
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._adapter.analyze_bag(_validate_bag_path(path))
 
-    # ---------------------------- DDS module ------------------------------
-
     def _await_dds(self) -> None:
-        """Let a freshly started discovery tracker hear the bus (bounded, usually a no-op)."""
+        """Wait, bounded, for a newly started discovery tracker to hear the bus; usually a no-op."""
         wait = getattr(self._adapter, "await_discovery_ready", None)
         if callable(wait):
             wait()
@@ -212,15 +191,7 @@ def _validate_topic_name(topic: str) -> None:
 
 
 def _validate_topic_name_dds(topic: str) -> None:
-    """Relaxed validator for DDS-native topic names.
-
-    DDS topic names follow OMG conventions: they may or may not start with
-    `/`, may contain `::` separators (C++-namespace style), and the builtin
-    DCPS topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`)
-    have no leading `/` at all. Still rejects whitespace, shell
-    metacharacters, and other oddities so the live adapter's downstream
-    consumers can rely on a clean string.
-    """
+    """Validate a DDS topic name (see `_DDS_TOPIC_NAME_RE`)."""
     if not topic or not topic.strip():
         raise AdapterError("topic must be a non-empty string")
     if not _DDS_TOPIC_NAME_RE.match(topic):
@@ -232,11 +203,9 @@ def _validate_topic_name_dds(topic: str) -> None:
 
 
 def _validate_bag_path(path: str) -> str:
-    """Validate and normalize a bag path before it reaches an adapter.
+    """Return the stripped bag path, or raise `AdapterError` if it is empty, blank or malformed.
 
-    Returns the stripped path. Raises `AdapterError` for empty, blank,
-    null-byte-containing, or otherwise malformed paths. Does NOT check
-    existence or extension: that is the live adapter's responsibility.
+    Existence and extension are checked by the adapter.
     """
     if not isinstance(path, str):
         raise AdapterError("path must be a string")

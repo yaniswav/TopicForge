@@ -1,17 +1,13 @@
 """Example 05: reliability, in code.
 
-Example 02 found a RELIABLE reader that could never talk to a BEST_EFFORT
-writer, from outside. Here are the same two programs with their code: the
-LIDAR driver offers BEST_EFFORT (`publisher.py --best-effort`), the planner
-asks for RELIABLE (`subscriber.py --reliable`). A second subscriber with the
-default (BEST_EFFORT) receives fine.
+The programs of example 02 with their source: the LIDAR driver offers
+BEST_EFFORT (`publisher.py --best-effort`), the planner asks for RELIABLE
+(`subscriber.py --reliable`), and a default subscriber receives fine.
+From inside the planner only sees "incompatible QoS: RELIABILITY", with no
+writer named; TopicForge names both ends.
 
-Seen from inside, the planner only learns "incompatible QoS: RELIABILITY"
-(a policy id, no writer). Seen from outside, TopicForge names the writer and
-the reader.
-
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import asyncio

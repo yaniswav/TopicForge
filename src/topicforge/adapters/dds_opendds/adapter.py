@@ -1,24 +1,13 @@
-"""OpenDDS adapter: v0.4.0 Phase 1.5 stub implementation.
+"""OpenDDS adapter stub.
 
-`pyopendds` is not currently maintained on PyPI. This stub implements
-the full `MiddlewareAdapter` protocol so the auto-detect framework
-treats OpenDDS uniformly with Cyclone / Fast / RTI ; the 8 protocol
-methods raise `AdapterError(_OPENDDS_ROADMAP_MSG)` with a clear pointer
-to the v0.5+ roadmap if a user reaches them.
+`pyopendds` is not maintained on PyPI. The stub implements the full
+`MiddlewareAdapter` protocol; every method raises
+`AdapterError(_OPENDDS_ROADMAP_MSG)`.
 
-`is_available()` always returns False while this is a stub (Audit S1):
-the factory selects backends on `is_available()`, so reporting True
-(even when a `pyopendds` module happens to be importable) would make the
-factory pick OpenDDS and then every tool call would raise. The Dust stub
-follows the same rule. When a real binding ships, the replacement adapter
-sets this from an actual capability probe.
-
-When `pyopendds` ships, the stub is replaced by a real adapter under
-the same module path. No other code changes : the factory, the
-auto-detect chain, the health report, and the tool surface all keep
-working as-is.
-
-Shape mirrors the historical v0.2.0 `CycloneDdsAdapter` stub.
+`is_available()` is always False: the factory selects backends on it, so
+reporting True (even with an importable `pyopendds`) would make the factory
+pick OpenDDS and fail every tool call. A real adapter would replace this
+stub under the same module path and probe the binding instead.
 """
 
 from __future__ import annotations
@@ -42,13 +31,10 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _OPENDDS_ROADMAP_MSG = (
-    "OpenDDS adapter is a stub at TopicForge v0.4.0 Phase 1.5: the "
-    "`pyopendds` Python binding is not yet maintained on PyPI. Track "
-    "OpenDDS Python binding progress upstream or contribute to the "
-    "TopicForge OpenDDS adapter under `src/topicforge/adapters/dds_opendds/`. "
-    "Until then, the auto-detect chain falls through to Fast / Cyclone "
-    "/ Mock per the priority order in `config/settings.py`. See "
-    "`docs/projet-file/mcp-02-spec.md` for the multi-vendor roadmap."
+    "The OpenDDS backend is not implemented: the `pyopendds` binding is not "
+    "maintained on PyPI. OpenDDS participants are still visible: run TopicForge "
+    "with TOPICFORGE_DDS_BACKEND=cyclone and it observes them through standard "
+    "DDS discovery. See `docs/dds-interop-matrix.md`."
 )
 
 
@@ -66,9 +52,8 @@ class OpenDdsAdapter:
         return "live"
 
     def is_available(self) -> bool:
-        # Always False while this is a stub: even if a `pyopendds` module is
-        # importable, this adapter cannot serve any request, and the factory
-        # selects on is_available(). (Audit S1.)
+        # Always False: even with `pyopendds` importable this stub serves nothing,
+        # and the factory selects on is_available().
         return False
 
     # ----- ROS2 surface: not served by this adapter -----

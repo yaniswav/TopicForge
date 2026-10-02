@@ -1,16 +1,9 @@
-"""Dust DDS adapter: v0.4.0 Phase 1.5 stub implementation.
+"""Dust DDS adapter stub.
 
-Dust DDS is the Rust-native conformant DDS-RTPS stack from the OMG
-May 2025 interop matrix (`docs/dds-interop-matrix.md`). It does not
-ship a maintained Python binding on PyPI as of 2026-05-14, so this
-stub exists purely to give the auto-detect chain a fourth OSS slot
-to land in. `is_available()` always returns False ; every protocol
-method raises `AdapterError(_DUST_ROADMAP_MSG)`.
-
-When a `dust-dds-python` (or equivalent) package ships, the stub is
-replaced by a real adapter under the same module path. Shape mirrors
-the historical v0.2.0 `CycloneDdsAdapter` stub and the v0.4.0 Phase
-1.5 OpenDDS stub.
+Dust DDS is a Rust-native, RTPS-conformant stack (`docs/dds-interop-matrix.md`)
+with no maintained Python binding on PyPI. `is_available()` is always False
+and every protocol method raises `AdapterError(_DUST_ROADMAP_MSG)`. A real
+adapter would replace this stub under the same module path.
 """
 
 from __future__ import annotations
@@ -34,17 +27,15 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _DUST_ROADMAP_MSG = (
-    "Dust DDS adapter is a stub at TopicForge v0.4.0 Phase 1.5: Dust "
-    "DDS is a Rust-native implementation with no maintained Python "
-    "binding on PyPI. The auto-detect chain treats it as the lowest "
-    "OSS priority ; the factory falls back to Fast / Cyclone / Mock "
-    "before reaching this adapter in any realistic install. See "
-    "`docs/dds-interop-matrix.md` for the OMG positioning."
+    "The Dust DDS backend is not implemented: Dust has no Python binding "
+    "TopicForge can use. Dust participants are still visible: run TopicForge "
+    "with TOPICFORGE_DDS_BACKEND=cyclone and it observes them through standard "
+    "DDS discovery. See `docs/dds-interop-matrix.md`."
 )
 
 
 class DustDdsAdapter:
-    """Stub adapter: always unavailable in v0.4.0 Phase 1.5."""
+    """Stub adapter: always unavailable."""
 
     name: AdapterName = "dust"
 
@@ -57,7 +48,7 @@ class DustDdsAdapter:
         return "live"
 
     def is_available(self) -> bool:
-        return False  # Always: no Python binding maintained.
+        return False
 
     # ----- ROS2 surface: not served by this adapter -----
 

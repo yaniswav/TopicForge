@@ -1,9 +1,9 @@
 # 13 The deadline is not offered
 
-**Real use case.** A reader requires a minimum update rate; the new writer
-does not promise one. The reader gets nothing at all, not even late data.
+A reader requires a minimum update rate; the new writer does not promise one.
+The reader gets nothing at all, not even late data.
 
-## The story
+## Scenario
 
 | Program | Writes | Reads |
 |---|---|---|
@@ -38,29 +38,24 @@ python run.py --hold     # keep the programs running, ask your own MCP client
     [nav_planner] rx imu: 10 in 1.0 s, last seq 49
 ```
 
-- A Deadline is a promise: the writer offers "a new sample at least every
-  N ms", the reader requests one. The offer must be at least as strict as
-  the request.
-- No deadline means "no promise" (an infinite period). That is the default
-  in most DDS and ROS 2 setups, so this mismatch appears as soon as one
-  reader starts requiring a deadline.
-- The IMU driver promises 10 ms for a 100 ms request: compatible, not
-  reported.
+A Deadline is a promise: the writer offers "a new sample at least every N
+ms", the reader requests one, and the offer must be at least as strict as the
+request. No deadline means no promise (an infinite period), which is the
+default in most DDS and ROS 2 setups, so this mismatch appears as soon as one
+reader starts requiring a deadline. The IMU driver promises 10 ms for a 100 ms
+request: compatible, not reported.
 
-## What this does not do
+## Limits
 
-TopicForge sees the deadline each side **declares**. It does not see whether
-a running writer actually meets it: that needs the data itself, which
-TopicForge does not decode yet.
+TopicForge sees the deadline each side declares. It does not see whether a
+running writer actually meets it: that needs the data itself, which TopicForge
+does not decode yet.
 
-## Ask your agent
+A deadline mismatch blocks the connection entirely. To fix it, declare a
+deadline on the writer at least as strict as the readers require, or relax the
+reader.
+
+Prompt to try:
 
 > nav_planner receives the imu topic but never the scan topic on DDS domain
 > 0. Why?
-
-## Remember
-
-- A deadline mismatch blocks the connection entirely; it is not a "late
-  data" warning.
-- Fix: declare a deadline on the writer at least as strict as the readers
-  require, or relax the reader.

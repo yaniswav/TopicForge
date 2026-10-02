@@ -1,20 +1,16 @@
 """Example 12: the safety monitor dropped out.
 
-The safety monitor watches the velocity commands and publishes the
-emergency-stop state. It crashes. The robot keeps driving: nothing in the
-motor controller notices that the estop topic lost its only writer.
+The safety monitor publishes the emergency-stop state and crashes. The robot
+keeps driving: nothing notices that `estop` lost its only writer.
+TopicForge shows it once the monitor's lease expires: `estop` has no writer
+and `cmd_vel` lost a reader.
 
-TopicForge shows the crash once the monitor's lease expires, and what it
-means for the robot: `estop` has no writer anymore, `cmd_vel` lost a reader.
+The discovery lease is not a safety mechanism: detection takes as long as the
+lease the dead program announced (10 s in Cyclone DDS, 100 s for several other
+vendors). TopicForge does not check Liveliness QoS.
 
-The lesson an engineer in charge of safety expects to hear: the discovery
-lease is a discovery mechanism, not a safety mechanism. Detection takes as
-long as the lease the dead program announced (10 s for Cyclone DDS by
-default, 100 s for several other vendors). The Liveliness QoS that a real
-safety design would rely on is not checked by TopicForge.
-
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

@@ -260,7 +260,7 @@ def test_mock_listing_is_coherent_with_other_mock_tools() -> None:
         assert ep.participant_guid in participants
         assert ep.participant_name == participants[ep.participant_guid]
     by_topic = {t.topic: t for t in listing.by_topic}
-    assert by_topic["/dds/ddsforge/opaque"].orphan == "no_reader"
+    assert by_topic["/dds/topicforge/opaque"].orphan == "no_reader"
     assert by_topic["/dds/qos_mismatch"].orphan is None
     scan = adapter.detect_qos_mismatches("/dds/qos_mismatch")
     mismatch = scan.reports[0]
@@ -272,7 +272,7 @@ def test_mock_listing_is_coherent_with_other_mock_tools() -> None:
 
 def test_mock_listing_filters_and_dust_qos() -> None:
     adapter = MockAdapter()
-    one = adapter.list_endpoints(topic="/dds/ddsforge/opaque")
+    one = adapter.list_endpoints(topic="/dds/topicforge/opaque")
     assert one.returned == 1 and one.total_discovered == 7
     qos = one.endpoints[0].qos
     assert qos is not None
@@ -427,8 +427,8 @@ def test_health_report_states_the_observed_domain(health_service: Any) -> None:
 
 
 def test_departed_endpoint_keeps_vendor_from_its_guid_prefix() -> None:
-    """A departed participant is no longer in the live vendor map: the endpoint's
-    own participant_key prefix still says Cyclone (01.10), not "unknown"."""
+    """A departed participant is not in the live vendor map; the endpoint's
+    participant_key prefix still says Cyclone (01.10), not "unknown"."""
     from topicforge.adapters.common.endpoints import endpoint_record
 
     sample = SimpleNamespace(

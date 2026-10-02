@@ -1,11 +1,11 @@
 # 07 The deadline, declared and kept, in code
 
-**Concept:** Deadline. A reader's Deadline is a demand ("a new sample at least
-every N ms"). A writer's Deadline is a promise. Two separate questions: is the
-promise **declared** (DDS checks it at connection time) and is it **kept**
-(DDS only counts misses at runtime).
+A reader's Deadline is a demand ("a new sample at least every N ms"). A
+writer's Deadline is a promise. Two separate questions: is the promise
+declared (DDS checks it at connection time) and is it kept (DDS only counts
+misses at runtime).
 
-## The story
+## The cases
 
 The navigation planner wants a new scan every 200 ms.
 
@@ -81,32 +81,25 @@ detect_qos_mismatches
     scan_a: Deadline (incompatible): writer pub_a -> reader sub_a
 ```
 
-TopicForge reports case A (same rule as example 13). It reports **nothing**
-for `scan_b`.
+TopicForge reports case A (same rule as example 13) and nothing for `scan_b`.
 
-## What this does not do
+## What TopicForge cannot see
 
-Case B is the honest limit: TopicForge reads what each side **declares**, not
-what it **does**. `scan_b` declares a 100 ms promise and a 200 ms demand: those
+Case B: TopicForge reads what each side declares, not what it does. `scan_b` declares a 100 ms promise and a 200 ms demand: those
 are compatible, so there is no mismatch to report, even though the writer
 breaks its promise on every sample. Missed deadlines are runtime
 behavior, visible only to the endpoints themselves (the status counters above).
 TopicForge's `topic_metrics` frequency is its own peek cadence and is no
 substitute.
 
-## Ask your agent
-
-> Two scan topics on DDS domain 0, scan_a and scan_b. The planner reads both and
-> wants a new scan every 200 ms. Is each one really delivering on its deadline?
-
 A correct answer finds the mismatch on `scan_a`, and says it cannot verify
 that `scan_b` actually keeps its promise.
 
-## Remember
+DDS checks a declared Deadline once, at connection time. Whether it is kept
+is something only a counter inside the reader can tell you, so use the
+reader's `deadline missed` status in your own node as the runtime watchdog.
 
-- A declared Deadline is a contract that DDS checks once, at connection time.
-  A kept Deadline is something only a counter inside the reader can tell you.
-- Use the reader's `deadline missed` status in your own node: it is the
-  runtime watchdog. A passing mismatch check proves nothing about timing.
-- A writer without a Deadline cannot serve a reader that requires one
-  (case A), the same as in example 13.
+Prompt to try:
+
+> Two scan topics on DDS domain 0, scan_a and scan_b. The planner reads both and
+> wants a new scan every 200 ms. Is each one really delivering on its deadline?

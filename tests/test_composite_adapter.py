@@ -112,8 +112,7 @@ class _StubRosAdapter:
         raise AdapterError("ROS adapter should not receive DDS calls")
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
-        # peek_bag_samples is a ROS-half method (bag analysis lives on
-        # the ROS side per Phase 3.3 composite routing decision).
+        # Bag analysis is routed to the ROS side.
         self.calls.append(("peek_bag_samples", (path, topic, count)))
         return SampleResult(topic=topic, count=0, samples=[], mode_effective=self._mode)
 

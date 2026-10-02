@@ -1,11 +1,9 @@
 # 08 A crash, seen from inside and from outside
 
-**Concept:** two clocks for the same crash. A writer's **Liveliness** lease is
-chosen by the application and tells its readers within that lease. The
-**participant lease** of discovery is coarse (10 s by default in Cyclone DDS)
-and is what TopicForge, an outside observer, relies on.
-
-## The story
+A crash has two clocks. A writer's Liveliness lease is chosen by the
+application and tells its readers within that lease. The participant lease of
+discovery is coarse (10 s by default in Cyclone DDS) and is what TopicForge,
+an outside observer, relies on.
 
 Two heartbeat publishers get killed: no goodbye on the bus.
 
@@ -69,12 +67,12 @@ sub_default: matched writers: 0
 
 - `sub_leased` is told 1.0 s after the last heartbeat: the lease it was
   promised.
-- `sub_default` prints **no** liveliness event (not_alive_count stays 0, checked
+- `sub_default` prints no liveliness event (not_alive_count stays 0, checked
   live). Its only sign is
   `matched writers: 0`, once the participant lease expires, about 10 s after
   the crash. Nothing in its output says "the writer crashed".
 
-## What TopicForge shows
+## From outside
 
 ```
 [3] How long until TopicForge sees it?
@@ -87,34 +85,28 @@ sub_default: matched writers: 0
     lost       pub_default
 ```
 
-- TopicForge sees **both** crashes, because the participant lease covers every
-  writer of the process, even one that never set a liveliness lease. That is
-  the broken variant's only safety net.
-- It sees them late: the 10 s lease (12 s here), not the 1 s the application
-  chose. It cannot tell the crash from a clean leave.
+TopicForge sees both crashes, because the participant lease covers every
+writer of the process, even one that never set a liveliness lease. It sees
+them late: after the 10 s lease (12 s here), not the 1 s the application
+chose. It cannot tell the crash from a clean leave.
 
-## What this does not do
+## What TopicForge cannot see
 
 TopicForge checks Liveliness compatibility: a reader that demands a shorter
 lease than the writer offers is reported by `detect_qos_mismatches` (see also
 example 12). But it sees the discovery lease, not application liveliness, so it
-cannot say "this writer is silent but its process is up".
-The `writer lost liveliness` event exists only inside the subscriber.
-
-## Ask your agent
-
-> Two heartbeat publishers, pub_leased and pub_default, are about to be stopped on
-> DDS domain 0. Tell me which participants left and when.
+cannot say "this writer is silent but its process is up". The `writer lost
+liveliness` event exists only inside the subscriber.
 
 (Stop them from another terminal, then ask again.) A good answer says the
 timeline is a lease behind, not instantaneous.
 
-## Remember
+For a safety function, do not wait for discovery: give critical writers a
+Liveliness lease sized to your reaction time, and react to the reader's
+`liveliness changed` status. Without it, a crash is visible only at the
+participant lease, about 10 s here (see examples 03 and 12). An outside
 
-- For a safety function, do not wait for discovery: give critical writers a
-  Liveliness lease sized to your reaction time, and react to the reader's
-  `liveliness changed` status.
-- Without it, a crash is visible only at the participant lease, about 10 s
-  here: see examples 03 and 12.
-- An outside observer is a diagnostic tool, not a watchdog: it confirms what
-  the application should already have noticed.
+Prompt to try:
+
+> Two heartbeat publishers, pub_leased and pub_default, are about to be stopped on
+> DDS domain 0. Tell me which participants left and when.

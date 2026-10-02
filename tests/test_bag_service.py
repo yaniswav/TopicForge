@@ -105,9 +105,7 @@ def test_bag_service_peek_rejects_negative_count(
 def test_bag_service_analyze_surfaces_exception_type_in_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
 ) -> None:
-    """v0.5.0 polish: wrap the rosbags-side exception type into the message so
-    the LLM caller can act on `PermissionError` / `IsADirectoryError` etc. without
-    re-reading the traceback."""
+    """The error message names the exception type (`PermissionError`, `IsADirectoryError`, ...)."""
     from topicforge.services import bag_service
 
     fake_bag = tmp_path / "x.mcap"  # type: ignore[attr-defined]

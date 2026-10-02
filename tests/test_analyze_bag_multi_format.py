@@ -1,10 +1,5 @@
-"""Tests for the enriched BagAnalysis schema (v0.4.0 Phase 3).
-
-Verifies that the Mock adapter path returns the four new additive
-fields (`bag_format`, `samples_decoded_count`, `recording_duration_ns`,
-`participants_recorded`) and that v0.3.0 consumers ignoring them
-keep working.
-"""
+"""The mock bag analysis carries `bag_format`, `samples_decoded_count`,
+`recording_duration_ns` and `participants_recorded`; the fields are optional."""
 
 from __future__ import annotations
 
@@ -14,11 +9,11 @@ from topicforge.adapters.ros2_mock import MockAdapter
 def test_mock_analyze_bag_returns_enriched_fields() -> None:
     adapter = MockAdapter()
     result = adapter.analyze_bag("/tmp/demo.mcap")
-    # v0.3.0 fields preserved.
+    # Original fields.
     assert result.path == "/tmp/demo.mcap"
     assert result.storage_format == "mcap"
     assert result.message_count == 1287
-    # v0.4.0 Phase 3 additive fields.
+    # Added fields.
     assert result.bag_format == "mcap"
     assert result.recording_duration_ns == 42_500_000_000
     assert result.samples_decoded_count == 0
@@ -39,7 +34,7 @@ def test_mock_analyze_bag_path_echo() -> None:
 
 
 def test_bag_analysis_schema_defaults_when_constructed_minimally() -> None:
-    """v0.3.0-style construction (without the 4 new fields) succeeds."""
+    """Construction without the four added fields succeeds."""
     from topicforge.models import BagAnalysis, BagTopicStats
 
     legacy = BagAnalysis(

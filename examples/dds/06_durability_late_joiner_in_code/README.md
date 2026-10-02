@@ -1,12 +1,10 @@
 # 06 Durability and the late joiner, in code
 
-**Concept:** Durability, written as code you can read. Example 04 showed the
-mismatch from the outside; here you see the two programs, what the late
-subscriber prints, and the one variant TopicForge cannot see.
+Example 04 showed the mismatch from the outside; here you see the two
+programs, what the late subscriber prints, and the one variant TopicForge
+cannot see.
 
-## The story
-
-Mission control writes the robot's mission **once**, then idles. The
+Mission control writes the robot's mission once, then idles. The
 navigation planner boots afterwards. Whether it ever gets the mission depends
 on what the writer kept, and on what the reader asked for. Three topics play
 the three cases:
@@ -87,41 +85,37 @@ sub_2: matched writers: 1
 - `sub_2` matches, and receives nothing. No error, no status: the writer
   simply had nothing to hand over.
 
-## What TopicForge shows
+## Seen by TopicForge
 
 ```
 detect_qos_mismatches
     mission_volatile_writer: Durability (incompatible): writer pub_1 -> reader sub_1
 ```
 
-- `mission_tl` is compatible and not reported. Same for `mission_volatile_both`.
-- The Durability mismatch is the same request/offered rule as in example 04.
+`mission_tl` is compatible and not reported, and neither is
+`mission_volatile_both`. The Durability mismatch is the same request/offered
+rule as in example 04.
 
-## What this does not do
+## What TopicForge cannot see
 
-TopicForge **cannot see the third case**. `mission_volatile_both` is not a QoS
-incompatibility: the endpoints are compatible, they are matched, and the
-subscriber simply joined too late for a writer that keeps nothing. TopicForge
-reads declared QoS, and the declarations here are consistent. Only the
-subscriber, from inside, knows it received nothing. It also cannot tell that
-a writer already wrote and finished.
-
-## Ask your agent
-
-> Three mission topics on DDS domain 0 (mission_tl, mission_volatile_writer,
-> mission_volatile_both): their subscribers joined late. Which ones can never
-> get the mission, and why?
+The third case. `mission_volatile_both` is not a QoS
+incompatibility: the endpoints are compatible and matched, and the subscriber
+joined too late for a writer that keeps nothing. TopicForge reads declared QoS,
+and the declarations here are consistent. Only the subscriber, from inside,
+knows it received nothing. TopicForge also cannot tell that a writer already
+wrote and finished.
 
 A correct answer names `mission_volatile_writer` and its Durability mismatch,
 and should not claim anything about `mission_volatile_both` from TopicForge
 alone.
 
-## Remember
+Configuration-like data (missions, maps, parameters) wants TRANSIENT_LOCAL on
+the writer, with a KeepLast depth big enough to hold what a latecomer needs.
+Both sides VOLATILE is legal and silent: a late joiner misses the past, and
+"matched" does not mean "received everything".
 
-- Configuration-like data (missions, maps, parameters) wants TRANSIENT_LOCAL on
-  the **writer**, with a KeepLast depth big enough to hold what a latecomer
-  needs.
-- A reader can only ask for what the writer offers. Asking for more means no
-  match at all (example 04).
-- Both VOLATILE is legal and silent: a late joiner just misses the past.
-  "Matched" does not mean "received everything".
+Prompt to try:
+
+> Three mission topics on DDS domain 0 (mission_tl, mission_volatile_writer,
+> mission_volatile_both): their subscribers joined late. Which ones can never
+> get the mission, and why?

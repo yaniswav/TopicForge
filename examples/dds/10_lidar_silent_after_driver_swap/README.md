@@ -1,9 +1,9 @@
 # 10 The LIDAR went silent after a driver swap
 
-**Real use case.** Combines two problems, as a real incident does: a topic
-name changed with the new supplier, and an old process was never stopped.
+Two problems at once: the new supplier renamed the topic, and an old process
+was never stopped.
 
-## The story
+## Scenario
 
 The LIDAR driver was replaced by one from another supplier, built on another
 DDS implementation (Dust DDS). Since then the navigation planner receives no
@@ -44,24 +44,21 @@ python run.py --hold     # keep the programs running, ask your own MCP client
     [nav_planner] rx scan: 0 in 1.0 s
 ```
 
-- The mismatch report finds the forgotten old driver. Stop there and you
-  "fix" it by making the old driver RELIABLE, and the planner then receives
-  scans from a driver that should not be running.
-- The scan's `hints` already point at the orphan: `lidar/scan` has a writer
-  and no reader, and `scan` is the same name without the namespace.
-- The wiring shows the real cause: the new driver publishes on `lidar/scan`,
-  a topic nobody reads. It appears by GUID: Dust DDS announces no name.
+The mismatch report finds the forgotten old driver. Stop there and you "fix"
+it by making the old driver RELIABLE, and the planner then receives scans from
+a driver that should not be running. The `hints` already point at the orphan:
+`lidar/scan` has a writer and no reader, and `scan` is the same name without
+the namespace.
 
-## Ask your agent
+The wiring shows the real cause: the new driver publishes on `lidar/scan`, a
+topic nobody reads. It appears by GUID because Dust DDS announces no name.
+
+A writer nobody reads, or a reader nobody writes, is the other half of the
+picture, so after a swap check for leftovers: two programs claiming the same
+role are easy to miss. TopicForge pairs readers and writers by topic name, assuming the same
+type and the default partition.
+
+Prompt to try:
 
 > Since we swapped the LIDAR driver, nav_planner receives no scan on DDS
 > domain 0. Find every reason.
-
-## Remember
-
-- An empty or short mismatch report does not mean a healthy bus. A writer
-  nobody reads, or a reader nobody writes, is the other half of the picture.
-- After a swap, check for leftovers: two programs claiming the same role is
-  a classic.
-- TopicForge pairs readers and writers by topic name, assuming the same type
-  and the default partition.

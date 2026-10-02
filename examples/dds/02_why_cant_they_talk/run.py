@@ -1,16 +1,12 @@
 """Example 02: why can't they talk?
 
-The navigation planner subscribes to the LIDAR scan and never receives a
-single message. Both programs run, both use the same topic and the same type.
-TopicForge finds the reason: the planner asks for RELIABLE delivery, the
-LIDAR driver only offers BEST_EFFORT, so DDS refuses to connect them.
+nav_planner subscribes to the LIDAR scan and receives nothing. It asks for
+RELIABLE, the driver only offers BEST_EFFORT, so DDS refuses to match them.
+The odometry pair differs in the allowed direction (BEST_EFFORT reader,
+RELIABLE writer) and must not be reported.
 
-A second pair, on the odometry topic, differs too but in the allowed
-direction (a BEST_EFFORT reader accepts a RELIABLE writer). TopicForge must
-not report it.
-
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

@@ -188,7 +188,7 @@ def build_endpoint_listing(
     """Apply the filters to `endpoint_record` dicts and assemble the envelope.
 
     The observer's own endpoints are dropped unless `include_observer`.
-    `total_discovered` counts every record before any filter ; the roll-up
+    `total_discovered` counts every record before any filter; the roll-up
     covers every match, while `endpoints` is capped at `MAX_LISTED_ENDPOINTS`.
     """
     all_records = list(records)

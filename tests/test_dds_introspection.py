@@ -1,6 +1,6 @@
 """Tests for the binding-free DDS discovery-sample introspection helpers.
 
-Extracted from the Cyclone and Fast adapters (Lot 0, audit 2026-07-08) so
+Extracted from the Cyclone and Fast adapters so
 the `getattr`-with-fallback field extraction is testable without the
 `cyclonedds` / `fastdds` bindings. The helpers stay vendor-qualified
 because the two vendors expose subtly different sample shapes; the tests
@@ -160,9 +160,8 @@ def test_common_reexports_are_importable():
 
 
 # ------------------ defensive fallback branches (binding-shape variance) ----
-# These pin the getattr-fallback paths that exist precisely to absorb
-# cross-binding-version shape differences: the branches the audit flagged as
-# the silent-failure risk if they ever regress.
+# These pin the getattr-fallback paths that absorb shape differences between
+# binding versions; a regression there fails silently.
 
 
 def test_cyclone_extract_guid_skips_absent_attrs_then_finds_guid():
@@ -216,7 +215,7 @@ def test_fast_extract_topic_name_missing_returns_none():
     assert fast_extract_topic_name(_Obj()) is None
 
 
-# --- Regressions found by the first real-bus run (2026-10-01) ----------------
+# --- Regressions found on a real bus -----------------------------------------
 
 import uuid  # noqa: E402
 

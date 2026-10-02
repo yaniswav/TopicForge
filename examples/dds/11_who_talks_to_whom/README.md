@@ -1,10 +1,9 @@
 # 11 Who talks to whom?
 
-**Real use case.** You inherit a robot assembled from two suppliers. The
-design document says how it is wired. TopicForge tells you how it is wired
-on the wire.
+You inherit a robot assembled from two suppliers. The design document says how
+it is wired; TopicForge shows how it is wired on the wire.
 
-## The story
+## Programs
 
 | Program | Vendor | Writes | Reads |
 |---|---|---|---|
@@ -19,7 +18,7 @@ python run.py            # run and check
 python run.py --hold     # keep the programs running, ask your own MCP client
 ```
 
-## What TopicForge shows
+## The wiring on the wire
 
 ```
 [1] Who writes and who reads each topic?
@@ -32,22 +31,20 @@ python run.py --hold     # keep the programs running, ask your own MCP client
                  readers: nav_planner (LidarScan)
 ```
 
-- Each reader and writer is attached to its program through its GUID: the
-  first 12 bytes of an endpoint GUID are its participant's.
-- The Dust motor controller is fully visible, without any Dust software on
-  TopicForge's side, but it shows by GUID only: Dust DDS announces no name,
-  and its vendor shows as `unknown`. Say so rather than guess.
-- `heartbeat` has a writer and no reader. Maybe expected (a diagnostic
-  nobody consumes yet), maybe a missing monitor. The wiring raises the
-  question; you answer it.
+Each reader and writer is attached to its program through its GUID: the first
+12 bytes of an endpoint GUID are its participant's. The Dust motor controller
+is fully visible, without any Dust software on TopicForge's side, but it shows
+by GUID only: Dust DDS announces no name, and its vendor shows as `unknown`.
+Say so rather than guess.
 
-## Ask your agent
+`heartbeat` has a writer and no reader. That may be expected (a diagnostic
+nobody consumes yet) or a missing monitor; the wiring raises the question and
+you answer it.
+
+Names and vendor ids are
+optional extras that some vendors do not send.
+
+Prompt to try:
 
 > Draw the wiring of DDS domain 0: for each topic, who writes it, who reads
 > it, and with which type. Point out anything that looks unconnected.
-
-## Remember
-
-- The wiring on the wire is the truth; the design document is a claim.
-- Standard discovery shows every vendor's programs. Names and vendor ids are
-  optional extras some vendors do not send.

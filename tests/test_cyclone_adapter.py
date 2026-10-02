@@ -1,10 +1,7 @@
-"""Tests for the real CycloneDdsAdapter (v0.3.0).
+"""Tests for the real CycloneDdsAdapter.
 
-Skipped without `cyclonedds`. Tests run a local participant against
-domain 0 to exercise the real CycloneDDS bindings: they may discover
-other participants on the host's loopback domain depending on
-environment ; the assertions pin shape, not content, to stay robust
-against networking edge cases on CI runners.
+Skipped without `cyclonedds`. Each test joins domain 0 and may see other
+participants on the host, so assertions pin shape, not content.
 """
 
 from __future__ import annotations
@@ -112,7 +109,7 @@ def test_peek_dds_samples_negative_count_rejected() -> None:
 
 
 def test_peek_builtin_dcps_participant_returns_sample_result() -> None:
-    """Builtin DCPS topics work today: the v0.3.0 MVP scope."""
+    """Builtin DCPS topics can be peeked."""
     adapter = CycloneDdsAdapter(domain_id=0)
     result = adapter.peek_dds_samples("DCPSParticipant", count=5)
     assert result.topic == "DCPSParticipant"

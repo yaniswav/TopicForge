@@ -14,7 +14,7 @@ Fix the variable in the `env` block of your MCP client configuration (or in the 
 
 ## `health_check` says `mode: "mock"` but I asked for `live`
 
-`mode` is the mode of the adapter actually built, `requested_mode` is what you asked for. `live` or `auto` ending on `mock` means neither `ros2` nor a DDS backend came up, and the server fell back to fixtures; the server log carries the matching warning. Check from the **same shell** that spawns TopicForge (desktop MCP clients do not inherit your PATH or venv activation):
+`mode` is the mode of the adapter actually built, `requested_mode` is what you asked for. `live` or `auto` ending on `mock` means neither `ros2` nor a DDS backend came up, and the server fell back to fixtures; the server log carries the matching warning. Check from the same shell that spawns TopicForge (desktop MCP clients do not inherit your PATH or venv activation):
 
 ```bash
 which ros2          # Linux / WSL: /opt/ros/<distro>/bin/ros2
@@ -41,9 +41,9 @@ If you want a DDS-only deployment, the message is expected: you use the seven DD
 
 The message carries the underlying exception type and text. In order:
 
-1. **Domain mismatch.** TopicForge joins `TOPICFORGE_DDS_DOMAIN_ID` (default `0`); your publishers must be on the same domain (`echo $ROS_DOMAIN_ID`).
-2. **Firewall or multicast.** RTPS discovery uses multicast by default; corporate Wi-Fi and firewalls often block it and discovery then times out silently. Allow multicast on the interface, or configure unicast discovery through `CYCLONEDDS_URI`.
-3. **`CYCLONEDDS_URI` misconfigured.** It must point to a readable XML file; `unset CYCLONEDDS_URI` to rule it out.
+1. Domain mismatch. TopicForge joins `TOPICFORGE_DDS_DOMAIN_ID` (default `0`); your publishers must be on the same domain (`echo $ROS_DOMAIN_ID`).
+2. Firewall or multicast. RTPS discovery uses multicast by default; corporate Wi-Fi and firewalls often block it and discovery then times out silently. Allow multicast on the interface, or configure unicast discovery through `CYCLONEDDS_URI`.
+3. `CYCLONEDDS_URI` misconfigured. It must point to a readable XML file; `unset CYCLONEDDS_URI` to rule it out.
 
 A `Timeout` points at 1 or 2; a `FileNotFoundError` or `OSError` points at 3.
 
@@ -67,11 +67,11 @@ The adapter was written against the 2.6.x binding and has never run against a bu
 
 ## Other
 
-- **`topicforge: command not found`**: the entry point is not on PATH. Re-activate the venv, or use `python -m topicforge`.
-- **`sample_messages` returns no samples**: live mode runs `ros2 topic echo --once` with a 3 second timeout; a topic with no active publisher returns nothing. Check `ros2 topic info -v <topic>`.
-- **`analyze_bag` says the path does not exist**: the path is resolved in the shell where TopicForge runs. Under WSL use `/mnt/c/demos/run.mcap`, not `C:\demos\run.mcap`. In mock mode only `.mcap`, `.db3`, `.bag` or extensionless paths are accepted.
-- **Claude Desktop shows no tools**: check Help -> View Logs -> MCP, confirm `topicforge --version` runs from the same environment (or use the absolute path of the binary in the config), and validate the config with `python -m json.tool claude_desktop_config.json`, since a JSON error silently drops the whole file.
-- **First live call is slow**: `ros2 topic list -t` initializes the DDS middleware, a 1-2 second warm-up.
-- **A `peek_dds_samples` result with `_decode_status="raw"` and empty `_raw_bytes_hex`** is the user-topic placeholder: the topic is on the bus, the payload is not decoded.
+- `topicforge: command not found`: the entry point is not on PATH. Re-activate the venv, or use `python -m topicforge`.
+- `sample_messages` returns no samples: live mode runs `ros2 topic echo --once` with a 3 second timeout; a topic with no active publisher returns nothing. Check `ros2 topic info -v <topic>`.
+- `analyze_bag` says the path does not exist: the path is resolved in the shell where TopicForge runs. Under WSL use `/mnt/c/demos/run.mcap`, not `C:\demos\run.mcap`. In mock mode only `.mcap`, `.db3`, `.bag` or extensionless paths are accepted.
+- Claude Desktop shows no tools: check Help -> View Logs -> MCP, confirm `topicforge --version` runs from the same environment (or use the absolute path of the binary in the config), and validate the config with `python -m json.tool claude_desktop_config.json`, since a JSON error silently drops the whole file.
+- First live call is slow: `ros2 topic list -t` initializes the DDS middleware, a 1-2 second warm-up.
+- A `peek_dds_samples` result with `_decode_status="raw"` and empty `_raw_bytes_hex` is the user-topic placeholder: the topic is on the bus, the payload is not decoded.
 
 See also: [README](../README.md), [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md), [`TESTING.md`](TESTING.md).

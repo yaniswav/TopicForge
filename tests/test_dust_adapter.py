@@ -1,8 +1,7 @@
-"""Tests for `topicforge.adapters.dds_dust.DustDdsAdapter`: v0.4.0 stub.
+"""Tests for `topicforge.adapters.dds_dust.DustDdsAdapter`.
 
 Dust DDS is Rust-native, no Python binding maintained. `is_available()`
-is always False ; every protocol method raises AdapterError. The stub
-exists so the auto-detect chain has a fourth OSS slot.
+is always False and every protocol method raises AdapterError.
 """
 
 from __future__ import annotations
@@ -45,5 +44,5 @@ def test_all_protocol_methods_raise_roadmap_pointer() -> None:
         ("topic_metrics", ("/x", 60, 0)),
         ("peek_bag_samples", ("/tmp/x.mcap", "/x", 1)),
     ]:
-        with pytest.raises(AdapterError, match="Dust DDS adapter is a stub"):
+        with pytest.raises(AdapterError, match="Dust DDS backend is not implemented"):
             getattr(adapter, method)(*args)

@@ -1,4 +1,4 @@
-"""Schema shape pinning for the v0.2.0 DDS module models.
+"""Schema shape pinning for the DDS module models.
 
 `extra="forbid"` and `frozen=True` are inherited from the shared
 `_CONFIG`; this suite asserts that the contract holds for the three

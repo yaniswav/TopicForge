@@ -156,9 +156,7 @@ def test_dds_only_error_msg_preserves_substring_match_token() -> None:
 
 
 def test_dds_only_error_msg_mentions_composite_remediation() -> None:
-    """v0.5.0 polish: the message must name the v0.4.0 CompositeAdapter as the
-    canonical remediation for the dual-surface workflow, so an LLM caller can
-    suggest the right action immediately."""
+    """The message names the composite adapter as the remedy."""
     assert "composite adapter" in DDS_ONLY_ERROR_MSG
 
 
@@ -171,11 +169,11 @@ def test_dds_only_error_msg_lists_affected_tools() -> None:
 
 
 def test_every_canonical_vendor_tag_is_valid_participant_literal() -> None:
-    """Audit P2-3: pin that every tag `canonicalize_vendor_id` can produce
-    (the `_VENDOR_ID_MAP` values) is accepted by the `ParticipantInfo.vendor`
-    Literal. Otherwise an adapter emitting a mapped-but-unlisted tag would
-    raise a ValidationError at output-construction time. This test fails if
-    the vendor map and the schema Literal ever drift apart."""
+    """Every tag in `_VENDOR_ID_MAP` is accepted by the `ParticipantInfo.vendor` Literal.
+
+    A mapped tag missing from the Literal would raise a ValidationError when
+    the adapter builds its output.
+    """
     from topicforge.models import ParticipantEvent, ParticipantInfo
 
     tags = set(_VENDOR_ID_MAP.values()) | set(get_args(VendorTag))

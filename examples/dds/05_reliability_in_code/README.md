@@ -1,14 +1,14 @@
 # 05 Reliability, in code
 
-**Concept:** the same RELIABLE / BEST_EFFORT mismatch as example 02, seen
-from the code that causes it. A writer **offers** a reliability, a reader
-**requests** one, and the request must not exceed the offer.
+This is the RELIABLE / BEST_EFFORT mismatch of example 02, seen from the code
+that causes it. A writer offers a reliability, a reader requests one, and the
+request must not exceed the offer.
 
 Read it together with [02 Why can't they talk?](../02_why_cant_they_talk/README.md):
 02 finds the problem from outside, 05 shows the lines of code behind it and
 what the program itself can observe.
 
-## The story
+## The programs
 
 The LIDAR driver publishes `scan` with BEST_EFFORT (fine for a sensor: the
 next scan replaces a lost one). The navigation planner subscribes with
@@ -44,8 +44,8 @@ Here `reliability` is `Policy.Reliability.BestEffort` or
 subscriber to `--best-effort`, so the programs work together unless you ask
 for the broken combination.
 
-The status tells the program **that** some writer was refused and **which
-policy** (an id: 11 is Reliability), but not **which writer**.
+The status tells the program that some writer was refused and which policy
+was at fault (an id: 11 is Reliability), but not which writer.
 
 ## Run it
 
@@ -77,7 +77,7 @@ incompatible QoS from a writer: RELIABILITY (id 11)
 No `rx` line, ever. The default subscriber, on the same bus, prints one
 `rx seq=... range_m=...` line per scan.
 
-## What TopicForge shows
+## What TopicForge adds
 
 ```
 [1] Which writer and which reader are incompatible?
@@ -86,17 +86,15 @@ No `rx` line, ever. The default subscriber, on the same bus, prints one
 ```
 
 TopicForge adds what the DDS status cannot: the writer and the reader, by
-name. The `scan_logger` is not reported, its BEST_EFFORT request is
+name. The `scan_logger` is not reported, because a BEST_EFFORT request is
 compatible with any offer.
 
-## Ask your agent
+## Fix
+
+Make the driver `--reliable`, or the planner `--best-effort`. In your own
+code, poll the incompatible-QoS status or attach a listener when a reader is
+silent: it is the only local clue, and it names a policy id, not a peer.
+
+Prompt to try:
 
 > nav_planner never receives the scan topic on DDS domain 0. Why?
-
-## Remember
-
-- Offered must be at least requested: RELIABLE writer with BEST_EFFORT reader
-  works, the opposite never connects.
-- The incompatible-QoS status is a program's only local clue, and it names a
-  policy id, not a peer. Poll it, or attach a listener, when a reader is silent.
-- Fix: make the driver `--reliable`, or the planner `--best-effort`.

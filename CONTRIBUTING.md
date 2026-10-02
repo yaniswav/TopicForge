@@ -1,43 +1,39 @@
 # Contributing to TopicForge
 
-Thanks for the interest. TopicForge is a small indie project run by one
-maintainer ; the contribution loop is intentionally tight.
+TopicForge is a small project run by one maintainer, so the contribution loop is short.
 
 ## What contributions land easily
 
-- **Parser fixes for new ROS2 distros.** Pure parsers in
+- Parser fixes for new ROS2 distros. Pure parsers in
   `src/topicforge/adapters/ros2_live/` are designed to be tweak-able
   on a new distro without touching the adapter shell. A failing
   parser test against Iron / Jazzy / Kilted with a 5-line fix is the
-  ideal contribution shape.
-- **Bug reports with reproducers.** See
+  ideal contribution.
+- Bug reports with reproducers. See
   `.github/ISSUE_TEMPLATE/bug_report.yml`. A failing pytest case in
-  the body of the issue is gold.
-- **Doc improvements.** Typos, broken links, unclear quickstart
+  the body of the issue is the most useful thing you can attach.
+- Doc improvements. Typos, broken links, unclear quickstart
   steps. Open a PR directly: these merge fast.
-- **Cross-platform regressions.** TopicForge is Windows-first ; if you
+- Cross-platform regressions. TopicForge is Windows-first ; if you
   hit a Mac / Linux-specific breakage, file it with the stack trace.
-- **Reports from a real DDS bus.** The Cyclone adapter has run against
+- Reports from a real DDS bus. The Cyclone adapter has run against
   Cyclone and Dust participants; the Fast adapter and other vendors on
   the bus have not been observed yet. What you see there (what worked,
-  what raised, what looked wrong) is the most useful input available.
+  what raised, what looked wrong) helps more than anything else.
   Include the vendors on your bus and the `health_check` output.
   `python examples/dds/run_all.py` is a quick way to produce one.
 
 ## What contributions are harder to land
 
-- **New MCP tools.** The tool surface is intentionally capped at 11:
-  any expansion is a strategy decision documented in
-  `docs/product-plan.md section 11` "Scope creep within the TopicForge
-  umbrella". File an issue describing the use case first ; the
+- New MCP tools. The tool surface is kept deliberately small. File an issue describing the use case first; the
   maintainer will close, defer, or sponsor the work.
-- **New backends.** The `RosAdapter` / `MiddlewareAdapter` protocol is
+- New backends. The `RosAdapter` / `MiddlewareAdapter` protocol is
   designed to take new adapters, but each one comes with a long-term
   maintenance cost. File an issue with the use case ; expect a
   conversation before the PR.
-- **Refactors without a triggering bug or feature.** Cosmetic
-  refactors are a net cost for a solo maintainer. Tie any structural
-  change to a concrete user need.
+- Refactors without a triggering bug or feature. Cosmetic
+  refactors cost a solo maintainer more than they give. Tie any
+  structural change to a concrete user need.
 
 ## Development setup
 
@@ -55,7 +51,7 @@ pip install -e ".[dev]"
 
 ## The contract before a PR
 
-Every PR runs through CI on the matrix above. Locally, the bundle is :
+Every PR runs through CI on the matrix above. Locally:
 
 ```bash
 make check       # lint + tests (Linux / macOS / WSL)
@@ -65,8 +61,8 @@ python -m ruff format --check src tests
 python -m pytest -q
 ```
 
-A green `make check` on Python 3.12 + the platform you developed on is
-the baseline. CI catches the rest.
+A green `make check` on Python 3.12 and your own platform is enough;
+CI covers the rest.
 
 ### Mock-first development
 
@@ -90,9 +86,8 @@ review.
 
 Parsing of `ros2` CLI output lives in module-level functions named
 `parse_<thing>` separated from subprocess wrappers. They take a
-string in, return a typed value out, and are tested without ROS2.
-This is what makes new-distro fixes a 5-line patch instead of an
-adapter rewrite.
+string in, return a typed value out, and are tested without ROS2,
+so a new-distro fix is a 5-line patch instead of an adapter rewrite.
 
 ## Commit conventions
 
@@ -101,9 +96,9 @@ adapter rewrite.
   shape.
 - Body explains the *why*, not the *what* (the diff is the what).
 - One concern per commit: no "fix tests + add feature + docs" bundles.
-- We do not use the `Co-Authored-By: Claude` trailer, even when an AI
-  assistant was used. The contributor's authorship line is the
-  contract.
+- TopicForge is developed with an AI coding assistant (Claude Code).
+  Commits carry no AI attribution trailer: the contributor who commits
+  has read, run and stands behind the change.
 
 ## Releasing
 

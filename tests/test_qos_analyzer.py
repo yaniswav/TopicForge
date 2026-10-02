@@ -161,8 +161,7 @@ def test_incompatible_takes_precedence_over_risky():
 
 
 # ---------------------------------------------------------------------------
-# Cross-vendor edge cases (v0.3.0): flagged by the OMG-DDS exploration
-# report as gaps a parametrized test SHOULD cover.
+# Cross-vendor edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -263,10 +262,8 @@ def test_mixed_severity_keeps_all_offending_policies() -> None:
 
 
 def test_reader_finite_deadline_writer_none_incompatible() -> None:
-    """Audit P1-3 / C3: a writer offering no deadline = infinite (loosest)
-    period, which cannot satisfy a reader that requests a finite deadline.
-    The pre-audit rule skipped this case (both-must-be-non-None) and
-    returned a false 'compatible'."""
+    """A writer offering no deadline = infinite (loosest) period, which cannot
+    satisfy a reader that requests a finite deadline."""
     reader = _profile(deadline_ns=100_000_000)
     writer = _profile(deadline_ns=None)
     result = detect_mismatches(reader, writer)
@@ -283,7 +280,7 @@ def test_both_deadline_none_compatible() -> None:
     assert detect_mismatches(reader, writer) is None
 
 
-# ------------------------- exact RxO rules (lot B) -------------------------
+# ------------------------- exact RxO rules -------------------------
 
 from topicforge.adapters.common import analyze_pair, format_duration, partitions_match  # noqa: E402
 
@@ -462,7 +459,7 @@ def test_format_duration(ns: int | None, text: str) -> None:
     ("writer", "reader", "expected"),
     [
         # Each row was measured on a live cyclonedds 11.0.1 bus (domain 61,
-        # subscription_matched_status.current_count, 2026-10-02).
+        # subscription_matched_status.current_count).
         ("r*", "r*", False),
         ("robot*", "robot?", False),
         ("robot1", "robot[12]", False),

@@ -1,20 +1,14 @@
 """Telemetry client and tool instrumentation.
 
-Design notes:
-
-- **Strict opt-in.** `enabled=False` makes `emit()` and `instrument()` true
-  no-ops: no payload is assembled, no transport is invoked, no timing
-  overhead is added to tool handlers. The OFF-means-no-network guarantee
-  is the load-bearing property of this module and is tested explicitly.
-- **No user payload.** Only `tool_name`, `latency_ms`, `mode`, `version`,
-  `session_id`, and `success` are sent. The `Inspector` and adapter
-  layers never touch this module: by construction they cannot leak
-  topic names, message bodies, or bag paths into telemetry.
-- **Pluggable transport.** Default transport writes a structured log
-  line; a future HTTP transport (Fly.io, S3-backed endpoint) will plug
-  in via `build_telemetry_client` without changing call sites.
-- **Fire-and-forget.** Transport exceptions are swallowed so a telemetry
-  hiccup can never break a tool call.
+- Disabled means a no-op: `emit()` and `instrument()` assemble no payload,
+  call no transport and add no timing. Tests pin that nothing touches the
+  network when it is off.
+- Only `tool_name`, `latency_ms`, `mode`, `version`, `session_id` and
+  `success` are sent. The inspector and adapters never import this module,
+  so topic names, message bodies and bag paths cannot reach it.
+- The default transport logs a line; another one can be injected through
+  `build_telemetry_client`.
+- Transport exceptions are swallowed so telemetry cannot break a tool call.
 """
 
 from __future__ import annotations
@@ -36,11 +30,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 @dataclass(frozen=True, slots=True)
 class TelemetryEvent:
-    """The complete event shape sent over the transport.
+    """The event sent over the transport; these six fields are all telemetry carries.
 
-    These five fields are the *only* data points telemetry ever carries.
-    Adding a field here is a privacy decision: document it in the README
-    Telemetry section in the same change.
+    Adding a field is a privacy decision: update the README Telemetry
+    section in the same change.
     """
 
     tool_name: str
@@ -67,12 +60,7 @@ def _log_transport(payload: dict[str, Any]) -> None:
 
 
 class TelemetryClient:
-    """Opt-in telemetry emitter.
-
-    A single instance is built at server startup and shared by every tool
-    handler. When disabled, every method is a no-op and the instance
-    holds no resources.
-    """
+    """Opt-in telemetry emitter, built once at startup and shared by the handlers."""
 
     def __init__(
         self,
@@ -87,9 +75,7 @@ class TelemetryClient:
         self._mode = mode
         self._version = version
         self._transport = transport or _log_transport
-        # A new session id per process; never persisted, never tied to user
-        # identity. Lets the server-side deduplicate within a session
-        # without identifying anyone.
+        # New per process, never persisted or tied to a user.
         self._session_id = session_id or uuid.uuid4().hex
 
     @property
@@ -119,15 +105,11 @@ class TelemetryClient:
 
 
 def instrument(client: TelemetryClient, tool_name: str) -> Callable[[F], F]:
-    """Wrap a tool handler with timing + emit.
+    """Wrap a tool handler with timing and an `emit` call.
 
-    When `client.enabled` is False, the decorator returns the handler
-    unchanged: zero overhead and, more importantly, zero possibility of
-    a network call. This is the property `test_off_mode_no_network`
-    pins.
-
-    `functools.wraps` preserves the signature so FastMCP's introspection
-    of Pydantic-annotated parameters and return type still works.
+    When telemetry is disabled the handler is returned unchanged, so no
+    network call is possible (`test_off_mode_no_network`). `functools.wraps`
+    keeps the signature that FastMCP introspects.
     """
     if not client.enabled:
         return lambda fn: fn
@@ -158,11 +140,7 @@ def build_telemetry_client(
     version: str,
     transport: Transport | None = None,
 ) -> TelemetryClient:
-    """Construct the telemetry client used by `build_app`.
-
-    Kept as a small factory so wiring stays out of `server/app.py` and
-    tests can inject a deterministic transport.
-    """
+    """Construct the client used by `build_app`; tests inject a transport here."""
     return TelemetryClient(
         enabled=enabled,
         mode=mode,

@@ -1,22 +1,13 @@
 """Composite adapter: routes ROS2 graph calls to one adapter, DDS calls to another.
 
-v0.4.0 Phase 1 introduces a runtime where `TOPICFORGE_MODE=live` and
-`TOPICFORGE_DDS_BACKEND=cyclone|fast` are **orthogonal** rather than
-mutually exclusive. The factory composes a `Ros2CliAdapter` and a DDS
-adapter behind this wrapper so a single process can serve all 8
-`MiddlewareAdapter` tools simultaneously.
+`TOPICFORGE_MODE=live` and `TOPICFORGE_DDS_BACKEND=cyclone|fast` are
+independent settings. When both are active the factory puts a
+`Ros2CliAdapter` and a DDS adapter behind this wrapper, so one process
+serves all tools.
 
-The wrapper itself implements `MiddlewareAdapter` and dispatches per
-method category:
-
-  * `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`
-    -> `self._ros`
-  * `list_participants`, `detect_qos_mismatches`, `peek_dds_samples`
-    -> `self._dds`
-
-`AdapterError` from either side propagates unchanged. The composite
-never swallows or remaps errors: that would defeat the underlying
-adapter's diagnostic messages.
+The ROS2 graph and bag methods go to the ROS adapter; the DDS and
+observability methods go to the DDS adapter. `AdapterError` from either
+side propagates unchanged.
 """
 
 from __future__ import annotations
@@ -40,10 +31,8 @@ from topicforge.models import (
 class CompositeAdapter:
     """Routes ROS2 protocol methods to `ros`, DDS protocol methods to `dds`.
 
-    Both underlying adapters must satisfy the `MiddlewareAdapter` protocol.
-    The composite reports a hyphenated `name` (e.g. `"ros2_cli+cyclone"`)
-    and reduces `effective_mode` to `"live"` when either side is live
-    (the live half dominates the wire contract surfaced to MCP clients).
+    Reports a hyphenated `name` (e.g. `"ros2_cli+cyclone"`) and an
+    `effective_mode` of `"live"` when either side is live.
     """
 
     def __init__(self, ros: MiddlewareAdapter, dds: MiddlewareAdapter) -> None:
@@ -119,6 +108,5 @@ class CompositeAdapter:
         return self._dds.list_endpoints(topic, participant_guid, include_observer, include_departed)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
-        # Bag analysis lives on the ROS half: MCAP is the canonical
-        # ROS2 recording format, and rosbags is a ROS-native library.
+        # Bag decoding is on the ROS half (MCAP and rosbags are ROS tooling).
         return self._ros.peek_bag_samples(path, topic, count)

@@ -32,8 +32,8 @@ participant a publication of its own whatever else runs.
 
 ## Language participants
 
-The five programs above carry the scenario. The vendor x language grid is
-covered by smaller programs that each join the bus, write `DemoHeartbeat`
+The five programs above carry the scenario. Smaller programs cover the vendor x
+language grid: each joins the bus, write `DemoHeartbeat`
 (RELIABLE, 1 Hz) and nothing else, so that `list_participants` shows one
 participant per vendor and language. Same rules: `--domain N`, one start line
 `[<dir name>] domain N: writes DemoHeartbeat (RELIABLE)`, run until killed.

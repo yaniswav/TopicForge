@@ -1,20 +1,15 @@
 """Example 13: the deadline is not offered.
 
-The navigation planner requires a new scan at least every 100 ms: it declares
-a Deadline of 100 ms on its reader. The new LIDAR driver declares no deadline
-at all, which means "no promise" (an infinite deadline, the default in most
-DDS and ROS 2 setups). A writer that promises nothing cannot satisfy a reader
-that requires a promise, so DDS does not connect them: the planner receives
-nothing, not even late scans.
+The planner requires a scan every 100 ms (Deadline on its reader). The new
+LIDAR driver declares no deadline, which means no promise, so DDS does not
+match them and the planner receives nothing, not even late scans.
 
-The IMU pair is the control: the IMU driver promises 10 ms, the planner asks
-for 100 ms. Offering more than asked is fine; TopicForge must not report it.
+The IMU pair is the control: the driver promises 10 ms, the planner asks for
+100 ms. Offering more than asked is fine and must not be reported.
+TopicForge sees declared deadlines, not whether a writer meets them.
 
-TopicForge sees the deadline each side declares. It cannot see whether a
-running writer actually meets its deadline.
-
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys
