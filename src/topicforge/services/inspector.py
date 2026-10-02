@@ -14,7 +14,7 @@ from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -104,7 +104,7 @@ class Inspector:
         _validate_dds_domain(domain_id)
         return self._adapter.list_participants(domain_id)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None:
             _validate_topic_name_dds(topic)
         return self._adapter.detect_qos_mismatches(topic)

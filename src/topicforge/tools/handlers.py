@@ -29,7 +29,7 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     HealthReport,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -252,21 +252,27 @@ def register_tools(
 
     @mcp.tool(
         description=(
-            "Detect DDS QoS incompatibilities between reader and writer "
-            "endpoints on the bus. Returns `list[MismatchReport]`: one "
-            "entry per incompatible (reader, writer) pair, listing the "
-            "policies that block or risk degrading communication "
-            "(Reliability, Durability, History, Deadline at MVP). Each "
-            "report carries `severity` (`incompatible` strictly blocks "
-            "communication per the DDS spec ; `risky` may degrade but "
-            'is not strictly blocked) and `mode_effective` (`"live"`/'
-            '`"mock"`). Pass `topic` to scope to a single topic ; omit '
-            "for an exhaustive scan. **Use this when** an LLM is "
-            "debugging why a subscriber doesn't receive. **Read-only "
-            "by architecture**: the analyzer compares observed QoS "
-            "profiles ; no method on this tool can rewrite QoS or "
-            "alter the bus. **Raises an MCP error** when no DDS module "
-            "is active ; the mock backend returns deterministic "
+            "Explain why DDS readers and writers on the same topic do not "
+            "talk. Pairs every reader with every writer per topic and "
+            "returns a `MismatchScan`: `reports` (QoS incompatible or "
+            "risky pairs, each with the participant names, requested vs "
+            "offered values and the failed rule in `details`), `not_matched` "
+            "(pairs DDS never matches: different partitions or type names; "
+            "the QoS rules are NOT evaluated for them, so a partition split "
+            "is not blamed on Reliability), `hints` (orphan topics with a "
+            "near-identical name, i.e. probable typos, and type id notes), "
+            "plus `pairs_checked`, `topics_scanned`, `policies_checked` and "
+            "`policies_unchecked`. Checked: Partition (with `*` and `?` "
+            "wildcards), type name, Reliability, Durability, Deadline, "
+            "Liveliness, LatencyBudget, Ownership, DestinationOrder, "
+            "DataRepresentation, History (risky only). Not checked: see "
+            "`policies_unchecked`. **An empty `reports` with a non-empty "
+            "`not_matched` still means no data flows**, and an all-empty "
+            "result does not prove the bus healthy: discovery shows the "
+            "QoS endpoints DECLARED, not runtime behavior. Pass `topic` to "
+            "scope to one topic ; omit for an exhaustive scan. "
+            "**Read-only by architecture**. **Raises an MCP error** when no "
+            "DDS module is active ; the mock backend returns deterministic "
             "fixtures."
         )
     )
@@ -277,13 +283,13 @@ def register_tools(
             Field(
                 description=(
                     "Optional topic name to scope the scan to "
-                    "(`/foo/bar` shape). `None` (default) returns all "
-                    "mismatches across all topics."
+                    "(`/foo/bar` shape). `None` (default) scans all "
+                    "topics."
                 ),
                 default=None,
             ),
         ] = None,
-    ) -> list[MismatchReport]:
+    ) -> MismatchScan:
         return inspector.detect_qos_mismatches(topic)
 
     @mcp.tool(

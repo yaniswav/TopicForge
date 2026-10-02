@@ -82,7 +82,7 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     QosProfile,
@@ -312,7 +312,7 @@ class FastDdsAdapter:
         """
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         """Pair reader/writer endpoints by topic via the shared analyzer.
 
         The pairing / reporting logic lives in

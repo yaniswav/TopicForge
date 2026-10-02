@@ -45,6 +45,7 @@ from topicforge.adapters.common.endpoints import (
     announced_ns_of,
     build_endpoint_listing,
     builtin_payload,
+    endpoint_infos_from_samples,
     endpoint_record,
     format_participant_key,
     listing_from_samples,
@@ -58,13 +59,20 @@ from topicforge.adapters.common.metrics_buffer import (
     MetricsBuffer,
     MetricsSample,
 )
-from topicforge.adapters.common.qos_analyzer import detect_mismatches
+from topicforge.adapters.common.qos_analyzer import (
+    PairAnalysis,
+    analyze_pair,
+    detect_mismatches,
+    format_duration,
+    partitions_match,
+)
 from topicforge.adapters.common.qos_endpoints import detect_mismatches_across_endpoints
 from topicforge.adapters.common.qos_normalize import (
     cyclone_qos_to_profile,
     duration_to_ns,
     fast_qos_to_profile,
 )
+from topicforge.adapters.common.qos_scan import POLICIES_CHECKED, POLICIES_UNCHECKED, scan_endpoints
 from topicforge.adapters.common.xtypes import (
     DecodeStatus,
     annotate_full,
@@ -79,14 +87,18 @@ __all__ = [
     "MAX_EVENTS",
     "MAX_LISTED_ENDPOINTS",
     "MAX_SAMPLES_PER_TOPIC",
+    "POLICIES_CHECKED",
+    "POLICIES_UNCHECKED",
     "DecodeStatus",
     "DiscoveryCaches",
     "DiscoveryTracker",
     "LifecycleBuffer",
     "MetricsBuffer",
     "MetricsSample",
+    "PairAnalysis",
     "SampleCache",
     "VendorTag",
+    "analyze_pair",
     "annotate_full",
     "annotate_partial",
     "annotate_raw",
@@ -108,6 +120,7 @@ __all__ = [
     "detect_mismatches_across_endpoints",
     "duration_to_ns",
     "dynamic_type_name",
+    "endpoint_infos_from_samples",
     "endpoint_record",
     "extract_publish_ns_from_payload",
     "extract_seq_from_payload",
@@ -116,6 +129,7 @@ __all__ = [
     "fast_extract_topic_name",
     "fast_extract_vendor_id",
     "fast_qos_to_profile",
+    "format_duration",
     "format_guid",
     "format_participant_key",
     "is_alive_sample",
@@ -123,6 +137,8 @@ __all__ = [
     "iter_field_names",
     "listing_from_samples",
     "participant_names",
+    "partitions_match",
+    "scan_endpoints",
     "summarize_by_topic",
     "take_bounded",
     "type_id_text",

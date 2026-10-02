@@ -12,12 +12,14 @@ from __future__ import annotations
 
 from topicforge.adapters.common.endpoints import build_endpoint_listing
 from topicforge.adapters.common.metrics_buffer import MetricsBuffer
+from topicforge.adapters.common.qos_scan import scan_endpoints
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
+    EndpointInfo,
     EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     QosProfile,
@@ -299,17 +301,6 @@ MOCK_DDS_TOPICS: tuple[str, ...] = (
     "/dds/ddsforge/opaque",
 )
 
-_MOCK_MISMATCHES: tuple[MismatchReport, ...] = (
-    MismatchReport(
-        topic="/dds/qos_mismatch",
-        reader_guid="010f1c2a-3b4c-5d6e-7f80-000000000001",
-        writer_guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
-        incompatible_policies=["Reliability"],
-        severity="incompatible",
-        mode_effective="mock",
-    ),
-)
-
 
 def mock_qos_for(topic: str) -> QosProfile | None:
     """Return a deterministic QoS profile for a mock DDS topic, else None."""
@@ -406,13 +397,6 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
     )
 
 
-def mock_mismatches_for(topic: str | None) -> list[MismatchReport]:
-    """Return the mock mismatches filtered by topic. None returns all."""
-    if topic is None:
-        return list(_MOCK_MISMATCHES)
-    return [m for m in _MOCK_MISMATCHES if m.topic == topic]
-
-
 # ---------------------------------------------------------------------------
 # Endpoint fixtures (`list_endpoints`)
 # ---------------------------------------------------------------------------
@@ -488,6 +472,20 @@ _MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
         16,
     ),
 )
+
+
+def mock_mismatch_scan(topic: str | None) -> MismatchScan:
+    """Deterministic `MismatchScan` for the mock scenario.
+
+    Runs the real pure scan over the endpoint fixtures above, so the mock and
+    the live path cannot disagree on the rules: `/dds/qos_mismatch` yields one
+    `Reliability` report, the opaque topic an orphan hint.
+    """
+    endpoints = [
+        EndpointInfo(**rec, domain_id=0, mode_effective="mock")  # type: ignore[arg-type]
+        for rec in _MOCK_ENDPOINT_RECORDS
+    ]
+    return scan_endpoints(endpoints, topic=topic, mode_effective="mock")
 
 
 def mock_endpoint_listing(

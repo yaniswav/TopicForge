@@ -28,7 +28,7 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -88,7 +88,7 @@ class CompositeAdapter:
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         return self._dds.list_participants(domain_id)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         return self._dds.detect_qos_mismatches(topic)
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:

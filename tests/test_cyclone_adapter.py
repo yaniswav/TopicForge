@@ -63,18 +63,19 @@ def test_list_participants_returns_list() -> None:
         assert p.domain_id == 0
 
 
-def test_detect_qos_mismatches_returns_list() -> None:
-    """Empty bus typically yields [] ; we pin the shape, not the content."""
+def test_detect_qos_mismatches_returns_scan_envelope() -> None:
+    """Empty bus typically yields no reports ; we pin the shape, not the content."""
     adapter = CycloneDdsAdapter(domain_id=0)
     result = adapter.detect_qos_mismatches()
-    assert isinstance(result, list)
+    assert isinstance(result.reports, list) and isinstance(result.not_matched, list)
+    assert result.mode_effective == "live" and result.policies_checked
 
 
 def test_detect_qos_mismatches_topic_filter_accepts_unknown_topic() -> None:
-    """Filtering on an unobserved topic must return []: never raise."""
+    """Filtering on an unobserved topic must return an empty scan: never raise."""
     adapter = CycloneDdsAdapter(domain_id=0)
     result = adapter.detect_qos_mismatches(topic="/never/seen/this/topic")
-    assert result == []
+    assert result.reports == [] and result.not_matched == [] and result.topics_scanned == 0
 
 
 def test_peek_user_topic_not_on_bus_raises_not_discovered() -> None:

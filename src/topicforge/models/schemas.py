@@ -488,8 +488,31 @@ class TopicMetrics(BaseModel):
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
+class PolicyMismatch(BaseModel):
+    """One QoS policy of a reader/writer pair, with the values that were compared."""
+
+    model_config = _CONFIG
+
+    policy: str = Field(
+        description=(
+            "Policy name: `Reliability`, `Durability`, `Deadline`, `Liveliness`, "
+            "`LatencyBudget`, `Ownership`, `DestinationOrder`, `DataRepresentation` "
+            "or `History`."
+        )
+    )
+    requested: str = Field(
+        description='What the reader requests, human-readable: `"RELIABLE"`, `"100 ms"`, `"infinite"`.'
+    )
+    offered: str = Field(description="What the writer offers, same format as `requested`.")
+    rule: str = Field(description="The compatibility rule that failed, one sentence.")
+
+
 class MismatchReport(BaseModel):
-    """A single reader/writer QoS incompatibility detected on a topic."""
+    """A single reader/writer QoS incompatibility detected on a topic.
+
+    Only pairs that share a partition and a type name are reported here: those
+    separated by partition or type are `NotMatchedPair`s in the same scan.
+    """
 
     model_config = _CONFIG
 
@@ -502,18 +525,109 @@ class MismatchReport(BaseModel):
         default=None,
         description="GUID of the writer endpoint involved in the mismatch, if known.",
     )
+    reader_participant_guid: str | None = Field(
+        default=None, description="GUID of the participant that owns the reader, if known."
+    )
+    reader_participant_name: str | None = Field(
+        default=None, description="Announced name of the reader's participant, if it set one."
+    )
+    writer_participant_guid: str | None = Field(
+        default=None, description="GUID of the participant that owns the writer, if known."
+    )
+    writer_participant_name: str | None = Field(
+        default=None, description="Announced name of the writer's participant, if it set one."
+    )
+    reader_type_name: str | None = Field(
+        default=None, description="Type name the reader announced."
+    )
+    writer_type_name: str | None = Field(
+        default=None, description="Type name the writer announced."
+    )
     incompatible_policies: list[str] = Field(
         description=(
             "Names of the QoS policies that block communication or risk "
-            "degradation. Drawn from the MVP set: `Reliability`, "
-            "`Durability`, `History`, `Deadline`."
+            "degradation: see `details` for the compared values."
         )
     )
     severity: Literal["incompatible", "risky"] = Field(
         description=(
             "`incompatible` means communication is definitely blocked ; "
             "`risky` means it may degrade but is not strictly blocked by "
-            "the DDS spec. Useful for an LLM to triage user-facing advice."
+            "the DDS spec (History only). Useful for an LLM to triage user-facing advice."
+        )
+    )
+    details: list[PolicyMismatch] = Field(
+        default_factory=list,
+        description="Requested and offered value and the failed rule, one entry per policy.",
+    )
+    unchecked: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Policies that could not be compared for this pair because one side "
+            "did not announce a value."
+        ),
+    )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+
+
+class NotMatchedPair(BaseModel):
+    """A reader and a writer on one topic that DDS will not match, whatever their QoS."""
+
+    model_config = _CONFIG
+
+    topic: str = Field(description="Topic name both endpoints use.")
+    reader_guid: str = Field(description="GUID of the reader endpoint.")
+    reader_participant_guid: str = Field(description="GUID of the reader's participant.")
+    reader_participant_name: str | None = Field(
+        default=None, description="Announced name of the reader's participant."
+    )
+    writer_guid: str = Field(description="GUID of the writer endpoint.")
+    writer_participant_guid: str = Field(description="GUID of the writer's participant.")
+    writer_participant_name: str | None = Field(
+        default=None, description="Announced name of the writer's participant."
+    )
+    reason: Literal["partition", "type_name"] = Field(
+        description=(
+            "`partition`: no reader partition matches a writer partition. "
+            "`type_name`: the endpoints announced different type names. The "
+            "RxO QoS rules are not evaluated for such a pair."
+        )
+    )
+    detail: str = Field(description="The two partition lists or the two type names.")
+
+
+class MismatchScan(BaseModel):
+    """Result of `detect_qos_mismatches`: findings plus what was and was not checked."""
+
+    model_config = _CONFIG
+
+    reports: list[MismatchReport] = Field(
+        description="Pairs that share a partition and a type but have incompatible or risky QoS."
+    )
+    not_matched: list[NotMatchedPair] = Field(
+        description=(
+            "Pairs separated by partition or type name. No data flows between them. "
+            "An empty `reports` with a non-empty `not_matched` does not mean the bus is healthy."
+        )
+    )
+    hints: list[str] = Field(
+        description=(
+            "Leads that are not findings: orphan topics with near-identical names "
+            "(typos), type id differences, pairs that could not be fully checked."
+        )
+    )
+    pairs_checked: int = Field(
+        ge=0,
+        description=(
+            "Same-topic (reader, writer) pairs examined, including those reported in `not_matched`."
+        ),
+    )
+    topics_scanned: int = Field(ge=0, description="Topics that had at least one endpoint in scope.")
+    policies_checked: list[str] = Field(description="Policies compared on every pair.")
+    policies_unchecked: list[str] = Field(
+        description=(
+            "Policies and facts this scan does not cover, each with a one-line reason. "
+            "A clean result says nothing about them."
         )
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)

@@ -185,6 +185,24 @@ def participant_names(participant_samples: Iterable[Any]) -> dict[str, str | Non
     }
 
 
+def endpoint_infos_from_samples(
+    participant_samples: Iterable[Any],
+    publication_samples: Iterable[Any],
+    subscription_samples: Iterable[Any],
+    *,
+    domain_id: int,
+    mode_effective: Literal["mock", "live"],
+    observer_guid: str | None,
+) -> list[EndpointInfo]:
+    """Raw builtin samples in, every `EndpointInfo` out (no filtering, observer included)."""
+    names = participant_names(participant_samples)
+    records = [endpoint_record(s, "writer", names, observer_guid) for s in publication_samples]
+    records += [endpoint_record(s, "reader", names, observer_guid) for s in subscription_samples]
+    return [
+        EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective) for rec in records
+    ]
+
+
 def listing_from_samples(
     participant_samples: Iterable[Any],
     publication_samples: Iterable[Any],

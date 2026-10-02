@@ -81,8 +81,8 @@ from topicforge.adapters.common import (
     builtin_payload,
     decode_dynamic_sample,
     decode_field_value,
-    detect_mismatches_across_endpoints,
     dynamic_type_name,
+    endpoint_infos_from_samples,
     extract_publish_ns_from_payload,
     extract_seq_from_payload,
     format_guid,
@@ -90,6 +90,7 @@ from topicforge.adapters.common import (
     iter_field_names,
     listing_from_samples,
     participant_names,
+    scan_endpoints,
     take_bounded,
     user_topic_placeholder,
     validate_domain_id,
@@ -100,14 +101,11 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
 )
-from topicforge.adapters.common import (
-    cyclone_qos_to_profile as _cyclone_qos_to_profile,
-)
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -425,24 +423,23 @@ class CycloneDdsAdapter:
         )
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
-        """Pair reader/writer endpoints by topic, run the shared analyzer on each.
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
+        """Pair cached reader/writer endpoints per topic and scan them.
 
-        The pairing / reporting logic lives in
-        `common.qos_endpoints.detect_mismatches_across_endpoints` (shared with
-        the Fast adapter, unit-tested without a binding). This method only
-        gathers the vendor-native endpoint samples and hands them over.
+        Builds `EndpointInfo` records (with participant names) from the tracker's
+        caches, then hands them to the pure `common.qos_scan.scan_endpoints`:
+        partition and type separation first, RxO rules after.
         """
-        subs = self._caches.subscriptions.values()
-        pubs = self._caches.publications.values()
-        return detect_mismatches_across_endpoints(
-            subs=subs,
-            pubs=pubs,
-            topic=topic,
-            qos_to_profile=_cyclone_qos_to_profile,
-            extract_topic_name=_extract_topic_name,
-            extract_guid=_extract_guid,
+        parts, pubs, subs = self._raw_endpoint_samples()
+        endpoints = endpoint_infos_from_samples(
+            parts,
+            pubs,
+            subs,
+            domain_id=self._domain_id,
+            mode_effective="live",
+            observer_guid=self._observer_guid(),
         )
+        return scan_endpoints(endpoints, topic=topic, mode_effective="live")
 
     def _observer_guid(self) -> str:
         """Formatted GUID of this adapter's own participant."""

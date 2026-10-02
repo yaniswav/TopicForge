@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- **Exact `detect_qos_mismatches` (breaking output).** The tool now returns a
+  `MismatchScan` envelope instead of a bare list: `reports`, `not_matched`,
+  `hints`, `pairs_checked`, `topics_scanned`, `policies_checked`,
+  `policies_unchecked`, `mode_effective`. Why: in a blind evaluation, readers
+  and writers in different partitions were blamed on Reliability, Liveliness
+  and Ownership incompatibilities were missed, agents had to map GUIDs to
+  programs by hand, and an empty list was read as a healthy bus although only
+  four policies were checked. Partition is now checked first (`*` / `?`
+  wildcards, wildcard against wildcard never matches) and a pair it separates is
+  a `not_matched` entry with reason `partition`; differing type names are
+  `not_matched` with reason `type_name`; the RxO rules are not run on either.
+  Liveliness (kind and lease), LatencyBudget, Ownership (kind equality),
+  DestinationOrder and DataRepresentation join Reliability, Durability and
+  Deadline; History stays a labelled `risky` finding. A policy a side did not
+  announce is skipped, never guessed. `MismatchReport` gains, additively, the
+  reader/writer participant guid and name, type names, `details` (requested and
+  offered value, failed rule) and `unchecked`. Hints cover orphan topics whose
+  names differ by at most 2 edits (typos) and XTypes type id differences (a
+  note, never a mismatch). Pre-1.0: callers of the old list read `["reports"]`.
 - **Continuous discovery tracking on Cyclone.** A daemon thread (0.5 s period)
   is now the only code that touches the three builtin discovery readers, using
   `take()` with an any-state condition, and feeds in-memory caches that every

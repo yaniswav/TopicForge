@@ -31,7 +31,7 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -90,7 +90,7 @@ class OpenDdsAdapter:
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:

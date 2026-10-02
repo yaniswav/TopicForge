@@ -30,10 +30,14 @@ BEST_EFFORT writer), and two user-topic payload exemplars,
 participants with `vendor`, `hostname`, `guid`, lifecycle fields
 (`first_seen_ns`, `status="active"`, `seen_count`). The
 multi-vendor mix exercises the OMG-DDS-RTPS protocol guarantee in
-fixture form. Then `detect_qos_mismatches(topic=None)` -> returns 1
-`MismatchReport` for `/dds/qos_mismatch` with
-`incompatible_policies=["Reliability"]` and
-`severity="incompatible"`.
+fixture form. Then `detect_qos_mismatches(topic=None)` -> returns a
+`MismatchScan` whose `reports` hold 1 `MismatchReport` for
+`/dds/qos_mismatch` with `incompatible_policies=["Reliability"]`,
+`severity="incompatible"`, the two participant names and
+`details=[{policy: "Reliability", requested: "RELIABLE", offered:
+"BEST_EFFORT", rule: ...}]`. `not_matched` is empty (no partition or type
+split) and `hints` notes that `/dds/ddsforge/opaque` has a writer and no
+reader.
 
 **You:**
 
@@ -51,7 +55,10 @@ fixture form. Then `detect_qos_mismatches(topic=None)` -> returns 1
 > 2. Upgrade the writer to `RELIABLE` (if the data is critical).
 >
 > The other topic `/dds/well_matched` has no mismatch reported, so
-> the same diagnostic loop would not fire there.
+> the same diagnostic loop would not fire there. Caveat: discovery shows
+> the QoS each endpoint *declared*, and the scan lists what it does not
+> cover in `policies_unchecked`, so an empty result is not proof of a
+> healthy bus.
 
 **You:**
 
@@ -101,5 +108,9 @@ then mentally running the OMG compatibility matrix. TopicForge ships
 that matrix as a vendor-neutral pure analyzer
 (`adapters/common/qos_analyzer.py`) so the LLM can suggest the fix
 without a 20-minute deep-dive. The analyzer covers Reliability,
-Durability, History and Deadline; a mismatch on Liveliness, Ownership or
-Partition would not be reported.
+Durability, Deadline, Liveliness, LatencyBudget, Ownership,
+DestinationOrder and DataRepresentation (History as a risk only), and
+checks Partition and the type name first: a reader and a writer in
+different partitions are returned in `not_matched` with reason
+`partition`, never blamed on Reliability. Presentation, XTypes
+assignability and runtime behavior are listed in `policies_unchecked`.
