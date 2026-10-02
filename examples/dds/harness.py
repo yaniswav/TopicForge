@@ -33,7 +33,7 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 NODES = HERE / "nodes"
@@ -71,6 +71,10 @@ class Node:
     writes: tuple[str, ...] = ()
     reads: tuple[str, ...] = ()
     rate_hz: float = 10.0
+    # An explicit program (an example's own publisher.py / subscriber.py)
+    # instead of the generic role node; `args` follow `--domain N`.
+    script: Path | None = None
+    args: tuple[str, ...] = ()
 
     def missing(self) -> str | None:
         """Why this node cannot start here, or None when it can."""
@@ -85,6 +89,8 @@ class Node:
 
     def argv(self, domain: int) -> list[str]:
         """Command line that starts this node with the current interpreter."""
+        if self.script is not None:
+            return [sys.executable, str(self.script), "--domain", str(domain), *self.args]
         cmd = [sys.executable, str(NODES / f"{self.vendor}_node.py")]
         cmd += ["--domain", str(domain), "--name", self.name, "--rate-hz", str(self.rate_hz)]
         for endpoint in self.writes:
@@ -97,17 +103,26 @@ class Node:
 # ------------------------------------------------------------------ the bus
 
 
-def _spawn(argv: list[str], log: IO[bytes]) -> subprocess.Popen[bytes]:
-    # stderr goes to a file, not a pipe: nobody drains a pipe while the
-    # example runs, and a chatty program would block once it is full.
-    kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL, "stderr": log}
+def _spawn(argv: list[str], log: Path | None) -> subprocess.Popen[bytes]:
+    """Start a program, its output going to `log`, or to this console if None.
+
+    A log file, not a pipe: nobody drains a pipe while the example runs, and
+    a chatty program would block once it is full. The file is opened in
+    append mode, so the program always writes at the end even while the
+    harness reads it through a handle of its own.
+    """
+    kwargs: dict[str, Any] = {}
     if os.name == "nt":
         # CREATE_NO_WINDOW: a console program started from here would
-        # otherwise pop a window of its own.
+        # otherwise pop a window of its own. Its output then only reaches
+        # this console when the handles are passed explicitly.
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         kwargs["start_new_session"] = True
-    return subprocess.Popen(argv, **kwargs)
+    if log is None:
+        return subprocess.Popen(argv, stdout=sys.stdout, stderr=sys.stderr, **kwargs)
+    with open(log, "ab") as out:  # the child keeps its own copy of the handle
+        return subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT, **kwargs)
 
 
 def kill_tree(proc: subprocess.Popen[bytes]) -> None:
@@ -133,30 +148,52 @@ def kill_tree(proc: subprocess.Popen[bytes]) -> None:
 
 class Bus:
     """The DDS programs of one example. Used as a context manager, it always
-    stops everything it started, even on error or Ctrl+C."""
+    stops everything it started, even on error or Ctrl+C.
 
-    def __init__(self, domain: int) -> None:
+    Each program's output is kept in a log file, readable with `lines()`,
+    unless `echo` is set: then it goes straight to this console.
+    """
+
+    def __init__(self, domain: int, *, echo: bool = False) -> None:
         self.domain = domain
+        self.echo = echo
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
-        self._logs: contextlib.ExitStack = contextlib.ExitStack()
+        self._dir = tempfile.TemporaryDirectory(prefix="topicforge-example-")
+        self._logs: dict[str, Path] = {}
 
     def start(self, *nodes: Node) -> None:
         """Start every node, or none of them if one cannot run here."""
         problems = [f"{n.name}: {why}" for n in nodes if (why := n.missing())]
         if problems:
             raise Unavailable("\n".join(problems))
-        started: dict[str, IO[bytes]] = {}
         for node in nodes:
-            log = self._logs.enter_context(tempfile.TemporaryFile())  # noqa: SIM115 (ExitStack owns it)
+            log = None if self.echo else Path(self._dir.name) / f"{node.name}-{time.time_ns()}.log"
             self._procs[node.name] = _spawn(node.argv(self.domain), log)
-            started[node.name] = log
+            if log is not None:
+                self._logs[node.name] = log
             print(f"  started {node.name:<16} ({node.vendor})")
         time.sleep(1.0)
-        for name, log in started.items():
-            if self._procs[name].poll() is not None:
-                log.seek(0)
-                err = log.read().decode(errors="replace").strip()
-                raise RuntimeError(f"{name} exited at startup: {err or 'no message'}")
+        for node in nodes:
+            if self._procs[node.name].poll() is not None:
+                output = "\n".join(self.lines(node.name)[-10:])
+                raise RuntimeError(f"{node.name} exited at startup: {output or 'no message'}")
+
+    def lines(self, name: str, prefix: str = "") -> list[str]:
+        """Output lines a program printed so far, optionally only those starting with `prefix`."""
+        log = self._logs.get(name)
+        if log is None or not log.exists():
+            return []
+        text = log.read_bytes().decode(errors="replace")
+        return [line for line in text.splitlines() if line.startswith(prefix)]
+
+    def wait_line(self, name: str, prefix: str, timeout_s: float = 15.0) -> bool:
+        """Block until `name` prints a line starting with `prefix`; False on timeout."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if self.lines(name, prefix):
+                return True
+            time.sleep(0.2)
+        return False
 
     def crash(self, name: str) -> None:
         """Kill one node abruptly: no goodbye message reaches the bus."""
@@ -167,7 +204,8 @@ class Bus:
         for proc in self._procs.values():
             kill_tree(proc)
         self._procs.clear()
-        self._logs.close()
+        with contextlib.suppress(OSError):  # Windows may hold a dying handle briefly
+            self._dir.cleanup()
 
     def __enter__(self) -> Bus:
         return self
@@ -391,7 +429,7 @@ def run_example(
     args = parser.parse_args(argv)
 
     print(f"{title}\n\nstarting the robot programs on DDS domain {args.domain}")
-    with Bus(args.domain) as bus:
+    with Bus(args.domain, echo=args.hold) as bus:
         try:
             bus.start(*nodes)
         except Unavailable as exc:

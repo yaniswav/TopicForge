@@ -194,3 +194,52 @@ def start_line(vendor: str, args: argparse.Namespace) -> str:
     writes = "; ".join(describe(e) for e in args.write) or "nothing"
     reads = "; ".join(describe(e) for e in args.read) or "nothing"
     return f"[{args.name}] {vendor} domain {args.domain}: writes {writes}; reads {reads}"
+
+
+class RxReport:
+    """Once per second, one line per reader: how many samples it received.
+
+    Lines look like `[nav_planner] rx scan: 10 in 1.0 s, last seq 123`, or
+    `[nav_planner] rx scan: 0 in 1.0 s` when nothing arrived (printed anyway, so
+    that absence is visible). The class does no I/O: the caller passes the
+    clock to `due()` and `lines()` and prints what `lines()` returns. The
+    window is measured, not assumed: it starts when the readers exist and each
+    line states how long it really lasted.
+    """
+
+    PERIOD_S = 1.0
+
+    def __init__(self, name: str, topics: list[str], now: float) -> None:
+        self.name = name
+        self._counts = {t: 0 for t in topics}
+        self._last_seq: dict[str, int] = {}
+        self._next = now + self.PERIOD_S
+        self._start = now
+
+    def record(self, topic: str, seqs: list[int | None]) -> None:
+        """Count the valid samples of one `take` and remember the last known `seq`."""
+        self._counts[topic] += len(seqs)
+        known = [s for s in seqs if s is not None]
+        if known:
+            self._last_seq[topic] = known[-1]
+
+    def due(self, now: float) -> bool:
+        """True once per period; the next period starts from `now`."""
+        if now < self._next:
+            return False
+        self._next = now + self.PERIOD_S
+        return True
+
+    def lines(self, now: float) -> list[str]:
+        """The report lines for the period that just ended, then reset the counts."""
+        elapsed = now - self._start
+        self._start = now
+        out = []
+        for topic, count in self._counts.items():
+            line = f"[{self.name}] rx {topic}: {count} in {elapsed:.1f} s"
+            last = self._last_seq.pop(topic, None)
+            if count and last is not None:
+                line += f", last seq {last}"
+            out.append(line)
+            self._counts[topic] = 0
+        return out

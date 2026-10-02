@@ -29,6 +29,7 @@ from harness import (
     show_mismatches,
     step,
 )
+from received import show_received
 
 NODES = (
     Node(
@@ -66,6 +67,9 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
         not any(m["topic"] == "odom" for m in mismatches),
         "odom: RELIABLE writer to BEST_EFFORT reader is allowed, not reported",
     )
+    await show_received(bus, checks, 3, "nav_planner", "scan", receives=False)
+
+    await show_received(bus, checks, 4, "lidar_driver", "odom", receives=True)
 
 
 if __name__ == "__main__":

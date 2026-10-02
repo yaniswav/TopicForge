@@ -33,6 +33,7 @@ from harness import (
     show_mismatches,
     step,
 )
+from received import show_received
 
 NODES = (
     Node(
@@ -65,6 +66,9 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
         not any(m["topic"] == "imu" for m in mismatches),
         "imu: 10 ms offered for 100 ms requested is compatible, not reported",
     )
+    await show_received(bus, checks, 2, "nav_planner", "scan", receives=False)
+
+    await show_received(bus, checks, 3, "nav_planner", "imu", receives=True)
 
 
 if __name__ == "__main__":
