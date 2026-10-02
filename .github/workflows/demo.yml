@@ -63,7 +63,10 @@ jobs:
       - name: Install TopicForge with the Cyclone binding
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dds]" dust-dds==0.16.0
+          python -m pip install -e ".[dds,dev]" dust-dds==0.16.0
+
+      - name: Cyclone adapter tests against the real binding
+        run: python -m pytest -q tests/test_cyclone_adapter.py tests/test_dds_cross_vendor.py
 
       - name: Build the Rust / Dust participant
         working-directory: scripts/integration/publishers/dust_publisher

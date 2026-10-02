@@ -20,6 +20,16 @@ Start with the concepts, one per example:
 | 03 | [A node crashed](03_a_node_crashed/) | leases, crash detection | `participant_events` |
 | 04 | [A late joiner misses the data](04_late_joiner_misses_data/) | Durability | `detect_qos_mismatches` |
 
+Then real incidents, simple ones, each a few programs:
+
+| # | Example | The incident | What it teaches |
+|---|---|---|---|
+| 10 | [The LIDAR went silent after a driver swap](10_lidar_silent_after_driver_swap/) | new supplier, renamed topic, old driver still running | a short mismatch list is not a healthy bus |
+| 11 | [Who talks to whom?](11_who_talks_to_whom/) | robot assembled from two suppliers | the wiring on the wire, foreign vendors included |
+| 12 | [The safety monitor dropped out](12_safety_monitor_dropout/) | estop loses its only writer | consequences of a crash, limits of lease-based detection |
+| 13 | [The deadline is not offered](13_deadline_not_offered/) | reader requires 100 ms, writer promises nothing | Deadline request/offered |
+| 14 | [A node in a restart loop](14_restart_loop/) | supervisor restarts a crashing node | GUIDs, names, the event timeline |
+
 ## Setup
 
 Python 3.10 to 3.13 (the Cyclone DDS wheels stop at 3.13), from the
@@ -102,6 +112,10 @@ Then ask the question from the example's README.
   are skipped without one and never run in public CI.
 - TopicForge checks Reliability, Durability and Deadline compatibility, and
   flags History as risky. Liveliness, Ownership and Partition are not checked.
+  It pairs readers and writers by topic name, assuming the same type and the
+  default partition.
+- It sees the QoS each side declares, never whether a running program meets
+  it, and it notices a departure only when asked (it polls).
 - TopicForge does not decode the data on your topics yet, so it cannot tell
   you a publish rate or a value.
 

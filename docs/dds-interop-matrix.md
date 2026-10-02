@@ -52,3 +52,7 @@ The claim is about **discovery**: which participants, readers and writers exist,
 - [Source data archived in this repo](projet-file/references/omg-dds-interop-2025-05-08.xlsx) (2025-05-08 snapshot)
 
 TopicForge does not run the OMG interop tests itself; the results above are the OMG Foundation's published artifact.
+
+If you already run the OMG DDS interoperability demo
+(https://github.com/omg-dds/dds-rtps), TopicForge sees its participants like
+any others.

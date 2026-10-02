@@ -179,6 +179,19 @@ def cyclone_extract_topic_name(sample: Any) -> str | None:
     return None
 
 
+def cyclone_extract_type_name(sample: Any) -> str | None:
+    """Pull the data type name off a Cyclone endpoint sample, if it carries one.
+
+    Two endpoints on the same topic only match when their type names agree,
+    so the type name is what tells "incompatible QoS" apart from "never
+    meant to match".
+    """
+    v = getattr(sample, "type_name", None)
+    if isinstance(v, str) and v:
+        return v
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Fast DDS variants
 # ---------------------------------------------------------------------------
