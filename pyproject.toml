@@ -126,6 +126,9 @@ fail_under = 85
 line-length = 100
 target-version = "py310"
 src = ["src", "tests"]
+# ruff >= 0.16 also formats Python blocks inside Markdown. The examples'
+# READMEs align their comments on purpose, so Markdown stays out of it.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 # Note: TC (typing-only imports) rules are intentionally omitted: Pydantic
