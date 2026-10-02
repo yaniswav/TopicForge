@@ -100,6 +100,10 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
   lost for good; a failed read could drop a participant's departure; endpoints
   of a participant that had just left could stay listed as live. The tracker
   and every tool now share one lock, and taken samples are never discarded.
+- The cyclonedds Python binding is not thread-safe when it converts QoS: two
+  threads in `take()` at once corrupted the heap on Windows. Every binding call
+  now goes through one process-wide lock, and tool handlers no longer call the
+  binding at all.
 - If every tracker pass fails, tools no longer wait 3 s each: warm-up is bounded
   once. `health_check` reports failed passes and cache evictions.
 - An unreadable QoS duration is treated as unknown (`QosProfile.unknown_policies`),
