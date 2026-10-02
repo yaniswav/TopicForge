@@ -160,6 +160,8 @@ dump.rdb
 *.db3
 *.mcap
 rosbag2_*/
+# Test fixtures that are meant to be committed
+!tests/fixtures/bags/**/*.db3
 
 
 # -------------------------------------------------------------------------

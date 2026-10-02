@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Literal, Protocol, runtime_checkable
 
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -88,7 +89,14 @@ class MiddlewareAdapter(Protocol):
 
     def get_topic_info(self, topic: str) -> TopicInfo: ...
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]: ...
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]: ...
 
     def analyze_bag(self, path: str) -> BagAnalysis: ...
 

@@ -15,6 +15,7 @@ from topicforge.adapters.common import (
     VendorTag,
     canonicalize_vendor_id,
     format_guid,
+    resolve_user_topic,
     validate_domain_id,
 )
 from topicforge.adapters.common.dds_helpers import _VENDOR_ID_MAP
@@ -202,3 +203,31 @@ def test_vendor_tag_matches_schema_literals() -> None:
         assert annotation is not None
         assert set(get_args(annotation)) == expected, model.__name__
     assert set(_VENDOR_ID_MAP.values()) <= expected
+
+
+# ---- peek_dds_samples name resolution ----------------------------------------
+
+
+def test_resolve_user_topic_accepts_ros_names() -> None:
+    known = {"rt/scan", "rt/odom", None}
+    assert resolve_user_topic("rt/scan", known, 0) == ("rt/scan", None)
+    resolved, note = resolve_user_topic("/scan", known, 0)
+    assert resolved == "rt/scan"
+    assert note is not None and "'/scan'" in note and "'rt/scan'" in note
+    assert resolve_user_topic("scan", known, 0)[0] == "rt/scan"
+
+
+def test_resolve_user_topic_unknown_lists_the_closest_topics() -> None:
+    with pytest.raises(AdapterError) as err:
+        resolve_user_topic("/scna", {"rt/scan", "rt/odom"}, 3)
+    message = str(err.value)
+    assert "not discovered on domain 3" in message and "rt/scan" in message
+
+
+def test_user_topic_result_carries_the_resolution_note() -> None:
+    from topicforge.adapters.common import user_topic_result
+
+    result = user_topic_result("/scan", "live", "filter '/scan' matched the DDS topic 'rt/scan'")
+    assert result.topic == "/scan" and result.count == 0
+    assert result.note is not None
+    assert result.note.startswith("filter '/scan' matched") and "disabled" in result.note

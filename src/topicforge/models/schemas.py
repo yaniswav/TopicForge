@@ -735,7 +735,22 @@ class TopicInfo(BaseModel):
     subscriber_count: int = Field(ge=0, description="Subscribers known to the graph.")
     qos_reliability: str | None = Field(
         default=None,
-        description="QoS reliability policy if known: `reliable` or `best_effort`.",
+        description=(
+            "Reliability announced by the topic's publishers: `reliable`, "
+            "`best_effort`, or `mixed` when publishers disagree. `null` when "
+            "unknown: the topic has no publisher, or the value was not read "
+            "(`list_topics` does not read QoS; `get_topic_info` does)."
+        ),
+    )
+    qos_durability: str | None = Field(
+        default=None,
+        description=(
+            "Durability announced by the topic's publishers: `volatile`, "
+            "`transient_local` (late subscribers receive the last samples; "
+            "typical of latched topics such as `/tf_static`), or `mixed` when "
+            "publishers disagree. `null` when unknown, with the same rules as "
+            "`qos_reliability`."
+        ),
     )
     reader_count: int | None = Field(
         default=None,
@@ -821,7 +836,51 @@ class BagTopicStats(BaseModel):
     frequency_hz: float | None = Field(
         default=None,
         ge=0,
-        description="Average rate (messages / bag duration) when computable, else `null`.",
+        description=(
+            "Average publish rate in Hz. With `frequency_basis` `topic_span` "
+            "it is `(message_count - 1) / (last - first message time)` for "
+            "this topic; with `bag_duration` it is `message_count / bag "
+            "duration`, which understates the rate of a topic that started "
+            "late or stopped early. `null` when fewer than 2 messages or a "
+            "zero time span. Not a periodic rate when `latched` is true "
+            "(a latched topic is published in a burst, then silent) or for "
+            "event-driven topics such as `/parameter_events`."
+        ),
+    )
+    first_timestamp_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Recorded time of the first message on this topic, in "
+            "nanoseconds (bag receive time, normally epoch). `null` when the "
+            "bag was summarized from `ros2 bag info` text only, or the topic "
+            "has no messages."
+        ),
+    )
+    last_timestamp_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description="Recorded time of the last message on this topic; same rules as `first_timestamp_ns`.",
+    )
+    frequency_basis: Literal["topic_span", "bag_duration"] | None = Field(
+        default=None,
+        description=(
+            "How `frequency_hz` was computed: `topic_span` (per-topic first "
+            "and last message times, the accurate one) or `bag_duration` "
+            "(count divided by whole-bag duration, used when per-topic times "
+            "could not be read). `null` when there is no rate."
+        ),
+    )
+    latched: bool | None = Field(
+        default=None,
+        description=(
+            "True when a publisher recorded this topic with transient_local "
+            "durability (late joiners get the last samples, e.g. `/tf_static`, "
+            "`/rosout`): its messages are a burst at start-up, not a periodic "
+            "stream, so `frequency_hz` is not a rate. `false` when every "
+            "recorded publisher was volatile; `null` when the bag carries no "
+            "QoS information (ROS 1 bags report their latching flag)."
+        ),
     )
 
 
@@ -995,6 +1054,16 @@ class HealthReport(BaseModel):
             "`fast` requires a Fast DDS Python binding built from eProsima "
             "sources (not on PyPI); `opendds` and `dust` are permanent stub "
             "adapters that never serve."
+        ),
+    )
+    dds_inactive_reason: str | None = Field(
+        default=None,
+        description=(
+            "Why `dds_backend` is `none` while the ROS 2 CLI serves: the "
+            "backend was not selected (`TOPICFORGE_DDS_BACKEND` unset or "
+            "`mock`), its Python binding is not installed, or the binding "
+            "is installed but the adapter failed to start. `null` when a "
+            "DDS backend is serving or the cause is not known."
         ),
     )
     dds_domain_id: int | None = Field(

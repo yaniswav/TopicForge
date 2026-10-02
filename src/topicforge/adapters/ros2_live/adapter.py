@@ -20,6 +20,12 @@ import subprocess
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.ros2_live.parsers import (
+    parse_topic_endpoint_qos,
+    parse_topic_list_verbose,
+    summarize_publisher_qos,
+)
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
@@ -38,15 +44,12 @@ log = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT_SEC = 8.0
 _SAMPLE_TIMEOUT_SEC = 3.0
 
-_DDS_MODULE_INACTIVE_MSG = (
-    "DDS module is not active in this configuration. The `ros2` CLI "
-    "adapter can introspect the ROS2 graph but does not have direct "
-    "DDS-layer access. Install the Cyclone binding and select it: "
+_DEFAULT_DDS_INACTIVE_REASON = (
+    "install the Cyclone binding and select it: "
     '`pip install "topicforge[dds-cyclone]"` + '
     "`TOPICFORGE_DDS_BACKEND=cyclone`. Fast DDS also works "
     "(`TOPICFORGE_DDS_BACKEND=fast`) but its Python binding is not on "
-    "PyPI and must be built from eProsima's sources. Either backend "
-    "observes participants from any OMG DDS-RTPS vendor, RTI included."
+    "PyPI and must be built from eProsima's sources."
 )
 
 
@@ -55,8 +58,10 @@ class Ros2CliAdapter:
 
     name: AdapterName = "ros2_cli"
 
-    def __init__(self, executable: str = "ros2") -> None:
+    def __init__(self, executable: str = "ros2", *, dds_inactive_reason: str | None = None) -> None:
         self._exe = executable
+        # Why no DDS backend serves next to this adapter; set by the factory.
+        self.dds_inactive_reason = dds_inactive_reason
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -65,27 +70,34 @@ class Ros2CliAdapter:
     def is_available(self) -> bool:
         return shutil.which(self._exe) is not None
 
-    # The CLI cannot reach the DDS layer: these methods raise with a
-    # remediation message.
+    # The CLI cannot reach the DDS layer: these methods raise with the reason
+    # no DDS backend is active.
+
+    def _dds_inactive_error(self) -> AdapterError:
+        reason = self.dds_inactive_reason or _DEFAULT_DDS_INACTIVE_REASON
+        return AdapterError(
+            f"DDS module is not active: {reason} The `ros2` CLI adapter can "
+            "introspect the ROS2 graph but has no direct DDS-layer access."
+        )
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
-        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+        raise self._dds_inactive_error()
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
-        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+        raise self._dds_inactive_error()
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
-        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+        raise self._dds_inactive_error()
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300
     ) -> list[ParticipantEvent]:
-        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+        raise self._dds_inactive_error()
 
     def topic_metrics(
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
-        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+        raise self._dds_inactive_error()
 
     def list_endpoints(
         self,
@@ -94,7 +106,7 @@ class Ros2CliAdapter:
         include_observer: bool = False,
         include_departed: bool = False,
     ) -> EndpointListing:
-        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+        raise self._dds_inactive_error()
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         """Read decoded samples from a bag through `BagService` (the `rosbags` library).
@@ -107,10 +119,19 @@ class Ros2CliAdapter:
         return BagService().peek_samples(path, topic, count)
 
     def list_topics(self) -> list[TopicInfo]:
+        """Topics with types and publisher/subscriber counts; QoS is not read here.
+
+        Counts come from one `ros2 topic list -v` call. If that output cannot
+        be read, each topic is queried with `ros2 topic info` instead.
+        """
         out = self._run([self._exe, "topic", "list", "-t"])
+        graph_counts = self._graph_counts()
         topics: list[TopicInfo] = []
         for name, msg_type in parse_topic_list(out):
-            pub_count, sub_count = self._safe_counts(name)
+            if graph_counts is not None:
+                pub_count, sub_count = graph_counts.get(name, (0, 0))
+            else:
+                pub_count, sub_count = self._safe_counts(name)
             topics.append(
                 TopicInfo(
                     name=name,
@@ -129,7 +150,14 @@ class Ros2CliAdapter:
             raise AdapterError(f"Topic not found or empty info: {topic!r}")
         return info
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]:
         # `ros2 topic echo` blocks indefinitely, so use --once with a timeout.
         # `--csv` flattens the message in declaration order: for a message
         # starting with a `Header` the first two columns are the stamp, which
@@ -142,9 +170,10 @@ class Ros2CliAdapter:
             return []
 
         info = self.get_topic_info(topic)
+        echo_args = _echo_array_args(max_array_length, arrays_summary_only)
         try:
             out = self._run(
-                [self._exe, "topic", "echo", "--csv", "--once", topic],
+                [self._exe, "topic", "echo", "--csv", "--once", *echo_args, topic],
                 timeout=_SAMPLE_TIMEOUT_SEC,
             )
         except AdapterError as exc:
@@ -168,7 +197,27 @@ class Ros2CliAdapter:
             raise AdapterError(f"Bag path does not exist: {path}")
 
         out = self._run([self._exe, "bag", "info", str(bag_path)])
-        return parse_bag_info(out, fallback_path=str(bag_path), mode_effective=self.effective_mode)
+        analysis = parse_bag_info(
+            out, fallback_path=str(bag_path), mode_effective=self.effective_mode
+        )
+        # `ros2 bag info` has no per-topic times: add them when the bag is readable here.
+        # Imported here because `services` imports this package.
+        from topicforge.services.bag_service import read_topic_spans
+        from topicforge.services.bag_stats import overlay_spans
+
+        spans = read_topic_spans(bag_path)
+        if spans:
+            topics = overlay_spans(analysis.topics, spans)
+            analysis = analysis.model_copy(update={"topics": topics})
+        return analysis
+
+    def _graph_counts(self) -> dict[str, tuple[int, int]] | None:
+        """`{topic: (pubs, subs)}` from `ros2 topic list -v`, or `None` when unavailable."""
+        try:
+            text = self._run([self._exe, "topic", "list", "-v"])
+        except AdapterError:
+            return None
+        return parse_topic_list_verbose(text)
 
     def _safe_counts(self, topic: str) -> tuple[int, int]:
         """`(pub_count, sub_count)` for a topic, `(0, 0)` if the lookup fails."""
@@ -191,6 +240,8 @@ class Ros2CliAdapter:
                 full_cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 check=False,
             )
@@ -211,6 +262,22 @@ class Ros2CliAdapter:
                 f"`{' '.join(cmd)}` failed (exit {result.returncode}): {stderr_tail or 'no stderr'}"
             )
         return result.stdout
+
+
+def _echo_array_args(max_array_length: int | None, arrays_summary_only: bool) -> list[str]:
+    """`ros2 topic echo` flags for array handling.
+
+    `None` means no truncation (`--full-length`); the CLI default of
+    `DEFAULT_MAX_ARRAY_LENGTH` is left implicit.
+    """
+    args: list[str] = []
+    if max_array_length is None:
+        args.append("--full-length")
+    elif max_array_length != DEFAULT_MAX_ARRAY_LENGTH:
+        args += ["--truncate-length", str(max_array_length)]
+    if arrays_summary_only:
+        args.append("--no-arr")
+    return args
 
 
 # Parsers
@@ -258,7 +325,8 @@ def parse_topic_info(
 
     Returns None when no message type is found (the adapter reports the topic
     as not found). `fallback_name` and `mode_effective` come from the caller,
-    not from the output.
+    not from the output. `qos_reliability` and `qos_durability` summarize the
+    publishers' QoS blocks (see `summarize_publisher_qos`).
     """
     msg_type: str | None = None
     pub = sub = 0
@@ -271,11 +339,14 @@ def parse_topic_info(
             sub = int(m.group(1))
     if msg_type is None:
         return None
+    reliability, durability = summarize_publisher_qos(parse_topic_endpoint_qos(stdout))
     return TopicInfo(
         name=fallback_name,
         message_type=msg_type,
         publisher_count=pub,
         subscriber_count=sub,
+        qos_reliability=reliability,
+        qos_durability=durability,
         mode_effective=mode_effective,
     )
 
@@ -309,6 +380,7 @@ def parse_echo_yaml(stdout: str) -> dict[str, object]:
 _TS_SEC_MIN = 946_684_800  # 2000-01-01 UTC
 _TS_SEC_MAX = 4_102_444_800  # 2100-01-01 UTC
 _TS_NSEC_MAX = 1_000_000_000
+_CSV_TRUNCATION_MARK = "..."
 
 
 def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
@@ -319,6 +391,10 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
     the first two columns fall within the bounds above they become
     `timestamp_ns` and are dropped from the payload, which is re-indexed from
     `col_0`. Otherwise `timestamp_ns` is 0 (see `MessageSample.timestamp_ns`).
+
+    A `...` cell is the CLI's marker for an array cut at `--truncate-length`.
+    It is not a data column: it is dropped and the index of the column before
+    it is listed under `_truncated_after_columns`.
 
     Blank lines, `#` comments and rows with fewer than two columns are
     skipped. Example (`sensor_msgs/Imu`):
@@ -346,7 +422,16 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
             ts_ns = sec * 1_000_000_000 + nsec
             value_parts = parts[2:]
 
-        payload: dict[str, object] = {f"col_{i}": value for i, value in enumerate(value_parts)}
+        payload: dict[str, object] = {}
+        truncated_after: list[int] = []
+        for value in value_parts:
+            if value == _CSV_TRUNCATION_MARK:
+                if payload:
+                    truncated_after.append(len(payload) - 1)
+                continue
+            payload[f"col_{len(payload)}"] = value
+        if truncated_after:
+            payload["_truncated_after_columns"] = truncated_after
         payload["_raw_text"] = line
         rows.append((ts_ns, payload))
     return rows
@@ -377,6 +462,7 @@ def parse_bag_info(
                     message_type=msg_type,
                     message_count=count,
                     frequency_hz=freq,
+                    frequency_basis="bag_duration" if freq is not None else None,
                 )
             )
 

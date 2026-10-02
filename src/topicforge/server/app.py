@@ -29,7 +29,7 @@ def build_app(
     """
     settings = settings or load_settings()
     adapter = build_adapter(settings)
-    inspector = Inspector(adapter)
+    inspector = Inspector(adapter, max_sample_bytes=settings.max_sample_bytes)
     health = HealthService(settings, adapter)
 
     telemetry = telemetry or build_telemetry_client(

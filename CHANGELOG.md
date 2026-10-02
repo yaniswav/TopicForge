@@ -7,11 +7,33 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [0.5.6] - Unreleased
 
-Fixes from an external test of 0.5.5 with the Cyclone backend on a ROS 2 Humble
-bus of Fast DDS participants, reported by the OmniSim team.
+Fixes from a live run of 0.5.3 and 0.5.5 against OmniSim's simulated
+Clearpath Husky (ROS 2 Humble, Fast DDS, Cyclone backend for the DDS tools),
+reported with ground truth by the OmniSim team.
+
+### Added
+
+- `sample_messages` takes `max_array_length` (1..65536, default 128, null for no
+  cut) and `arrays_summary_only`. A cut is listed under `_truncated_after_columns`
+  in the sample and in `note`.
+- Size caps on returned samples: 1 MiB per message and 4 MiB per call
+  (`TOPICFORGE_MAX_SAMPLE_BYTES` sets the per-message cap). Over-cap messages are
+  dropped and `note` says so. `peek_bag_samples` is capped the same way, and its
+  arrays are cut at 4096 elements.
+- `BagTopicStats` gains `first_timestamp_ns`, `last_timestamp_ns`,
+  `frequency_basis` (`topic_span` or `bag_duration`) and `latched`.
+- `TopicInfo.qos_durability`; `qos_reliability` and `qos_durability` are filled
+  by `get_topic_info` from the publishers' QoS (`mixed` when they disagree).
+- `HealthReport.dds_inactive_reason` says why `dds_backend` is `none`.
+- A real Humble rosbag2 bag from the OmniSim team as a test fixture
+  (`tests/fixtures/bags/omnisim_humble/`).
 
 ### Changed
 
+- `list_topics` (live) uses one `ros2 topic list -v` call for publisher and
+  subscriber counts instead of one `ros2 topic info` per topic, falling back to
+  the per-topic calls if the output is not recognized. It leaves QoS null.
+- `rosbags>=0.10` is required (the global type store was removed in 0.10.0).
 - `QosProfile.history` is now optional, and a new `history_note` explains why it
   is missing. DDS discovery does not carry History (the builtin endpoint data has
   no such member), so TopicForge reports it only for its own endpoints and for
@@ -27,6 +49,25 @@ bus of Fast DDS participants, reported by the OmniSim team.
 
 ### Fixed
 
+- `peek_bag_samples` failed on every Humble `.db3` bag with "Bag contains no
+  type definitions". The reader now gets the type definitions of the distro the
+  bag records, or Humble, and `note` says which. `LaserScan.ranges` and other
+  numeric arrays now come back as lists, not a numpy repr string.
+- `analyze_bag` rates were count / whole-bag duration, 0.1 to 0.7 percent off on
+  periodic topics and meaningless on latched ones (`/tf_static` showed 0.06 Hz,
+  `/rosout` 0.37 Hz). They are now `(n - 1) / (last - first)` per topic, read
+  from the bag when it is readable locally, and latched topics are flagged.
+- `get_topic_info` returned `qos_reliability: null` on every topic although the
+  CLI prints Reliability and Durability per endpoint.
+- `peek_dds_samples('/scan')` reported the topic as not discovered while
+  `rt/scan` and `scan` worked; it now resolves the name like the other DDS tools
+  and says which topic matched.
+- The "DDS module is not active" error said to install the Cyclone binding even
+  when it was installed. It now states the actual cause: backend not selected,
+  binding missing, or adapter failed to start. README wording aligned.
+- CSV `...` truncation cells from `ros2 topic echo` no longer count as data
+  columns.
+- `ros2` output is decoded as UTF-8 on Windows instead of cp1252.
 - `detect_qos_mismatches` no longer calls service, action, `rosout`,
   `parameter_events` or `ros_discovery_info` topics typos of each other (for
   example `get_parametersRequest` vs `set_parametersRequest`), and no longer

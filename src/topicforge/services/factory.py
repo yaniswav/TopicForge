@@ -17,6 +17,7 @@ from topicforge.adapters.composite import CompositeAdapter
 from topicforge.adapters.ros2_live import Ros2CliAdapter
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
+from topicforge.config.settings import _DDS_BACKEND_MODULES, _module_is_importable
 
 log = logging.getLogger(__name__)
 
@@ -30,8 +31,10 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
     if settings.effective_mode == "mock" and settings.effective_dds_backend == "mock":
         return MockAdapter()
 
-    ros_adapter = _try_build_ros2_cli(settings)
     dds_adapter = _try_build_dds(settings)
+    ros_adapter = _try_build_ros2_cli(
+        settings, dds_inactive_reason=None if dds_adapter else _dds_inactive_reason(settings)
+    )
 
     if ros_adapter is not None and dds_adapter is not None:
         log.info(
@@ -59,12 +62,61 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
     return MockAdapter()
 
 
-def _try_build_ros2_cli(settings: Settings) -> MiddlewareAdapter | None:
-    """Return a usable `Ros2CliAdapter` or `None` when the CLI is missing."""
-    cli_adapter = Ros2CliAdapter(executable=settings.ros2_executable)
+def _try_build_ros2_cli(
+    settings: Settings, *, dds_inactive_reason: str | None = None
+) -> MiddlewareAdapter | None:
+    """Return a usable `Ros2CliAdapter` or `None` when the CLI is missing.
+
+    `dds_inactive_reason` is what the adapter tells a client who calls a DDS
+    tool while no DDS backend serves.
+    """
+    cli_adapter = Ros2CliAdapter(
+        executable=settings.ros2_executable, dds_inactive_reason=dds_inactive_reason
+    )
     if not cli_adapter.is_available():
         return None
     return cli_adapter
+
+
+_CYCLONE_HINT = (
+    'Install it with `pip install "topicforge[dds-cyclone]"` and set '
+    "`TOPICFORGE_DDS_BACKEND=cyclone`."
+)
+
+
+def _dds_inactive_reason(settings: Settings) -> str:
+    """Why no DDS backend is serving, for the three distinct causes.
+
+    The backend was not selected, its binding is not installed, or the
+    binding is installed but the adapter failed to load or start (the server
+    log has the cause).
+    """
+    backend = settings.effective_dds_backend
+    if backend == "mock":
+        if settings.dds_backend == "auto":
+            return (
+                "`TOPICFORGE_DDS_BACKEND=auto` found no DDS binding (`fastdds` or "
+                f"`cyclonedds`) installed. {_CYCLONE_HINT}"
+            )
+        if _module_is_importable(_DDS_BACKEND_MODULES["cyclone"]):
+            return (
+                "no DDS backend is selected: `TOPICFORGE_DDS_BACKEND` is unset or `mock`. "
+                "The `cyclonedds` binding is installed; set `TOPICFORGE_DDS_BACKEND=cyclone` "
+                "and restart to enable the DDS tools."
+            )
+        return f"no DDS backend is selected and no DDS binding is installed. {_CYCLONE_HINT}"
+    module = _DDS_BACKEND_MODULES.get(backend)
+    if backend in ("opendds", "dust"):
+        return f"`TOPICFORGE_DDS_BACKEND={backend}` is a stub that never serves; use `cyclone`."
+    if module is not None and not _module_is_importable(module):
+        return (
+            f"`TOPICFORGE_DDS_BACKEND={backend}` is set but its `{module}` Python binding is "
+            f"not installed. {_CYCLONE_HINT if backend == 'cyclone' else ''}".rstrip()
+        )
+    return (
+        f"`TOPICFORGE_DDS_BACKEND={backend}` is set and its binding is installed, but the "
+        "DDS adapter failed to load or start; the server log has the cause."
+    )
 
 
 def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:

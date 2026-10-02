@@ -80,7 +80,7 @@ so a self-referential object graph cannot raise `RecursionError`."""
 def decode_field_value(value: Any, *, _depth: int = 0) -> object:
     """Decode one dynamic-type field value into JSON-serializable data.
 
-    Primitives pass through; lists, tuples, dicts and struct-like objects
+    Primitives pass through; lists, tuples, numpy arrays, dicts and struct-like objects
     recurse; anything else (bytes, opaque classes) becomes its `repr()`.
     `_depth` is internal.
     """
@@ -90,6 +90,9 @@ def decode_field_value(value: Any, *, _depth: int = 0) -> object:
         return value
     if isinstance(value, (list, tuple)):
         return [decode_field_value(v, _depth=_depth + 1) for v in value]
+    # Array-valued fields from `rosbags` are numpy arrays; `tolist` gives plain Python values.
+    if callable(getattr(value, "tolist", None)) and hasattr(value, "dtype"):
+        return decode_field_value(value.tolist(), _depth=_depth + 1)
     if isinstance(value, dict):
         return {str(k): decode_field_value(v, _depth=_depth + 1) for k, v in value.items()}
     # Nested struct: recurse.

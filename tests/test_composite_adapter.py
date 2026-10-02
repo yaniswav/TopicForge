@@ -70,8 +70,8 @@ class _StubRosAdapter:
             mode_effective=self._mode,
         )
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
-        self.calls.append(("sample_messages", (topic, count)))
+    def sample_messages(self, topic: str, count: int, **_options: object) -> list[MessageSample]:
+        self.calls.append(("sample_messages", (topic, count, tuple(sorted(_options.items())))))
         return []
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -147,7 +147,7 @@ class _StubDdsAdapter:
         self.calls.append(("get_topic_info", (topic,)))
         raise AdapterError("DDS adapter should not receive ROS calls")
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(self, topic: str, count: int, **_options: object) -> list[MessageSample]:
         self.calls.append(("sample_messages", (topic, count)))
         raise AdapterError("DDS adapter should not receive ROS calls")
 
@@ -260,7 +260,10 @@ def test_method_arguments_propagate_unchanged() -> None:
     composite.peek_dds_samples("/dds/topic", 12)
     composite.list_participants(domain_id=99)
 
-    assert ros.calls[-1] == ("sample_messages", ("/cmd_vel", 7))
+    assert ros.calls[-1] == (
+        "sample_messages",
+        ("/cmd_vel", 7, (("arrays_summary_only", False), ("max_array_length", 128))),
+    )
     assert dds.calls[0] == ("peek_dds_samples", ("/dds/topic", 12))
     assert dds.calls[1] == ("list_participants", (99,))
 
