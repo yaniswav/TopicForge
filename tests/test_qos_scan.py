@@ -214,14 +214,12 @@ def test_matched_excludes_incompatible_and_separated_but_keeps_risky() -> None:
     assert len(risky.matched) == 1 and risky.reports[0].severity == "risky"
 
 
-def test_typo_hint_compares_orphan_against_non_orphan_topics() -> None:
+def test_orphan_next_to_paired_topic_is_a_plain_orphan_hint() -> None:
     eps = [_ep("reader", "battery"), _ep("writer", "battery"), _ep("reader", "batery")]
     scan = scan_endpoints(eps)
-    assert any(
-        "'batery'" in h and "readers but no writer" in h and "'battery'" in h and "1 edit" in h
-        for h in scan.hints
-    )
+    assert not any("typo" in h for h in scan.hints)
     assert len([h for h in scan.hints if "batery" in h]) == 1
+    assert any("'batery'" in h and "no pair to compare" in h for h in scan.hints)
 
 
 def test_path_suffix_hint_for_namespaced_orphan() -> None:

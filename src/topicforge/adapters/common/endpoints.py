@@ -22,7 +22,7 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_vendor_id,
     vendor_id_from_guid,
 )
-from topicforge.adapters.common.qos_normalize import cyclone_qos_to_profile
+from topicforge.adapters.common.qos_normalize import apply_history_policy, cyclone_qos_to_profile
 from topicforge.adapters.common.topic_filter import no_match_note, resolve_topic_filter
 from topicforge.models import (
     DepartedEndpoint,
@@ -98,19 +98,20 @@ def endpoint_record(
     raises on an odd sample: missing pieces become `None`.
     """
     participant_guid = format_participant_key(getattr(sample, "participant_key", None))
+    vendor = (vendors_by_guid or {}).get(participant_guid) or _vendor_from_participant_key(sample)
+    is_observer = observer_guid is not None and participant_guid == observer_guid
     return {
         "guid": format_guid(cyclone_extract_guid(sample)),
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": participants_by_guid.get(participant_guid),
-        "participant_vendor": (vendors_by_guid or {}).get(participant_guid)
-        or _vendor_from_participant_key(sample),
+        "participant_vendor": vendor,
         "topic": cyclone_extract_topic_name(sample) or "unknown",
         "type_name": cyclone_extract_type_name(sample),
         "type_id": type_id_text(sample),
-        "qos": qos_to_profile(sample),
+        "qos": apply_history_policy(qos_to_profile(sample), vendor=vendor, is_observer=is_observer),
         "announced_ns": announced_ns_of(sample),
-        "is_observer": observer_guid is not None and participant_guid == observer_guid,
+        "is_observer": is_observer,
     }
 
 

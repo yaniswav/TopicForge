@@ -46,18 +46,27 @@ class QosProfile(BaseModel):
             "`TRANSIENT_LOCAL` reader cannot match a `VOLATILE` writer."
         )
     )
-    history: Literal["KEEP_LAST", "KEEP_ALL"] = Field(
+    history: Literal["KEEP_LAST", "KEEP_ALL"] | None = Field(
+        default=None,
         description=(
             "DDS History QoS. `KEEP_LAST` keeps a bounded ring buffer "
             "of size `history_depth`; `KEEP_ALL` keeps every sample "
             "(memory permitting). Mixed `KEEP_ALL` reader with "
-            "`KEEP_LAST` writer is risky but not strictly incompatible."
-        )
+            "`KEEP_LAST` writer is risky but not strictly incompatible. "
+            "`None` when it is not known: DDS discovery does not carry History, "
+            "so it is reported only for TopicForge's own endpoints and for "
+            "Cyclone DDS peers that set something other than the default "
+            "(see `history_note`)."
+        ),
     )
     history_depth: int | None = Field(
         default=None,
         ge=0,
-        description="Depth for `KEEP_LAST`. `None` when policy is `KEEP_ALL`.",
+        description="Depth for `KEEP_LAST`. `None` for `KEEP_ALL` or when `history` is `None`.",
+    )
+    history_note: str | None = Field(
+        default=None,
+        description="Set when `history` was left out because discovery did not announce it.",
     )
     deadline_ns: int | None = Field(
         default=None,
@@ -1136,8 +1145,8 @@ class EndpointInfo(BaseModel):
         description=(
             "QoS the endpoint announced. Durations (`deadline_ns`, "
             "`liveliness_lease_ns`, `latency_budget_ns`) of `None` mean "
-            "infinite or not set. `None` when the essential policies "
-            "(reliability, durability, history) could not be resolved."
+            "infinite or not set. `None` when reliability or durability "
+            "could not be resolved."
         ),
     )
     announced_ns: int | None = Field(

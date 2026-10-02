@@ -260,6 +260,13 @@ def _optional_findings(
     return found, unchecked
 
 
+def _history_verdict_unknown(reader: QosProfile, writer: QosProfile) -> bool:
+    """True when a missing History value stops the KEEP_ALL-vs-KEEP_LAST check from deciding."""
+    if reader.history is not None and writer.history is not None:
+        return False
+    return reader.history in (None, "KEEP_ALL") and writer.history in (None, "KEEP_LAST")
+
+
 def analyze_pair(reader: QosProfile, writer: QosProfile) -> PairAnalysis:
     """Compare the RxO policies of one pair that already shares a partition and a type.
 
@@ -272,7 +279,9 @@ def analyze_pair(reader: QosProfile, writer: QosProfile) -> PairAnalysis:
     incompatible = _core_findings(reader, writer) + optional
     incompatible.sort(key=lambda f: RXO_POLICIES.index(f.policy))
     risky: list[PolicyMismatch] = []
-    if reader.history == "KEEP_ALL" and writer.history == "KEEP_LAST":
+    if _history_verdict_unknown(reader, writer):
+        unchecked.append("History")
+    elif reader.history == "KEEP_ALL" and writer.history == "KEEP_LAST":
         depth = f" depth {writer.history_depth}" if writer.history_depth is not None else ""
         risky.append(
             _finding(

@@ -180,6 +180,30 @@ def _is_builtin(topic: str) -> bool:
     return topic.startswith("DCPS")
 
 
+# ROS 2 name mangling prefixes other than `rt/` (plain topics): service request
+# and reply, legacy service/parameter/action prefixes.
+_NON_TOPIC_PREFIXES = ("rq/", "rr/", "rs/", "rp/", "ra/")
+_INFRASTRUCTURE_TOPICS = frozenset({"rosout", "parameter_events", "ros_discovery_info"})
+
+
+def _is_typo_candidate(topic: str) -> bool:
+    """True for plain topics (`rt/...` or a bare DDS name) worth comparing for typos.
+
+    Services are request/reply pairs (a server without a client is normal, and
+    `get_` / `set_` parameter services differ by one edit by design), actions
+    carry `_action/` segments, and the logging, parameter-event and discovery
+    topics are shared infrastructure. None of them is a user topic name that a
+    typo could break.
+    """
+    if topic.startswith(_NON_TOPIC_PREFIXES):
+        return False
+    bare = topic[3:] if topic.startswith("rt/") else topic
+    bare = bare.strip("/")
+    if bare in _INFRASTRUCTURE_TOPICS:
+        return False
+    return "_action" not in bare.split("/")
+
+
 def _orphan_side(endpoints: list[EndpointInfo]) -> Literal["writer", "reader"] | None:
     """The only role present on a topic, `None` when it has both (not an orphan)."""
     roles = {e.role for e in endpoints}
@@ -205,9 +229,10 @@ def _orphan_hints(
     whose lengths differ by more than the distance are skipped, the edit
     distance gives up early, and at most `_MAX_COMPARED_ORPHANS` orphans are compared.
     """
-    sides = {t: _orphan_side(e) for t, e in by_topic.items()}
+    candidates = {t: e for t, e in by_topic.items() if _is_typo_candidate(t)}
+    sides = {t: _orphan_side(e) for t, e in candidates.items()}
     orphans = sorted(t for t, side in sides.items() if side)
-    topics = sorted(by_topic)
+    topics = sorted(candidates)
     near: list[str] = []
     explained: set[str] = set()
     seen: set[frozenset[str]] = set()
@@ -230,9 +255,10 @@ def _orphan_hints(
                 over_budget = True
                 distance = _MAX_NEAR_DISTANCE + 1
             if distance <= _MAX_NEAR_DISTANCE:
-                seen.add(key)
-                explained.update(key if both_orphans else (orphan,))
-                near.append(_typo_hint(orphan, other, sides, distance))
+                if both_orphans and sides[other] != sides[orphan]:
+                    seen.add(key)
+                    explained.update(key)
+                    near.append(_typo_hint(orphan, other, sides, distance))
             elif _is_path_suffix(orphan, other) or _is_path_suffix(other, orphan):
                 seen.add(key)
                 explained.update(key if both_orphans else (orphan,))
@@ -262,16 +288,11 @@ def _orphan_hints(
 
 
 def _typo_hint(orphan: str, other: str, sides: dict[str, str | None], distance: int) -> str:
-    other_side = sides[other]
-    if other_side is not None and other_side != sides[orphan]:
-        wt, rt = (orphan, other) if sides[orphan] == "writer" else (other, orphan)
-        return (
-            f"Topic {wt!r} has a writer but no reader, and {rt!r} has a reader but "
-            f"no writer: the names differ by {distance} edit(s). Likely a topic name typo."
-        )
+    """Hint for a writer-only name next to a reader-only name."""
+    wt, rt = (orphan, other) if sides[orphan] == "writer" else (other, orphan)
     return (
-        f"Topic {orphan!r} {_side_text(sides[orphan] or 'writer')}; {other!r} differs by "
-        f"{distance} edit{'s' if distance != 1 else ''}: likely a typo."
+        f"Topic {wt!r} has a writer but no reader, and {rt!r} has a reader but "
+        f"no writer: the names differ by {distance} edit(s). Likely a topic name typo."
     )
 
 
