@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -61,8 +62,20 @@ class CompositeAdapter:
     def get_topic_info(self, topic: str) -> TopicInfo:
         return self._ros.get_topic_info(topic)
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
-        return self._ros.sample_messages(topic, count)
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]:
+        return self._ros.sample_messages(
+            topic,
+            count,
+            max_array_length=max_array_length,
+            arrays_summary_only=arrays_summary_only,
+        )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._ros.analyze_bag(path)

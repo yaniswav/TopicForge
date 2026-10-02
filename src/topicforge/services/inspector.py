@@ -6,7 +6,12 @@ import re
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
-from topicforge.constants import MAX_SAMPLE_COUNT
+from topicforge.constants import (
+    DEFAULT_MAX_ARRAY_LENGTH,
+    DEFAULT_MAX_SAMPLE_BYTES,
+    MAX_ARRAY_LENGTH,
+    MAX_SAMPLE_COUNT,
+)
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -17,6 +22,7 @@ from topicforge.models import (
     TopicInfo,
     TopicMetrics,
 )
+from topicforge.services.sample_budget import apply_sample_budget
 
 DEFAULT_SAMPLE_COUNT = 5
 DEFAULT_LOOKBACK_SECONDS = 300
@@ -48,8 +54,14 @@ class Inspector:
     when it only passes the call on.
     """
 
-    def __init__(self, adapter: MiddlewareAdapter) -> None:
+    def __init__(
+        self,
+        adapter: MiddlewareAdapter,
+        *,
+        max_sample_bytes: int = DEFAULT_MAX_SAMPLE_BYTES,
+    ) -> None:
         self._adapter = adapter
+        self._max_sample_bytes = max_sample_bytes
 
     @property
     def backend_name(self) -> AdapterName:
@@ -63,17 +75,38 @@ class Inspector:
         _validate_topic_name(topic)
         return self._adapter.get_topic_info(topic)
 
-    def sample_messages(self, topic: str, count: int | None = None) -> SampleResult:
+    def sample_messages(
+        self,
+        topic: str,
+        count: int | None = None,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> SampleResult:
         _validate_topic_name(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
-        samples = self._adapter.sample_messages(topic, min(n, MAX_SAMPLE_COUNT))
+        _validate_max_array_length(max_array_length)
+        samples = self._adapter.sample_messages(
+            topic,
+            min(n, MAX_SAMPLE_COUNT),
+            max_array_length=max_array_length,
+            arrays_summary_only=arrays_summary_only,
+        )
+        samples, notes = apply_sample_budget(samples, self._max_sample_bytes)
+        if any("_truncated_after_columns" in s.payload for s in samples):
+            notes.append(
+                f"Arrays longer than {max_array_length} elements were cut; the cut is "
+                "listed in `_truncated_after_columns`. Pass `max_array_length` null for "
+                "full arrays, or `arrays_summary_only` true to drop array contents."
+            )
         return SampleResult(
             topic=topic,
             count=len(samples),
             samples=samples,
             mode_effective=self._adapter.effective_mode,
+            note=" ".join(notes) or None,
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -149,7 +182,21 @@ class Inspector:
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
-        return self._adapter.peek_bag_samples(clean_path, topic, min(n, MAX_SAMPLE_COUNT))
+        result = self._adapter.peek_bag_samples(clean_path, topic, min(n, MAX_SAMPLE_COUNT))
+        samples, notes = apply_sample_budget(result.samples, self._max_sample_bytes)
+        if not notes:
+            return result
+        note = " ".join([n for n in [result.note, *notes] if n])
+        return result.model_copy(update={"samples": samples, "count": len(samples), "note": note})
+
+
+def _validate_max_array_length(value: int | None) -> None:
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise AdapterError(f"max_array_length must be an int or null, got {type(value).__name__}")
+    if value < 1 or value > MAX_ARRAY_LENGTH:
+        raise AdapterError(f"max_array_length must be in 1..{MAX_ARRAY_LENGTH}, got {value}")
 
 
 def _validate_dds_domain(domain_id: int) -> None:

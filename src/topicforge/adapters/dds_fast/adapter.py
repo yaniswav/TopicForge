@@ -30,6 +30,7 @@ from topicforge.adapters.common import (
     detect_mismatches_across_endpoints,
     format_guid,
     metrics_status,
+    resolve_user_topic,
     user_topic_result,
     validate_domain_id,
 )
@@ -51,6 +52,7 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     is_removal as _is_removal,
 )
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -232,7 +234,14 @@ class FastDdsAdapter:
     def get_topic_info(self, topic: str) -> TopicInfo:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -332,34 +341,27 @@ class FastDdsAdapter:
         `_try_dynamic_decode_fast` always returns `None`. The placeholder is
         never recorded into `MetricsBuffer`.
         """
-        if not self._is_topic_on_bus(topic):
-            raise AdapterError(
-                f"DDS topic {topic!r} not discovered on domain {self._domain_id}. "
-                "Confirm a publisher is alive and reachable, or call "
-                "list_participants / detect_qos_mismatches first to inspect "
-                "current bus state."
-            )
+        resolved, resolution_note = resolve_user_topic(
+            topic, self._discovered_topic_names(), self._domain_id
+        )
 
-        decoded = _try_dynamic_decode_fast(topic, count)
+        decoded = _try_dynamic_decode_fast(resolved, count)
         if decoded is not None:
             return SampleResult(
                 topic=topic,
                 count=len(decoded),
                 samples=decoded,
                 mode_effective="live",
+                note=resolution_note,
             )
 
         # Nothing was received, so nothing is recorded into the metrics buffer.
-        return user_topic_result(topic, "live")
+        return user_topic_result(topic, "live", resolution_note)
 
-    def _is_topic_on_bus(self, topic: str) -> bool:
-        """True iff `topic` appears in any subscription or publication."""
-        for sample in (
-            self._listener.snapshot_subscriptions() + self._listener.snapshot_publications()
-        ):
-            if _extract_topic_name(sample) == topic:
-                return True
-        return False
+    def _discovered_topic_names(self) -> set[str | None]:
+        """Topic names of every discovered reader and writer."""
+        samples = self._listener.snapshot_subscriptions() + self._listener.snapshot_publications()
+        return {_extract_topic_name(sample) for sample in samples}
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300

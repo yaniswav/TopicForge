@@ -12,6 +12,8 @@ import shutil
 from dataclasses import dataclass
 from typing import Literal
 
+from topicforge.constants import DEFAULT_MAX_SAMPLE_BYTES
+
 Mode = Literal["mock", "live", "auto"]
 ResolvedMode = Literal["mock", "live"]
 
@@ -37,6 +39,8 @@ _TELEMETRY_OFF_VALUES: frozenset[str] = frozenset({"", "off", "0", "false", "no"
 
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
+_MAX_SAMPLE_BYTES_MIN = 1024
+_MAX_SAMPLE_BYTES_MAX = 64 * 1024 * 1024
 
 # Vendor -> Python module, shared by `auto` resolution and `HealthService`.
 _DDS_BACKEND_MODULES: dict[str, str] = {
@@ -63,6 +67,7 @@ class Settings:
     telemetry_enabled: bool
     dds_backend: DdsBackend = "mock"
     dds_domain_id: int = 0
+    max_sample_bytes: int = DEFAULT_MAX_SAMPLE_BYTES
 
     @property
     def effective_mode(self) -> ResolvedMode:
@@ -163,6 +168,21 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
             f"expected {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}"
         )
 
+    raw_max_bytes = src.get("TOPICFORGE_MAX_SAMPLE_BYTES", "").strip()
+    max_sample_bytes = DEFAULT_MAX_SAMPLE_BYTES
+    if raw_max_bytes:
+        try:
+            max_sample_bytes = int(raw_max_bytes)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid TOPICFORGE_MAX_SAMPLE_BYTES={raw_max_bytes!r}; expected integer"
+            ) from exc
+        if not _MAX_SAMPLE_BYTES_MIN <= max_sample_bytes <= _MAX_SAMPLE_BYTES_MAX:
+            raise ValueError(
+                f"Invalid TOPICFORGE_MAX_SAMPLE_BYTES={max_sample_bytes}; "
+                f"expected {_MAX_SAMPLE_BYTES_MIN}..{_MAX_SAMPLE_BYTES_MAX}"
+            )
+
     return Settings(
         mode=raw_mode,
         log_level=raw_log,
@@ -170,4 +190,5 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
         telemetry_enabled=telemetry_enabled,
         dds_backend=raw_dds_backend,
         dds_domain_id=dds_domain,
+        max_sample_bytes=max_sample_bytes,
     )

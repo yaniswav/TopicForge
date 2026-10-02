@@ -54,6 +54,7 @@ from topicforge.adapters.common import (
     listing_from_samples,
     metrics_status,
     participant_names,
+    resolve_user_topic,
     scan_endpoints,
     take_bounded,
     user_topic_result,
@@ -62,6 +63,7 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
 )
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -325,7 +327,14 @@ class CycloneDdsAdapter:
     def get_topic_info(self, topic: str) -> TopicInfo:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -466,21 +475,17 @@ class CycloneDdsAdapter:
         is unreachable and the result carries a note that decoding is
         disabled. Nothing is recorded into `MetricsBuffer`.
         """
-        if not self._is_topic_on_bus(topic):
-            raise AdapterError(
-                f"DDS topic {topic!r} not discovered on domain {self._domain_id}. "
-                "Confirm a publisher is alive and reachable, or call "
-                "list_participants / detect_qos_mismatches first to inspect "
-                "current bus state."
-            )
+        resolved, resolution_note = resolve_user_topic(
+            topic, self._discovered_topic_names(), self._domain_id
+        )
 
-        decoded = _try_dynamic_decode_cyclone(self._dp, topic, count)
+        decoded = _try_dynamic_decode_cyclone(self._dp, resolved, count)
         if decoded is not None:
             # Unreachable while dynamic decode is disabled.
             now_ns = time.time_ns()
             for sample in decoded:
                 self._metrics.record(
-                    topic=topic,
+                    topic=resolved,
                     receive_ns=now_ns,
                     sequence_number=_extract_seq_from_payload(sample.payload),
                     publish_ns=_extract_publish_ns_from_payload(sample.payload),
@@ -491,15 +496,16 @@ class CycloneDdsAdapter:
                 count=len(decoded),
                 samples=decoded,
                 mode_effective="live",
+                note=resolution_note,
             )
 
         # Nothing was received, so nothing is recorded into the metrics buffer.
-        return user_topic_result(topic, "live")
+        return user_topic_result(topic, "live", resolution_note)
 
-    def _is_topic_on_bus(self, topic: str) -> bool:
-        """True iff a sub or pub for `topic` has been discovered."""
+    def _discovered_topic_names(self) -> set[str | None]:
+        """Topic names of every discovered reader and writer."""
         endpoints = self._caches.subscriptions.values() + self._caches.publications.values()
-        return any(_extract_topic_name(sample) == topic for sample in endpoints)
+        return {_extract_topic_name(sample) for sample in endpoints}
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300

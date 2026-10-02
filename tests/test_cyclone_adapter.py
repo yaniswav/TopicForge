@@ -184,3 +184,43 @@ def test_topic_metrics_status_for_user_and_builtin_topics() -> None:
     adapter = CycloneDdsAdapter(domain_id=0)
     assert adapter.topic_metrics("scan", 60).status == "unsupported_user_topic"
     assert adapter.topic_metrics("DCPSParticipant", 60).status == "no_samples_yet"
+
+
+def test_peek_resolves_a_ros_style_name_to_the_mangled_topic() -> None:
+    """`/scan` finds a writer on the DDS topic `rt/scan` and the note says so."""
+    import time
+    import types
+    from dataclasses import dataclass
+
+    from cyclonedds.domain import DomainParticipant
+    from cyclonedds.idl import IdlStruct
+    from cyclonedds.pub import DataWriter
+    from cyclonedds.topic import Topic
+
+    # Built explicitly: this module's `from __future__ import annotations` would
+    # turn the field annotation into a string that the IDL layer cannot resolve.
+    beam_type = dataclass(
+        types.new_class(
+            "Beam",
+            (IdlStruct,),
+            {"typename": "topicforge_test::Beam"},
+            lambda ns: ns.update(__annotations__={"value": int}),
+        )
+    )
+
+    writer_participant = DomainParticipant(0)
+    writer = DataWriter(writer_participant, Topic(writer_participant, "rt/scan", beam_type))
+    adapter = CycloneDdsAdapter(domain_id=0)
+    try:
+        result = None
+        for _ in range(50):
+            try:
+                result = adapter.peek_dds_samples("/scan", count=1)
+                break
+            except AdapterError:
+                time.sleep(0.1)
+        assert result is not None, "the writer on rt/scan was not discovered"
+        assert result.topic == "/scan"
+        assert result.note is not None and "'rt/scan'" in result.note
+    finally:
+        del writer
