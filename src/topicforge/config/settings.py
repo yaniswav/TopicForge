@@ -43,7 +43,7 @@ _MAX_SAMPLE_BYTES_MIN = 1024
 _MAX_SAMPLE_BYTES_MAX = 64 * 1024 * 1024
 
 # Vendor -> Python module, shared by `auto` resolution and `HealthService`.
-_DDS_BACKEND_MODULES: dict[str, str] = {
+DDS_BACKEND_MODULES: dict[str, str] = {
     "opendds": "pyopendds",
     "fast": "fastdds",
     "cyclone": "cyclonedds",
@@ -99,12 +99,12 @@ class Settings:
         if self.dds_backend != "auto":
             return self.dds_backend
         for vendor in _DDS_AUTO_DETECT_ORDER:
-            if _module_is_importable(_DDS_BACKEND_MODULES[vendor]):
+            if module_is_importable(DDS_BACKEND_MODULES[vendor]):
                 return vendor  # type: ignore[return-value]
         return "mock"
 
 
-def _module_is_importable(module: str) -> bool:
+def module_is_importable(module: str) -> bool:
     """True when `find_spec(module)` finds the module.
 
     `ModuleNotFoundError` (missing parent package) and `ValueError`

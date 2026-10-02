@@ -24,8 +24,8 @@ def _settings(dds_backend: str) -> Settings:
 
 
 def _installed(monkeypatch: pytest.MonkeyPatch, *modules: str) -> None:
-    monkeypatch.setattr(f"{_FACTORY_MODULE}._module_is_importable", lambda name: name in modules)
-    monkeypatch.setattr(f"{_SETTINGS_MODULE}._module_is_importable", lambda name: name in modules)
+    monkeypatch.setattr(f"{_FACTORY_MODULE}.module_is_importable", lambda name: name in modules)
+    monkeypatch.setattr(f"{_SETTINGS_MODULE}.module_is_importable", lambda name: name in modules)
 
 
 def test_not_selected_with_binding_installed(monkeypatch: pytest.MonkeyPatch) -> None:

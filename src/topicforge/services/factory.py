@@ -17,7 +17,7 @@ from topicforge.adapters.composite import CompositeAdapter
 from topicforge.adapters.ros2_live import Ros2CliAdapter
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
-from topicforge.config.settings import _DDS_BACKEND_MODULES, _module_is_importable
+from topicforge.config.settings import DDS_BACKEND_MODULES, module_is_importable
 
 log = logging.getLogger(__name__)
 
@@ -98,17 +98,17 @@ def _dds_inactive_reason(settings: Settings) -> str:
                 "`TOPICFORGE_DDS_BACKEND=auto` found no DDS binding (`fastdds` or "
                 f"`cyclonedds`) installed. {_CYCLONE_HINT}"
             )
-        if _module_is_importable(_DDS_BACKEND_MODULES["cyclone"]):
+        if module_is_importable(DDS_BACKEND_MODULES["cyclone"]):
             return (
                 "no DDS backend is selected: `TOPICFORGE_DDS_BACKEND` is unset or `mock`. "
                 "The `cyclonedds` binding is installed; set `TOPICFORGE_DDS_BACKEND=cyclone` "
                 "and restart to enable the DDS tools."
             )
         return f"no DDS backend is selected and no DDS binding is installed. {_CYCLONE_HINT}"
-    module = _DDS_BACKEND_MODULES.get(backend)
+    module = DDS_BACKEND_MODULES.get(backend)
     if backend in ("opendds", "dust"):
         return f"`TOPICFORGE_DDS_BACKEND={backend}` is a stub that never serves; use `cyclone`."
-    if module is not None and not _module_is_importable(module):
+    if module is not None and not module_is_importable(module):
         return (
             f"`TOPICFORGE_DDS_BACKEND={backend}` is set but its `{module}` Python binding is "
             f"not installed. {_CYCLONE_HINT if backend == 'cyclone' else ''}".rstrip()

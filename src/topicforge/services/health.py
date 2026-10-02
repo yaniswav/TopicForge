@@ -10,7 +10,7 @@ from typing import Any, Literal
 from topicforge import __version__
 from topicforge.adapters.base import MiddlewareAdapter
 from topicforge.config import Settings
-from topicforge.config.settings import _DDS_BACKEND_MODULES, _module_is_importable
+from topicforge.config.settings import DDS_BACKEND_MODULES, module_is_importable
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import HealthReport
 
@@ -108,5 +108,5 @@ def _middleware_available(dds_backend: str, settings: Settings) -> bool:
     """
     if dds_backend != "none":
         return True
-    module = _DDS_BACKEND_MODULES.get(settings.dds_backend)
-    return module is not None and _module_is_importable(module)
+    module = DDS_BACKEND_MODULES.get(settings.dds_backend)
+    return module is not None and module_is_importable(module)
