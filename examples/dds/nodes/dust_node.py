@@ -15,6 +15,14 @@ Limits of the Dust DDS Python binding (0.16, checked against a real bus):
   - It has no EntityName policy, so the participant name is carried in the
     participant's `user_data` as UTF-8 bytes. user_data is announced in
     DCPSParticipant, but a generic observer will not read it as a name.
+  - Partition, liveliness and ownership kind are supported (partition goes on
+    the Publisher / Subscriber). `OwnershipStrengthQosPolicy` has no
+    constructor in 0.16, so `strength=` is ignored with one warning on stderr.
+  - `participant.assert_liveliness()` panics ("not yet implemented") in 0.16,
+    so manual liveliness relies on writing alone to assert. That is enough for
+    MANUAL_BY_TOPIC, and in practice for MANUAL_BY_PARTICIPANT while any
+    writer writes. `--stop-asserting-after S` stops writing after S seconds
+    while the node stays up.
 """
 
 # No `from __future__ import annotations` here: dust_dds reads the real
@@ -72,6 +80,21 @@ def _duration(dust_dds: Any, millis: int) -> Any:
     return dust_dds.DurationKind.Finite(dust_dds.Duration(sec=sec, nanosec=rest * 1_000_000))
 
 
+def _liveliness(dust_dds: Any, qos: spec.QosSpec) -> Any:
+    """The LivelinessQosPolicy for `qos` (infinite lease when none is given)."""
+    kinds = {
+        "automatic": dust_dds.LivelinessQosPolicyKind.Automatic,
+        "manual_participant": dust_dds.LivelinessQosPolicyKind.ManualByParticipant,
+        "manual_topic": dust_dds.LivelinessQosPolicyKind.ManualByTopic,
+    }
+    lease = (
+        dust_dds.DurationKind.Infinite
+        if qos.lease_ms is None
+        else _duration(dust_dds, qos.lease_ms)
+    )
+    return dust_dds.LivelinessQosPolicy(kinds[qos.liveliness], lease)
+
+
 def _qos_kwargs(dust_dds: Any, qos: spec.QosSpec) -> dict[str, Any]:
     """Map a QosSpec onto the keywords shared by DataWriterQos and DataReaderQos."""
     reliable = qos.reliability == "reliable"
@@ -97,6 +120,10 @@ def _qos_kwargs(dust_dds: Any, qos: spec.QosSpec) -> dict[str, Any]:
     }
     if qos.deadline_ms is not None:
         kwargs["deadline"] = dust_dds.DeadlineQosPolicy(_duration(dust_dds, qos.deadline_ms))
+    if qos.liveliness != "automatic" or qos.lease_ms is not None:
+        kwargs["liveliness"] = _liveliness(dust_dds, qos)
+    if qos.ownership == "exclusive":
+        kwargs["ownership"] = dust_dds.OwnershipQosPolicy(dust_dds.OwnershipQosPolicyKind.Exclusive)
     return kwargs
 
 
@@ -128,21 +155,42 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return topics[key]
 
-        publisher = participant.create_publisher()
+        publishers: dict[tuple[str, ...], Any] = {}
+        subscribers: dict[tuple[str, ...], Any] = {}
+
+        def partition_qos(cls: Any, e: spec.Endpoint) -> Any:
+            """PublisherQos / SubscriberQos carrying the endpoint's partition, or None."""
+            if not e.qos.partition:
+                return None
+            return cls(partition=dust_dds.PartitionQosPolicy(list(e.qos.partition)))
+
+        def publisher_for(e: spec.Endpoint) -> Any:
+            if e.qos.partition not in publishers:
+                publishers[e.qos.partition] = participant.create_publisher(
+                    qos=partition_qos(dust_dds.PublisherQos, e)
+                )
+            return publishers[e.qos.partition]
+
+        def subscriber_for(e: spec.Endpoint) -> Any:
+            if e.qos.partition not in subscribers:
+                subscribers[e.qos.partition] = participant.create_subscriber(
+                    qos=partition_qos(dust_dds.SubscriberQos, e)
+                )
+            return subscribers[e.qos.partition]
+
         writers = [
             (
                 e,
-                publisher.create_datawriter(
+                publisher_for(e).create_datawriter(
                     topic_for(e), qos=dust_dds.DataWriterQos(**_qos_kwargs(dust_dds, e.qos))
                 ),
             )
             for e in args.write
         ]
-        subscriber = participant.create_subscriber()
         readers = [
             (
                 e,
-                subscriber.create_datareader(
+                subscriber_for(e).create_datareader(
                     topic_for(e), qos=dust_dds.DataReaderQos(**_qos_kwargs(dust_dds, e.qos))
                 ),
             )
@@ -172,6 +220,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
             flush=True,
         )
+    if any(e.qos.ownership == "exclusive" and e.qos.strength for e, _ in writers):
+        print(
+            "warning: the Dust DDS Python binding cannot set ownership strength; "
+            "strength= is ignored (strength 0)",
+            file=sys.stderr,
+            flush=True,
+        )
     writers = [(e, w) for e, w in writers if _writable(e.type_name)]
 
     period_s = 1.0 / args.rate_hz
@@ -180,10 +235,16 @@ def main(argv: list[str] | None = None) -> int:
     next_tick = time.monotonic()
     seq = 0
     timed_out: set[str] = set()
-    rx = spec.RxReport(args.name, [e.topic for e, _ in readers], time.monotonic())
+    started = time.monotonic()
+    silent_at = None if args.stop_asserting_after is None else started + args.stop_asserting_after
+    hung = False
+    rx = spec.RxReport(args.name, [e.topic for e, _ in readers], started)
     try:
         while not stop:
-            for endpoint, writer in writers:
+            if not hung and silent_at is not None and time.monotonic() >= silent_at:
+                hung = True
+                print(f"[{args.name}] stopped writing and asserting liveliness", flush=True)
+            for endpoint, writer in [] if hung else writers:
                 cls = dds_types[endpoint.type_name]
                 try:
                     writer.write(cls(**spec.sample_values(endpoint.type_name, seq)))
