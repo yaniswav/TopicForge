@@ -14,7 +14,7 @@ TopicForge (open source, MIT) is read-only by architecture: there is no write pa
 
 ## When the RTI Connext adapter is the right tool
 
-An observer from another vendor is still a foreign participant: RTI-proprietary transports and security modes that never touch standard RTPS discovery stay invisible to it. A native RTI Connext adapter exists for the cases where your domain runs RTI's DDS Security plugin with credentials, uses a pure shared-memory transport, or depends on RTI-only extensions. It is bring-your-own-everything: you supply the `rti.connextdds` Python binding and a valid RTI Connext license; TopicForge does not bundle, resell or redistribute either. The open-source core does not load it automatically, and `TOPICFORGE_DDS_BACKEND=rti` is rejected at startup; how the adapter is delivered and run is part of the engagement. No other commercial vendor adapter has working code, so do not plan around one.
+An observer from another vendor is still a foreign participant: RTI-proprietary transports and security modes that never touch standard RTPS discovery stay invisible to it. A native RTI Connext adapter exists for the cases where your domain runs RTI's DDS Security plugin with credentials, uses a pure shared-memory transport, or depends on RTI-only extensions. You supply the `rti.connextdds` Python binding and a valid RTI Connext license; TopicForge does not bundle, resell or redistribute either. The open-source core does not load it automatically, and `TOPICFORGE_DDS_BACKEND=rti` is rejected at startup; how the adapter is delivered and run is part of the engagement. No other commercial vendor adapter has working code, so do not plan around one.
 
 ## Available on request
 

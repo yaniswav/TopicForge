@@ -1,14 +1,12 @@
 # 04: Topic metrics and participant lifecycle
 
-**Scenario.** A robotics integrator complains that a 10 Hz heartbeat
-topic "seems jittery". You want numbers (observed frequency, sequence
-gaps, latency percentiles) plus visibility on participants joining and
-leaving the bus. **Tools exercised.** `topic_metrics`,
-`participant_events`. **Mode.** Mock: exercises a pre-filled 10 Hz
+A robotics integrator complains that a 10 Hz heartbeat topic "seems jittery".
+You want numbers (observed frequency, sequence gaps, latency percentiles) and
+visibility on participants joining and leaving the bus. This walkthrough uses
+`topic_metrics` and `participant_events`, against a pre-filled 10 Hz mock
 fixture.
 
-**Read this first.** The mock fixture is richer than anything a live
-adapter can produce today. On a live bus `topic_metrics` only has data
+The mock fixture is richer than anything a live adapter can produce today. On a live bus `topic_metrics` only has data
 for the builtin discovery topics, and its frequency is the cadence of
 your own `peek_dds_samples` calls, not the publication rate of a topic.
 The jitter question in this scenario cannot be answered with TopicForge
@@ -22,7 +20,7 @@ pip install topicforge
 TOPICFORGE_MODE=mock python -m topicforge
 ```
 
-The mock observability fixture ships :
+The mock observability fixture contains:
 
 - `/dds/heartbeat_10hz`: 100 samples spaced 100 ms apart with
   synthetic 50 ms latency and contiguous sequence numbers 0..99
@@ -32,12 +30,12 @@ The mock observability fixture ships :
 
 ## Conversation
 
-**You:**
+You:
 
 > Tell me the observed frequency and any sequence gaps on
 > `/dds/heartbeat_10hz` over the last minute.
 
-**Claude calls:** `topic_metrics(topic="/dds/heartbeat_10hz",
+Claude calls: `topic_metrics(topic="/dds/heartbeat_10hz",
 window_seconds=60, domain_id=0)` -> returns a `TopicMetrics`:
 
 ```json
@@ -63,11 +61,11 @@ samples, so 10.0 up to floating-point rounding. `frequency_hz_declared`
 is `null` here, as it is in every response: no adapter populates it, so
 there is nothing to compare the observed rate against.
 
-**You:**
+You:
 
 > Did any participants come or go on the bus?
 
-**Claude calls:** `participant_events(domain_id=0,
+Claude calls: `participant_events(domain_id=0,
 lookback_seconds=300)` -> returns 4 `ParticipantEvent` entries, newest
 first, all `event_type="discovered"` and none `"lost"`: the Dust DDS
 participant `mock-rust-node`, the Fast DDS participant
@@ -75,9 +73,9 @@ participant `mock-rust-node`, the Fast DDS participant
 `mock-robot`. Each carries `guid`, `event_type`,
 `vendor`, `timestamp_ns`, `hostname`, `domain_id` and `mode_effective`.
 (The mock clock sits two minutes after the first event, so
-`lookback_seconds=60` returns an empty list and `300` returns all three.)
+`lookback_seconds=60` returns an empty list and `300` returns all four.)
 
-**Claude responds** with a synthesis :
+Claude answers:
 
 > The mock buffer holds 100 samples on `/dds/heartbeat_10hz` at about
 > 10 Hz, with contiguous sequence numbers (0 gaps) and a uniform 50 ms
@@ -88,10 +86,10 @@ participant `mock-rust-node`, the Fast DDS participant
 
 ## What happens on a live bus
 
-**`topic_metrics` only has data for the builtin topics.** The buffer is
-filled when `peek_dds_samples` surfaces samples, neither binding exposes
-an at-receive callback, and only the builtin DCPS topics
-(`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) surface any.
+`topic_metrics` only has data for the builtin topics. The buffer is filled
+when `peek_dds_samples` surfaces samples, neither binding exposes an
+at-receive callback, and only the builtin DCPS topics (`DCPSParticipant`,
+`DCPSSubscription`, `DCPSPublication`) surface any.
 Since 0.5.3 a user topic returns `samples_observed=0` with every metric
 `null`; before that, the Fast adapter counted placeholder samples it had
 made up. On a builtin topic:
@@ -104,11 +102,12 @@ made up. On a builtin topic:
 - `latency_ns_p50/p95/p99` are `null` and `latency_available` is `false`:
   builtin samples carry no publish timestamp.
 
-**`participant_events` works on live adapters, with a caveat on
-Cyclone.** Cyclone's lifecycle log updates only when `list_participants`
-runs, so a participant that joined and left between two calls is
-invisible. Fast DDS uses listener callbacks and captures both arrival
-and removal. Neither adapter has been run against a live bus yet.
+`participant_events` works on live adapters. On Cyclone a background thread
+reads the builtin discovery topics every 0.5 s, so the timeline does not depend
+on when you call it; a participant that cycles faster than the discovery
+history depth between two passes can still be missed. Fast DDS uses listener
+callbacks and captures both arrival and removal, but that adapter has never
+run against a live bus.
 
 ```bash
 pip install topicforge[dds-cyclone]

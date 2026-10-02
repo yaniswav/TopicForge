@@ -21,7 +21,7 @@ not prefix its GUID with its RTPS vendor id (01.01). Known limit, see CHANGELOG.
 pip install rti.connext
 ```
 
-Get a **Connext Express** license from RTI (free, no time limit, system size
+Get a Connext Express license from RTI (free, no time limit, system size
 capped by the activation key: the documented example limits are 6
 DomainParticipants, 12 DataReaders and 12 DataWriters). Request it through the
 Connext Express page: <https://www.rti.com/products/connext-express> (RTI also
@@ -56,7 +56,7 @@ linked from <https://www.rti.com/get-connext/terms>. Re-read it before relying
 on this summary; it is not legal advice.
 
 - No redistribution of the software or of the license (section 3.1, and 2.3.3
-  for Express). `rti_license.dat` is yours alone: **never commit it**.
+  for Express). `rti_license.dat` is yours alone: never commit it.
 - Performance, functionality, security or other evaluation results must not be
   disclosed to third parties without RTI's prior written consent
   (confidentiality section; also section 3.5 for performance and vulnerability

@@ -4,7 +4,7 @@ Writes `DemoHeartbeat` (`struct Heartbeat { uint32 seq; }`, RELIABLE, 1 Hz)
 and nothing else. See `../../DEMO_CONTRACT.md`, section "Language
 participants".
 
-This one is **Linux-first and heavy**. The `fastdds` Python module is **not a
+This one is Linux-first and heavy. The `fastdds` Python module is **not a
 PyPI package**: `pip install fastdds` does not give the eProsima binding. It
 has to be built from <https://github.com/eProsima/Fast-DDS-python>, and the
 `Heartbeat` type module has to be generated and compiled per IDL file. This
@@ -28,9 +28,9 @@ executed**.
   The repos file also checks out Fast-DDS-Gen; it still has to be built with
   Gradle (see the Fast DDS installation manual, section "Fast DDS-Gen") so that
   `fastddsgen` is on `PATH`.
-- **Java >= 17** for `fastddsgen` (Fast-DDS-Gen stopped supporting older JDKs
+- Java >= 17 for `fastddsgen` (Fast-DDS-Gen stopped supporting older JDKs
   at v4.3.0).
-- **SWIG < 4.2** (4.1 recommended), `cmake`, a C++ compiler, python3
+- SWIG < 4.2 (4.1 recommended), `cmake`, a C++ compiler, python3
   development headers.
 
 ## Build

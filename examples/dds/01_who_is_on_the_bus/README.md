@@ -1,6 +1,6 @@
 # 01 Who is on the bus?
 
-**Concept:** DDS discovery. Every DDS program announces itself on the bus,
+Concept: DDS discovery. Every DDS program announces itself on the bus,
 whatever its vendor, through standard discovery messages. TopicForge reads
 those announcements; it does not need to know the programs in advance.
 
@@ -34,14 +34,12 @@ python run.py --hold     # keep the programs running, ask your own MCP client
     (no name)          vendor=unknown  active  host=?
 ```
 
-- `topicforge` is TopicForge itself: it joins the bus as a read-only
-  participant, so it is listed too.
-- The Cyclone programs announce a **name** (the standard DDS EntityName QoS)
-  and their **host**.
-- The Dust program is there, but without a name or host: Dust DDS does not
-  announce them, and it does not put its vendor id where TopicForge can read
-  it, so it shows as `unknown`. It is still seen. That is the point of
-  standard discovery: no vendor can hide from it.
+`topicforge` is TopicForge itself: it joins the bus as a read-only
+participant, so it is listed too. The Cyclone programs announce a name (the
+standard DDS EntityName QoS) and their host. The Dust program has neither:
+Dust DDS does not announce them, and it does not put its vendor id where
+TopicForge can read it, so it shows as `unknown`. It is still seen, because
+standard discovery does not depend on the vendor.
 
 ## Ask your agent
 
@@ -50,9 +48,5 @@ client (see `../README.md`):
 
 > Who is on DDS domain 0? For each participant give its name, vendor and host.
 
-## Remember
-
-- Discovery is standard (OMG DDS-RTPS): one observer sees every conformant
-  vendor.
-- Give your participants names. An unnamed participant is a GUID, and a GUID
-  tells a human nothing.
+Give your participants names. An unnamed participant is a GUID, and a GUID
+tells a human nothing.

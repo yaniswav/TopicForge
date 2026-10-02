@@ -1,6 +1,6 @@
 # TopicForge DDS examples
 
-Runnable examples on a **real DDS bus**. Each one starts a few small DDS
+Runnable examples on a real DDS bus. Each one starts a few small DDS
 programs that play the roles of a robot (`lidar_driver`, `nav_planner`...),
 from different DDS vendors, then questions TopicForge through the official
 MCP client, the same way Claude Desktop or Claude Code would. Each example
@@ -13,7 +13,7 @@ DDS applications, and TopicForge reads the standard DDS discovery topics.
 
 Three tracks. Follow them in order, or jump to the one you need.
 
-**Write the code.** Each example is a readable `publisher.py` and
+Write the code. Each example is a readable `publisher.py` and
 `subscriber.py` (Cyclone DDS, Python, commented line by line). You see the
 problem from inside, in what the subscriber prints, and from outside, in
 what TopicForge reports.
@@ -26,7 +26,7 @@ what TopicForge reports.
 | 07 | [The deadline, declared and kept, in code](07_deadline_in_code/) | Deadline at match time and at run time | 13 |
 | 08 | [A crash, seen from inside and from outside](08_crash_seen_from_inside/) | Liveliness lease against discovery lease | 03, 12 |
 
-**Concepts, through TopicForge.** One concept per example, the programs
+Concepts, through TopicForge. One concept per example, the programs
 configured from a table:
 
 | # | Example | You learn | TopicForge tool |
@@ -36,7 +36,7 @@ configured from a table:
 | 03 | [A node crashed](03_a_node_crashed/) | leases, crash detection | `participant_events` |
 | 04 | [A late joiner misses the data](04_late_joiner_misses_data/) | Durability | `detect_qos_mismatches` |
 
-**Real incidents**, simple ones, each a few programs:
+Real incidents, simple ones, each a few programs:
 
 | # | Example | The incident | What it teaches |
 |---|---|---|---|

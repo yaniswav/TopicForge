@@ -19,8 +19,7 @@ live next to the observer.
 | Windows | Python / Cyclone, C++ / Fast DDS, Python / RTI |
 
 The Fast DDS writer on Windows and the RTI reader on Windows still form the
-`DemoImu` mismatch, seen from the Linux observer across the network: that is
-the industrial case.
+`DemoImu` mismatch, seen from the Linux observer across the network.
 
 ## Per vendor
 

@@ -4,12 +4,11 @@ One read-only TopicForge participant observes programs from several DDS
 vendors and several languages on the same domain. It sees them through the
 standard RTPS discovery topics, with no vendor-specific binding. The questions
 are asked by the official MCP client over stdio, the same path Claude Desktop
-or Claude Code uses, so the demo exercises the server exactly as an agent
-would.
+or Claude Code uses.
 
 This is the first thing in the repository that runs the DDS adapters against
-live traffic. The status of each participant is listed below, and most of them
-have not been run yet.
+live traffic. The status of each participant is listed below; most have not
+been run yet.
 
 TopicForge never publishes. The participants in `publishers/` are demo
 programs written for this directory; TopicForge itself only reads discovery
@@ -61,14 +60,13 @@ artifact is present, and the checks adapt to what was actually started.
 ## Participants
 
 Twelve programs, one per vendor and language that has an officially released
-binding. The
-contract they all follow (topics, types, QoS, start line) is in
+binding. The contract they all follow (topics, types, QoS, start line) is in
 [`DEMO_CONTRACT.md`](DEMO_CONTRACT.md). The five scenario programs carry the
 QoS story; the seven language participants each write one topic,
 `DemoHeartbeat`, so that `list_participants` shows one entry per vendor and
 language.
 
-Status is stated as of this writing. "Tested" means it ran on the bus and was
+"Tested" means it ran on the bus and was
 seen by TopicForge, on Windows 11 only. "Written, not run" means the source
 exists and was written from the vendor's documentation or example sources, but
 nobody has built or started it.
@@ -128,28 +126,28 @@ With only the two required participants, the Reliability check on
 
 ## Known limits
 
-- **Vendor shown as `unknown` for Dust DDS and RTI Connext.** TopicForge reads
+- Vendor shown as `unknown` for Dust DDS and RTI Connext. TopicForge reads
   the vendor from the first two bytes of the participant GUID prefix, because
   the Python Cyclone binding does not expose the vendor id from the RTPS
   header. Dust DDS does not prefix its GUID with its vendor id, and RTI does
   not by default. The participants are still listed, only the vendor tag is
   missing. The driver does not require a tag for them.
-- **OpenSplice is experimental.** The last release is from 2021, it cannot be
+- OpenSplice is experimental. The last release is from 2021, it cannot be
   compiled on current toolchains, and the participant needs the prebuilt HDE
   (`OSPL_HOME`). Its README sets an abandon criterion: try it once, and drop it
   from the demo if it does not appear on the bus.
-- **RTI runs locally only.** A license is required (`RTI_LICENSE_FILE`). The
+- RTI runs locally only. A license is required (`RTI_LICENSE_FILE`). The
   driver skips every RTI participant when that variable is unset, and RTI never
   runs in public CI. RTI's Free Use license (agreement #4046) forbids
   disclosing evaluation results without RTI's prior written consent. No
   capture, screenshot, recording or result from an RTI run is published
   without that consent, and there is no benchmarking with these nodes.
-- **Dust DDS discovers over multicast only.** A network that blocks multicast
+- Dust DDS discovers over multicast only. A network that blocks multicast
   will not show Dust participants.
-- **User-topic payloads are not read.** The demo shows who is on the bus and
+- User-topic payloads are not read. The demo shows who is on the bus and
   which pairs cannot communicate. It does not show message contents; that
   decoding is disabled in the core (see the CHANGELOG, 0.5.3).
-- **Participants and observer run on one host by default.** The driver starts
+- Participants and observer run on one host by default. The driver starts
   everything locally. Running across machines is the next section.
 
 ## Mixed Linux and Windows bus
@@ -174,7 +172,7 @@ started by hand; the driver does not launch remote processes.
   not that TopicForge sees it.
 
 A green `demo.yml` run shows that Cyclone and Dust participants are discovered
-and that one QoS mismatch is reported. It says nothing about Fast DDS, RTI or
+and that one QoS mismatch is reported; it says nothing about Fast DDS, RTI or
 OpenSplice.
 
 ## Related

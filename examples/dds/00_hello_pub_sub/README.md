@@ -1,6 +1,6 @@
 # 00 Hello, publisher and subscriber
 
-**Concept:** the five DDS objects every program creates: participant, topic,
+Concept: the five DDS objects every program creates: participant, topic,
 type, writer, reader. Writers and readers meet only if they are in the same
 domain, on the same topic name, with the same type (and compatible QoS, see
 example 02 and example 05).
@@ -37,15 +37,13 @@ writer.write(Battery(seq=seq, voltage=12.6 - 0.001 * seq))
 The subscriber builds the same participant and topic, then a `DataReader`,
 and waits for data with a `WaitSet` (sleep until a new sample exists, at most
 500 ms) before `take()`-ing it. Each turn it also reads the reader's
-**status**: `get_subscription_matched_status()` says how many writers the
+status: `get_subscription_matched_status()` says how many writers the
 reader is connected to.
 
-Two things worth knowing:
-
-- Do not put `from __future__ import annotations` in a file that defines an
-  `IdlStruct`: Cyclone needs the real types, not strings.
-- `EntityName` is optional, but it is what makes `dashboard` show up with its
-  name instead of a GUID in TopicForge.
+Do not put `from __future__ import annotations` in a file that defines an
+`IdlStruct`: Cyclone needs the real types, not strings. `EntityName` is
+optional, but it is what makes `dashboard` show up with its name instead of a
+GUID in TopicForge.
 
 ## Run it
 
@@ -97,17 +95,17 @@ Then nothing, forever. `matched writers: 0` is the only hint the program has.
                  readers: dashboard (Battery)
 ```
 
-From outside, the typo is obvious: a topic with a reader and no writer.
-Neither program knows about the other, but the discovery traffic on the bus
-lists every reader and writer, and TopicForge only reads that.
+From outside, the typo shows: a topic with a reader and no writer. Neither
+program knows about the other, but the discovery traffic on the bus lists
+every reader and writer, and that is all TopicForge reads.
 
 ## Ask your agent
 
 > dashboard_typo shows nothing on DDS domain 0. Which topics have a reader but no writer?
 
-## Remember
+## Afterwards
 
-- A subscriber to a topic nobody writes is not an error in DDS. Check
-  `matched writers` first.
-- Topic names are case-sensitive strings. A typo creates a brand new topic.
-- Next: example 05 (same programs, but the topic is right and the QoS is not).
+A subscriber to a topic nobody writes is not an error in DDS, so check
+`matched writers` first. Topic names are case-sensitive strings, and a typo
+creates a new topic. Example 05 uses the same programs with the topic right
+and the QoS wrong.
