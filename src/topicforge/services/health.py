@@ -51,6 +51,11 @@ class HealthService:
             server_version=__version__,
             max_sample_count=MAX_SAMPLE_COUNT,
             dds_backend=dds_backend,
+            dds_inactive_reason=(
+                getattr(self._adapter, "dds_inactive_reason", None)
+                if dds_backend == "none"
+                else None
+            ),
             dds_domain_id=self._settings.dds_domain_id,
             observed_domain_note=(
                 f"Only DDS domain {self._settings.dds_domain_id} (joined at startup) is "
