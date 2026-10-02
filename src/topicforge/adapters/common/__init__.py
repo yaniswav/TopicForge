@@ -33,6 +33,13 @@ from topicforge.adapters.common.dds_introspection import (
     is_removal,
     vendor_id_from_guid,
 )
+from topicforge.adapters.common.discovery_tracker import (
+    DEFAULT_PERIOD_S,
+    DiscoveryCaches,
+    DiscoveryTracker,
+    SampleCache,
+    apply_builtin_samples,
+)
 from topicforge.adapters.common.endpoints import (
     MAX_LISTED_ENDPOINTS,
     announced_ns_of,
@@ -67,19 +74,24 @@ from topicforge.adapters.common.xtypes import (
 
 __all__ = [
     "DDS_ONLY_ERROR_MSG",
+    "DEFAULT_PERIOD_S",
     "DYNAMIC_DECODE_DISABLED_NOTE",
     "MAX_EVENTS",
     "MAX_LISTED_ENDPOINTS",
     "MAX_SAMPLES_PER_TOPIC",
     "DecodeStatus",
+    "DiscoveryCaches",
+    "DiscoveryTracker",
     "LifecycleBuffer",
     "MetricsBuffer",
     "MetricsSample",
+    "SampleCache",
     "VendorTag",
     "annotate_full",
     "annotate_partial",
     "annotate_raw",
     "announced_ns_of",
+    "apply_builtin_samples",
     "build_endpoint_listing",
     "builtin_payload",
     "canonicalize_vendor_id",

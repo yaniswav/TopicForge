@@ -21,6 +21,8 @@ adapter's diagnostic messages.
 
 from __future__ import annotations
 
+from typing import Any
+
 from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
 from topicforge.models import (
     BagAnalysis,
@@ -77,6 +79,11 @@ class CompositeAdapter:
         return self._ros.analyze_bag(path)
 
     # ----- DDS surface -> DDS adapter -----
+
+    def observer_status(self) -> dict[str, Any] | None:
+        """The DDS half's observer/tracker status, `None` when it has none."""
+        status = getattr(self._dds, "observer_status", None)
+        return status() if callable(status) else None
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         return self._dds.list_participants(domain_id)

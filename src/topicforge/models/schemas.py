@@ -138,6 +138,9 @@ class QosProfile(BaseModel):
     )
 
 
+TimeSource = Literal["dds_source_timestamp", "observed_local"]
+"""Origin of a lifecycle timestamp: see `ParticipantEvent.time_source`."""
+
 _DdsVendor = Literal[
     "cyclone",
     "fast",
@@ -255,6 +258,39 @@ class ParticipantInfo(BaseModel):
             "live adapters increment on each observation."
         ),
     )
+    announced_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Nanoseconds since epoch (DDS source timestamp of the participant's "
+            "most recent announcement, taken from the announcing side's clock; "
+            "the local clock when the announcer sent none). `None` when the "
+            "backend does not expose it. Distinct from `first_seen_ns` / "
+            "`last_seen_ns`, which are TopicForge's own local clock."
+        ),
+    )
+    lost_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Nanoseconds since epoch of the moment the participant left, once "
+            "`status` is `left`; `None` while it is active. How precise it is "
+            "depends on `lost_time_source`. It is an upper bound of when the "
+            "participant died: after a clean shutdown it is the exact leave "
+            "time, after a crash it is when the lease expired, and the two "
+            "cannot be told apart. The process died at or before `lost_ns`, "
+            "and at most one lease earlier (10 s Cyclone default, 20 s Fast, "
+            "100 s RTI)."
+        ),
+    )
+    lost_time_source: TimeSource | None = Field(
+        default=None,
+        description=(
+            "Where `lost_ns` comes from: `dds_source_timestamp` (timestamp "
+            "carried by the discovery dispose) or `observed_local` (the "
+            "moment TopicForge noticed, the weakest). `None` while active."
+        ),
+    )
 
 
 class ParticipantEvent(BaseModel):
@@ -308,6 +344,27 @@ class ParticipantEvent(BaseModel):
         description="DDS domain id the event occurred on.",
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    time_source: TimeSource = Field(
+        default="observed_local",
+        description=(
+            "Where `timestamp_ns` comes from. `dds_source_timestamp`: the DDS "
+            "timestamp of the discovery announcement or dispose. For a "
+            "`lost` event it is an upper bound: exact after a clean "
+            "shutdown, the lease expiry after a crash (the process died up "
+            "to one lease earlier: 10 s Cyclone default, 20 s Fast, 100 s "
+            "RTI), and the two cannot be told apart. `observed_local`: the "
+            "moment TopicForge noticed (weakest)."
+        ),
+    )
+    observed_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Local wall-clock time (ns since epoch) at which TopicForge noticed "
+            "the event. Always at or after `timestamp_ns` when the latter is "
+            "DDS-derived. `None` when not tracked."
+        ),
+    )
 
 
 class TopicMetrics(BaseModel):
@@ -748,6 +805,44 @@ class HealthReport(BaseModel):
             "`none`). When the DDS module is inactive (`dds_backend == "
             "'none'`), whether the *configured* backend's Python bindings "
             "are importable, so a missing binding is visible."
+        ),
+    )
+    now_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description="Server wall-clock time (ns since epoch) when this report was built.",
+    )
+    observer_started_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Wall-clock time (ns since epoch) when the DDS observer joined the "
+            "bus. Nothing earlier than this was watched: `now_ns` minus this "
+            "is how long TopicForge has been observing. `None` without a live "
+            "DDS observer."
+        ),
+    )
+    tracker_running: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the continuous discovery tracker thread is alive "
+            "(Cyclone). `None` when the backend has no tracker."
+        ),
+    )
+    tracker_passes: int | None = Field(
+        default=None, ge=0, description="Completed discovery tracker passes since start."
+    )
+    tracker_errors: int | None = Field(
+        default=None,
+        ge=0,
+        description="Discovery tracker passes that raised (swallowed and logged). Non-zero means gaps.",
+    )
+    tracker_last_pass_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Wall-clock time (ns since epoch) of the last completed tracker "
+            "pass. A value far older than `now_ns` means lifecycle is stale."
         ),
     )
     ros_backend: Literal["mock", "ros2_cli", "none"] = Field(

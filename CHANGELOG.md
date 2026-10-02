@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- **Continuous discovery tracking on Cyclone.** A daemon thread (0.5 s period)
+  is now the only code that touches the three builtin discovery readers, using
+  `take()` with an any-state condition, and feeds in-memory caches that every
+  discovery tool reads. Lifecycle no longer moves only when a tool is called: a
+  node restarted three times is reported as 3 `lost` + 4 `discovered`, and a
+  crash is dated by DDS, not by the next tool call. No handler does DDS reads
+  any more, and the 2 s warm-up sleep is gone. `participant_events` and
+  `list_participants` gain `announced_ns`, `lost_ns`, `lost_time_source` and
+  (events) `time_source` / `observed_ns`: additive, DDS source timestamp vs
+  local observation never mixed. A `lost` time is an upper bound of the death
+  (exact after a clean shutdown, the lease expiry after a crash, the two cannot
+  be told apart), so a crash happened up to one lease earlier. `health_check`
+  gains `now_ns`, `observer_started_ns` and the tracker status
+  (`tracker_running`, `tracker_passes`, `tracker_errors`,
+  `tracker_last_pass_ns`). `peek_dds_samples` on a builtin topic returns the
+  cached current discovery state, not a stream. Caveat: participant cycles
+  faster than the builtin reader's history depth between two passes can still
+  be missed.
 - **`list_endpoints`, the 12th MCP tool** (approved 2026-10-02: a blind
   evaluation had 6 of 6 agents parsing a Python repr and joining GUID prefixes
   by hand). Returns every announced DDS writer and reader as a typed
