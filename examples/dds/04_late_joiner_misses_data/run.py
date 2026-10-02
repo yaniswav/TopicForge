@@ -27,6 +27,7 @@ from harness import (
     show_mismatches,
     step,
 )
+from received import show_received
 
 NODES = (
     Node("mission_control", "cyclone", writes=("mission:Status:reliable,volatile",), rate_hz=1.0),
@@ -54,6 +55,7 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
             "Reliability" not in found["incompatible_policies"],
             "mission: reliability is not the problem (both RELIABLE)",
         )
+    await show_received(bus, checks, 2, "nav_planner", "mission", receives=False)
 
 
 if __name__ == "__main__":

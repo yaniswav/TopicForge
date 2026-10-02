@@ -19,7 +19,6 @@ Limits of the Dust DDS Python binding (0.16, checked against a real bus):
 
 # No `from __future__ import annotations` here: dust_dds reads the real
 # `__annotations__` of the dataclass to build the DDS type.
-import contextlib
 import signal
 import sys
 import time
@@ -49,6 +48,22 @@ def _build_type(dust_dds: Any, type_name: str) -> type:
 def _writable(type_name: str) -> bool:
     """True when the binding can serialize every field of `type_name`."""
     return all(kind == "uint32" for _, kind in spec.TYPES[type_name])
+
+
+def _take_seqs(reader: Any) -> list[int | None]:
+    """Take what a reader holds: the `seq` of each valid sample, None when unreadable.
+
+    An empty reader returns [] (verified on dust-dds 0.16), so nothing is
+    suppressed here. The 0.16 Python binding delivers received samples as empty
+    objects without fields (verified Dust to Dust), so `seq` is usually None:
+    the samples are counted but their content cannot be shown.
+    """
+    seqs: list[int | None] = []
+    for sample in reader.take(100):
+        data = sample.get_data()  # None for a disposed instance
+        if data is not None:
+            seqs.append(getattr(data, "seq", None))
+    return seqs
 
 
 def _duration(dust_dds: Any, millis: int) -> Any:
@@ -160,8 +175,12 @@ def main(argv: list[str] | None = None) -> int:
     writers = [(e, w) for e, w in writers if _writable(e.type_name)]
 
     period_s = 1.0 / args.rate_hz
+    # Absolute schedule: sleeping a full period after the work would drift
+    # below the requested rate (about 7 Hz for 10 Hz on Windows).
+    next_tick = time.monotonic()
     seq = 0
     timed_out: set[str] = set()
+    rx = spec.RxReport(args.name, [e.topic for e, _ in readers], time.monotonic())
     try:
         while not stop:
             for endpoint, writer in writers:
@@ -181,13 +200,17 @@ def main(argv: list[str] | None = None) -> int:
                             file=sys.stderr,
                             flush=True,
                         )
+            # take, not read, so that a KEEP_ALL reader does not grow without bound
             for endpoint, reader in readers:
-                if endpoint.qos.history_depth is None:
-                    # KEEP_ALL would otherwise grow without bound
-                    with contextlib.suppress(Exception):
-                        reader.take(100)
+                rx.record(endpoint.topic, _take_seqs(reader))
+            if rx.due(time.monotonic()):
+                for line in rx.lines(time.monotonic()):
+                    print(line, flush=True)
             seq += 1
-            time.sleep(period_s)
+            next_tick += period_s
+            if next_tick < time.monotonic() - period_s:  # overran: do not burst to catch up
+                next_tick = time.monotonic()
+            time.sleep(max(0.0, next_tick - time.monotonic()))
     except KeyboardInterrupt:
         pass
     except Exception as exc:

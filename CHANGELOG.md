@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `examples/dds/`: a "write the code" track. Examples 00 (hello publisher
+  and subscriber), 05 (Reliability), 06 (Durability and the late joiner),
+  07 (Deadline declared and kept) and 08 (a crash seen from inside and from
+  outside) each ship a readable `publisher.py` and `subscriber.py` in Cyclone
+  DDS Python; the subscriber prints what it receives and the DDS statuses,
+  and TopicForge explains the same situation from outside. All fourteen
+  examples pass on a live bus.
+- The generic role nodes print one line per second per reader with what
+  they received, and examples 02, 04, 10 and 13 check that the broken
+  subscriber receives nothing while the control one receives data.
+- The harness keeps each program's output in a log file and prints it live
+  under `--hold`.
+
+### Fixed
+
+- Role nodes published below their rate (about 7 Hz for 10 Hz on Windows):
+  they now keep an absolute schedule.
+
 ## [0.5.4] - 2026-10-02
 
 First run of the DDS code against a live multi-vendor bus (Windows 11, a
