@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `peek_dds_samples` on `DCPSPublication`, `DCPSSubscription` and
   `DCPSParticipant` now carries structured `role`, `participant_guid`,
   `participant_name`, `type_id`, `qos`, `announced_ns` and `is_observer`, and
-  sets the sample `timestamp_ns` from the announcement. `_raw_text` is kept but
-  truncated to about 300 characters.
+  sets the sample `timestamp_ns` from the announcement. `_raw_text` is dropped
+  except for a sample with nothing structured to read (then truncated to 300
+  characters). `EndpointInfo.activity` is reserved (always `None`) with an
+  `activity_note` saying liveness is not observed.
 
 ### Fixed
 

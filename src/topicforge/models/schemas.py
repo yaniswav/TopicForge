@@ -807,6 +807,17 @@ class EndpointInfo(BaseModel):
     is_observer: bool = Field(
         description="True when the endpoint belongs to TopicForge's own observer participant."
     )
+    activity: None = Field(
+        default=None,
+        description="Reserved for a future liveness signal. Always `None` today.",
+    )
+    activity_note: str = Field(
+        default=(
+            "not observed: TopicForge holds no reader on user topics, so it cannot "
+            "tell a silent or hung writer from a healthy one"
+        ),
+        description="Why `activity` is not populated.",
+    )
     domain_id: int = Field(ge=0, le=232, description="DDS domain the endpoint was observed on.")
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 

@@ -18,10 +18,12 @@ from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import (
     MAX_LISTED_ENDPOINTS,
     build_endpoint_listing,
+    builtin_payload,
     cyclone_qos_to_profile,
     duration_to_ns,
     endpoint_record,
     format_participant_key,
+    listing_from_samples,
 )
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
@@ -299,3 +301,31 @@ def test_tool_call_returns_json_serializable_listing() -> None:
     payload = json.loads(blocks[0].text)
     assert payload["returned"] == 2
     assert payload["endpoints"][0]["qos"]["reliability"] in {"RELIABLE", "BEST_EFFORT"}
+
+
+def test_activity_is_reserved_and_explained() -> None:
+    ep = MockAdapter().list_endpoints().endpoints[0]
+    assert ep.activity is None
+    assert "not observed" in ep.activity_note
+
+
+def test_listing_from_samples_joins_names() -> None:
+    part = SimpleNamespace(key=uuid.UUID(int=100), qos=[_policy("EntityName", name="lidar")])
+    listing = listing_from_samples(
+        [part],
+        [_endpoint_sample(key=1, participant=100)],
+        [_endpoint_sample(key=2, participant=100)],
+        domain_id=0,
+        mode_effective="live",
+        observer_guid=None,
+    )
+    assert {e.participant_name for e in listing.endpoints} == {"lidar"}
+
+
+def test_builtin_payload_drops_raw_text_when_structured() -> None:
+    sample = _endpoint_sample(key=1, participant=100)
+    payload = builtin_payload("DCPSPublication", sample, {}, None)
+    assert "_raw_text" not in payload
+    assert payload["role"] == "writer" and payload["topic_name"] == "/t"
+    odd = builtin_payload("DCPSPublication", SimpleNamespace(), {}, None)
+    assert len(str(odd["_raw_text"])) <= 320

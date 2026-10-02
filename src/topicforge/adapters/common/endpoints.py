@@ -13,11 +13,13 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Literal
 
-from topicforge.adapters.common.dds_helpers import format_guid
+from topicforge.adapters.common.dds_helpers import canonicalize_vendor_id, format_guid
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
+    cyclone_extract_participant_name,
     cyclone_extract_topic_name,
     cyclone_extract_type_name,
+    cyclone_extract_vendor_id,
 )
 from topicforge.adapters.common.qos_normalize import cyclone_qos_to_profile
 from topicforge.models import EndpointInfo, EndpointListing, QosProfile, TopicSummary
@@ -173,3 +175,79 @@ def build_endpoint_listing(
         truncated=len(matched) > len(listed),
         mode_effective=mode_effective,
     )
+
+
+def participant_names(participant_samples: Iterable[Any]) -> dict[str, str | None]:
+    """Announced participant name by formatted guid, from raw DCPSParticipant samples."""
+    return {
+        format_guid(cyclone_extract_guid(s)): cyclone_extract_participant_name(s)
+        for s in participant_samples
+    }
+
+
+def listing_from_samples(
+    participant_samples: Iterable[Any],
+    publication_samples: Iterable[Any],
+    subscription_samples: Iterable[Any],
+    **listing_kwargs: Any,
+) -> EndpointListing:
+    """Raw builtin samples in, `EndpointListing` out: the whole pure pipeline.
+
+    Keeps the sample source swappable (direct reads today, a cache filled by a
+    tracker thread later) without touching the logic. `listing_kwargs` are the
+    `build_endpoint_listing` keywords (`domain_id`, `mode_effective`,
+    `observer_guid`, filters).
+    """
+    names = participant_names(participant_samples)
+    observer = listing_kwargs.get("observer_guid")
+    records = [endpoint_record(s, "writer", names, observer) for s in publication_samples]
+    records += [endpoint_record(s, "reader", names, observer) for s in subscription_samples]
+    return build_endpoint_listing(records, **listing_kwargs)
+
+
+RAW_TEXT_MAX_CHARS = 300
+
+
+def builtin_payload(
+    topic: str, sample: Any, names: Mapping[str, str | None], observer: str | None
+) -> dict[str, object]:
+    """Structured payload of one builtin DCPS sample (the `peek_dds_samples` shape).
+
+    Keeps `vendor`, `guid`, `topic_name` and `type_name` (the example harness
+    reads them) and adds the endpoint facts. `_raw_text` (the binding's repr,
+    truncated) is included only when nothing structured could be read.
+    """
+    payload: dict[str, object] = {
+        "vendor": canonicalize_vendor_id(cyclone_extract_vendor_id(sample)),
+        "guid": format_guid(cyclone_extract_guid(sample)),
+        "topic_name": cyclone_extract_topic_name(sample),
+        "type_name": cyclone_extract_type_name(sample),
+    }
+    if topic == "DCPSParticipant":
+        guid = str(payload["guid"])
+        payload.update(
+            role="participant",
+            participant_guid=guid,
+            participant_name=names.get(guid),
+            type_id=None,
+            is_observer=guid == observer,
+        )
+    else:
+        role: Literal["writer", "reader"] = "writer" if topic == "DCPSPublication" else "reader"
+        rec = endpoint_record(sample, role, names, observer)
+        qos = rec["qos"]
+        payload.update(
+            role=role,
+            participant_guid=rec["participant_guid"],
+            participant_name=rec["participant_name"],
+            type_id=rec["type_id"],
+            is_observer=rec["is_observer"],
+            qos=qos.model_dump(mode="json") if qos is not None else None,
+        )
+    payload["announced_ns"] = announced_ns_of(sample)
+    if payload["guid"] == "unknown":
+        raw = repr(sample)
+        if len(raw) > RAW_TEXT_MAX_CHARS:
+            raw = raw[:RAW_TEXT_MAX_CHARS] + "... [truncated]"
+        payload["_raw_text"] = raw
+    return payload

@@ -138,4 +138,4 @@ def test_peek_builtin_endpoints_carry_structured_fields() -> None:
     for topic in ("DCPSPublication", "DCPSSubscription", "DCPSParticipant"):
         for s in adapter.peek_dds_samples(topic, count=5).samples:
             assert {"role", "participant_guid", "announced_ns", "is_observer"} <= set(s.payload)
-            assert len(str(s.payload["_raw_text"])) <= 400
+            assert "_raw_text" not in s.payload
