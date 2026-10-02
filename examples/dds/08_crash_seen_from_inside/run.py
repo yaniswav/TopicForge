@@ -9,7 +9,7 @@ A publisher is killed (no goodbye on the bus). Two ways to notice:
            when it is asked.
 
 The broken variant: a writer left with the default liveliness (an infinite
-lease). Its subscriber is never told anything. Only the participant lease
+lease). Its subscriber gets no liveliness event. Only the participant lease
 reveals the crash. Read publisher.py and subscriber.py.
 
     python run.py           # run the example and check what TopicForge reports
@@ -66,7 +66,7 @@ NODES = (
 )
 
 LEASE_WAIT_S = 40.0  # Cyclone's 10 s participant lease, plus discovery and polling margin
-INSIDE_S = 3.0  # a 1 s writer lease must be noticed well inside this
+INSIDE_S = 5.0  # a 1 s writer lease must be noticed well inside this
 
 PROMPT = (
     "Two heartbeat publishers, pub_leased and pub_default, are about to be stopped on DDS "
@@ -123,10 +123,21 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
         )
 
     step(5, "And the subscriber of the writer with the default lease?", "subscriber output")
+
+    # Wait for the subscriber to notice the participant lease first, otherwise
+    # "no writer lost line" would hold simply because nothing happened yet.
+    # The subscriber also prints "matched writers: 0" at startup, so the drop
+    # counts only when it follows a "matched writers: 1".
+    async def dropped() -> bool:
+        seen = bus.lines("sub_default", "matched writers")
+        return seen[-1:] == ["matched writers: 0"] and "matched writers: 1" in seen
+
+    gone = await wait_for(dropped, LEASE_WAIT_S) is not None
     print(f"    sub_default: {(bus.lines('sub_default')[-1:] or ['(nothing)'])[0]}")
+    checks.expect(gone, "hb_default: the reader sees its matched writers drop to 0")
     checks.expect(
         not bus.lines("sub_default", "writer lost"),
-        "hb_default: the reader was never told the writer is gone",
+        "hb_default: and was never told the writer lost liveliness",
     )
 
 

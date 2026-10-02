@@ -44,7 +44,9 @@ topic = Topic(participant, args.topic, Heartbeat)
 # Liveliness on a writer is a promise made to its readers: "if I am alive, you
 # will hear from me within this lease". AUTOMATIC means DDS itself renews it
 # while the process runs; when the process dies, the renewals stop. Without
-# the policy the lease is infinite: readers are never told the writer is gone.
+# the policy only the participant lease (10 s by default in Cyclone) reveals
+# that the writer is gone: the reader sees its matched writers drop, with no
+# fast notice at the application level.
 policies = [Policy.Reliability.Reliable(duration(seconds=1)), Policy.History.KeepLast(1)]
 if args.lease:
     policies.append(Policy.Liveliness.Automatic(duration(milliseconds=args.lease)))

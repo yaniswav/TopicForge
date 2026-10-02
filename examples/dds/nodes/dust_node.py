@@ -19,7 +19,6 @@ Limits of the Dust DDS Python binding (0.16, checked against a real bus):
 
 # No `from __future__ import annotations` here: dust_dds reads the real
 # `__annotations__` of the dataclass to build the DDS type.
-import contextlib
 import signal
 import sys
 import time
@@ -51,19 +50,20 @@ def _writable(type_name: str) -> bool:
     return all(kind == "uint32" for _, kind in spec.TYPES[type_name])
 
 
-def _take_seqs(reader: Any) -> list[int]:
-    """Take what a reader holds and return the `seq` of each valid sample.
+def _take_seqs(reader: Any) -> list[int | None]:
+    """Take what a reader holds: the `seq` of each valid sample, None when unreadable.
 
-    Some bindings raise when there is no data; that is "nothing received".
+    An empty reader returns [] (verified on dust-dds 0.16), so nothing is
+    suppressed here. The 0.16 Python binding delivers received samples as empty
+    objects without fields (verified Dust to Dust), so `seq` is usually None:
+    the samples are counted but their content cannot be shown.
     """
-    with contextlib.suppress(Exception):
-        seqs = []
-        for sample in reader.take(100):
-            data = sample.get_data()  # None for a disposed instance
-            if data is not None:
-                seqs.append(data.seq)
-        return seqs
-    return []
+    seqs: list[int | None] = []
+    for sample in reader.take(100):
+        data = sample.get_data()  # None for a disposed instance
+        if data is not None:
+            seqs.append(getattr(data, "seq", None))
+    return seqs
 
 
 def _duration(dust_dds: Any, millis: int) -> Any:
@@ -204,10 +204,12 @@ def main(argv: list[str] | None = None) -> int:
             for endpoint, reader in readers:
                 rx.record(endpoint.topic, _take_seqs(reader))
             if rx.due(time.monotonic()):
-                for line in rx.lines():
+                for line in rx.lines(time.monotonic()):
                     print(line, flush=True)
             seq += 1
             next_tick += period_s
+            if next_tick < time.monotonic() - period_s:  # overran: do not burst to catch up
+                next_tick = time.monotonic()
             time.sleep(max(0.0, next_tick - time.monotonic()))
     except KeyboardInterrupt:
         pass

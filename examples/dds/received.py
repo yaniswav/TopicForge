@@ -1,6 +1,6 @@
 """The last step of several examples: what does the subscriber actually receive?
 
-The generic role nodes print one `[name] rx <topic>: <count> in 1 s` line per
+The generic role nodes print one `[name] rx <topic>: <count> in <t> s` line per
 reader and per second (see `nodes/spec.py`). This reads those lines back from
 the harness, so that the example shows the symptom (nothing arrives) next to
 TopicForge's diagnosis.
@@ -12,16 +12,25 @@ import time
 
 from harness import Bus, Checks, step
 
-MIN_LINES = 2  # fewer than this and "every count is 0" would be vacuous
-WAIT_S = 15.0
-_COUNT = re.compile(r": (\d+) in 1 s")
+# How long to observe. "0 received" only means "broken" once discovery had time
+# to finish, so the broken pair is watched for a fixed number of one-second
+# reports (discovery takes a second or two) instead of a couple of lines. The
+# control pair is watched until it has data, or until a timeout.
+QUIET_LINES = 6
+WAIT_S = 20.0
+MIN_SAMPLES = 5
+_COUNT = re.compile(r": (\d+) in [\d.]+ s")
 
 
-async def rx_counts(bus: Bus, reader: str, topic: str, min_lines: int = MIN_LINES) -> list[str]:
-    """The `rx` lines of `reader` for `topic`, waiting until there are enough."""
+async def rx_counts(bus: Bus, reader: str, topic: str, *, receives: bool) -> list[str]:
+    """The `rx` lines of `reader` for `topic`, waiting until the verdict is meaningful."""
     prefix = f"[{reader}] rx {topic}:"
     deadline = time.monotonic() + WAIT_S
-    while len(bus.lines(reader, prefix)) < min_lines and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        lines = bus.lines(reader, prefix)
+        done = _total(lines) >= MIN_SAMPLES if receives else len(lines) >= QUIET_LINES
+        if done:
+            break
         await asyncio.sleep(0.5)
     return bus.lines(reader, prefix)
 
@@ -42,16 +51,18 @@ async def show_received(
     """Step `number`: print the reader's last rx lines for `topic` and check them.
 
     `receives=False` is the broken pair: every reported count must be 0.
-    `receives=True` is the compatible control: at least 5 samples in total.
+    `receives=True` is the compatible control: at least MIN_SAMPLES samples in total.
     """
     step(number, f"What does {reader} actually receive on {topic}?", f"{reader} output")
-    lines = await rx_counts(bus, reader, topic)
+    lines = await rx_counts(bus, reader, topic, receives=receives)
     for line in lines[-2:]:
         print(f"    {line}")
-    checks.expect(len(lines) >= MIN_LINES, f"{reader} reported on {topic} at least twice")
+    checks.expect(len(lines) >= 2, f"{reader} reported on {topic} ({len(lines)} reports)")
     total = _total(lines)
     if receives:
-        checks.expect(total >= 5, f"{topic}: {reader} receives data ({total} samples so far)")
+        checks.expect(
+            total >= MIN_SAMPLES, f"{topic}: {reader} receives data ({total} samples so far)"
+        )
     else:
         checks.expect(total == 0, f"{topic}: {reader} receives nothing ({total} samples so far)")
     return lines

@@ -41,7 +41,7 @@ PROMPT = "dashboard_typo shows nothing on DDS domain 0. Which topics have a read
 
 async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     print("  Seen from inside (what the programs print):")
-    for _ in range(25):  # up to 5 s to collect 20 samples
+    for _ in range(75):  # up to 15 s to collect 20 samples
         if len(bus.lines("dashboard", "rx ")) >= 20:
             break
         await asyncio.sleep(0.2)

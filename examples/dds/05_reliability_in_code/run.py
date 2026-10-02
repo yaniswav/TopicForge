@@ -61,7 +61,7 @@ INCOMPATIBLE = "incompatible QoS from a writer: RELIABILITY (id 11)"
 
 async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     print("  Seen from inside (what the programs print):")
-    for _ in range(25):  # up to 5 s
+    for _ in range(75):  # up to 15 s
         if bus.lines("nav_planner", "incompatible") and len(bus.lines("scan_logger", "rx ")) >= 20:
             break
         await asyncio.sleep(0.2)

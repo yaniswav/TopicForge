@@ -31,13 +31,13 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 [3] What does nav_planner actually receive on scan?
     -> nav_planner output
-    [nav_planner] rx scan: 0 in 1 s
-    [nav_planner] rx scan: 0 in 1 s
+    [nav_planner] rx scan: 0 in 1.0 s
+    [nav_planner] rx scan: 0 in 1.0 s
 
 [4] What does lidar_driver actually receive on odom?
     -> lidar_driver output
-    [lidar_driver] rx odom: 10 in 1 s, last seq 39
-    [lidar_driver] rx odom: 10 in 1 s, last seq 49
+    [lidar_driver] rx odom: 10 in 1.0 s, last seq 39
+    [lidar_driver] rx odom: 10 in 1.0 s, last seq 49
 ```
 
 - On `scan`, the planner **requests** RELIABLE delivery and the driver only

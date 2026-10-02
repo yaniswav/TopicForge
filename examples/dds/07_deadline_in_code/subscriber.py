@@ -77,7 +77,10 @@ while not stop.is_set():
             continue
         print(f"rx seq={sample.seq}", flush=True)
 
-    # Statuses: DDS's own account of the connection, polled each turn.
+    # Statuses: DDS's own account of the connection. They are POLLED here, every
+    # 500 ms turn, not triggered. The event-driven alternative is to attach the
+    # reader's StatusCondition to the WaitSet, so that the wait wakes up on a
+    # status change instead of on the timeout.
     count = reader.get_subscription_matched_status().current_count
     if count != matched:
         matched = count
