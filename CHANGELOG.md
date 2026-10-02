@@ -5,7 +5,34 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.6] - Unreleased
+
+Fixes from an external test of 0.5.5 with the Cyclone backend on a ROS 2 Humble
+bus of Fast DDS participants, reported by the OmniSim team.
+
+### Changed
+
+- `QosProfile.history` is now optional, and a new `history_note` explains why it
+  is missing. DDS discovery does not carry History (the builtin endpoint data has
+  no such member), so TopicForge reports it only for its own endpoints and for
+  Cyclone DDS peers that set something other than the default. For Fast DDS, RTI
+  and unknown-vendor endpoints it is `null`; for a Cyclone peer, KEEP_LAST depth 1
+  is also `null` because the binding fills missing QoS with that default. Clients
+  that assumed `history` is always a string must handle `null`.
+- A discovered endpoint that announced no History keeps its reliability,
+  durability and the other policies; before, the whole `qos` became `null`.
+- `detect_qos_mismatches`: when History is unknown for a pair where it could
+  matter, the pair is listed as "could not be checked on History" instead of
+  being judged.
+
+### Fixed
+
+- `detect_qos_mismatches` no longer calls service, action, `rosout`,
+  `parameter_events` or `ros_discovery_info` topics typos of each other (for
+  example `get_parametersRequest` vs `set_parametersRequest`), and no longer
+  reports them as orphans. Only plain `rt/` topics and bare DDS names are compared.
+- The "differs by N edits" hint is now only given between a writer-only name and
+  a reader-only name; a topic with both sides is never suggested as a typo.
 
 ## [0.5.5] - 2026-10-02
 

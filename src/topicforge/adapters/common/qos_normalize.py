@@ -135,8 +135,8 @@ def _extended_policies(qos: Any) -> dict[str, Any]:
 def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
     """Map a Cyclone discovery sample's QoS to a `QosProfile`.
 
-    Returns `None` when reliability, durability or history is missing; the
-    analyzer needs all three.
+    Returns `None` when reliability or durability is missing. A missing
+    history leaves `history` as `None`: SEDP does not carry it by spec.
     """
     qos = getattr(sample, "qos", None)
     if qos is None:
@@ -174,7 +174,7 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
     except (TypeError, AttributeError):  # defensive against odd qos shapes
         return None
 
-    if reliability is None or durability is None or history is None:
+    if reliability is None or durability is None:
         return None
 
     return QosProfile(
@@ -198,7 +198,7 @@ def fast_qos_to_profile(
 
     The three maps are the binding's integer-enum -> canonical-string
     tables, built by the adapter from `fastdds` constants. Returns `None`
-    when reliability, durability or history cannot be resolved.
+    when reliability or durability cannot be resolved.
     """
     qos = getattr(sample, "qos", None)
     if qos is None:
@@ -247,7 +247,7 @@ def fast_qos_to_profile(
     except (TypeError, AttributeError):  # defensive
         return None
 
-    if reliability is None or durability is None or history is None:
+    if reliability is None or durability is None:
         return None
 
     return QosProfile(
@@ -259,11 +259,48 @@ def fast_qos_to_profile(
     )
 
 
+HISTORY_NOT_ANNOUNCED_NOTE = (
+    "History is not carried by DDS discovery (it is not part of the builtin endpoint "
+    "data), so it is not reported for this endpoint."
+)
+
+
+def apply_history_policy(
+    qos: QosProfile | None, *, vendor: str, is_observer: bool = False
+) -> QosProfile | None:
+    """Report History only where the observed value was really announced.
+
+    The Cyclone binding fills every missing QoS with its own defaults, so a
+    Cyclone peer showing KEEP_LAST depth 1 is indistinguishable from "not
+    announced". Fast DDS and RTI do not send History at all, and an unknown
+    vendor cannot be trusted. The observer's own endpoints are authoritative.
+    Anything else becomes `history=None` plus an explanatory `history_note`.
+    """
+    if qos is None or is_observer:
+        return qos
+    announced = (
+        vendor == "cyclone"
+        and qos.history is not None
+        and not (qos.history == "KEEP_LAST" and qos.history_depth in (None, 1))
+    )
+    if announced:
+        return qos
+    return qos.model_copy(
+        update={
+            "history": None,
+            "history_depth": None,
+            "history_note": HISTORY_NOT_ANNOUNCED_NOTE,
+        }
+    )
+
+
 __all__ = [
     "CYCLONE_DURABILITY_NAMES",
     "CYCLONE_HISTORY_NAMES",
     "CYCLONE_RELIABILITY_NAMES",
+    "HISTORY_NOT_ANNOUNCED_NOTE",
     "INFINITE_DURATION_NS",
+    "apply_history_policy",
     "cyclone_qos_to_profile",
     "duration_state",
     "duration_to_ns",
