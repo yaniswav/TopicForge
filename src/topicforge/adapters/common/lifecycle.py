@@ -21,10 +21,10 @@ Design rules:
   library's worker thread (Fast) ; tool calls fire on the MCP request
   thread. An RLock guards every mutating method ; readers (
   `snapshot_participants`, `events_since`) return defensive copies.
-* **No background thread.** The buffer is updated in-band when an
-  adapter polls or a callback fires. A participant that joined and
-  left between two adapter touches is invisible: this is the
-  documented Cyclone caveat in `participant_events` tool description.
+* **No background thread of its own.** The buffer is fed by whoever owns
+  it: Fast DDS listener callbacks, or the Cyclone `DiscoveryTracker`
+  thread (`common/discovery_tracker.py`), which applies builtin-reader
+  samples carrying DDS timestamps.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from typing import Literal
 
 from topicforge.adapters.common.dds_helpers import VendorTag
 from topicforge.models import ParticipantEvent, ParticipantInfo
+from topicforge.models.schemas import TimeSource
 
 MAX_EVENTS = 200
 """Hard cap on the event ring. Older entries drop out as new ones arrive."""
@@ -82,8 +83,14 @@ class LifecycleBuffer:
         mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
         name: str | None = None,
+        announced_ns: int | None = None,
     ) -> None:
         """Mark a participant as observed at `now_ns` (default: time.time_ns()).
+
+        `announced_ns` is the DDS source timestamp of the announcement, when
+        known: it becomes the `discovered` event time (`time_source`
+        `dds_source_timestamp`), while `first_seen_ns` / `last_seen_ns` stay
+        on the local clock.
 
         Idempotent on re-observation: updates `last_seen_ns`, increments
         `seen_count`, and re-emits a `discovered` event only when the
@@ -107,6 +114,7 @@ class LifecycleBuffer:
                     last_seen_ns=ts,
                     status="active",
                     seen_count=1,
+                    announced_ns=announced_ns,
                 )
                 self._append_event(
                     guid=guid,
@@ -117,6 +125,7 @@ class LifecycleBuffer:
                     domain_id=domain_id,
                     mode_effective=mode_effective,
                     ts=ts,
+                    announced_ns=announced_ns,
                 )
                 return
             re_joined = existing.status == "left"
@@ -128,6 +137,8 @@ class LifecycleBuffer:
                     # Hostname may surface only on later discovery samples.
                     "hostname": hostname or existing.hostname,
                     "name": name or existing.name,
+                    "announced_ns": announced_ns or existing.announced_ns,
+                    **({"lost_ns": None, "lost_time_source": None} if re_joined else {}),
                 }
             )
             if re_joined:
@@ -140,6 +151,7 @@ class LifecycleBuffer:
                     domain_id=domain_id,
                     mode_effective=mode_effective,
                     ts=ts,
+                    announced_ns=announced_ns,
                 )
 
     def record_lost(
@@ -151,18 +163,30 @@ class LifecycleBuffer:
         domain_id: int | None = None,
         mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
+        lost_ns: int | None = None,
+        time_source: TimeSource | None = None,
     ) -> None:
         """Mark a participant as left. Idempotent: emits one event per
         transition `active -> left`. Re-calls while already `"left"` are
         no-ops. If the GUID was never seen, falls through to a no-op
         (we cannot synthesize a participant we never observed).
+
+        `lost_ns` / `time_source` carry a DDS-derived loss time when the
+        caller has one; otherwise the loss is stamped `observed_local` at
+        `now_ns`.
         """
         ts = now_ns if now_ns is not None else time.time_ns()
         with self._lock:
             existing = self._participants.get(guid)
             if existing is None or existing.status == "left":
                 return
-            self._participants[guid] = existing.model_copy(update={"status": "left"})
+            event_ts = lost_ns if lost_ns is not None else ts
+            source: TimeSource = time_source or "observed_local"
+            if lost_ns is None:
+                source = "observed_local"
+            self._participants[guid] = existing.model_copy(
+                update={"status": "left", "lost_ns": event_ts, "lost_time_source": source}
+            )
             self._append_event(
                 guid=guid,
                 event_type="lost",
@@ -171,7 +195,9 @@ class LifecycleBuffer:
                 name=existing.name,
                 domain_id=domain_id if domain_id is not None else existing.domain_id,
                 mode_effective=mode_effective,
-                ts=ts,
+                ts=event_ts,
+                time_source=source,
+                observed_ns=ts,
             )
 
     def reconcile(
@@ -208,6 +234,11 @@ class LifecycleBuffer:
                 )
 
     # ------------------------- read-only snapshots --------------------------
+
+    def is_known(self, guid: str) -> bool:
+        """True when `guid` has been recorded, active or left."""
+        with self._lock:
+            return guid in self._participants
 
     def snapshot_participants(self, *, domain_id: int | None = None) -> list[ParticipantInfo]:
         """Return a defensive copy of currently-known participants.
@@ -272,14 +303,23 @@ class LifecycleBuffer:
         mode_effective: EffectiveMode,
         ts: int,
         name: str | None = None,
+        announced_ns: int | None = None,
+        time_source: TimeSource | None = None,
+        observed_ns: int | None = None,
     ) -> None:
         # Called under self._lock: do not acquire again.
+        # `ts` is the local observation time; a DDS announcement time, when
+        # given, takes over as the event time.
+        if time_source is None:
+            time_source = "dds_source_timestamp" if announced_ns else "observed_local"
         self._events.append(
             ParticipantEvent(
                 guid=guid,
                 event_type=event_type,
                 vendor=vendor,
-                timestamp_ns=ts,
+                timestamp_ns=announced_ns if announced_ns else ts,
+                time_source=time_source,
+                observed_ns=observed_ns if observed_ns is not None else ts,
                 hostname=hostname,
                 name=name,
                 domain_id=domain_id,

@@ -14,22 +14,29 @@ factory only loads this module when `TOPICFORGE_DDS_BACKEND=cyclone`
 
 Current scope (v0.4.0+):
 
-* `list_participants`: DCPSParticipant discovery via builtin reader,
-  enriched with `LifecycleBuffer` reconciliation (first/last seen,
-  status, seen_count).
-* `detect_qos_mismatches`: DCPSSubscription + DCPSPublication paired by
-  topic, run through the vendor-neutral pure analyzer in
+Discovery is tracked continuously: a daemon `DiscoveryTracker` thread is the
+ONLY code that touches the three builtin readers (it `take()`s, which would
+hide samples from any other reader), and folds what it takes into the caches
+of `common/discovery_tracker.py`. Every tool below reads those caches, so no
+handler does DDS reads and the lifecycle does not depend on tool calls.
+
+* `list_participants`: the `LifecycleBuffer` (first/last seen, status,
+  seen_count, announced_ns, lost_ns).
+* `detect_qos_mismatches`: cached DCPSSubscription + DCPSPublication paired
+  by topic, run through the vendor-neutral pure analyzer in
   `adapters/common/qos_analyzer.py`.
 * `peek_dds_samples`: structured payloads on the 3 builtin DCPS topics
-  (DCPSParticipant, DCPSSubscription, DCPSPublication). Arbitrary user
+  (DCPSParticipant, DCPSSubscription, DCPSPublication), served from the
+  caches: the current discovery state, not a stream. Arbitrary user
   topics go through `_peek_user_topic`, which confirms the topic is on the
   bus and returns one annotated placeholder (`_decode_status="raw"`, empty
   bytes). Dynamic XTypes decode of user-topic payloads is DISABLED in this
   release pending real-bus validation: see `_try_dynamic_decode_cyclone`.
   The placeholder is not a received sample and never feeds `topic_metrics`.
 * `participant_events`: `discovered` / `lost` events from the
-  `LifecycleBuffer`. Caveat : Cyclone updates the buffer only on
-  `list_participants` poll calls (no native at-discovery callbacks).
+  `LifecycleBuffer`, timed by the DDS source timestamps of the discovery
+  samples. Caveat: a participant cycle faster than the builtin reader's
+  history depth between two tracker passes can still be missed.
 * `topic_metrics`: opportunistic frequency / sequence-gap / latency
   metrics buffered as `peek_dds_samples` surfaces samples of the builtin
   DCPS topics (no native at-sample-receive callback in cyclonedds 2.6.x
@@ -66,11 +73,12 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
     DYNAMIC_DECODE_DISABLED_NOTE,
-    LifecycleBuffer,
+    DiscoveryCaches,
+    DiscoveryTracker,
     MetricsBuffer,
+    SampleCache,
     announced_ns_of,
     builtin_payload,
-    canonicalize_vendor_id,
     decode_dynamic_sample,
     decode_field_value,
     detect_mismatches_across_endpoints,
@@ -90,22 +98,10 @@ from topicforge.adapters.common import (
     cyclone_extract_guid as _extract_guid,
 )
 from topicforge.adapters.common import (
-    cyclone_extract_hostname as _extract_hostname,
-)
-from topicforge.adapters.common import (
-    cyclone_extract_participant_name as _extract_participant_name,
-)
-from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
 )
 from topicforge.adapters.common import (
-    cyclone_extract_vendor_id as _extract_vendor_id,
-)
-from topicforge.adapters.common import (
     cyclone_qos_to_profile as _cyclone_qos_to_profile,
-)
-from topicforge.adapters.common import (
-    is_alive_sample as _is_alive,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -135,22 +131,15 @@ _extract_publish_ns_from_payload = extract_publish_ns_from_payload
 log = logging.getLogger(__name__)
 
 # Tunables: kept module-level so a future env-var hook is a one-line
-# change. Discovery + sample reads use `read_iter` (non-destructive) rather
-# than `take_iter`, so observing the builtin discovery topics does not drain
-# the reader cache and cause spurious lost / re-discovered participant
-# flapping across polls. (Audit P1-5; the read-vs-take semantics on a real
-# bus must be confirmed on the `scripts/integration/` rig before this ships.)
-# `read_iter(timeout=...)` resets its timeout on every received sample, so it
-# never ends on a topic publishing faster than the timeout: every call site
-# bounds the iterator with `take_bounded` (itertools.islice) instead of
-# materializing it and truncating afterwards.
+# change. The builtin readers are drained by the tracker thread alone, with
+# `take()`; the rest of the adapter reads the tracker's caches.
+# `read_iter(timeout=...)` (used by the unreachable dynamic-decode code)
+# resets its timeout on every received sample, so it never ends on a topic
+# publishing faster than the timeout: bound it with `take_bounded`.
 _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
-# Discovery needs a moment after our participant joins before the first
-# snapshot is complete: SPDP/SEDP exchanges take a few hundred ms locally.
-_DISCOVERY_WARMUP_SEC = 2.0
 
 # Builtin DCPS topics that `peek_dds_samples` serves with structured
 # payloads. Arbitrary user topics route through `_peek_user_topic`, which
@@ -322,9 +311,9 @@ class CycloneDdsAdapter:
     def __init__(self, domain_id: int = 0) -> None:
         validate_domain_id(domain_id)
         self._domain_id = domain_id
-        # v0.4.0 Phase 1: lifecycle tracking. Cyclone uses polling-delta
-        # reconciliation: see `list_participants` for the feed pattern.
-        self._lifecycle = LifecycleBuffer()
+        # Lifecycle buffer + endpoint caches, fed by the tracker thread below.
+        self._caches = DiscoveryCaches()
+        self._lifecycle = self._caches.lifecycle
         # v0.4.0 Phase 2: metrics buffer fed opportunistically by
         # `peek_dds_samples` flows. See `_peek_builtin` / `_peek_user_topic`.
         self._metrics = MetricsBuffer()
@@ -336,9 +325,9 @@ class CycloneDdsAdapter:
             raise AdapterError(
                 f"Failed to create CycloneDDS DomainParticipant on domain {domain_id}: {exc}"
             ) from exc
-        self._joined_at = time.monotonic()
+        self.observer_started_ns = time.time_ns()
         # One reader per builtin discovery topic, kept for the adapter's
-        # lifetime. Creating one per call leaked a DDS reader per tool call.
+        # lifetime, and read by the tracker thread only.
         self._builtin: dict[Any, tuple[Any, Any]] = {}
         for topic_class in (
             BuiltinTopicDcpsParticipant,
@@ -346,33 +335,45 @@ class CycloneDdsAdapter:
             BuiltinTopicDcpsSubscription,
         ):
             self._builtin_reader(topic_class)
+        self._tracker = DiscoveryTracker(self._take_all, self._caches, domain_id=domain_id)
+        self._tracker.start()
 
     def _builtin_reader(self, topic_class: Any) -> tuple[Any, Any]:
         """The adapter's reader for one builtin topic, and an any-state read condition."""
         entry = self._builtin.get(topic_class)
         if entry is None:
             reader = BuiltinDataReader(self._dp, topic_class)
-            # Alive instances only, in any read state: the limit then applies
-            # to live entries, so departed ones can never crowd them out.
-            condition = ReadCondition(reader, SampleState.Any | ViewState.Any | InstanceState.Alive)
+            # Every instance state: disposed and no-writers instances come back
+            # as invalid samples (key + sample_info), which is how a leave is seen.
+            condition = ReadCondition(reader, SampleState.Any | ViewState.Any | InstanceState.Any)
             entry = self._builtin[topic_class] = (reader, condition)
         return entry
 
-    def _discovery_snapshot(self, topic_class: Any, limit: int) -> list[Any]:
-        """Every live entry the discovery cache holds for one builtin topic.
-
-        Non-blocking, and blind to the read/unread state, so each call sees
-        the whole current cache rather than only what arrived since the
-        previous call. Disposed entries (participants or endpoints that are
-        gone) are filtered out.
-        """
-        # Paid once, by a call made within 2 s of startup. It blocks the MCP
-        # event loop like every handler does today (handlers are synchronous).
-        wait = _DISCOVERY_WARMUP_SEC - (time.monotonic() - self._joined_at)
-        if wait > 0:
-            time.sleep(wait)
+    def _take_new(self, topic_class: Any, limit: int) -> list[Any]:
+        """Take everything new from one builtin reader (tracker thread only)."""
         reader, condition = self._builtin_reader(topic_class)
-        return [s for s in reader.read(N=limit, condition=condition) if _is_alive(s)]
+        taken: list[Any] = []
+        while True:
+            batch = reader.take(N=limit, condition=condition)
+            taken.extend(batch)
+            if len(batch) < limit:
+                return taken
+
+    def _take_all(self) -> tuple[list[Any], list[Any], list[Any]]:
+        """One tracker pass worth of raw samples: participants, publications, subscriptions."""
+        return (
+            self._take_new(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS),
+            self._take_new(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS),
+            self._take_new(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS),
+        )
+
+    def close(self) -> None:
+        """Stop the tracker thread. The participant is released with the process."""
+        self._tracker.stop()
+
+    def observer_status(self) -> dict[str, Any]:
+        """Observer start time and tracker counters, for `health_check`."""
+        return {"observer_started_ns": self.observer_started_ns, **self._tracker.status()}
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -410,39 +411,15 @@ class CycloneDdsAdapter:
         participant sees: spinning up a second participant on the fly
         would violate the "one bus join per adapter instance" rule.
 
-        v0.4.0 Phase 1: each call feeds the `LifecycleBuffer`. GUIDs seen
-        in this snapshot are recorded as `seen` ; previously-known GUIDs
-        absent from the snapshot are reconciled to `lost`. The returned
-        list comes from the buffer (carrying `first_seen_ns`,
-        `last_seen_ns`, `status`, `seen_count`), not directly from the
-        raw discovery samples.
+        Served from the `LifecycleBuffer` the tracker thread keeps current
+        (first/last seen, status, seen_count, announced_ns, lost_ns). The
+        reconcile below is a safety net only: the tracker already records
+        every loss from the builtin readers' dispose samples.
         """
-        try:
-            samples = self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS)
-        except Exception as exc:
-            raise AdapterError(
-                f"CycloneDDS participant discovery failed on domain {self._domain_id} "
-                f"({type(exc).__name__}: {exc}). Common causes: DDS domain mismatch, "
-                f"firewall blocking RTPS multicast, or CYCLONEDDS_URI pointing at an "
-                f"unreadable config."
-            ) from exc
-
-        observed_guids: set[str] = set()
-        for sample in samples:
-            guid = format_guid(_extract_guid(sample))
-            observed_guids.add(guid)
-            self._lifecycle.record_seen(
-                guid=guid,
-                vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
-                hostname=_extract_hostname(sample),
-                name=_extract_participant_name(sample),
-                domain_id=self._domain_id,
-                mode_effective="live",
-            )
-        # Reconcile: previously-active GUIDs missing from this snapshot
-        # flip to "left" + emit a `lost` event.
         self._lifecycle.reconcile(
-            observed_guids=observed_guids,
+            observed_guids={
+                format_guid(_extract_guid(s)) for s in self._caches.participants.values()
+            },
             domain_id=self._domain_id,
             mode_effective="live",
         )
@@ -456,15 +433,8 @@ class CycloneDdsAdapter:
         the Fast adapter, unit-tested without a binding). This method only
         gathers the vendor-native endpoint samples and hands them over.
         """
-        try:
-            subs = self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS)
-            pubs = self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS)
-        except Exception as exc:
-            raise AdapterError(
-                f"CycloneDDS endpoint discovery failed on domain {self._domain_id} "
-                f"({type(exc).__name__}: {exc})."
-            ) from exc
-
+        subs = self._caches.subscriptions.values()
+        pubs = self._caches.publications.values()
         return detect_mismatches_across_endpoints(
             subs=subs,
             pubs=pubs,
@@ -491,13 +461,7 @@ class CycloneDdsAdapter:
         not whether samples move. The pure assembly lives in
         `common.endpoints.build_endpoint_listing`.
         """
-        try:
-            parts, pubs, subs = self._raw_endpoint_samples()
-        except Exception as exc:
-            raise AdapterError(
-                f"CycloneDDS endpoint discovery failed on domain {self._domain_id} "
-                f"({type(exc).__name__}: {exc})."
-            ) from exc
+        parts, pubs, subs = self._raw_endpoint_samples()
         return listing_from_samples(
             parts,
             pubs,
@@ -511,15 +475,15 @@ class CycloneDdsAdapter:
         )
 
     def _raw_endpoint_samples(self) -> tuple[list[Any], list[Any], list[Any]]:
-        """Raw builtin samples (participants, publications, subscriptions).
+        """Cached builtin samples (participants, publications, subscriptions).
 
-        The only place `list_endpoints` touches the builtin readers: every
-        other step is a pure function over these lists.
+        The only place `list_endpoints` gets its input: every other step is a
+        pure function over these lists.
         """
         return (
-            self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS),
-            self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS),
-            self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS),
+            self._caches.participants.values(),
+            self._caches.publications.values(),
+            self._caches.subscriptions.values(),
         )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
@@ -544,21 +508,10 @@ class CycloneDdsAdapter:
         return self._peek_user_topic(topic, count)
 
     def _peek_builtin(self, topic: str, count: int) -> SampleResult:
-        """Builtin DCPS topic peek: unchanged from v0.3.0."""
-        topic_class = _BUILTIN_DCPS_TOPICS[topic]
-        try:
-            samples_raw = self._discovery_snapshot(topic_class, count)
-        except Exception as exc:
-            raise AdapterError(
-                f"CycloneDDS sample peek failed on topic {topic!r} ({type(exc).__name__}: {exc})."
-            ) from exc
-
-        import time
-
+        """Builtin DCPS topic peek: the cached current discovery state, not a stream."""
+        samples_raw = self._cache_for(topic).values(count)
         now_ns = time.time_ns()
-        names = participant_names(
-            self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS)
-        )
+        names = participant_names(self._caches.participants.values())
         observer = self._observer_guid()
         samples = [
             MessageSample(
@@ -588,6 +541,14 @@ class CycloneDdsAdapter:
             mode_effective="live",
         )
 
+    def _cache_for(self, topic: str) -> SampleCache:
+        """The tracker cache that backs one builtin DCPS topic."""
+        if topic == "DCPSParticipant":
+            return self._caches.participants
+        if topic == "DCPSPublication":
+            return self._caches.publications
+        return self._caches.subscriptions
+
     def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
         """User-topic peek: topic presence plus an annotated placeholder.
 
@@ -613,8 +574,6 @@ class CycloneDdsAdapter:
             # Unreachable while dynamic decode is disabled. Metrics fill
             # on the decoded user-topic path. Pull seq# and publish_ns from
             # the decoded payload when available: best-effort.
-            import time
-
             now_ns = time.time_ns()
             for sample in decoded:
                 self._metrics.record(
@@ -643,23 +602,16 @@ class CycloneDdsAdapter:
 
     def _is_topic_on_bus(self, topic: str) -> bool:
         """True iff a sub or pub for `topic` has been discovered."""
-        try:
-            subs = self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS)
-            pubs = self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS)
-        except Exception:  # pragma: no cover: defensive
-            log.exception("cyclone discovery probe for topic %r failed", topic)
-            return False
-        return any(_extract_topic_name(sample) == topic for sample in subs + pubs)
+        endpoints = self._caches.subscriptions.values() + self._caches.publications.values()
+        return any(_extract_topic_name(sample) == topic for sample in endpoints)
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300
     ) -> list[ParticipantEvent]:
         """Return lifecycle events for `self._domain_id` within the window.
 
-        Cyclone's lifecycle log is populated lazily by `list_participants`
-        calls: see the docstring there. A GUID that joined and left
-        between two `list_participants` calls will not produce events.
-        The `participant_events` tool description makes this explicit.
+        The log is kept current by the tracker thread, independently of tool
+        calls, with DDS-derived timestamps (`time_source`).
         """
         if lookback_seconds < 1 or lookback_seconds > 86400:
             raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")

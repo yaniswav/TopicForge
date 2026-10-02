@@ -193,3 +193,25 @@ def test_live_without_ros2_reports_the_mock_that_was_built() -> None:
     assert payload["requested_mode"] == "live"
     assert payload["ros_backend"] == "mock"
     assert payload["dds_backend"] == "mock"
+
+
+def test_report_carries_observer_and_tracker_status_when_the_adapter_has_them() -> None:
+    adapter = _NamedAdapter("cyclone")
+    adapter.observer_status = lambda: {  # type: ignore[attr-defined]
+        "observer_started_ns": 5,
+        "running": True,
+        "passes": 7,
+        "errors": 1,
+        "last_pass_ns": 9,
+    }
+    report = HealthService(_settings(), adapter).report()  # type: ignore[arg-type]
+
+    assert (report.observer_started_ns, report.tracker_running) == (5, True)
+    assert (report.tracker_passes, report.tracker_errors, report.tracker_last_pass_ns) == (7, 1, 9)
+    assert report.now_ns is not None
+
+
+def test_report_leaves_tracker_fields_empty_without_an_observer() -> None:
+    report = HealthService(_settings(), _adapter("mock")).report()
+
+    assert report.observer_started_ns is None and report.tracker_errors is None

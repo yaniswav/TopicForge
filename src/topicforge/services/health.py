@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
-from typing import Literal
+import time
+from typing import Any, Literal
 
 from topicforge import __version__
 from topicforge.adapters.base import MiddlewareAdapter
@@ -39,7 +40,14 @@ class HealthService:
         things look broken, so it must always answer.
         """
         ros_backend, dds_backend = _backends_from_adapter_name(self._adapter.name)
+        observer = _observer_status(self._adapter)
         return HealthReport(
+            now_ns=time.time_ns(),
+            observer_started_ns=observer.get("observer_started_ns"),
+            tracker_running=observer.get("running"),
+            tracker_passes=observer.get("passes"),
+            tracker_errors=observer.get("errors"),
+            tracker_last_pass_ns=observer.get("last_pass_ns"),
             mode=self._adapter.effective_mode,
             requested_mode=self._settings.mode,
             ros2_available=shutil.which(self._settings.ros2_executable) is not None,
@@ -51,6 +59,21 @@ class HealthService:
             middleware_available=_middleware_available(dds_backend, self._settings),
             ros_backend=ros_backend,
         )
+
+
+def _observer_status(adapter: MiddlewareAdapter) -> dict[str, Any]:
+    """Observer start time and tracker counters when the adapter has them, else `{}`.
+
+    Optional capability (Cyclone): never part of the protocol, and a failure
+    here must not break `health_check`.
+    """
+    status = getattr(adapter, "observer_status", None)
+    if not callable(status):
+        return {}
+    try:
+        return dict(status() or {})
+    except Exception:
+        return {}
 
 
 def _backends_from_adapter_name(name: str) -> tuple[RosBackendTag, DdsBackendTag]:
