@@ -69,18 +69,19 @@ from topicforge.adapters.common import (
     LifecycleBuffer,
     MetricsBuffer,
     announced_ns_of,
-    build_endpoint_listing,
+    builtin_payload,
     canonicalize_vendor_id,
     decode_dynamic_sample,
     decode_field_value,
     detect_mismatches_across_endpoints,
     dynamic_type_name,
-    endpoint_record,
     extract_publish_ns_from_payload,
     extract_seq_from_payload,
     format_guid,
     format_participant_key,
     iter_field_names,
+    listing_from_samples,
+    participant_names,
     take_bounded,
     user_topic_placeholder,
     validate_domain_id,
@@ -96,9 +97,6 @@ from topicforge.adapters.common import (
 )
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
-)
-from topicforge.adapters.common import (
-    cyclone_extract_type_name as _extract_type_name,
 )
 from topicforge.adapters.common import (
     cyclone_extract_vendor_id as _extract_vendor_id,
@@ -150,9 +148,6 @@ _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
-# `_raw_text` (the binding's repr of a discovery sample) is kept for
-# compatibility only: the structured payload fields carry the same facts.
-_RAW_TEXT_MAX_CHARS = 300
 # Discovery needs a moment after our participant joins before the first
 # snapshot is complete: SPDP/SEDP exchanges take a few hundred ms locally.
 _DISCOVERY_WARMUP_SEC = 2.0
@@ -483,11 +478,6 @@ class CycloneDdsAdapter:
         """Formatted GUID of this adapter's own participant."""
         return format_participant_key(self._dp.guid)
 
-    def _participant_names(self) -> dict[str, str | None]:
-        """Announced name by formatted guid, for every live participant."""
-        samples = self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS)
-        return {format_guid(_extract_guid(s)): _extract_participant_name(s) for s in samples}
-
     def list_endpoints(
         self,
         topic: str | None = None,
@@ -502,25 +492,34 @@ class CycloneDdsAdapter:
         `common.endpoints.build_endpoint_listing`.
         """
         try:
-            pubs = self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS)
-            subs = self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS)
-            names = self._participant_names()
+            parts, pubs, subs = self._raw_endpoint_samples()
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS endpoint discovery failed on domain {self._domain_id} "
                 f"({type(exc).__name__}: {exc})."
             ) from exc
-        observer = self._observer_guid()
-        records = [endpoint_record(s, "writer", names, observer) for s in pubs]
-        records += [endpoint_record(s, "reader", names, observer) for s in subs]
-        return build_endpoint_listing(
-            records,
+        return listing_from_samples(
+            parts,
+            pubs,
+            subs,
             domain_id=self._domain_id,
             mode_effective="live",
-            observer_guid=observer,
+            observer_guid=self._observer_guid(),
             topic=topic,
             participant_guid=participant_guid,
             include_observer=include_observer,
+        )
+
+    def _raw_endpoint_samples(self) -> tuple[list[Any], list[Any], list[Any]]:
+        """Raw builtin samples (participants, publications, subscriptions).
+
+        The only place `list_endpoints` touches the builtin readers: every
+        other step is a pure function over these lists.
+        """
+        return (
+            self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS),
+            self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS),
+            self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS),
         )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
@@ -557,14 +556,16 @@ class CycloneDdsAdapter:
         import time
 
         now_ns = time.time_ns()
-        names = self._participant_names()
+        names = participant_names(
+            self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS)
+        )
         observer = self._observer_guid()
         samples = [
             MessageSample(
                 topic=topic,
                 message_type=f"dds_builtin/{topic}",
                 timestamp_ns=announced_ns_of(s) or 0,
-                payload=_builtin_payload(topic, s, names, observer),
+                payload=builtin_payload(topic, s, names, observer),
             )
             for s in samples_raw
         ]
@@ -687,50 +688,6 @@ class CycloneDdsAdapter:
             domain_id=self._domain_id,
             mode_effective="live",
         )
-
-
-def _builtin_payload(
-    topic: str, sample: Any, names: dict[str, str | None], observer: str
-) -> dict[str, object]:
-    """Structured payload of one builtin DCPS sample (the `peek_dds_samples` shape).
-
-    Keeps `vendor`, `guid`, `topic_name` and `type_name` (the example harness
-    reads them) and adds the endpoint facts. `_raw_text` stays for
-    compatibility, truncated.
-    """
-    raw = repr(sample)
-    if len(raw) > _RAW_TEXT_MAX_CHARS:
-        raw = raw[:_RAW_TEXT_MAX_CHARS] + "... [truncated: use the structured fields above]"
-    payload: dict[str, object] = {
-        "vendor": canonicalize_vendor_id(_extract_vendor_id(sample)),
-        "guid": format_guid(_extract_guid(sample)),
-        "topic_name": _extract_topic_name(sample),
-        "type_name": _extract_type_name(sample),
-    }
-    if topic == "DCPSParticipant":
-        guid = str(payload["guid"])
-        payload.update(
-            role="participant",
-            participant_guid=guid,
-            participant_name=names.get(guid),
-            type_id=None,
-            is_observer=guid == observer,
-        )
-    else:
-        role = "writer" if topic == "DCPSPublication" else "reader"
-        rec = endpoint_record(sample, role, names, observer)
-        payload.update(
-            role=role,
-            participant_guid=rec["participant_guid"],
-            participant_name=rec["participant_name"],
-            type_id=rec["type_id"],
-            is_observer=rec["is_observer"],
-        )
-        qos = rec["qos"]
-        payload["qos"] = qos.model_dump(mode="json") if qos is not None else None
-    payload["announced_ns"] = announced_ns_of(sample)
-    payload["_raw_text"] = raw
-    return payload
 
 
 # Sample-introspection helpers (_extract_guid / _extract_vendor_id /
