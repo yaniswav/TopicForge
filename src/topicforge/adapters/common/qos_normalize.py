@@ -60,7 +60,11 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
 
     try:
         for policy in qos:
-            cls_name = type(policy).__name__
+            # cyclonedds 11.0.1 names policy classes with their scope,
+            # e.g. "Reliability.BestEffort" (observed on a live bus). Matching
+            # the bare "BestEffort" against that full name never succeeded, so
+            # no profile was ever built and no mismatch was ever reported.
+            cls_name = type(policy).__name__.rsplit(".", 1)[-1]
             if cls_name in CYCLONE_RELIABILITY_NAMES:
                 reliability = CYCLONE_RELIABILITY_NAMES[cls_name]
             elif cls_name in CYCLONE_DURABILITY_NAMES:

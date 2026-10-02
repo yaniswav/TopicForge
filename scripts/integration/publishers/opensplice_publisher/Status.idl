@@ -1,0 +1,10 @@
+/* DemoStatus payload for the TopicForge multi-vendor demo.
+ *
+ * No module on purpose: with idlpp -S -l c the DDS type name registered on
+ * the wire is then exactly "Status", as scripts/integration/DEMO_CONTRACT.md
+ * requires. Keyless (no #pragma keylist).
+ */
+struct Status {
+    unsigned long seq;
+    string text;
+};

@@ -1,0 +1,10 @@
+[package]
+name = "dust_publisher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Rust / Dust DDS participant for the TopicForge multi-vendor demo"
+license = "MIT"
+
+[dependencies]
+dust_dds = "0.16"

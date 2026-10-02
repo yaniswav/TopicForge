@@ -6,8 +6,7 @@ TopicForge is **read-only by architecture**, not by configuration.
 There is no write path in the protocol or in any shipped adapter ;
 the MCP client can introspect a robot stack but cannot publish,
 command, or modify anything. This is the load-bearing security
-posture, validated by the audit trail in
-`docs/projet-file/audit-followup-triage-v0.2.0.md`.
+posture.
 
 The current threat model is **local trust**: TopicForge runs as a
 subprocess of your MCP client (Claude Desktop, Claude Code) on a
@@ -32,11 +31,10 @@ Consequences :
 
 The roadmap to harden TopicForge for hosted / multi-tenant
 deployments lives in
-[`docs/product-plan.md section 5`](docs/product-plan.md) under
-"Audit-driven v0.3+ candidates": `TOPICFORGE_ROS2_BIN` allowlist,
-`subprocess.run` env scrub, `analyze_bag` workspace-root sandbox,
-path traversal rejection, signed Pro plugin entry point. Those land
-when the hosted MCP endpoint sprint (Phase 3) opens.
+[`docs/product-plan.md section 5`](docs/product-plan.md):
+`TOPICFORGE_ROS2_BIN` allowlist, `subprocess.run` env scrub,
+`analyze_bag` workspace-root sandbox, path traversal rejection.
+Those land if a hosted MCP endpoint is ever built.
 
 ## Reporting a vulnerability
 
@@ -68,10 +66,8 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest minor release receives security patches. As of
-2026-05-18, that's the `v0.4.x` line. Migrating from older versions
-is generally a small effort: see the `docs/MIGRATION_v0.x_to_v0.y.md`
-guides.
+Only the latest release receives security patches: `0.5.3` at the
+time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure
 

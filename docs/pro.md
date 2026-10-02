@@ -1,51 +1,28 @@
 ---
 layout: default
 title: TopicForge: commercial support and integration
-description: What the free tier already covers through multi-vendor DDS-RTPS observation, what actually requires the RTI Connext binding, and how to reach out for integration or support work.
+description: What the free tier already covers, what actually requires the RTI Connext binding, and how to reach out for integration or support work.
 ---
 
 # TopicForge: commercial support and integration
 
-TopicForge (open source, MIT) is read-only by architecture: there is no write path to a robot or a DDS bus, on any tier. This page is for teams that need something past what the open-source package already does - integration work, native RTI Connext access, or a support arrangement. There is no separate paid product today: no published price, no license key gate, no self-serve checkout. Everything below is arranged directly, by email.
+TopicForge (open source, MIT) is read-only by architecture: there is no write path to a robot or a DDS bus, for anyone. This page is for teams that need something past what the package already does: integration work, native RTI Connext access, or a support arrangement. There is no separate paid product, no published price, no license key and no self-serve checkout. Everything is arranged directly, by email, inbound only.
 
----
+## What the free package already does
 
-## What the free tier already does
+`pip install topicforge[dds]` installs the Eclipse CycloneDDS adapter. It joins a DDS domain as a read-only RTPS participant and, because the OMG DDS-RTPS discovery protocol is standardized, reports every conformant vendor on the domain through the builtin discovery topics, RTI Connext included: participants, readers and writers, their QoS, QoS mismatches, and lifecycle events. You need neither RTI's SDK nor a license to see an RTI publisher. This has been exercised against Cyclone and Dust DDS participants; RTI itself has not been observed yet. See [`dds-interop-matrix.md`](dds-interop-matrix.md). The ROS2 graph and bag tools are plain open source too. If that covers your use case, you need nothing on this page.
 
-`pip install topicforge[dds]` gets you the Eclipse CycloneDDS adapter (the extra resolves to `[dds-cyclone]`). The eProsima Fast DDS adapter is also in the package, but its Python binding is not on PyPI and has to be built from eProsima's sources. Either one joins a DDS domain as a read-only DDS-RTPS participant, and the OMG DDS-RTPS interoperability guarantee means that participant discovers and reports every conformant vendor on the domain through the builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) - RTI Connext included. That is the design; it has not yet been exercised against a live multi-vendor bus. If your goal is to *observe* what is on the bus (participants, topics, QoS mismatches, samples, lifecycle events, metrics), the free tier already does that against an RTI-based system: you do not need RTI's own SDK, and you do not need a license, to see an RTI publisher from a Cyclone or Fast DDS participant. See [`dds-interop-matrix.md`](dds-interop-matrix.md) for how that works and its known gaps.
+## When the RTI Connext adapter is the right tool
 
-The ROS2 graph introspection tools are plain OSS as well and unaffected by anything below.
+An observer from another vendor is still a foreign participant: RTI-proprietary transports and security modes that never touch standard RTPS discovery stay invisible to it. A native RTI Connext adapter exists for the cases where your domain runs RTI's DDS Security plugin with credentials, uses a pure shared-memory transport, or depends on RTI-only extensions. It is bring-your-own-everything: you supply the `rti.connextdds` Python binding and a valid RTI Connext license; TopicForge does not bundle, resell or redistribute either. The open-source core does not load it automatically, and `TOPICFORGE_DDS_BACKEND=rti` is rejected at startup; how the adapter is delivered and run is part of the engagement. No other commercial vendor adapter has working code, so do not plan around one.
 
-If that covers your use case, you most likely need nothing on this page.
+## Available on request
 
----
-
-## When you need the RTI Connext adapter specifically
-
-Observing an RTI bus from a Cyclone or Fast DDS participant covers the common case, but it is still a foreign participant on that bus: RTI-proprietary transports and security modes that never touch standard RTPS discovery stay invisible to it. Concretely, reach for the native `topicforge_pro` RTI Connext adapter instead of the free path when your domain runs RTI's own DDS Security plugin with credentials, uses a pure shared-memory transport, or depends on RTI-only proprietary extensions.
-
-That adapter exists and works, but it is bring-your-own-everything: you supply the `rti.connextdds` Python binding and a valid RTI Connext DDS license yourself. TopicForge does not bundle, resell, or otherwise redistribute either. Since 0.5.3 the open-source core does not import or load `topicforge_pro` automatically, and `TOPICFORGE_DDS_BACKEND=rti` (like `opensplice`, `coredx` and `intercom`) is rejected at startup; how the adapter is delivered and run is part of the engagement. Email if this is your situation and we will work out the setup together.
-
-No other commercial DDS vendor adapter is implemented today. A couple of other vendor slots exist in the `topicforge_pro` package layout for future work, but they carry no working code - do not plan around them.
-
----
-
-## What's available on request
-
-- Integration and adaptation to a specific ROS2 / DDS environment.
-- Native RTI Connext adapter setup, as described above.
-- A support arrangement for teams running TopicForge in production.
-
-None of this has a published price. Email with what you need and it gets scoped from there.
-
----
+Integration and adaptation to a specific ROS2 / DDS environment, native RTI Connext adapter setup, and a support arrangement for teams running TopicForge in production. Candidate deliverables beyond the current tool surface (URDF inspection, bag anomaly detection, multi-bag diff) are scoped the same way. None of this has a published price: email what you need and it gets scoped from there.
 
 ## Known limitations
 
-- DDS Security is not implemented on any adapter, free or otherwise. If your domain requires authenticated or encrypted RTPS, TopicForge cannot join it today.
-- `detect_qos_mismatches` covers four QoS policies: Reliability, Durability, History, and Deadline. Liveliness, Ownership, and Partition are not checked.
-
----
+DDS Security is not implemented on any adapter: if your domain requires authenticated or encrypted RTPS, TopicForge cannot join it today. `detect_qos_mismatches` covers Reliability, Durability, History and Deadline; Liveliness, Ownership and Partition are not checked.
 
 ## Contact
 
@@ -58,8 +35,4 @@ None of this has a published price. Email with what you need and it gets scoped 
   </a>
 </p>
 
-Inbound only - there is no outbound sales process. If you are unsure whether you need anything at all, re-read the free tier section above first.
-
----
-
-<sub>TopicForge is built by Yanis ETHVIGNOT. The open-source core is MIT-licensed. The RTI Connext adapter and any support arrangement described on this page are handled case by case, by direct agreement, with no published terms.</sub>
+<sub>Built by Yanis ETHVIGNOT. The open-source core is MIT-licensed; the RTI Connext adapter and any support arrangement are handled case by case, by direct agreement.</sub>

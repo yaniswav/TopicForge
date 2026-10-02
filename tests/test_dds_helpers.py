@@ -5,15 +5,19 @@ Pure tests: no DDS middleware needed, no monkeypatching, no fixtures.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
+    VendorTag,
     canonicalize_vendor_id,
     format_guid,
     validate_domain_id,
 )
+from topicforge.adapters.common.dds_helpers import _VENDOR_ID_MAP
 
 
 def test_validate_domain_id_accepts_range_bounds() -> None:
@@ -33,40 +37,50 @@ def test_validate_domain_id_rejects_out_of_range() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cyclone_vendor_id() -> None:
-    assert canonicalize_vendor_id((0x01, 0x16)) == "cyclone"
+@pytest.mark.parametrize(
+    ("raw", "tag"),
+    [
+        ((0x01, 0x01), "rti"),  # RTI Connext
+        ((0x01, 0x02), "opensplice"),  # ADLink OpenSplice
+        ((0x01, 0x03), "opendds"),  # OCI OpenDDS
+        ((0x01, 0x05), "intercom"),  # Kongsberg InterCOM
+        ((0x01, 0x06), "coredx"),  # Twin Oaks CoreDX
+        ((0x01, 0x0A), "rti_micro"),  # RTI Connext Micro
+        ((0x01, 0x0F), "fast"),  # eProsima Fast DDS
+        ((0x01, 0x10), "cyclone"),  # Eclipse Cyclone DDS
+        ((0x01, 0x14), "dust"),  # S2E Dust DDS
+    ],
+)
+def test_vendor_id_maps_to_tag(raw: tuple[int, int], tag: str) -> None:
+    """One row per mapped vendor, from the official OMG RTPS vendor id list."""
+    assert canonicalize_vendor_id(raw) == tag
 
 
-def test_fast_dds_vendor_id() -> None:
-    assert canonicalize_vendor_id((0x01, 0x05)) == "fast"
+def test_vendor_id_map_covers_exactly_the_documented_vendors() -> None:
+    """The parametrized table above is the whole map: a new row needs a new test."""
+    assert len(_VENDOR_ID_MAP) == 9
 
 
-def test_rti_vendor_id() -> None:
-    assert canonicalize_vendor_id((0x01, 0x01)) == "rti"
-
-
-def test_unknown_vendor_id_collapses_to_unknown() -> None:
-    """Any vendor not in the lookup table falls back to 'unknown': never raises."""
-    assert canonicalize_vendor_id((0x99, 0x99)) == "unknown"
-
-
-def test_opensplice_collapses_to_unknown() -> None:
-    """OpenSplice (EOL) is intentionally mapped to 'unknown', not its own tag."""
-    assert canonicalize_vendor_id((0x01, 0x02)) == "unknown"
-
-
-def test_opendds_collapses_to_unknown() -> None:
-    """OpenDDS exists at the wire level but has no first-class TopicForge tag yet."""
-    assert canonicalize_vendor_id((0x01, 0x03)) == "unknown"
-
-
-def test_dust_dds_collapses_to_unknown() -> None:
-    """Dust DDS (Rust) is observed but reports as 'unknown': no Python adapter."""
-    assert canonicalize_vendor_id((0x01, 0x11)) == "unknown"
+@pytest.mark.parametrize(
+    "raw",
+    [
+        (0x01, 0x04),  # MilSoft Mil-DDS
+        (0x01, 0x09),  # ETRI Diamond DDS
+        (0x01, 0x11),  # GurumDDS
+        (0x01, 0x12),  # Atostek RustDDS
+        (0x01, 0x13),  # ZRDDS
+        (0x01, 0x15),  # eProsima Safe DDS: a separate product, not Fast DDS
+        (0x01, 0x16),  # Federated Designs: once wrongly mapped to Cyclone
+        (0x99, 0x99),
+    ],
+)
+def test_unmapped_vendor_id_collapses_to_unknown(raw: tuple[int, int]) -> None:
+    """Any vendor without a first-class tag falls back to 'unknown': never raises."""
+    assert canonicalize_vendor_id(raw) == "unknown"
 
 
 def test_vendor_id_accepts_bytes() -> None:
-    assert canonicalize_vendor_id(b"\x01\x16") == "cyclone"
+    assert canonicalize_vendor_id(b"\x01\x10") == "cyclone"
 
 
 def test_vendor_id_short_bytes_collapses_to_unknown() -> None:
@@ -162,10 +176,9 @@ def test_every_canonical_vendor_tag_is_valid_participant_literal() -> None:
     Literal. Otherwise an adapter emitting a mapped-but-unlisted tag would
     raise a ValidationError at output-construction time. This test fails if
     the vendor map and the schema Literal ever drift apart."""
-    from topicforge.adapters.common.dds_helpers import _VENDOR_ID_MAP
     from topicforge.models import ParticipantEvent, ParticipantInfo
 
-    tags = set(_VENDOR_ID_MAP.values()) | {"cyclone", "fast", "rti", "mock", "unknown"}
+    tags = set(_VENDOR_ID_MAP.values()) | set(get_args(VendorTag))
     for tag in tags:
         info = ParticipantInfo(guid="g", vendor=tag, domain_id=0, mode_effective="mock")
         assert info.vendor == tag
@@ -178,3 +191,16 @@ def test_every_canonical_vendor_tag_is_valid_participant_literal() -> None:
             mode_effective="mock",
         )
         assert event.vendor == tag
+
+
+def test_vendor_tag_matches_schema_literals() -> None:
+    """`VendorTag` (adapters) and the schema `vendor` Literals (models) must
+    hold the same values, or adapter output fails Pydantic validation."""
+    from topicforge.models import ParticipantEvent, ParticipantInfo
+
+    expected = set(get_args(VendorTag))
+    for model in (ParticipantInfo, ParticipantEvent):
+        annotation = model.model_fields["vendor"].annotation
+        assert annotation is not None
+        assert set(get_args(annotation)) == expected, model.__name__
+    assert set(_VENDOR_ID_MAP.values()) <= expected

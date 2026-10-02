@@ -7,8 +7,7 @@ It is **deliberately excluded from the published sdist** (see `pyproject.toml` `
 Canonical public documentation (what a user installing TopicForge should read) lives one level up in `docs/`:
 
 - [`docs/product-plan.md`](../product-plan.md): phased roadmap, monetization, risk register
-- [`docs/pro.md`](../pro.md): Pro tier early-access page
-- [`docs/TESTING.md`](../TESTING.md): testing paths for the user-facing release
+- [`docs/pro.md`](../pro.md): commercial support and integration page (inbound only, no published price)
 - [`README.md`](../../README.md), [`CLAUDE.md`](../../CLAUDE.md), [`CHANGELOG.md`](../../CHANGELOG.md) at repo root
 
 ## What goes in here
@@ -17,13 +16,13 @@ Canonical public documentation (what a user installing TopicForge should read) l
 - **Strategic PDFs** (project files, market briefs, personal notes): references that should not bleed into the public docs but inform decisions.
 - **Pack-wide template extractions**: when a convention generalizes from TopicForge to the rest of the pack, the parameterized version lands here (`pack-template/`) before being lifted into a shared template repo.
 
-Release action plans live at `docs/<version>-action-plan.md` (one directory up), not here: they are short-lived per-release coordination docs that the maintainer reaches for during a release window and discards afterward. Promote one into `projet-file/` only if it carries strategic weight beyond its release.
+Superseded material (closed audits, old launch posts) is deleted rather than archived: git history keeps it.
 
 ## What does **not** go in here
 
 - Anything a downstream PyPI user needs to install or operate TopicForge. That belongs in `README.md` or `docs/`.
 - Anything a contributor needs to make a clean PR. That belongs in `CLAUDE.md` or `.claude/`.
-- Secrets, credentials, license keys. The file `TOPICFORGE_LICENSE_KEY` is documented in `CLAUDE.md` section 4; actual keys live outside the repo.
+- Secrets or credentials.
 
 ## Why a separate folder
 

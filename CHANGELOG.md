@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+First run of the DDS code against a live multi-vendor bus (Windows 11, a
+Python / Cyclone DDS participant and a Rust / Dust DDS participant, TopicForge
+driven by a real MCP client). Until now every DDS adapter had only been
+checked statically. The run exposed four defects that together made the DDS
+module non-functional on Cyclone; all are fixed and pinned by tests.
+
+### Fixed
+
+- **`list_participants` now reports the participant name and the hostname on
+  Cyclone.** The name comes from the EntityName QoS and the hostname from the
+  `__Hostname` discovery property; both were always null on a real bus.
+- **Participant GUIDs were never read.** cyclonedds 11.0.1 exposes the builtin
+  key as a `uuid.UUID`, which the extractor did not handle, so every
+  participant collapsed onto a single `unknown` entry.
+- **Vendors were never identified.** The builtin participant sample carries no
+  vendor field. The vendor id is now read from the first two bytes of the GUID
+  prefix, as RTPS recommends; implementations that do not follow that
+  convention (Dust DDS, and RTI by default) still report `unknown`, because
+  the Cyclone Python binding does not expose the vendor id from the RTPS
+  header.
+- **The OMG vendor-id table was wrong.** It mapped `01.05` to Fast DDS and
+  `01.16` to Cyclone; the correct ids are `01.0F` (eProsima) and `01.10`
+  (Eclipse), verified against both vendors' sources. The Cyclone side ran on a
+  live bus; the Fast DDS side (`fast_extract_vendor_id`) is verified
+  statically only, since its tests need a binding that is not on PyPI. The `vendor` field of
+  `ParticipantInfo` and `ParticipantEvent` now also accepts `rti_micro`,
+  `opensplice`, `opendds`, `coredx`, `intercom` and `dust` (soft-breaking for
+  clients validating the previous enum).
+- **`detect_qos_mismatches` never reported anything on Cyclone.** cyclonedds
+  scopes its policy class names (`Reliability.BestEffort`), and the
+  normalizer matched only the bare name, so no QoS profile was ever built.
+- **A stopped participant never disappeared.** Discovery readers keep the last
+  sample of a departed participant with a NOT_ALIVE instance state; those are
+  now ignored for participants and endpoints, so a participant is reported as
+  left when its lease expires, and a dead endpoint no longer produces a
+  mismatch.
+
+### Added
+
+- `scripts/integration/interop_check.py`: one-command multi-vendor demo
+  that starts a Rust / Dust and a Python / Cyclone participant, drives
+  TopicForge over stdio through the official MCP client, checks participant
+  discovery, a deliberate Reliability mismatch between the two vendors, and
+  the departure of a stopped participant, then stops every process it started.
+- A real Rust / Dust DDS participant (`publishers/dust_publisher`) and a real
+  Python / Cyclone participant replacing the previous scaffold, which never
+  wrote a sample.
+- Twelve interop programs in total, one per vendor and language with an
+  officially released binding (Cyclone C / C++ / Rust / Python, Dust Rust /
+  Python, Fast DDS C++ / Python, RTI Connext C / C++ / Python, OpenSplice C),
+  all following the contract in `scripts/integration/DEMO_CONTRACT.md`. The
+  driver starts whichever ones are built on the host and adapts its checks;
+  `--list` shows what can run. Only Cyclone Python and Dust Rust / Python / C
+  have been run, on Windows; the rest are written but unrun. RTI participants
+  need a local license and are never run in CI.
+- One-command launch scripts, `scripts/integration/launch/setup` and
+  `run_demo` (`.ps1` and `.sh`), which create `.venv-demo`, install the Cyclone
+  binding and build the Rust participant. `setup.ps1 -Firewall` adds inbound
+  UDP 7400-7500 rules on private networks for multi-machine runs.
+- Unicast peer configuration for Cyclone and Fast DDS and a guide for a mixed
+  Linux and Windows bus (`scripts/integration/config/`).
+- `.github/workflows/demo.yml` runs the driver with the Cyclone and Dust
+  participants on Ubuntu and Windows; `demo-fast.yml` builds Fast DDS 3 from
+  pinned tags and starts the C++ participant (weekly and manual).
+- `scripts/integration/README.md` rewritten around the demo: it previously
+  described the removed docker / scenario rig.
+
+### Removed
+
+- The docker / scenario integration rig (`scenarios_runner.py`, `run-local.*`,
+  `docker-compose.yml`, per-vendor Dockerfiles, scenario JSON files, schema
+  test and `integration.yml`) is removed in favour of the demo driver.
+
+
+### Fixed (live-bus runs, 2026-10-02)
+
+- Cyclone adapter created a new DDS reader on a builtin discovery topic on
+  every tool call and never deleted it. It now keeps one reader per builtin
+  topic and takes a non-blocking snapshot, so calls no longer wait 2 s each
+  (`detect_qos_mismatches` waited 4 s).
+- `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription` reported the
+  endpoints of participants that had left; disposed entries are now dropped.
+  Its payload also carries the endpoint `type_name`.
+- `test_dds_cross_vendor.py` expected an error message from v0.3; it had
+  never run, since CI has no DDS binding. First run against the real Cyclone
+  binding.
+
+### Added (examples)
+
+- `examples/dds/`: real use cases 10 to 14 (driver swap, wiring, safety
+  monitor dropout, deadline not offered, restart loop) next to the concept
+  examples 01 to 04. All nine pass on a live bus.
+
 ## [0.5.3] - 2026-10-01
 
 Fixes from an independent senior review of the whole repository (five

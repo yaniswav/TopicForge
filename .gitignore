@@ -230,3 +230,8 @@ CLAUDE*.md
 # Pro tier: paid features kept out of the open-source repo
 # -------------------------------------------------------------------------
 pro/
+
+# Vendor license files for the demo participants (never commit)
+scripts/integration/**/rti_license.dat
+scripts/integration/**/*.dat
+.venv-demo/

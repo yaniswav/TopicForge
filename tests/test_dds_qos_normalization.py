@@ -284,3 +284,43 @@ def test_fast_history_depth_populated():
     profile = _fast(_FastSample(_FastQos(rel=1, dur=0, hist=0, depth=42)))
     assert profile is not None
     assert profile.history_depth == 42
+
+
+# --- Regression: cyclonedds 11.0.1 scopes its policy class names -------------
+#
+# On a live bus `type(policy).__name__` is "Reliability.BestEffort", not
+# "BestEffort". Matching only the bare name built no profile at all, so
+# detect_qos_mismatches never reported anything (found by the first real-bus
+# run, 2026-10-01). `type()` accepts a dotted name, which reproduces it.
+
+_ScopedBestEffort = type("Reliability.BestEffort", (), {})
+_ScopedReliable = type("Reliability.Reliable", (), {})
+_ScopedVolatile = type("Durability.Volatile", (), {})
+
+
+def _scoped_keep_last(depth: int) -> object:
+    cls = type("History.KeepLast", (), {})
+    obj = cls()
+    obj.depth = depth  # type: ignore[attr-defined]
+    return obj
+
+
+def test_cyclone_scoped_policy_names_build_a_profile():
+    sample = _CycloneSample([_ScopedBestEffort(), _ScopedVolatile(), _scoped_keep_last(1)])
+    profile = cyclone_qos_to_profile(sample)
+    assert profile is not None
+    assert profile.reliability == "BEST_EFFORT"
+    assert profile.durability == "VOLATILE"
+    assert profile.history == "KEEP_LAST"
+    assert profile.history_depth == 1
+
+
+def test_cyclone_scoped_names_distinguish_reliable_from_best_effort():
+    reader = cyclone_qos_to_profile(
+        _CycloneSample([_ScopedReliable(), _ScopedVolatile(), _scoped_keep_last(1)])
+    )
+    writer = cyclone_qos_to_profile(
+        _CycloneSample([_ScopedBestEffort(), _ScopedVolatile(), _scoped_keep_last(1)])
+    )
+    assert reader is not None and writer is not None
+    assert (reader.reliability, writer.reliability) == ("RELIABLE", "BEST_EFFORT")

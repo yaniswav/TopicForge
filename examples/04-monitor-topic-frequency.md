@@ -68,10 +68,11 @@ there is nothing to compare the observed rate against.
 > Did any participants come or go on the bus?
 
 **Claude calls:** `participant_events(domain_id=0,
-lookback_seconds=300)` -> returns 3 `ParticipantEvent` entries, newest
-first, all `event_type="discovered"` and none `"lost"`: the Fast DDS
-participant `mock-aerospace-node`, then the Cyclone participants
-`mock-laptop` and `mock-robot`. Each carries `guid`, `event_type`,
+lookback_seconds=300)` -> returns 4 `ParticipantEvent` entries, newest
+first, all `event_type="discovered"` and none `"lost"`: the Dust DDS
+participant `mock-rust-node`, the Fast DDS participant
+`mock-aerospace-node`, then the Cyclone participants `mock-laptop` and
+`mock-robot`. Each carries `guid`, `event_type`,
 `vendor`, `timestamp_ns`, `hostname`, `domain_id` and `mode_effective`.
 (The mock clock sits two minutes after the first event, so
 `lookback_seconds=60` returns an empty list and `300` returns all three.)

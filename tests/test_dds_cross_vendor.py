@@ -24,11 +24,12 @@ in action ; the tests deliberately do not pin participant counts.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
+from topicforge.adapters.common import VendorTag
 
 
 @pytest.fixture(params=["cyclone", "fast"])
@@ -76,7 +77,7 @@ def test_list_participants_returns_pydantic_participantinfo(dds_adapter: Any) ->
     assert isinstance(participants, list)
     for p in participants:
         # Canonical vendor Literal must hold on every adapter's output.
-        assert p.vendor in ("cyclone", "fast", "rti", "mock", "unknown")
+        assert p.vendor in get_args(VendorTag)
         assert p.mode_effective == "live"
         assert isinstance(p.guid, str)
         assert isinstance(p.domain_id, int)
@@ -108,9 +109,14 @@ def test_ros2_surface_raises_dds_only_error_uniformly(dds_adapter: Any) -> None:
             getattr(dds_adapter, method)(*args)
 
 
-def test_peek_user_topic_uniform_roadmap_message(dds_adapter: Any) -> None:
-    """Both adapters raise the v0.3.x roadmap message on arbitrary user topics."""
-    with pytest.raises(AdapterError, match=r"v0\.3\.x roadmap"):
+def test_peek_user_topic_not_on_bus_raises(dds_adapter: Any) -> None:
+    """A user topic nobody announces raises a clear "not discovered" error.
+
+    This test used to expect a v0.3.x roadmap message. It was always skipped
+    (no binding in CI), so nobody saw it drift; first run against the real
+    Cyclone binding on 2026-10-02.
+    """
+    with pytest.raises(AdapterError, match="not discovered"):
         dds_adapter.peek_dds_samples("/foo/user_topic", count=1)
 
 
