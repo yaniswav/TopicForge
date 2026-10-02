@@ -1,0 +1,51 @@
+name: ROS 2 live adapter
+
+# Runs Ros2CliAdapter against a real ROS 2 graph in Docker (official ros:humble
+# and ros:jazzy images). Tests tagged xfail document known bugs and do not
+# fail the job.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/topicforge/adapters/ros2_live/**"
+      - "src/topicforge/services/bag_service.py"
+      - "tests/integration/ros2/**"
+      - ".github/workflows/ros2-live.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/topicforge/adapters/ros2_live/**"
+      - "src/topicforge/services/bag_service.py"
+      - "tests/integration/ros2/**"
+      - ".github/workflows/ros2-live.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ros2-live:
+    name: ${{ matrix.distro }} / ${{ matrix.rmw }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy]
+        rmw: [fastrtps, cyclonedds]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build image and run the bench
+        run: >
+          python tests/integration/ros2/run_bench.py
+          --distro ${{ matrix.distro }} --rmw ${{ matrix.rmw }}
