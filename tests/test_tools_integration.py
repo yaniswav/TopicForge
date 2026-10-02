@@ -36,6 +36,9 @@ MVP_TOOLS = {
     # third explicit ceiling break, acknowledged in CHANGELOG and
     # docs/projet-file/mcp-02-spec.md section 2.
     "peek_bag_samples",
+    # Endpoint discovery (2026-10-02): the 12th tool, approved by the owner
+    # after a blind evaluation showed every agent hand-joining GUID prefixes.
+    "list_endpoints",
 }
 
 
@@ -48,6 +51,12 @@ def _mock_app():
 def test_build_app_succeeds() -> None:
     app = _mock_app()
     assert app is not None
+
+
+def test_tool_surface_is_locked_at_twelve() -> None:
+    names = {t.name for t in asyncio.run(_mock_app().list_tools())}
+    assert names == MVP_TOOLS
+    assert len(names) == 12
 
 
 def test_all_mvp_tools_registered() -> None:

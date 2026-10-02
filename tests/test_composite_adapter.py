@@ -12,11 +12,12 @@ from typing import Any
 import pytest
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common import scan_endpoints
 from topicforge.adapters.composite import CompositeAdapter
 from topicforge.models import (
     BagAnalysis,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -90,7 +91,7 @@ class _StubRosAdapter:
         self.calls.append(("list_participants", (domain_id,)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         self.calls.append(("detect_qos_mismatches", (topic,)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
@@ -167,9 +168,9 @@ class _StubDdsAdapter:
             )
         ]
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         self.calls.append(("detect_qos_mismatches", (topic,)))
-        return []
+        return scan_endpoints([])
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         self.calls.append(("peek_dds_samples", (topic, count)))

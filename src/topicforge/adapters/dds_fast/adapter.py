@@ -57,7 +57,8 @@ from topicforge.adapters.common import (
     canonicalize_vendor_id,
     detect_mismatches_across_endpoints,
     format_guid,
-    user_topic_placeholder,
+    metrics_status,
+    user_topic_result,
     validate_domain_id,
 )
 from topicforge.adapters.common import (
@@ -80,8 +81,9 @@ from topicforge.adapters.common import (
 )
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     QosProfile,
@@ -97,13 +99,6 @@ _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
 
 _BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
-
-_USER_TOPIC_FALLBACK_MSG = (
-    "dynamic XTypes decode is not implemented for Fast DDS in this release "
-    "(the fastdds Python binding does not expose a stable remote TypeObject "
-    "lookup); topic presence is reported, payload is not decoded"
-)
-"""`_decode_note` carried by the user-topic placeholder sample."""
 
 
 class _DiscoveryListener:
@@ -290,6 +285,17 @@ class FastDdsAdapter:
 
     # ----- DDS surface (v0.3.0) -----
 
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+        include_departed: bool = False,
+    ) -> EndpointListing:
+        # The Fast listener keeps raw discovery info objects whose layout has
+        # never been read on a real bus, so no endpoint record is built from them.
+        raise AdapterError("list_endpoints is not supported on the Fast backend yet.")
+
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         """Snapshot of discovered participants from the lifecycle buffer.
 
@@ -301,7 +307,7 @@ class FastDdsAdapter:
         """
         return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         """Pair reader/writer endpoints by topic via the shared analyzer.
 
         The pairing / reporting logic lives in
@@ -399,15 +405,8 @@ class FastDdsAdapter:
                 mode_effective="live",
             )
 
-        # Placeholder only: nothing was received, so nothing is recorded into
-        # the metrics buffer (a placeholder must never count as a sample).
-        fallback_samples = user_topic_placeholder(topic, count, note=_USER_TOPIC_FALLBACK_MSG)
-        return SampleResult(
-            topic=topic,
-            count=len(fallback_samples),
-            samples=fallback_samples,
-            mode_effective="live",
-        )
+        # Nothing was received, so nothing is recorded into the metrics buffer.
+        return user_topic_result(topic, "live")
 
     def _is_topic_on_bus(self, topic: str) -> bool:
         """True iff `topic` appears in any subscription or publication."""
@@ -447,11 +446,14 @@ class FastDdsAdapter:
         """
         if window_seconds < 1 or window_seconds > 3600:
             raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
-        return self._metrics.compute_metrics(
+        metrics = self._metrics.compute_metrics(
             topic=topic,
             window_seconds=window_seconds,
             domain_id=self._domain_id,
             mode_effective="live",
+        )
+        return metrics.model_copy(
+            update={"status": metrics_status(topic, metrics.samples_observed)}
         )
 
 

@@ -9,13 +9,18 @@ from topicforge.adapters.common.cdr_decoder import (
     iter_field_names,
 )
 from topicforge.adapters.common.dds_helpers import (
+    BUILTIN_DCPS_TOPICS,
     DDS_ONLY_ERROR_MSG,
     DYNAMIC_DECODE_DISABLED_NOTE,
+    USER_TOPIC_NOTE,
     VendorTag,
     canonicalize_vendor_id,
+    declared_hz_from_endpoints,
     format_guid,
+    metrics_status,
     take_bounded,
     user_topic_placeholder,
+    user_topic_result,
     validate_domain_id,
 )
 from topicforge.adapters.common.dds_introspection import (
@@ -33,18 +38,47 @@ from topicforge.adapters.common.dds_introspection import (
     is_removal,
     vendor_id_from_guid,
 )
+from topicforge.adapters.common.discovery_tracker import (
+    DEFAULT_PERIOD_S,
+    BufferedTake,
+    DiscoveryCaches,
+    DiscoveryTracker,
+    SampleCache,
+    apply_builtin_samples,
+)
+from topicforge.adapters.common.endpoints import (
+    MAX_LISTED_ENDPOINTS,
+    announced_ns_of,
+    build_endpoint_listing,
+    builtin_payload,
+    endpoint_infos_from_samples,
+    endpoint_record,
+    format_participant_key,
+    listing_from_samples,
+    participant_names,
+    summarize_by_topic,
+    type_id_text,
+)
 from topicforge.adapters.common.lifecycle import MAX_EVENTS, LifecycleBuffer
 from topicforge.adapters.common.metrics_buffer import (
     MAX_SAMPLES_PER_TOPIC,
     MetricsBuffer,
     MetricsSample,
 )
-from topicforge.adapters.common.qos_analyzer import detect_mismatches
+from topicforge.adapters.common.qos_analyzer import (
+    PairAnalysis,
+    analyze_pair,
+    detect_mismatches,
+    format_duration,
+    partitions_match,
+)
 from topicforge.adapters.common.qos_endpoints import detect_mismatches_across_endpoints
 from topicforge.adapters.common.qos_normalize import (
     cyclone_qos_to_profile,
+    duration_to_ns,
     fast_qos_to_profile,
 )
+from topicforge.adapters.common.qos_scan import POLICIES_CHECKED, POLICIES_UNCHECKED, scan_endpoints
 from topicforge.adapters.common.xtypes import (
     DecodeStatus,
     annotate_full,
@@ -53,18 +87,34 @@ from topicforge.adapters.common.xtypes import (
 )
 
 __all__ = [
+    "BUILTIN_DCPS_TOPICS",
     "DDS_ONLY_ERROR_MSG",
+    "DEFAULT_PERIOD_S",
     "DYNAMIC_DECODE_DISABLED_NOTE",
     "MAX_EVENTS",
+    "MAX_LISTED_ENDPOINTS",
     "MAX_SAMPLES_PER_TOPIC",
+    "POLICIES_CHECKED",
+    "POLICIES_UNCHECKED",
+    "USER_TOPIC_NOTE",
+    "BufferedTake",
     "DecodeStatus",
+    "DiscoveryCaches",
+    "DiscoveryTracker",
     "LifecycleBuffer",
     "MetricsBuffer",
     "MetricsSample",
+    "PairAnalysis",
+    "SampleCache",
     "VendorTag",
+    "analyze_pair",
     "annotate_full",
     "annotate_partial",
     "annotate_raw",
+    "announced_ns_of",
+    "apply_builtin_samples",
+    "build_endpoint_listing",
+    "builtin_payload",
     "canonicalize_vendor_id",
     "cyclone_extract_guid",
     "cyclone_extract_hostname",
@@ -73,11 +123,15 @@ __all__ = [
     "cyclone_extract_type_name",
     "cyclone_extract_vendor_id",
     "cyclone_qos_to_profile",
+    "declared_hz_from_endpoints",
     "decode_dynamic_sample",
     "decode_field_value",
     "detect_mismatches",
     "detect_mismatches_across_endpoints",
+    "duration_to_ns",
     "dynamic_type_name",
+    "endpoint_infos_from_samples",
+    "endpoint_record",
     "extract_publish_ns_from_payload",
     "extract_seq_from_payload",
     "fast_extract_guid",
@@ -85,12 +139,22 @@ __all__ = [
     "fast_extract_topic_name",
     "fast_extract_vendor_id",
     "fast_qos_to_profile",
+    "format_duration",
     "format_guid",
+    "format_participant_key",
     "is_alive_sample",
     "is_removal",
     "iter_field_names",
+    "listing_from_samples",
+    "metrics_status",
+    "participant_names",
+    "partitions_match",
+    "scan_endpoints",
+    "summarize_by_topic",
     "take_bounded",
+    "type_id_text",
     "user_topic_placeholder",
+    "user_topic_result",
     "validate_domain_id",
     "vendor_id_from_guid",
 ]

@@ -12,8 +12,9 @@ from typing import Literal, Protocol, runtime_checkable
 
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -112,7 +113,7 @@ class MiddlewareAdapter(Protocol):
     # module is not active in the current configuration.
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]: ...
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]: ...
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan: ...
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult: ...
 
@@ -125,6 +126,14 @@ class MiddlewareAdapter(Protocol):
     ) -> TopicMetrics: ...
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult: ...
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+        include_departed: bool = False,
+    ) -> EndpointListing: ...
 
 
 # Backward-compat alias. External code importing `RosAdapter` continues

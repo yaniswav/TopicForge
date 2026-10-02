@@ -25,8 +25,8 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 [1] Who writes and who reads each topic?
     -> peek_dds_samples (discovery)
     cmd_vel      writers: nav_planner (Twist)
-                 readers: a9febda2.d4540000.00000000.000001c1 (Twist)
-    heartbeat    writers: a9febda2.d4540000.00000000.000001c1 (Heartbeat)
+                 readers: a9febda2.f49f0000.00000000.000001c1 (Twist)
+    heartbeat    writers: a9febda2.f49f0000.00000000.000001c1 (Heartbeat)
                  readers: NOBODY
     scan         writers: lidar_driver (LidarScan)
                  readers: nav_planner (LidarScan)

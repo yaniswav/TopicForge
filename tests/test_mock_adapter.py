@@ -234,3 +234,20 @@ def test_mock_participants_span_three_vendors(mock_adapter: MockAdapter) -> None
     """The mock bus demos multi-vendor discovery: Cyclone, Fast DDS and Dust DDS."""
     vendors = {p.vendor for p in mock_adapter.list_participants()}
     assert vendors == {"cyclone", "fast", "dust"}
+
+
+def test_mock_mismatch_scan_envelope(mock_adapter) -> None:
+    scan = mock_adapter.detect_qos_mismatches()
+    assert scan.mode_effective == "mock"
+    (report,) = scan.reports
+    assert report.topic == "/dds/qos_mismatch"
+    assert report.incompatible_policies == ["Reliability"]
+    assert (report.details[0].requested, report.details[0].offered) == ("RELIABLE", "BEST_EFFORT")
+    assert report.reader_participant_name and report.writer_participant_name
+    assert scan.not_matched == []
+    assert any("/dds/ddsforge/opaque" in h for h in scan.hints)
+    assert "Partition" in scan.policies_checked and scan.policies_unchecked
+
+
+def test_mock_mismatch_scan_topic_scope(mock_adapter) -> None:
+    assert mock_adapter.detect_qos_mismatches("/dds/well_matched").reports == []

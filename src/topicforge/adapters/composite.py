@@ -21,11 +21,14 @@ adapter's diagnostic messages.
 
 from __future__ import annotations
 
+from typing import Any
+
 from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -77,10 +80,20 @@ class CompositeAdapter:
 
     # ----- DDS surface -> DDS adapter -----
 
+    def observer_status(self) -> dict[str, Any] | None:
+        """The DDS half's observer/tracker status, `None` when it has none."""
+        status = getattr(self._dds, "observer_status", None)
+        return status() if callable(status) else None
+
+    def await_discovery_ready(self) -> bool:
+        """Delegate to the DDS half's warm-up wait; `True` when it has none."""
+        wait = getattr(self._dds, "await_discovery_ready", None)
+        return bool(wait()) if callable(wait) else True
+
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         return self._dds.list_participants(domain_id)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         return self._dds.detect_qos_mismatches(topic)
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
@@ -95,6 +108,15 @@ class CompositeAdapter:
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         return self._dds.topic_metrics(topic, window_seconds, domain_id)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+        include_departed: bool = False,
+    ) -> EndpointListing:
+        return self._dds.list_endpoints(topic, participant_guid, include_observer, include_departed)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         # Bag analysis lives on the ROS half: MCAP is the canonical

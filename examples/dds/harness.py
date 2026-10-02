@@ -253,7 +253,8 @@ class TopicForge:
     async def participants(self) -> list[dict[str, Any]]:
         return await self.ask("list_participants", domain_id=self.domain)
 
-    async def mismatches(self) -> list[dict[str, Any]]:
+    async def mismatches(self) -> dict[str, Any]:
+        """The full `MismatchScan`: `reports`, `not_matched`, `hints`, and what was checked."""
         return await self.ask("detect_qos_mismatches")
 
     async def endpoints(self, builtin_topic: str) -> list[dict[str, Any]]:
@@ -326,25 +327,63 @@ def owner(guid: str | None, parts: Sequence[dict[str, Any]]) -> str:
     return guid
 
 
-def show_mismatches(mismatches: Sequence[dict[str, Any]], parts: Sequence[dict[str, Any]]) -> None:
-    if not mismatches:
+def who(item: dict[str, Any], role: str, parts: Sequence[dict[str, Any]]) -> str:
+    """Participant name of the `reader` or `writer` of a report / not-matched pair.
+
+    Read from the scan itself; falls back to resolving the endpoint GUID against
+    `parts` when the scan carries no name.
+    """
+    return item.get(f"{role}_participant_name") or owner(item.get(f"{role}_guid"), parts)
+
+
+def show_mismatches(scan: dict[str, Any], parts: Sequence[dict[str, Any]]) -> None:
+    """Print the findings of a `MismatchScan`: reports, pairs DDS never matches, hints."""
+    if not (scan["reports"] or scan["not_matched"] or scan["hints"] or scan.get("matched")):
         print("    none")
-    for m in mismatches:
+    for p in scan.get("matched", []):
+        print(
+            f"    {p['topic']}: matched (declared QoS): writer {who(p, 'writer', parts)} "
+            f"-> reader {who(p, 'reader', parts)}"
+        )
+    for m in scan["reports"]:
         policies = ", ".join(m["incompatible_policies"])
         print(
             f"    {m['topic']}: {policies} ({m['severity']}): writer "
-            f"{owner(m.get('writer_guid'), parts)} -> reader {owner(m.get('reader_guid'), parts)}"
+            f"{who(m, 'writer', parts)} -> reader {who(m, 'reader', parts)}"
         )
+        for d in m.get("details", []):
+            print(
+                f"        {d['policy']}: reader asks {d['requested']}, writer offers {d['offered']}"
+            )
+    for n in scan["not_matched"]:
+        print(
+            f"    {n['topic']}: NOT MATCHED ({n['reason']}): writer {who(n, 'writer', parts)} "
+            f"x reader {who(n, 'reader', parts)}: {n['detail']}"
+        )
+    for hint in scan["hints"]:
+        print(f"    hint: {hint}")
 
 
-def mismatch_on(
-    mismatches: Sequence[dict[str, Any]], topic: str, policy: str
-) -> dict[str, Any] | None:
+def mismatch_on(scan: dict[str, Any], topic: str, policy: str) -> dict[str, Any] | None:
     """The reported mismatch on `topic` that involves `policy`, if any."""
     return next(
-        (m for m in mismatches if m["topic"] == topic and policy in m["incompatible_policies"]),
+        (
+            m
+            for m in scan["reports"]
+            if m["topic"] == topic and policy in m["incompatible_policies"]
+        ),
         None,
     )
+
+
+def matched_on(scan: dict[str, Any], topic: str) -> list[dict[str, Any]]:
+    """Every pair DDS will connect on `topic` (declared QoS, data flow not observed)."""
+    return [p for p in scan.get("matched", []) if p["topic"] == topic]
+
+
+def reports_on(scan: dict[str, Any], topic: str) -> list[dict[str, Any]]:
+    """Every report on `topic`, whatever the policy."""
+    return [m for m in scan["reports"] if m["topic"] == topic]
 
 
 def show_wiring(table: dict[str, dict[str, list[tuple[str, str]]]]) -> None:

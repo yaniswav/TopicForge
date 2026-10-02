@@ -26,11 +26,11 @@ from harness import (
     Node,
     TopicForge,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     show_wiring,
     step,
+    who,
 )
 from received import show_received
 
@@ -54,13 +54,21 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     scan = mismatch_on(mismatches, "scan", "Reliability")
     checks.expect(
         scan is not None
-        and owner(scan.get("writer_guid"), parts) == "lidar_old"
-        and owner(scan.get("reader_guid"), parts) == "nav_planner",
+        and who(scan, "writer", parts) == "lidar_old"
+        and who(scan, "reader", parts) == "nav_planner",
         "scan: the forgotten old driver is BEST_EFFORT, the planner RELIABLE",
     )
     checks.expect(
-        not any(m["topic"] == "lidar/scan" for m in mismatches),
+        not any(m["topic"] == "lidar/scan" for m in mismatches["reports"]),
         "lidar/scan: no mismatch reported, because nobody reads it",
+    )
+    checks.expect(
+        any("lidar/scan" in h and "no reader" in h for h in mismatches["hints"]),
+        "lidar/scan: the scan's hints still flag it as a writer with no reader",
+    )
+    checks.expect(
+        not mismatches["not_matched"],
+        "no partition or type split: the pairs that exist are only QoS-checked",
     )
 
     step(2, "Who writes and who reads each topic?", "peek_dds_samples (discovery)")

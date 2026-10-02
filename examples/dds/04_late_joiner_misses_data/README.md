@@ -28,11 +28,12 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 [1] Why does the planner never get the mission?
     -> detect_qos_mismatches
     mission: Durability (incompatible): writer mission_control -> reader nav_planner
+        Durability: reader asks TRANSIENT_LOCAL, writer offers VOLATILE
 
 [2] What does nav_planner actually receive on mission?
     -> nav_planner output
     [nav_planner] rx mission: 0 in 1.0 s
-    [nav_planner] rx mission: 0 in 1.0 s
+    [nav_planner] rx mission: 0 in 1.1 s
 ```
 
 - The reader requests TRANSIENT_LOCAL, the writer offers VOLATILE. Same

@@ -27,7 +27,9 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 ```
 [1] Which reader/writer pairs can never talk?
     -> detect_qos_mismatches
+    odom: matched (declared QoS): writer nav_planner -> reader lidar_driver
     scan: Reliability (incompatible): writer lidar_driver -> reader nav_planner
+        Reliability: reader asks RELIABLE, writer offers BEST_EFFORT
 
 [3] What does nav_planner actually receive on scan?
     -> nav_planner output
@@ -36,8 +38,8 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 [4] What does lidar_driver actually receive on odom?
     -> lidar_driver output
-    [lidar_driver] rx odom: 10 in 1.0 s, last seq 39
-    [lidar_driver] rx odom: 10 in 1.0 s, last seq 49
+    [lidar_driver] rx odom: 10 in 1.0 s, last seq 50
+    [lidar_driver] rx odom: 10 in 1.0 s, last seq 60
 ```
 
 - On `scan`, the planner **requests** RELIABLE delivery and the driver only
@@ -45,7 +47,8 @@ python run.py --hold     # keep the programs running, ask your own MCP client
   offers, so DDS refuses the match.
 - On `odom` the QoS differ the other way: the writer offers RELIABLE and the
   reader asks for BEST_EFFORT. That is allowed (offering more than asked is
-  fine), so TopicForge does not report it.
+  fine), so TopicForge does not report it as a mismatch. It lists it under
+  `matched`, the pairs DDS will connect on the declared QoS.
 
 ## Ask your agent
 

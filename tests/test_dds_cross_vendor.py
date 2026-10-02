@@ -13,7 +13,7 @@ The point of cross-vendor testing is to confirm that:
     instead of `"RELIABLE"`, etc.)
   * Both raise `DDS_ONLY_ERROR_MSG` on the 4 ROS2 methods uniformly
   * Both raise the v0.3.x XTypes/IDL roadmap message uniformly
-  * `detect_qos_mismatches` returns the same `MismatchReport` shape
+  * `detect_qos_mismatches` returns the same `MismatchScan` shape
     regardless of which discovery path produced the QoS pair
 
 Note: when both bindings are installed and tests run in parallel, the
@@ -86,11 +86,11 @@ def test_list_participants_returns_pydantic_participantinfo(dds_adapter: Any) ->
 def test_detect_qos_mismatches_returns_list_with_canonical_severity(
     dds_adapter: Any,
 ) -> None:
-    """Empty bus typically yields [] ; either way the type and severity
-    Literal hold."""
+    """Empty bus typically yields no reports ; either way the envelope and
+    severity Literal hold."""
     result = dds_adapter.detect_qos_mismatches()
-    assert isinstance(result, list)
-    for r in result:
+    assert isinstance(result.reports, list)
+    for r in result.reports:
         assert isinstance(r.incompatible_policies, list)
         assert r.severity in ("incompatible", "risky")
         assert r.mode_effective == "live"

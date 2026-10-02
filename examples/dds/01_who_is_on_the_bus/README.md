@@ -28,10 +28,10 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 ```
 [1] Who is on the bus?
     -> list_participants
-    topicforge         vendor=cyclone  active  host=DESKTOP-H0N0S7G
     nav_planner        vendor=cyclone  active  host=DESKTOP-H0N0S7G
-    (no name)          vendor=unknown  active  host=?
     motor_controller   vendor=cyclone  active  host=DESKTOP-H0N0S7G
+    topicforge         vendor=cyclone  active  host=DESKTOP-H0N0S7G
+    (no name)          vendor=unknown  active  host=?
 ```
 
 - `topicforge` is TopicForge itself: it joins the bus as a read-only

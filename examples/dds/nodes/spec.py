@@ -6,11 +6,23 @@ command line and publish the same types, whatever the binding underneath.
 
 Endpoint syntax: ``TOPIC:TYPE[:opt,opt,...]`` with options ``reliable``,
 ``best_effort``, ``volatile``, ``transient_local``, ``keep_all``,
-``keep_last=N`` and ``deadline=MS``.
+``keep_last=N`` and ``deadline=MS``, plus the safety-oriented policies:
+
+- ``partition=NAME`` (several with ``partition=a|b``), set on the publisher or
+  subscriber that owns the endpoint;
+- ``liveliness=automatic|manual_participant|manual_topic`` and ``lease=MS``
+  (lease duration; ``lease`` alone means automatic liveliness);
+- ``ownership=shared|exclusive`` and ``strength=N`` (writers only).
+
+A manual-liveliness writer keeps asserting its liveliness while the node
+runs. ``--stop-asserting-after S`` makes the node stop writing and asserting
+after S seconds while the process stays alive, which simulates a hung process
+that is still on the bus (its lease then expires).
 """
 
 import argparse
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -27,6 +39,8 @@ TYPES: dict[str, tuple[tuple[str, FieldKind], ...]] = {
 }
 
 MAX_DOMAIN_ID = 232
+LIVELINESS_KINDS = ("automatic", "manual_participant", "manual_topic")
+OWNERSHIP_KINDS = ("shared", "exclusive")
 
 
 @dataclass(frozen=True)
@@ -34,13 +48,20 @@ class QosSpec:
     """The QoS subset the role nodes can set on an endpoint.
 
     `history_depth` of None means KEEP_ALL. `deadline_ms` of None means no
-    deadline.
+    deadline. `partition` is empty for the default partition. `lease_ms` of
+    None means an infinite liveliness lease. `strength` only matters for an
+    exclusive-ownership writer.
     """
 
     reliability: Literal["reliable", "best_effort"] = "reliable"
     durability: Literal["volatile", "transient_local"] = "volatile"
     history_depth: int | None = 1
     deadline_ms: int | None = None
+    partition: tuple[str, ...] = ()
+    liveliness: Literal["automatic", "manual_participant", "manual_topic"] = "automatic"
+    lease_ms: int | None = None
+    ownership: Literal["shared", "exclusive"] = "shared"
+    strength: int = 0
 
 
 @dataclass(frozen=True)
@@ -63,12 +84,42 @@ def _positive_int(option: str, raw: str) -> int:
     return value
 
 
-def _apply_options(opts: list[str]) -> QosSpec:
-    """Fold a list of option tokens into a QosSpec, rejecting conflicts."""
+def _strength(raw: str) -> int:
+    """Parse the integer argument of `strength=N` (>= 0)."""
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"option strength= needs an integer, got {raw!r}") from None
+    if value < 0:
+        raise ValueError(f"option strength= must be >= 0, got {value}")
+    return value
+
+
+def _partitions(raw: str) -> tuple[str, ...]:
+    """Parse the argument of `partition=a|b` into a non-empty tuple of names."""
+    names = tuple(n.strip() for n in raw.split("|"))
+    if not all(names):
+        raise ValueError(f"option partition= needs non-empty names, got {raw!r}")
+    return names
+
+
+def _choice(option: str, raw: str, allowed: tuple[str, ...]) -> str:
+    """Validate the argument of an enumerated option such as `ownership=`."""
+    if raw not in allowed:
+        raise ValueError(f"option {option}= must be one of {', '.join(allowed)}, got {raw!r}")
+    return raw
+
+
+def _apply_options(opts: list[str], role: str | None = None) -> QosSpec:
+    """Fold a list of option tokens into a QosSpec, rejecting conflicts.
+
+    `role` is "write", "read" or None (unknown); `strength=` is refused on a reader.
+    """
     reliability: set[str] = set()
     durability: set[str] = set()
     history: set[int | None] = set()
     deadline_ms: int | None = None
+    extra: dict[str, Any] = {}
     for opt in opts:
         name, _, value = opt.partition("=")
         if opt in ("reliable", "best_effort"):
@@ -81,6 +132,18 @@ def _apply_options(opts: list[str]) -> QosSpec:
             history.add(_positive_int("keep_last", value))
         elif name == "deadline" and "=" in opt:
             deadline_ms = _positive_int("deadline", value)
+        elif name == "partition" and "=" in opt:
+            extra["partition"] = _partitions(value)
+        elif name == "liveliness" and "=" in opt:
+            extra["liveliness"] = _choice("liveliness", value, LIVELINESS_KINDS)
+        elif name == "lease" and "=" in opt:
+            extra["lease_ms"] = _positive_int("lease", value)
+        elif name == "ownership" and "=" in opt:
+            extra["ownership"] = _choice("ownership", value, OWNERSHIP_KINDS)
+        elif name == "strength" and "=" in opt:
+            if role == "read":
+                raise ValueError("option strength= only applies to writers")
+            extra["strength"] = _strength(value)
         else:
             raise ValueError(f"unknown QoS option {opt!r}")
     if len(reliability) > 1:
@@ -94,13 +157,14 @@ def _apply_options(opts: list[str]) -> QosSpec:
         durability="transient_local" if "transient_local" in durability else "volatile",
         history_depth=history.pop() if history else 1,
         deadline_ms=deadline_ms,
+        **extra,
     )
 
 
-def parse_endpoint(text: str) -> Endpoint:
+def parse_endpoint(text: str, role: str | None = None) -> Endpoint:
     """Parse ``TOPIC:TYPE[:opt,opt,...]`` into an Endpoint.
 
-    Raises ValueError with a readable message on any malformed input.
+    `role` ("write" or "read") enables role-specific checks. Raises ValueError with a readable message on any malformed input.
     """
     parts = text.split(":")
     if len(parts) not in (2, 3):
@@ -111,7 +175,7 @@ def parse_endpoint(text: str) -> Endpoint:
     if type_name not in TYPES:
         raise ValueError(f"unknown type {type_name!r}; choose one of {', '.join(TYPES)}")
     opts = [o.strip() for o in parts[2].split(",") if o.strip()] if len(parts) == 3 else []
-    return Endpoint(topic, type_name, _apply_options(opts))
+    return Endpoint(topic, type_name, _apply_options(opts, role))
 
 
 def describe(endpoint: Endpoint) -> str:
@@ -125,6 +189,16 @@ def describe(endpoint: Endpoint) -> str:
     text += ")"
     if qos.deadline_ms is not None:
         text += f", deadline {qos.deadline_ms} ms"
+    if qos.partition:
+        text += f", partition {'|'.join(qos.partition)}"
+    if qos.liveliness != "automatic" or qos.lease_ms is not None:
+        text += f", liveliness {qos.liveliness.upper()}"
+        if qos.lease_ms is not None:
+            text += f" lease {qos.lease_ms} ms"
+    if qos.ownership == "exclusive":
+        text += ", ownership EXCLUSIVE"
+        if qos.strength:
+            text += f" strength {qos.strength}"
     return text
 
 
@@ -155,12 +229,16 @@ def _domain(raw: str) -> int:
     return value
 
 
-def _endpoint(raw: str) -> Endpoint:
-    """argparse type for --write / --read."""
-    try:
-        return parse_endpoint(raw)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(str(exc)) from None
+def _endpoint_for(role: str) -> Callable[[str], Endpoint]:
+    """argparse type factory for --write / --read."""
+
+    def convert(raw: str) -> Endpoint:
+        try:
+            return parse_endpoint(raw, role)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from None
+
+    return convert
 
 
 def build_parser(vendor_label: str) -> argparse.ArgumentParser:
@@ -168,13 +246,25 @@ def build_parser(vendor_label: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=f"{vendor_label} DDS role node (one participant, writers and readers)",
         epilog="endpoint syntax: TOPIC:TYPE[:reliable|best_effort|volatile|transient_local|"
-        "keep_all|keep_last=N|deadline=MS,...]  types: " + ", ".join(TYPES),
+        "keep_all|keep_last=N|deadline=MS|partition=a|b|liveliness=KIND|lease=MS|"
+        "ownership=shared|exclusive|strength=N,...]  types: " + ", ".join(TYPES),
     )
     parser.add_argument("--domain", type=_domain, default=0, help="DDS domain id, 0..232")
     parser.add_argument("--name", required=True, help="participant name (the robot role)")
-    parser.add_argument("--write", action="append", type=_endpoint, default=[], metavar="ENDPOINT")
-    parser.add_argument("--read", action="append", type=_endpoint, default=[], metavar="ENDPOINT")
+    parser.add_argument(
+        "--write", action="append", type=_endpoint_for("write"), default=[], metavar="ENDPOINT"
+    )
+    parser.add_argument(
+        "--read", action="append", type=_endpoint_for("read"), default=[], metavar="ENDPOINT"
+    )
     parser.add_argument("--rate-hz", type=float, default=10.0, help="write rate, default 10")
+    parser.add_argument(
+        "--stop-asserting-after",
+        type=float,
+        default=None,
+        metavar="S",
+        help="after S seconds stop writing and asserting liveliness, but keep running",
+    )
     return parser
 
 
@@ -186,6 +276,8 @@ def parse_args(vendor_label: str, argv: list[str] | None = None) -> argparse.Nam
         parser.error("give at least one --write or --read")
     if args.rate_hz <= 0:
         parser.error("--rate-hz must be > 0")
+    if args.stop_asserting_after is not None and args.stop_asserting_after < 0:
+        parser.error("--stop-asserting-after must be >= 0")
     return args
 
 
