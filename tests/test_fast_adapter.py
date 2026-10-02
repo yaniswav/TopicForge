@@ -1,4 +1,4 @@
-"""Tests for the FastDdsAdapter (v0.3.0).
+"""Tests for the FastDdsAdapter.
 
 Skipped without `fastdds`. Listener-driven discovery may need a few
 hundred ms to populate against a local bus: the constructor uses
@@ -144,6 +144,6 @@ def test_listener_thread_safe_under_concurrent_callbacks() -> None:
         t.join()
     snapshot = listener.snapshot_participants()
     assert isinstance(snapshot, list)
-    # Each thread inserts 50 entries with mostly unique GUIDs ; collisions
-    # at the 256-byte ceiling reduce the count but never crash.
+    # Each thread inserts 50 entries with mostly unique GUIDs; collisions
+    # at the 256-byte cap reduce the count but never crash.
     assert len(snapshot) > 0

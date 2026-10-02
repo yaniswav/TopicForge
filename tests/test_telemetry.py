@@ -245,7 +245,7 @@ def test_build_app_off_makes_no_transport_calls() -> None:
     transport = _SpyTransport()
     app = build_app(_settings(telemetry=False), telemetry_transport=transport)
     tools = {t.name: t for t in asyncio.run(app.list_tools())}
-    # Touch every MVP tool through FastMCP's call_tool path.
+    # Touch two tools through FastMCP's call_tool path.
     for name in ("health_check", "list_topics"):
         asyncio.run(app.call_tool(name, {}))
     asyncio.run(app.call_tool("get_topic_info", {"topic": "/cmd_vel"}))
@@ -279,8 +279,8 @@ def test_default_log_transport_writes_one_record_per_event(
 ) -> None:
     """No transport injected: the default log transport must still fire.
 
-    Pins the MVP behaviour: opt-in users can verify what was sent by
-    reading the `topicforge.telemetry` logger.
+    Opt-in users can verify what was sent by reading the
+    `topicforge.telemetry` logger.
     """
     client = build_telemetry_client(enabled=True, mode="mock", version="0.0.0")
     with caplog.at_level(logging.INFO, logger="topicforge.telemetry.client"):

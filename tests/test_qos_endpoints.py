@@ -1,6 +1,6 @@
 """Tests for `common.qos_endpoints.detect_mismatches_across_endpoints`.
 
-The Fast-side endpoint-pairing logic extracted from both DDS adapters (Lot 5): tested
+The Fast-side endpoint-pairing logic extracted from both DDS adapters: tested
 in isolation with synthetic endpoint objects, and once through the real
 Cyclone helpers to pin the exact call shape the adapter makes. No binding.
 """

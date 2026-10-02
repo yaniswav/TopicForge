@@ -27,12 +27,10 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _DUST_ROADMAP_MSG = (
-    "Dust DDS adapter is a stub at TopicForge v0.4.0 Phase 1.5: Dust "
-    "DDS is a Rust-native implementation with no maintained Python "
-    "binding on PyPI. The auto-detect chain treats it as the lowest "
-    "OSS priority ; the factory falls back to Fast / Cyclone / Mock "
-    "before reaching this adapter in any realistic install. See "
-    "`docs/dds-interop-matrix.md` for the OMG positioning."
+    "The Dust DDS backend is not implemented: Dust has no Python binding "
+    "TopicForge can use. Dust participants are still visible: run TopicForge "
+    "with TOPICFORGE_DDS_BACKEND=cyclone and it observes them through standard "
+    "DDS discovery. See `docs/dds-interop-matrix.md`."
 )
 
 

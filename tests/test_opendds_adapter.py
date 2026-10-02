@@ -1,8 +1,7 @@
-"""Tests for `topicforge.adapters.dds_opendds.OpenDdsAdapter`: v0.4.0 stub.
+"""Tests for `topicforge.adapters.dds_opendds.OpenDdsAdapter`.
 
-`pyopendds` is not yet maintained on PyPI. The stub adapter exists to
-keep the auto-detect framework symmetric across all OSS vendors. These
-tests assert the stub shape without requiring any binding installed.
+`pyopendds` is not on PyPI, so the adapter is a stub. These tests pin
+its shape and need no binding.
 """
 
 from __future__ import annotations
@@ -27,9 +26,10 @@ def test_constructor_succeeds_for_valid_domain() -> None:
 
 
 def test_is_available_always_false_for_stub() -> None:
-    """Audit S1: a stub must never report available (even if a `pyopendds`
-    module is importable) because the factory selects on is_available() and
-    every method here raises. The Dust stub follows the same rule."""
+    """A stub never reports available, even if a `pyopendds` module is importable.
+
+    The factory selects on is_available() and every method here raises.
+    """
     adapter = OpenDdsAdapter(domain_id=0)
     assert adapter.is_available() is False
 
@@ -42,7 +42,7 @@ def test_ros2_methods_raise_with_roadmap_pointer() -> None:
         ("sample_messages", ("/x", 1)),
         ("analyze_bag", ("/tmp/x.mcap",)),
     ]:
-        with pytest.raises(AdapterError, match="OpenDDS adapter is a stub"):
+        with pytest.raises(AdapterError, match="OpenDDS backend is not implemented"):
             getattr(adapter, method)(*args)
 
 
@@ -56,5 +56,5 @@ def test_dds_methods_raise_with_roadmap_pointer() -> None:
         ("topic_metrics", ("/x", 60, 0)),
         ("peek_bag_samples", ("/tmp/x.mcap", "/x", 1)),
     ]:
-        with pytest.raises(AdapterError, match="OpenDDS adapter is a stub"):
+        with pytest.raises(AdapterError, match="OpenDDS backend is not implemented"):
             getattr(adapter, method)(*args)

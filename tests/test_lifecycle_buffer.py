@@ -227,8 +227,8 @@ def test_default_max_participants_is_4096() -> None:
 
 
 def test_participant_map_bounded_by_max_participants() -> None:
-    # Audit P1-4: a churny bus (each restart mints a fresh GUID) must not
-    # grow the participant map without bound.
+    # A churny bus (each restart mints a fresh GUID) must not grow the
+    # participant map without bound.
     buf = LifecycleBuffer(max_participants=3)
     for i in range(10):
         buf.record_seen(guid=f"g{i}", vendor="cyclone", hostname=None, domain_id=0, now_ns=i)

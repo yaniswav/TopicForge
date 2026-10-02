@@ -58,7 +58,7 @@ def test_count_sequence_gaps_dedupes_duplicates() -> None:
 
 
 def test_count_sequence_gaps_skips_wrap_or_reset_discontinuity() -> None:
-    # Audit C6: a 16-bit wrap (65535->0) or publisher restart is a
+    # A 16-bit wrap (65535->0) or publisher restart is a
     # discontinuity, not tens of thousands of lost samples.
     assert _count_sequence_gaps([65534, 65535, 0, 1]) == 0
 
@@ -191,9 +191,8 @@ def test_sequence_numbers_unavailable_when_all_none() -> None:
 
 
 def test_frequency_uses_n_minus_1_intervals_not_now() -> None:
-    # Audit C5 (off-by-one + now-based span): 3 samples 1 s apart span
-    # 2 s over 2 intervals -> 1.0 Hz, independent of now_ns. The old code
-    # divided count by (now - oldest), giving a now-dependent, ~1.5x rate.
+    # 3 samples 1 s apart span 2 s over 2 intervals -> 1.0 Hz, independent
+    # of now_ns.
     buf = MetricsBuffer()
     for i in range(3):
         buf.record(
@@ -209,9 +208,8 @@ def test_frequency_uses_n_minus_1_intervals_not_now() -> None:
 
 
 def test_snapshot_same_timestamp_yields_no_frequency() -> None:
-    # Audit C5: an opportunistic peek surfaces all samples with one shared
-    # receive_ns. Co-located samples do not define a rate -> None (the old
-    # code reported count / (now - that_instant), a fabricated number).
+    # A peek can surface all samples with one shared receive_ns. Co-located
+    # samples do not define a rate -> None.
     buf = MetricsBuffer()
     for i in range(5):
         buf.record(
@@ -227,7 +225,7 @@ def test_snapshot_same_timestamp_yields_no_frequency() -> None:
 
 
 def test_sequence_gaps_grouped_by_writer() -> None:
-    # Audit C6: two writers with offset counters (100,101 and 0,1) must NOT
+    # Two writers with offset counters (100,101 and 0,1) must NOT
     # read as an ~99-wide phantom gap. Grouping by writer_guid keeps each
     # writer's contiguous run separate -> 0 gaps.
     buf = MetricsBuffer()
@@ -384,7 +382,7 @@ def test_thread_safety_smoke() -> None:
 
 
 def test_topic_map_bounded_by_max_topics() -> None:
-    # Audit P2-5: the number of distinct topics must not grow unbounded.
+    # The number of distinct topics is bounded.
     buf = MetricsBuffer(max_topics=3)
     for i in range(10):
         buf.record(topic=f"/t{i}", receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)

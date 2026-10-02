@@ -31,13 +31,10 @@ from topicforge.models import (
 log = logging.getLogger(__name__)
 
 _OPENDDS_ROADMAP_MSG = (
-    "OpenDDS adapter is a stub at TopicForge v0.4.0 Phase 1.5: the "
-    "`pyopendds` Python binding is not yet maintained on PyPI. Track "
-    "OpenDDS Python binding progress upstream or contribute to the "
-    "TopicForge OpenDDS adapter under `src/topicforge/adapters/dds_opendds/`. "
-    "Until then, the auto-detect chain falls through to Fast / Cyclone "
-    "/ Mock per the priority order in `config/settings.py`. See "
-    "`docs/projet-file/mcp-02-spec.md` for the multi-vendor roadmap."
+    "The OpenDDS backend is not implemented: the `pyopendds` binding is not "
+    "maintained on PyPI. OpenDDS participants are still visible: run TopicForge "
+    "with TOPICFORGE_DDS_BACKEND=cyclone and it observes them through standard "
+    "DDS discovery. See `docs/dds-interop-matrix.md`."
 )
 
 
