@@ -1,6 +1,6 @@
 # OpenSplice participant (C / SAC) - EXPERIMENTAL
 
-**EXPERIMENTAL. Nothing here has ever been compiled or run.** Vortex OpenSplice
+EXPERIMENTAL. Nothing here has ever been compiled or run. Vortex OpenSplice
 Community Edition has been abandoned since its last release (6.9.210323OSS,
 2021-03-23). This participant exists to check that TopicForge sees an
 OpenSplice endpoint through standard RTPS discovery (vendor id 01.02). It is
@@ -100,7 +100,7 @@ Try it once, and stop there:
   `list_participants` within a few seconds on the same domain and network,
 
 then record the result (OS, HDE asset, error text) in the demo notes and
-**remove OpenSplice from the demo**. Do not compile OpenSplice from source and
+remove OpenSplice from the demo. Do not compile OpenSplice from source and
 do not fall back to another OpenSplice build. The demo is valid without it:
 the driver starts a participant only when its artifact exists.
 

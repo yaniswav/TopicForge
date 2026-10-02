@@ -1,6 +1,6 @@
 # 03 A node crashed
 
-**Concept:** liveliness and leases. A DDS participant that stops cleanly
+Concept: liveliness and leases. A DDS participant that stops cleanly
 says goodbye. One that crashes says nothing, and the bus only learns it is
 gone when its lease expires: the participant promised to show signs of life
 within a lease duration, and stopped doing so.
@@ -38,14 +38,14 @@ python run.py --hold     # keep the programs running, ask your own MCP client
     discovered lidar_driver
 ```
 
-- Cyclone DDS uses a 10 s lease by default, so the departure is reported when
-  the lease expires.
-- TopicForge tracks discovery in the background, so the event is there when
-  you ask, and its time comes from DDS rather than from your question. The
-  `lost` time is an upper bound of the death: after a crash it is the lease
-  expiry, and a crash looks the same as a clean leave.
-- The lease is a per-vendor default you can configure. Dust DDS, for
-  example, uses 100 s: a crashed Dust program stays "active" much longer.
+Cyclone DDS uses a 10 s lease by default, so the departure is reported when
+the lease expires. TopicForge tracks discovery in the background, so the event
+is there when you ask, and its time comes from DDS rather than from your
+question. The `lost` time is an upper bound of the death: after a crash it is
+the lease expiry, and a crash looks the same as a clean leave.
+
+The lease is a per-vendor default you can configure. Dust DDS, for example,
+uses 100 s, so a crashed Dust program stays "active" much longer.
 
 ## Ask your agent
 
@@ -55,8 +55,5 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 Then stop one of the programs from another terminal (or stop `--hold` with
 Ctrl+C and ask what happened).
 
-## Remember
-
-- "Still listed" does not mean "still alive": a crash is only visible after
-  the lease.
-- For a safety function, choose a lease short enough for your reaction time.
+"Still listed" does not mean "still alive". For a safety function, choose a
+lease short enough for your reaction time.

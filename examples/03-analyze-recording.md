@@ -1,11 +1,9 @@
 # 03: Post-mortem inspection of a bag recording
 
-**Scenario.** A field deployment failed at 14:32:17 UTC and the team
-saved a `.mcap` of the window around the failure. You need quick
-answers : duration, message counts, anything flagged, then a look at the
-messages of a specific topic. **Tools exercised.** `analyze_bag`,
-`peek_bag_samples`. **Mode.** Mock: exercises the deterministic bag
-fixtures.
+A field deployment failed at 14:32:17 UTC and the team saved a `.mcap` of the
+window around the failure. You want duration, message counts and anything
+flagged, then a look at the messages of one topic. This walkthrough uses
+`analyze_bag` and `peek_bag_samples`, against the mock's bag fixtures.
 
 ## Setup
 
@@ -26,12 +24,12 @@ topics and two canned anomaly strings.
 
 ## Conversation
 
-**You:**
+You:
 
 > Summarize the bag at `/tmp/demo.mcap`: how long, how many messages,
 > anything suspicious?
 
-**Claude calls:** `analyze_bag(path="/tmp/demo.mcap")` -> returns a
+Claude calls: `analyze_bag(path="/tmp/demo.mcap")` -> returns a
 `BagAnalysis`:
 
 ```json
@@ -62,11 +60,11 @@ topics and two canned anomaly strings.
 no live code path detects anomalies today, so a real bag always comes
 back with `"anomalies": []`.
 
-**You:**
+You:
 
 > Show me the actual messages on `/cmd_vel`.
 
-**Claude calls:** `peek_bag_samples(path="/tmp/demo.mcap",
+Claude calls: `peek_bag_samples(path="/tmp/demo.mcap",
 topic="/cmd_vel", count=3)` -> returns a `SampleResult` with 3 samples.
 The first looks like this:
 
@@ -90,11 +88,11 @@ included, returns an empty `samples` list rather than an error. A real
 bag raises an error when the topic is not in the file, and lists the
 topics it does contain.
 
-**You:**
+You:
 
 > Were there any non-ROS DDS participants recorded in the bag?
 
-**Claude responds** referencing `BagAnalysis.participants_recorded`. It
+Claude responds referencing `BagAnalysis.participants_recorded`. It
 is an empty list here, and it is empty on every real bag today: the
 reader never populates it. The field exists so that bag participants
 can later share the `ParticipantInfo` schema of `list_participants`.
@@ -125,7 +123,7 @@ With a DDS backend selected but no `ros2` on PATH, both tools raise the
 mock fixtures: check that `health_check` says `mode="live"` before
 trusting what a bag tool returns.
 
-## Three formats, one API
+## Formats
 
 `rosbags` (Apache 2.0, pure-Python) reads MCAP, ROS2 `.db3`, and ROS1
 `.bag` recordings through a single `AnyReader` API, and

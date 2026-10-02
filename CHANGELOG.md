@@ -17,7 +17,7 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
 
 ### Added
 
-- **`list_endpoints`, the 12th MCP tool.** Returns every announced DDS writer
+- `list_endpoints`, the twelfth MCP tool. Returns every announced DDS writer
   and reader as a typed `EndpointInfo` (role, topic, type, owning participant
   guid, name and vendor, structured QoS, announcement timestamp) plus a
   `by_topic` roll-up that flags orphans (`no_reader`, `no_writer`). TopicForge's
@@ -26,7 +26,7 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
   (200 entries, 1 hour) and shown as `departed_writers` / `departed_readers`;
   `include_departed` lists them. Served by Cyclone and the mock. Fast raises a
   clear "not supported yet" error.
-- **Continuous discovery tracking on Cyclone.** A daemon thread (0.5 s period)
+- Continuous discovery tracking on Cyclone. A daemon thread (0.5 s period)
   is the only code that reads the builtin discovery topics and feeds in-memory
   caches that every discovery tool reads. Lifecycle no longer moves only when a
   tool is called: a node restarted three times shows as 3 `lost` and 4
@@ -55,11 +55,11 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
 
 ### Changed
 
-- **Breaking: `detect_qos_mismatches` returns a `MismatchScan` envelope instead
+- **Breaking change: `detect_qos_mismatches` returns a `MismatchScan` envelope instead
   of a bare list.** To migrate, read `["reports"]` where you used the list. The
   envelope also carries `matched`, `not_matched`, `hints`, `pairs_checked`,
   `topics_scanned`, `policies_checked`, `policies_unchecked` and
-  `mode_effective`. Why: an empty list was read as a healthy bus although only
+  `mode_effective`. The reason: an empty list was read as a healthy bus although only
   four policies were checked, and readers and writers in different partitions
   were blamed on Reliability.
 - Partition is checked first (`*` and `?` wildcards; a wildcard against a
@@ -133,7 +133,7 @@ scenarios were diagnosed correctly, with no false alarm on a healthy bus.
 First run of the DDS code against a live multi-vendor bus (Windows 11, a
 Python / Cyclone DDS participant and a Rust / Dust DDS participant, TopicForge
 driven by a real MCP client). Until now every DDS adapter had only been
-checked statically. The run exposed four defects that together made the DDS
+checked statically. The run exposed four defects that together left the DDS
 module non-functional on Cyclone; all are fixed and pinned by tests.
 
 ### Fixed
@@ -144,27 +144,27 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
 - **`list_participants` now reports the participant name and the hostname on
   Cyclone.** The name comes from the EntityName QoS and the hostname from the
   `__Hostname` discovery property; both were always null on a real bus.
-- **Participant GUIDs were never read.** cyclonedds 11.0.1 exposes the builtin
+- Participant GUIDs were never read. cyclonedds 11.0.1 exposes the builtin
   key as a `uuid.UUID`, which the extractor did not handle, so every
   participant collapsed onto a single `unknown` entry.
-- **Vendors were never identified.** The builtin participant sample carries no
+- Vendors were never identified. The builtin participant sample carries no
   vendor field. The vendor id is now read from the first two bytes of the GUID
   prefix, as RTPS recommends; implementations that do not follow that
   convention (Dust DDS, and RTI by default) still report `unknown`, because
   the Cyclone Python binding does not expose the vendor id from the RTPS
   header.
-- **The OMG vendor-id table was wrong.** It mapped `01.05` to Fast DDS and
+- The OMG vendor-id table was wrong. It mapped `01.05` to Fast DDS and
   `01.16` to Cyclone; the correct ids are `01.0F` (eProsima) and `01.10`
   (Eclipse), verified against both vendors' sources. The Cyclone side ran on a
   live bus; the Fast DDS side (`fast_extract_vendor_id`) is verified
-  statically only, since its tests need a binding that is not on PyPI. The `vendor` field of
-  `ParticipantInfo` and `ParticipantEvent` now also accepts `rti_micro`,
+  statically only, since its tests need a binding that is not on PyPI.
+  The `vendor` field of `ParticipantInfo` and `ParticipantEvent` now also accepts `rti_micro`,
   `opensplice`, `opendds`, `coredx`, `intercom` and `dust` (soft-breaking for
   clients validating the previous enum).
-- **`detect_qos_mismatches` never reported anything on Cyclone.** cyclonedds
+- `detect_qos_mismatches` never reported anything on Cyclone. cyclonedds
   scopes its policy class names (`Reliability.BestEffort`), and the
   normalizer matched only the bare name, so no QoS profile was ever built.
-- **A stopped participant never disappeared.** Discovery readers keep the last
+- A stopped participant never disappeared. Discovery readers keep the last
   sample of a departed participant with a NOT_ALIVE instance state; those are
   now ignored for participants and endpoints, so a participant is reported as
   left when its lease expires, and a dead endpoint no longer produces a

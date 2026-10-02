@@ -1,6 +1,6 @@
 # 02 Why can't they talk?
 
-**Concept:** QoS compatibility, Reliability. A reader and a writer on the
+Concept: QoS compatibility, Reliability. A reader and a writer on the
 same topic and the same type only connect if their QoS are compatible. When
 they are not, DDS connects nothing and raises no error in your code by
 default: the reader just receives nothing.
@@ -42,23 +42,22 @@ python run.py --hold     # keep the programs running, ask your own MCP client
     [lidar_driver] rx odom: 10 in 1.0 s, last seq 60
 ```
 
-- On `scan`, the planner **requests** RELIABLE delivery and the driver only
-  **offers** BEST_EFFORT. A reader cannot ask for more than the writer
-  offers, so DDS refuses the match.
-- On `odom` the QoS differ the other way: the writer offers RELIABLE and the
-  reader asks for BEST_EFFORT. That is allowed (offering more than asked is
-  fine), so TopicForge does not report it as a mismatch. It lists it under
-  `matched`, the pairs DDS will connect on the declared QoS.
+On `scan`, the planner requests RELIABLE delivery and the driver only
+offers BEST_EFFORT. A reader cannot ask for more than the writer offers, so
+DDS refuses the match.
+
+On `odom` the QoS differ the other way: the writer offers RELIABLE and the
+reader asks for BEST_EFFORT. Offering more than asked is allowed, so
+TopicForge does not report a mismatch and lists the pair under `matched`, the
+pairs DDS will connect on the declared QoS.
 
 ## Ask your agent
 
 > nav_planner never receives the scan topic on DDS domain 0. Why?
 
-## Remember
+## Fix
 
-- DDS QoS follow a request/offered rule: the writer must offer at least what
-  the reader requests.
-- A QoS mismatch is silent in most applications. Look for it first when a
-  subscriber gets nothing.
-- Fix: make the driver RELIABLE, or the planner BEST_EFFORT (usual for
-  high-rate sensor data, where the next scan replaces a lost one).
+Make the driver RELIABLE, or the planner BEST_EFFORT (usual for high-rate
+sensor data, where the next scan replaces a lost one). Since a QoS mismatch is
+silent in most applications, it is the first thing to check when a subscriber
+gets nothing.

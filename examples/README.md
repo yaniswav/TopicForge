@@ -1,6 +1,6 @@
 # TopicForge: examples
 
-Two kinds of example. The numbered walkthroughs below run against the **mock adapter** (no ROS2 or DDS install) and pair an MCP-client prompt with the expected tool calls and a short diagnosis. The live DDS examples in [`dds/`](dds/README.md) run real participants on a real bus; start them with `python examples/dds/run_all.py`.
+There are two kinds of example. The numbered walkthroughs below run against the mock adapter (no ROS2 or DDS install) and pair an MCP-client prompt with the expected tool calls and a short diagnosis. The live DDS examples in [`dds/`](dds/README.md) run real participants on a real bus; start them with `python examples/dds/run_all.py`.
 
 | File | Scenario | Tools exercised |
 | ---- | -------- | --------------- |
