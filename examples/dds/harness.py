@@ -210,6 +210,29 @@ class TopicForge:
     async def mismatches(self) -> list[dict[str, Any]]:
         return await self.ask("detect_qos_mismatches")
 
+    async def endpoints(self, builtin_topic: str) -> list[dict[str, Any]]:
+        """Writers (`DCPSPublication`) or readers (`DCPSSubscription`) announced on the bus."""
+        result = await self.ask("peek_dds_samples", topic=builtin_topic, count=200)
+        return [s["payload"] for s in result.get("samples", [])]
+
+    async def wiring(self) -> dict[str, dict[str, list[tuple[str, str]]]]:
+        """Who writes and who reads each topic, as seen on the wire.
+
+        Returns {topic: {"writers": [(participant, type)], "readers": [...]}}.
+        """
+        parts = await self.participants()
+        table: dict[str, dict[str, list[tuple[str, str]]]] = {}
+        for builtin, role in (("DCPSPublication", "writers"), ("DCPSSubscription", "readers")):
+            for ep in await self.endpoints(builtin):
+                topic = ep.get("topic_name")
+                # DCPS* are the discovery topics themselves: TopicForge's own
+                # readers, not part of the robot.
+                if not topic or topic.startswith("DCPS"):
+                    continue
+                entry = table.setdefault(topic, {"writers": [], "readers": []})
+                entry[role].append((owner(ep.get("guid"), parts), ep.get("type_name") or "?"))
+        return table
+
     async def events(self, lookback_seconds: int = 600) -> list[dict[str, Any]]:
         return await self.ask(
             "participant_events", domain_id=self.domain, lookback_seconds=lookback_seconds
@@ -276,6 +299,17 @@ def mismatch_on(
         (m for m in mismatches if m["topic"] == topic and policy in m["incompatible_policies"]),
         None,
     )
+
+
+def show_wiring(table: dict[str, dict[str, list[tuple[str, str]]]]) -> None:
+    for topic in sorted(table):
+        entry = table[topic]
+
+        def fmt(side: list[tuple[str, str]]) -> str:
+            return ", ".join(f"{who} ({type_name})" for who, type_name in side) or "NOBODY"
+
+        print(f"    {topic:<12} writers: {fmt(entry['writers'])}")
+        print(f"    {'':<12} readers: {fmt(entry['readers'])}")
 
 
 def show_events(events: Sequence[dict[str, Any]]) -> None:

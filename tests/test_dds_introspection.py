@@ -323,3 +323,13 @@ def test_cyclone_extractors_never_raise_on_hostile_qos():
     sample = _Obj(qos=_Boom())
     assert cyclone_extract_participant_name(sample) is None
     assert cyclone_extract_hostname(sample) is None
+
+
+def test_cyclone_extract_type_name_reads_the_endpoint_type() -> None:
+    from types import SimpleNamespace
+
+    from topicforge.adapters.common import cyclone_extract_type_name
+
+    assert cyclone_extract_type_name(SimpleNamespace(type_name="LidarScan")) == "LidarScan"
+    assert cyclone_extract_type_name(SimpleNamespace(type_name="")) is None
+    assert cyclone_extract_type_name(SimpleNamespace()) is None

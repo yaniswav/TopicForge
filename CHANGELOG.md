@@ -78,6 +78,26 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
   `docker-compose.yml`, per-vendor Dockerfiles, scenario JSON files, schema
   test and `integration.yml`) is removed in favour of the demo driver.
 
+
+### Fixed (live-bus runs, 2026-10-02)
+
+- Cyclone adapter created a new DDS reader on a builtin discovery topic on
+  every tool call and never deleted it. It now keeps one reader per builtin
+  topic and takes a non-blocking snapshot, so calls no longer wait 2 s each
+  (`detect_qos_mismatches` waited 4 s).
+- `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription` reported the
+  endpoints of participants that had left; disposed entries are now dropped.
+  Its payload also carries the endpoint `type_name`.
+- `test_dds_cross_vendor.py` expected an error message from v0.3; it had
+  never run, since CI has no DDS binding. First run against the real Cyclone
+  binding.
+
+### Added (examples)
+
+- `examples/dds/`: real use cases 10 to 14 (driver swap, wiring, safety
+  monitor dropout, deadline not offered, restart loop) next to the concept
+  examples 01 to 04. All nine pass on a live bus.
+
 ## [0.5.3] - 2026-10-01
 
 Fixes from an independent senior review of the whole repository (five
