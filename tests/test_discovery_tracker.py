@@ -303,7 +303,7 @@ def test_departed_store_is_bounded_and_expires() -> None:
 
 
 def test_snapshot_never_sees_a_half_applied_pass() -> None:
-    """A handler between record_seen and participants.put used to read a live participant as lost."""
+    """A handler between record_seen and participants.put never reads a live participant as lost."""
     caches = DiscoveryCaches()
     seen_by_reader: list[Any] = []
     real_put = caches.participants.put

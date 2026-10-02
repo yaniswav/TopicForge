@@ -1,11 +1,4 @@
-"""Unit tests for `topicforge.adapters.common.cdr_decoder`.
-
-Pure-Python tests of the 6 helpers extracted from `dds_cyclone/adapter.py`
-in v0.4.0 Phase 3. No DDS dependency. The Phase 1.5 XTypes Cyclone tests
-(gated by `requires_cyclonedds`) continue to exercise the same logic
-through their full pipeline: these tests pin the extracted contract
-in isolation.
-"""
+"""Unit tests for `topicforge.adapters.common.cdr_decoder`. No DDS binding needed."""
 
 from __future__ import annotations
 
@@ -215,9 +208,8 @@ def test_extract_publish_ns_none_when_unavailable() -> None:
 
 
 def test_iter_field_names_string_slots_not_exploded() -> None:
-    # Audit C2: `__slots__ = "value"` (a bare string) is legal Python; list()
-    # on it would explode into ['v','a','l','u','e']. It must be treated as a
-    # single field name.
+    # `__slots__ = "value"` (a bare string) is legal Python; list() on it would
+    # split into single characters. It must count as one field name.
     class OneSlot:
         __slots__ = "value"
 
@@ -238,8 +230,8 @@ def test_decode_string_slots_object_decodes_single_field() -> None:
 
 
 def test_decode_field_value_caps_recursion_depth() -> None:
-    # Audit M6: a pathologically deep list nest collapses to repr() at the cap
-    # instead of raising RecursionError.
+    # A very deep list nest collapses to repr() at the cap instead of raising
+    # RecursionError.
     nested: Any = 0
     for _ in range(100):
         nested = [nested]

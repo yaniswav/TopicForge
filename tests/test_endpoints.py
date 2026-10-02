@@ -427,8 +427,8 @@ def test_health_report_states_the_observed_domain(health_service: Any) -> None:
 
 
 def test_departed_endpoint_keeps_vendor_from_its_guid_prefix() -> None:
-    """A departed participant is no longer in the live vendor map: the endpoint's
-    own participant_key prefix still says Cyclone (01.10), not "unknown"."""
+    """A departed participant is not in the live vendor map; the endpoint's
+    participant_key prefix still says Cyclone (01.10), not "unknown"."""
     from topicforge.adapters.common.endpoints import endpoint_record
 
     sample = SimpleNamespace(

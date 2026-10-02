@@ -33,10 +33,9 @@ _BAG_FORMAT_BY_EXTENSION: dict[str, str] = {
     ".bag": "bag",
 }
 _ROSBAGS_REQUIRED_MSG = (
-    "Bag analysis with full sample decode requires the `rosbags` library. "
-    "Install via `pip install topicforge[bags]` and retry. "
-    "`analyze_bag` may still fall back to the v0.3.0 `ros2 bag info` text-parse "
-    "path via the live ROS2 CLI adapter ; `peek_bag_samples` has no fallback."
+    "Reading bag samples requires the `rosbags` library: "
+    "pip install topicforge[bags]. `analyze_bag` can still summarize a bag "
+    "through `ros2 bag info` when ROS 2 is installed; `peek_bag_samples` cannot."
 )
 
 

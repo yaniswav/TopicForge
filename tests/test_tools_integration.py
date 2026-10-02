@@ -22,22 +22,17 @@ MVP_TOOLS = {
     "get_topic_info",
     "sample_messages",
     "analyze_bag",
-    # DDS module tools (v0.2.0)
+    # DDS module tools
     "list_participants",
     "detect_qos_mismatches",
     "peek_dds_samples",
-    # DDS lifecycle tool (v0.4.0 Phase 1): the 9th tool, breaks the
-    # 8-tool ceiling documented in docs/projet-file/mcp-02-spec.md section 2.
+    # DDS lifecycle
     "participant_events",
-    # DDS temporal diagnostics (v0.4.0 Phase 2): the 10th tool ;
-    # second explicit ceiling break, acknowledged in CHANGELOG.
+    # DDS temporal diagnostics
     "topic_metrics",
-    # Bag post-mortem analysis (v0.4.0 Phase 3): the 11th tool ;
-    # third explicit ceiling break, acknowledged in CHANGELOG and
-    # docs/projet-file/mcp-02-spec.md section 2.
+    # Bag post-mortem analysis
     "peek_bag_samples",
-    # Endpoint discovery (2026-10-02): the 12th tool, approved by the owner
-    # after a blind evaluation showed every agent hand-joining GUID prefixes.
+    # Endpoint discovery
     "list_endpoints",
 }
 
@@ -76,7 +71,7 @@ def test_registered_tools_have_descriptions() -> None:
 
 
 def test_adapter_error_propagates_as_tool_error() -> None:
-    """Contract (CLAUDE.md section 8, audit test-gap #4): handlers are thin:
+    """Handlers are thin:
     `AdapterError` bubbles up to FastMCP, which surfaces it as an MCP-native
     error (isError=true) rather than masking it as a successful result. At the
     FastMCP `call_tool` layer this manifests as a `ToolError` carrying the
@@ -104,7 +99,7 @@ _EXPECTED_OUTPUT_TITLES = {
     "get_topic_info": "TopicInfo",
     "sample_messages": "SampleResult",
     "analyze_bag": "BagAnalysis",
-    # DDS module tools (v0.2.0)
+    # DDS module tools
     "peek_dds_samples": "SampleResult",
 }
 
@@ -135,7 +130,7 @@ def test_tool_outputs_are_typed_pydantic_schemas() -> None:
     )
 
 
-# Pin the `mode_effective` contract added in v0.1.2: every response carrier
+# Pin the `mode_effective` contract: every response carrier
 # (TopicInfo, SampleResult, BagAnalysis) must surface it as a required field
 # so a downstream LLM can distinguish a live response from a mock one without
 # re-reading `health_check`.

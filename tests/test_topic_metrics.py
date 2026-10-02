@@ -1,4 +1,4 @@
-"""Tool-level tests for `topic_metrics` (10th MCP tool, v0.4.0 Phase 2).
+"""Tool-level tests for the `topic_metrics` tool.
 
 Exercises the Inspector + MockAdapter path against the deterministic
 mock fixture (`/dds/heartbeat_10hz`, 100 samples @ 10 Hz, 50 ms

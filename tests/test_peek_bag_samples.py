@@ -1,4 +1,4 @@
-"""Tool-level tests for `peek_bag_samples` (11th MCP tool, v0.4.0 Phase 3).
+"""Tool-level tests for the `peek_bag_samples` tool.
 
 Exercises the Inspector + MockAdapter path against the deterministic
 mock bag fixtures (`MOCK_BAG_SAMPLES` in

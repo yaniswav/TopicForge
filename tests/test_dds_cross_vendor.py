@@ -110,12 +110,7 @@ def test_ros2_surface_raises_dds_only_error_uniformly(dds_adapter: Any) -> None:
 
 
 def test_peek_user_topic_not_on_bus_raises(dds_adapter: Any) -> None:
-    """A user topic nobody announces raises a clear "not discovered" error.
-
-    This test used to expect a v0.3.x roadmap message. It was always skipped
-    (no binding in CI), so nobody saw it drift; first run against the real
-    Cyclone binding on 2026-10-02.
-    """
+    """A user topic nobody announces raises a clear "not discovered" error."""
     with pytest.raises(AdapterError, match="not discovered"):
         dds_adapter.peek_dds_samples("/foo/user_topic", count=1)
 
