@@ -191,3 +191,61 @@ def test_levenshtein() -> None:
     assert levenshtein("/scan", "/scna") == 2
     assert levenshtein("kitten", "sitting") == 3
     assert levenshtein("same", "same") == 0
+
+
+def test_matched_lists_pairs_dds_will_connect() -> None:
+    reader, writer = _ep("reader", name="sub"), _ep("writer", name="pub")
+    scan = scan_endpoints([reader, writer])
+    assert len(scan.matched) == 1
+    m = scan.matched[0]
+    assert (m.reader_guid, m.writer_guid) == (reader.guid, writer.guid)
+    assert (m.reader_participant_name, m.writer_participant_name) == ("sub", "pub")
+    assert m.type_name == "pkg/T"
+
+
+def test_matched_excludes_incompatible_and_separated_but_keeps_risky() -> None:
+    bad = scan_endpoints([_ep("reader"), _ep("writer", reliability="BEST_EFFORT")])
+    assert bad.matched == [] and len(bad.reports) == 1
+    split = scan_endpoints([_ep("reader", partitions=["a"]), _ep("writer", partitions=["b"])])
+    assert split.matched == [] and len(split.not_matched) == 1
+    risky = scan_endpoints([_ep("reader", history="KEEP_ALL"), _ep("writer")])
+    assert len(risky.matched) == 1 and risky.reports[0].severity == "risky"
+
+
+def test_typo_hint_compares_orphan_against_non_orphan_topics() -> None:
+    eps = [_ep("reader", "battery"), _ep("writer", "battery"), _ep("reader", "batery")]
+    scan = scan_endpoints(eps)
+    assert any(
+        "'batery'" in h and "readers but no writer" in h and "'battery'" in h and "1 edit" in h
+        for h in scan.hints
+    )
+    assert len([h for h in scan.hints if "batery" in h]) == 1
+
+
+def test_path_suffix_hint_for_namespaced_orphan() -> None:
+    eps = [_ep("reader", "lidar/scan"), _ep("reader", "scan"), _ep("writer", "scan")]
+    scan = scan_endpoints(eps)
+    hints = [h for h in scan.hints if "lidar/scan" in h]
+    assert len(hints) == 1 and "namespaced/remapped" in hints[0]
+    assert not any("typo" in h for h in hints)
+
+
+def test_late_joiner_note_for_volatile_writer() -> None:
+    writer = _ep("writer", name="pub").model_copy(update={"announced_ns": 1_000_000_000})
+    late = _ep("reader", name="sub").model_copy(update={"announced_ns": 5_000_000_000})
+    scan = scan_endpoints([writer, late])
+    assert any(
+        "reader sub joined after writer pub" in h and "VOLATILE" in h and "by design" in h
+        for h in scan.hints
+    )
+
+
+def test_no_late_joiner_note_when_close_or_transient_local() -> None:
+    w = _ep("writer").model_copy(update={"announced_ns": 1_000_000_000})
+    close = _ep("reader").model_copy(update={"announced_ns": 1_500_000_000})
+    assert not any("joined after" in h for h in scan_endpoints([w, close]).hints)
+    tl_w = _ep("writer", durability="TRANSIENT_LOCAL").model_copy(
+        update={"announced_ns": 1_000_000_000}
+    )
+    late = _ep("reader").model_copy(update={"announced_ns": 9_000_000_000})
+    assert not any("joined after" in h for h in scan_endpoints([tl_w, late]).hints)

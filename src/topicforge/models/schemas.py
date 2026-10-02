@@ -112,8 +112,10 @@ class QosProfile(BaseModel):
         default=None,
         description=(
             "Partition names the endpoint's Publisher or Subscriber belongs "
-            'to. An empty list is the default partition (`""`). Endpoints '
-            "only match when their partitions intersect. `None` when not announced."
+            'to. No Partition policy is the default partition, reported as `[""]` '
+            "(never an empty list). Endpoints only match when their partitions "
+            "intersect. `None` only when the backend cannot read partitions at all "
+            "(unknown, not the default)."
         ),
     )
     latency_budget_ns: int | None = Field(
@@ -618,6 +620,25 @@ class NotMatchedPair(BaseModel):
     detail: str = Field(description="The two partition lists or the two type names.")
 
 
+class MatchedPair(BaseModel):
+    """A reader and a writer that DDS will connect given their announced QoS."""
+
+    model_config = _CONFIG
+
+    topic: str = Field(description="Topic name both endpoints use.")
+    type_name: str | None = Field(default=None, description="Type name both announced.")
+    reader_guid: str = Field(description="GUID of the reader endpoint.")
+    reader_participant_guid: str = Field(description="GUID of the reader's participant.")
+    reader_participant_name: str | None = Field(
+        default=None, description="Announced name of the reader's participant."
+    )
+    writer_guid: str = Field(description="GUID of the writer endpoint.")
+    writer_participant_guid: str = Field(description="GUID of the writer's participant.")
+    writer_participant_name: str | None = Field(
+        default=None, description="Announced name of the writer's participant."
+    )
+
+
 class MismatchScan(BaseModel):
     """Result of `detect_qos_mismatches`: findings plus what was and was not checked."""
 
@@ -631,6 +652,15 @@ class MismatchScan(BaseModel):
             "Pairs separated by partition or type name. No data flows between them. "
             "An empty `reports` with a non-empty `not_matched` does not mean the bus is healthy."
         )
+    )
+    matched: list[MatchedPair] = Field(
+        default_factory=list,
+        description=(
+            "Pairs that will be matched by DDS given the announced QoS: same topic and "
+            "type name, overlapping partitions, no incompatible RxO policy (a pair "
+            "with only a `risky` History finding still counts). Actual data flow is "
+            "not observed."
+        ),
     )
     hints: list[str] = Field(
         description=(
@@ -1047,6 +1077,13 @@ class EndpointInfo(BaseModel):
         default=None,
         description="Announced name of the owning participant, `None` when it set none.",
     )
+    participant_vendor: _DdsVendor = Field(
+        default="unknown",
+        description=(
+            "Vendor of the owning participant, same value as `list_participants` "
+            "(`unknown` when it cannot be determined)."
+        ),
+    )
     topic: str = Field(description="DDS topic name.")
     type_name: str | None = Field(default=None, description="Announced data type name.")
     type_id: str | None = Field(
@@ -1128,4 +1165,17 @@ class EndpointListing(BaseModel):
     )
     returned: int = Field(ge=0, description="Length of `endpoints`.")
     truncated: bool = Field(description="True when matching endpoints exceeded the cap.")
+    excluded_observer_endpoints: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Endpoints of TopicForge's own observer participant left out of "
+            "`endpoints` (they are counted in `total_discovered`). Explains "
+            "`total_discovered` vs `returned` together with the filters."
+        ),
+    )
+    note: str | None = Field(
+        default=None,
+        description=("Hint when a `topic` filter matched nothing: names the closest known topics."),
+    )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)

@@ -412,6 +412,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
 MOCK_OBSERVER_GUID = "010f1c2a-3b4c-5d6e-7f80-000000000099"
 
 _PARTICIPANT_NAMES: dict[str, str | None] = {p.guid: p.name for p in MOCK_PARTICIPANTS}
+_PARTICIPANT_VENDORS: dict[str, str] = {p.guid: p.vendor for p in MOCK_PARTICIPANTS}
 
 
 def _mock_endpoint(
@@ -429,6 +430,7 @@ def _mock_endpoint(
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": _PARTICIPANT_NAMES.get(participant_guid),
+        "participant_vendor": _PARTICIPANT_VENDORS.get(participant_guid, "unknown"),
         "topic": topic,
         "type_name": type_name,
         "type_id": None,
@@ -439,6 +441,7 @@ def _mock_endpoint(
 
 
 def _qos(reliability: str, **extra: object) -> QosProfile:
+    extra.setdefault("partitions", [""])
     return QosProfile(
         reliability=reliability,  # type: ignore[arg-type]
         durability="VOLATILE",

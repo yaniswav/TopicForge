@@ -22,6 +22,7 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_vendor_id,
 )
 from topicforge.adapters.common.qos_normalize import cyclone_qos_to_profile
+from topicforge.adapters.common.qos_scan import levenshtein
 from topicforge.models import EndpointInfo, EndpointListing, QosProfile, TopicSummary
 
 MAX_LISTED_ENDPOINTS = 500
@@ -80,12 +81,14 @@ def endpoint_record(
     participants_by_guid: Mapping[str, str | None],
     observer_guid: str | None,
     *,
+    vendors_by_guid: Mapping[str, str] | None = None,
     qos_to_profile: Callable[[Any], QosProfile | None] = cyclone_qos_to_profile,
 ) -> dict[str, Any]:
     """Flatten one endpoint discovery sample into the fields of `EndpointInfo`.
 
     `participants_by_guid` maps a formatted participant guid to its announced
-    name. Never raises on an odd sample: missing pieces become `None`.
+    name, `vendors_by_guid` to its vendor tag (`unknown` when absent). Never
+    raises on an odd sample: missing pieces become `None`.
     """
     participant_guid = format_participant_key(getattr(sample, "participant_key", None))
     return {
@@ -93,6 +96,7 @@ def endpoint_record(
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": participants_by_guid.get(participant_guid),
+        "participant_vendor": (vendors_by_guid or {}).get(participant_guid, "unknown"),
         "topic": cyclone_extract_topic_name(sample) or "unknown",
         "type_name": cyclone_extract_type_name(sample),
         "type_id": type_id_text(sample),
@@ -164,6 +168,10 @@ def build_endpoint_listing(
     ]
     matched.sort(key=lambda e: (e.topic, e.role, e.guid))
     listed = matched[:MAX_LISTED_ENDPOINTS]
+    note = None
+    if topic is not None and not matched:
+        known = {r["topic"] for r in all_records if include_observer or not r["is_observer"]}
+        note = _no_match_note(topic, known)
     return EndpointListing(
         domain_id=domain_id,
         snapshot_ns=time.time_ns() if snapshot_ns is None else snapshot_ns,
@@ -173,8 +181,20 @@ def build_endpoint_listing(
         total_discovered=len(all_records),
         returned=len(listed),
         truncated=len(matched) > len(listed),
+        excluded_observer_endpoints=(
+            0 if include_observer else sum(1 for r in all_records if r["is_observer"])
+        ),
+        note=note,
         mode_effective=mode_effective,
     )
+
+
+def participant_vendors(participant_samples: Iterable[Any]) -> dict[str, str]:
+    """Vendor tag by formatted guid, from raw DCPSParticipant samples (as `list_participants`)."""
+    return {
+        format_guid(cyclone_extract_guid(s)): canonicalize_vendor_id(cyclone_extract_vendor_id(s))
+        for s in participant_samples
+    }
 
 
 def participant_names(participant_samples: Iterable[Any]) -> dict[str, str | None]:
@@ -196,8 +216,15 @@ def endpoint_infos_from_samples(
 ) -> list[EndpointInfo]:
     """Raw builtin samples in, every `EndpointInfo` out (no filtering, observer included)."""
     names = participant_names(participant_samples)
-    records = [endpoint_record(s, "writer", names, observer_guid) for s in publication_samples]
-    records += [endpoint_record(s, "reader", names, observer_guid) for s in subscription_samples]
+    vendors = participant_vendors(participant_samples)
+    records = [
+        endpoint_record(s, "writer", names, observer_guid, vendors_by_guid=vendors)
+        for s in publication_samples
+    ]
+    records += [
+        endpoint_record(s, "reader", names, observer_guid, vendors_by_guid=vendors)
+        for s in subscription_samples
+    ]
     return [
         EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective) for rec in records
     ]
@@ -217,10 +244,29 @@ def listing_from_samples(
     `observer_guid`, filters).
     """
     names = participant_names(participant_samples)
+    vendors = participant_vendors(participant_samples)
     observer = listing_kwargs.get("observer_guid")
-    records = [endpoint_record(s, "writer", names, observer) for s in publication_samples]
-    records += [endpoint_record(s, "reader", names, observer) for s in subscription_samples]
+    records = [
+        endpoint_record(s, "writer", names, observer, vendors_by_guid=vendors)
+        for s in publication_samples
+    ]
+    records += [
+        endpoint_record(s, "reader", names, observer, vendors_by_guid=vendors)
+        for s in subscription_samples
+    ]
     return build_endpoint_listing(records, **listing_kwargs)
+
+
+_MAX_NOTE_TOPICS = 5
+
+
+def _no_match_note(topic: str, known_topics: Iterable[str]) -> str:
+    """Note for a topic filter that matched nothing: the closest known topics first."""
+    known = sorted(set(known_topics), key=lambda t: (levenshtein(topic, t), t))
+    if not known:
+        return f"no endpoint on {topic!r}; no endpoint is known on this domain yet"
+    shown = ", ".join(known[:_MAX_NOTE_TOPICS])
+    return f"no endpoint on {topic!r}; known topics: {shown}"
 
 
 RAW_TEXT_MAX_CHARS = 300

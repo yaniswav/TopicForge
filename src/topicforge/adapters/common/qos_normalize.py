@@ -121,6 +121,8 @@ def _extended_policies(qos: Any) -> dict[str, Any]:
             out["destination_order"] = CYCLONE_DESTINATION_ORDER_NAMES[cls_name]
         elif cls_name == "DataRepresentation":
             out["data_representation"] = _data_representation(policy)
+    # DDS semantics: no Partition policy (or an empty list) is the default partition "".
+    out["partitions"] = out.get("partitions") or [""]
     return out
 
 

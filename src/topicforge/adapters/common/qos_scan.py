@@ -20,6 +20,7 @@ from topicforge.adapters.common.qos_analyzer import (
 )
 from topicforge.models import (
     EndpointInfo,
+    MatchedPair,
     MismatchReport,
     MismatchScan,
     NotMatchedPair,
@@ -42,6 +43,7 @@ POLICIES_UNCHECKED: list[str] = [
 
 _MAX_HINTS = 20
 _MAX_NEAR_DISTANCE = 2
+_LATE_JOIN_NS = 1_000_000_000
 
 
 def levenshtein(a: str, b: str) -> int:
@@ -123,29 +125,101 @@ def _report(
     )
 
 
+def _matched(reader: EndpointInfo, writer: EndpointInfo) -> MatchedPair:
+    return MatchedPair(
+        topic=reader.topic,
+        type_name=reader.type_name or writer.type_name,
+        reader_guid=reader.guid,
+        reader_participant_guid=reader.participant_guid,
+        reader_participant_name=reader.participant_name,
+        writer_guid=writer.guid,
+        writer_participant_guid=writer.participant_guid,
+        writer_participant_name=writer.participant_name,
+    )
+
+
 def _is_builtin(topic: str) -> bool:
     return topic.startswith("DCPS")
 
 
+def _orphan_side(endpoints: list[EndpointInfo]) -> Literal["writer", "reader"] | None:
+    """The only role present on a topic, `None` when it has both (not an orphan)."""
+    roles = {e.role for e in endpoints}
+    return next(iter(roles)) if len(roles) == 1 else None
+
+
+def _is_path_suffix(short: str, long: str) -> bool:
+    """True when `long` is `<namespace>/<short>`, ignoring leading and trailing slashes."""
+    s, lg = short.strip("/"), long.strip("/")
+    return s != lg and lg.endswith("/" + s)
+
+
+def _side_text(side: str) -> str:
+    return "has a writer but no reader" if side == "writer" else "has readers but no writer"
+
+
 def _orphan_hints(by_topic: dict[str, list[EndpointInfo]], scope: set[str]) -> list[str]:
-    """Orphan topics, and near-identical names across the writer-only / reader-only sides."""
-    no_reader = sorted(t for t, e in by_topic.items() if all(x.role == "writer" for x in e))
-    no_writer = sorted(t for t, e in by_topic.items() if all(x.role == "reader" for x in e))
+    """Orphan topics checked against every other topic: typos and namespaced twins."""
+    sides = {t: _orphan_side(e) for t, e in by_topic.items()}
+    orphans = sorted(t for t, side in sides.items() if side)
     hints: list[str] = []
-    paired: set[str] = set()
-    for wt in no_reader:
-        for rt in no_writer:
-            if levenshtein(wt, rt) <= _MAX_NEAR_DISTANCE and (wt in scope or rt in scope):
-                paired.update((wt, rt))
+    explained: set[str] = set()
+    seen: set[frozenset[str]] = set()
+    for orphan in orphans:
+        for other in sorted(by_topic):
+            key = frozenset((orphan, other))
+            if other == orphan or key in seen or not (orphan in scope or other in scope):
+                continue
+            distance = levenshtein(orphan, other)
+            both_orphans = sides[other] is not None
+            if distance <= _MAX_NEAR_DISTANCE:
+                seen.add(key)
+                explained.update(key if both_orphans else (orphan,))
+                hints.append(_typo_hint(orphan, other, sides, distance))
+            elif _is_path_suffix(orphan, other) or _is_path_suffix(other, orphan):
+                seen.add(key)
+                explained.update(key if both_orphans else (orphan,))
                 hints.append(
-                    f"Topic {wt!r} has a writer but no reader, and {rt!r} has a reader but "
-                    f"no writer: the names differ by {levenshtein(wt, rt)} edit(s). "
-                    "Likely a topic name typo."
+                    f"Topic {orphan!r} {_side_text(sides[orphan] or 'writer')}, and "
+                    f"{other!r} is the same name with or without a namespace: may be the "
+                    "same data under a namespaced/remapped name."
                 )
-    for topic in no_reader + no_writer:
-        if topic in scope and topic not in paired:
-            side = "writers but no reader" if topic in no_reader else "readers but no writer"
+    for topic in orphans:
+        if topic in scope and topic not in explained:
+            side = "writers but no reader" if sides[topic] == "writer" else "readers but no writer"
             hints.append(f"Topic {topic!r} has {side}: there is no pair to compare.")
+    return hints
+
+
+def _typo_hint(orphan: str, other: str, sides: dict[str, str | None], distance: int) -> str:
+    other_side = sides[other]
+    if other_side is not None and other_side != sides[orphan]:
+        wt, rt = (orphan, other) if sides[orphan] == "writer" else (other, orphan)
+        return (
+            f"Topic {wt!r} has a writer but no reader, and {rt!r} has a reader but "
+            f"no writer: the names differ by {distance} edit(s). Likely a topic name typo."
+        )
+    return (
+        f"Topic {orphan!r} {_side_text(sides[orphan] or 'writer')}; {other!r} differs by "
+        f"{distance} edit{'s' if distance != 1 else ''}: likely a typo."
+    )
+
+
+def _late_joiner_hints(pairs: list[tuple[EndpointInfo, EndpointInfo]]) -> list[str]:
+    hints = []
+    for reader, writer in pairs:
+        if not (writer.qos and writer.qos.durability == "VOLATILE"):
+            continue
+        if reader.announced_ns is None or writer.announced_ns is None:
+            continue
+        if reader.announced_ns - writer.announced_ns > _LATE_JOIN_NS:
+            r = reader.participant_name or reader.guid
+            w = writer.participant_name or writer.guid
+            hints.append(
+                f"Topic {reader.topic!r}: reader {r} joined after writer {w} and {w} is "
+                f"VOLATILE: samples published before {r} joined are not delivered to it "
+                "(by design)."
+            )
     return hints
 
 
@@ -197,6 +271,8 @@ def scan_endpoints(
     skipped = 0
     unchecked_counts: dict[str, int] = {}
     matched_pairs: list[tuple[EndpointInfo, EndpointInfo]] = []
+    matched: list[MatchedPair] = []
+    ok_pairs: list[tuple[EndpointInfo, EndpointInfo]] = []
     for tname in sorted(scope):
         eps = by_topic[tname]
         readers = [e for e in eps if e.role == "reader"]
@@ -215,11 +291,16 @@ def scan_endpoints(
                     unchecked_counts[name] = unchecked_counts.get(name, 0) + 1
                 if report is not None:
                     reports.append(report)
+                if report is None or report.severity != "incompatible":
+                    matched.append(_matched(reader, writer))
+                    ok_pairs.append((reader, writer))
 
     hints = _orphan_hints(by_topic, scope) + _type_id_hints(matched_pairs)
+    hints += _late_joiner_hints(ok_pairs)
     hints += _unchecked_hints(unchecked_counts, skipped)
     return MismatchScan(
         reports=reports,
+        matched=matched,
         not_matched=not_matched,
         hints=hints[:_MAX_HINTS],
         pairs_checked=pairs_checked,

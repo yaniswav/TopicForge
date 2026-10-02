@@ -133,14 +133,14 @@ def test_infinite_durations_become_none() -> None:
     assert profile.latency_budget_ns is None
 
 
-def test_absent_policies_stay_none_and_empty_partition_is_kept() -> None:
+def test_absent_policies_stay_none_and_no_partition_is_the_default_partition() -> None:
     plain = cyclone_qos_to_profile(SimpleNamespace(qos=_core()))
     assert plain is not None
-    assert plain.liveliness_kind is None and plain.partitions is None
+    assert plain.liveliness_kind is None and plain.partitions == [""]
     assert plain.ownership_kind is None and plain.data_representation is None
     qos = [*_core(), _policy("Partition", partitions=())]
     empty = cyclone_qos_to_profile(SimpleNamespace(qos=qos))
-    assert empty is not None and empty.partitions == []
+    assert empty is not None and empty.partitions == [""]
 
 
 def test_duration_to_ns() -> None:
@@ -332,3 +332,41 @@ def test_builtin_payload_drops_raw_text_when_structured() -> None:
     assert payload["role"] == "writer" and payload["topic_name"] == "/t"
     odd = builtin_payload("DCPSPublication", SimpleNamespace(), {}, None)
     assert len(str(odd["_raw_text"])) <= 320
+
+
+def test_listing_explains_observer_exclusion() -> None:
+    assert _listing().excluded_observer_endpoints == 1
+    assert _listing(include_observer=True).excluded_observer_endpoints == 0
+
+
+def test_endpoint_record_carries_participant_vendor() -> None:
+    sample = _endpoint_sample(key=1, participant=100)
+    rec = endpoint_record(sample, "writer", {}, None, vendors_by_guid={_pguid(100): "cyclone"})
+    assert rec["participant_vendor"] == "cyclone"
+    assert endpoint_record(sample, "writer", {}, None)["participant_vendor"] == "unknown"
+
+
+def test_unmatched_topic_filter_names_closest_known_topics() -> None:
+    listing = _listing(topic="/aa")
+    assert listing.endpoints == []
+    assert listing.note is not None
+    assert "no endpoint on '/aa'" in listing.note
+    assert "known topics: /a" in listing.note
+    assert _listing(topic="/a").note is None
+
+
+def test_note_lists_at_most_five_topics() -> None:
+    recs = [
+        endpoint_record(_endpoint_sample(key=i, topic=f"/t{i}"), "writer", {}, None)
+        for i in range(1, 9)
+    ]
+    listing = build_endpoint_listing(
+        recs, domain_id=0, mode_effective="live", observer_guid=None, topic="/zz"
+    )
+    assert listing.note is not None
+    assert len(listing.note.split("known topics: ")[1].split(", ")) == 5
+
+
+def test_no_partition_policy_is_the_default_partition_everywhere() -> None:
+    rec = endpoint_record(_endpoint_sample(key=1), "writer", {}, None)
+    assert rec["qos"].partitions == [""]
