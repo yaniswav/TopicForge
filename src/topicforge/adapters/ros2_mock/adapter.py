@@ -106,6 +106,7 @@ class MockAdapter:
         topic: str | None = None,
         participant_guid: str | None = None,
         include_observer: bool = False,
+        include_departed: bool = False,
     ) -> EndpointListing:
         return fixtures.mock_endpoint_listing(topic, participant_guid, include_observer)
 

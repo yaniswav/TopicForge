@@ -98,6 +98,7 @@ class Ros2CliAdapter:
         topic: str | None = None,
         participant_guid: str | None = None,
         include_observer: bool = False,
+        include_departed: bool = False,
     ) -> EndpointListing:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 

@@ -56,6 +56,13 @@ class HealthService:
             max_sample_count=MAX_SAMPLE_COUNT,
             dds_backend=dds_backend,
             dds_domain_id=self._settings.dds_domain_id,
+            observed_domain_note=(
+                f"Only DDS domain {self._settings.dds_domain_id} (joined at startup) is "
+                "observed: a program running on another domain is invisible here. "
+                "Change it with TOPICFORGE_DDS_DOMAIN_ID and a restart."
+                if dds_backend != "none"
+                else None
+            ),
             middleware_available=_middleware_available(dds_backend, self._settings),
             ros_backend=ros_backend,
             ros_tools_available=ros_backend != "none",

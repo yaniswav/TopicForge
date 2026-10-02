@@ -36,7 +36,7 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_vendor_id,
     vendor_id_from_guid,
 )
-from topicforge.adapters.common.endpoints import announced_ns_of
+from topicforge.adapters.common.endpoints import announced_ns_of, format_participant_key
 from topicforge.adapters.common.lifecycle import LifecycleBuffer
 
 DEFAULT_PERIOD_S = 0.5
@@ -49,6 +49,13 @@ WARM_MAX_WAIT_S = 3.0
 
 MAX_CACHED_SAMPLES = 4096
 """Bound of each sample cache, oldest entry dropped first."""
+
+MAX_DEPARTED_ENDPOINTS = 200
+DEPARTED_TTL_NS = 3_600_000_000_000
+"""Departed endpoints are kept for the last 200 entries and 1 hour."""
+
+REMOVAL_WINDOW_NS = 10_000_000_000
+"""An endpoint disposed up to 10 s before its participant is lost still counts as departed."""
 
 _INSTANCE_ALIVE = 16  # DDS 1.4 InstanceStateKind: ALIVE; 32 DISPOSED, 64 NO_WRITERS
 
@@ -83,11 +90,47 @@ class SampleCache:
         with self._lock:
             self._items.pop(guid, None)
 
+    def get(self, guid: str) -> Any | None:
+        with self._lock:
+            return self._items.get(guid)
+
     def values(self, limit: int | None = None) -> list[Any]:
         """Defensive copy of the cached samples, oldest first."""
         with self._lock:
             items = list(self._items.values())
         return items if limit is None else items[:limit]
+
+
+@dataclass(frozen=True)
+class DepartedRecord:
+    """An endpoint sample whose participant left, with the departure facts."""
+
+    role: str
+    sample: Any
+    gone_ns: int
+    participant_name: str | None
+
+
+class DepartedStore:
+    """Thread-safe, bounded memory of endpoints that left with their participant."""
+
+    def __init__(self, max_items: int = MAX_DEPARTED_ENDPOINTS, ttl_ns: int = DEPARTED_TTL_NS):
+        self._lock = threading.RLock()
+        self._items: OrderedDict[str, DepartedRecord] = OrderedDict()
+        self._max = max_items
+        self._ttl_ns = ttl_ns
+
+    def add(self, guid: str, record: DepartedRecord) -> None:
+        with self._lock:
+            self._items.pop(guid, None)
+            self._items[guid] = record
+            while len(self._items) > self._max:
+                self._items.popitem(last=False)
+
+    def records(self, now_ns: int) -> list[tuple[str, DepartedRecord]]:
+        """(guid, record) pairs younger than the TTL, oldest first."""
+        with self._lock:
+            return [(g, r) for g, r in self._items.items() if now_ns - r.gone_ns <= self._ttl_ns]
 
 
 @dataclass
@@ -98,6 +141,9 @@ class DiscoveryCaches:
     participants: SampleCache = field(default_factory=SampleCache)
     publications: SampleCache = field(default_factory=SampleCache)
     subscriptions: SampleCache = field(default_factory=SampleCache)
+    departed: DepartedStore = field(default_factory=DepartedStore)
+    recently_removed: SampleCache = field(default_factory=lambda: SampleCache(400))
+    removal_roles: dict[str, tuple[str, int]] = field(default_factory=dict)
 
 
 def _by_time(samples: list[Any], now_ns: int) -> list[Any]:
@@ -124,12 +170,16 @@ def _apply_participant(caches: DiscoveryCaches, sample: Any, now_ns: int, domain
             return
         # Born and gone between two passes: the valid sample is still unread
         # but the instance is already disposed. Its dispose time is unknown.
+        _depart(caches, guid, cyclone_extract_participant_name(sample), ts or now_ns, now_ns)
         caches.participants.remove(guid)
         life.record_lost(guid=guid, domain_id=domain_id, now_ns=now_ns)
         return
     # Invalid sample: the participant was disposed (clean leave) or its lease
     # expired. Both arrive here with a timestamp that is an upper bound of the
     # death, see `ParticipantEvent.time_source`.
+    cached = caches.participants.get(guid)
+    name = cyclone_extract_participant_name(cached) if cached is not None else None
+    _depart(caches, guid, name, ts or now_ns, now_ns)
     caches.participants.remove(guid)
     if not life.is_known(guid):
         # Never saw it announce (it died inside one pass, and its announcement
@@ -150,12 +200,45 @@ def _apply_participant(caches: DiscoveryCaches, sample: Any, now_ns: int, domain
     )
 
 
-def _apply_endpoint(cache: SampleCache, sample: Any) -> None:
+def _apply_endpoint(
+    caches: DiscoveryCaches, role: str, cache: SampleCache, sample: Any, now_ns: int
+) -> None:
     guid = format_guid(cyclone_extract_guid(sample))
     if _is_valid(sample) and _is_alive_instance(sample):
         cache.put(guid, sample)
-    else:
-        cache.remove(guid)
+        return
+    gone = cache.get(guid)
+    cache.remove(guid)
+    if gone is not None:
+        # Kept briefly: if its participant is lost next, it departed with it.
+        caches.recently_removed.put(guid, gone)
+        caches.removal_roles[guid] = (role, now_ns)
+        if len(caches.removal_roles) > 800:
+            kept = {g for g in caches.removal_roles if caches.recently_removed.get(g) is not None}
+            caches.removal_roles = {g: v for g, v in caches.removal_roles.items() if g in kept}
+
+
+def _depart(
+    caches: DiscoveryCaches, participant_guid: str, name: str | None, gone_ns: int, now_ns: int
+) -> None:
+    """Move the endpoints of a lost participant from the live caches to the departed store."""
+    for role, cache in (("writer", caches.publications), ("reader", caches.subscriptions)):
+        for sample in cache.values():
+            if format_participant_key(getattr(sample, "participant_key", None)) != participant_guid:
+                continue
+            guid = format_guid(cyclone_extract_guid(sample))
+            caches.departed.add(guid, DepartedRecord(role, sample, gone_ns, name))
+            cache.remove(guid)
+    for sample in caches.recently_removed.values():
+        guid = format_guid(cyclone_extract_guid(sample))
+        role, removed_ns = caches.removal_roles.get(guid, ("writer", 0))
+        if now_ns - removed_ns > REMOVAL_WINDOW_NS:
+            caches.recently_removed.remove(guid)
+            caches.removal_roles.pop(guid, None)
+        elif format_participant_key(getattr(sample, "participant_key", None)) == participant_guid:
+            caches.departed.add(guid, DepartedRecord(role, sample, gone_ns, name))
+            caches.recently_removed.remove(guid)
+            caches.removal_roles.pop(guid, None)
 
 
 def apply_builtin_samples(
@@ -178,9 +261,9 @@ def apply_builtin_samples(
     for sample in _by_time(participant_samples, now_ns):
         _apply_participant(caches, sample, now_ns, domain_id)
     for sample in publication_samples:
-        _apply_endpoint(caches.publications, sample)
+        _apply_endpoint(caches, "writer", caches.publications, sample, now_ns)
     for sample in subscription_samples:
-        _apply_endpoint(caches.subscriptions, sample)
+        _apply_endpoint(caches, "reader", caches.subscriptions, sample, now_ns)
 
 
 TakeAll = Callable[[], tuple[list[Any], list[Any], list[Any]]]

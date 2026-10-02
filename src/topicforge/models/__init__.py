@@ -3,6 +3,7 @@
 from topicforge.models.schemas import (
     BagAnalysis,
     BagTopicStats,
+    DepartedEndpoint,
     EndpointInfo,
     EndpointListing,
     HealthReport,
@@ -24,6 +25,7 @@ from topicforge.models.schemas import (
 __all__ = [
     "BagAnalysis",
     "BagTopicStats",
+    "DepartedEndpoint",
     "EndpointInfo",
     "EndpointListing",
     "HealthReport",

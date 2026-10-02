@@ -249,3 +249,24 @@ def test_no_late_joiner_note_when_close_or_transient_local() -> None:
     )
     late = _ep("reader").model_copy(update={"announced_ns": 9_000_000_000})
     assert not any("joined after" in h for h in scan_endpoints([tl_w, late]).hints)
+
+
+def test_not_matched_pair_carries_latent_rxo_findings() -> None:
+    scan = scan_endpoints(
+        [
+            _ep("reader", partitions=["a"]),
+            _ep("writer", partitions=["b"], reliability="BEST_EFFORT"),
+        ]
+    )
+    (pair,) = scan.not_matched
+    assert [d.policy for d in pair.latent_incompatible_policies] == ["Reliability"]
+    clean = scan_endpoints([_ep("reader", partitions=["a"]), _ep("writer", partitions=["b"])])
+    assert clean.not_matched[0].latent_incompatible_policies == []
+
+
+def test_scan_topic_filter_accepts_the_alternate_form_and_explains_no_match() -> None:
+    eps = [_ep("reader", "scan"), _ep("writer", "scan")]
+    alt = scan_endpoints(eps, topic="rt/scan")
+    assert len(alt.matched) == 1 and any("alternate name form" in h for h in alt.hints)
+    none = scan_endpoints(eps, topic="/nope")
+    assert none.matched == [] and any("known topics: scan" in h for h in none.hints)

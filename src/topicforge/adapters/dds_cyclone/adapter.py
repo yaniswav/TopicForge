@@ -464,6 +464,7 @@ class CycloneDdsAdapter:
         topic: str | None = None,
         participant_guid: str | None = None,
         include_observer: bool = False,
+        include_departed: bool = False,
     ) -> EndpointListing:
         """List every discovered writer and reader from the builtin discovery readers.
 
@@ -483,7 +484,16 @@ class CycloneDdsAdapter:
             topic=topic,
             participant_guid=participant_guid,
             include_observer=include_observer,
+            include_departed=include_departed,
+            departed=self._departed(),
         )
+
+    def _departed(self) -> list[tuple[str, Any, int, str | None]]:
+        """Endpoints whose participant left, from the tracker's bounded departed store."""
+        return [
+            (r.role, r.sample, r.gone_ns, r.participant_name)
+            for _, r in self._caches.departed.records(time.time_ns())
+        ]
 
     def _raw_endpoint_samples(self) -> tuple[list[Any], list[Any], list[Any]]:
         """Cached builtin samples (participants, publications, subscriptions).

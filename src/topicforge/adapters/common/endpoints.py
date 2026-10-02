@@ -22,8 +22,14 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_vendor_id,
 )
 from topicforge.adapters.common.qos_normalize import cyclone_qos_to_profile
-from topicforge.adapters.common.qos_scan import levenshtein
-from topicforge.models import EndpointInfo, EndpointListing, QosProfile, TopicSummary
+from topicforge.adapters.common.topic_filter import no_match_note, resolve_topic_filter
+from topicforge.models import (
+    DepartedEndpoint,
+    EndpointInfo,
+    EndpointListing,
+    QosProfile,
+    TopicSummary,
+)
 
 MAX_LISTED_ENDPOINTS = 500
 """Hard cap on `EndpointListing.endpoints` (the roll-up still covers all matches)."""
@@ -112,14 +118,36 @@ def _effective_partitions(endpoint: EndpointInfo) -> list[str]:
     return list(names) if names else [""]
 
 
-def summarize_by_topic(endpoints: Iterable[EndpointInfo]) -> list[TopicSummary]:
-    """Group endpoints by topic and flag topics with only one side."""
+def _departed_of(endpoints: Iterable[EndpointInfo]) -> list[DepartedEndpoint]:
+    """Departed entries, newest first."""
+    found = [
+        DepartedEndpoint(
+            guid=e.guid,
+            participant_guid=e.participant_guid,
+            participant_name=e.participant_name,
+            gone_ns=e.gone_ns,
+        )
+        for e in endpoints
+    ]
+    return sorted(found, key=lambda d: -(d.gone_ns or 0))
+
+
+def summarize_by_topic(
+    endpoints: Iterable[EndpointInfo], departed: Iterable[EndpointInfo] = ()
+) -> list[TopicSummary]:
+    """Group live endpoints by topic, flag topics with only one side, list departed ones."""
     groups: dict[str, list[EndpointInfo]] = {}
     for ep in endpoints:
-        groups.setdefault(ep.topic, []).append(ep)
+        groups.setdefault(ep.topic, [])
+        groups[ep.topic].append(ep)
+    gone: dict[str, list[EndpointInfo]] = {}
+    for ep in departed:
+        gone.setdefault(ep.topic, []).append(ep)
+        groups.setdefault(ep.topic, [])
     summaries = []
     for topic in sorted(groups):
         eps = groups[topic]
+        gone_eps = gone.get(topic, [])
         writers = sum(1 for e in eps if e.role == "writer")
         readers = len(eps) - writers
         orphan: Literal["no_reader", "no_writer"] | None = None
@@ -130,10 +158,12 @@ def summarize_by_topic(endpoints: Iterable[EndpointInfo]) -> list[TopicSummary]:
         summaries.append(
             TopicSummary(
                 topic=topic,
-                type_names=sorted({e.type_name for e in eps if e.type_name}),
+                type_names=sorted({e.type_name for e in [*eps, *gone_eps] if e.type_name}),
                 writer_count=writers,
                 reader_count=readers,
                 partitions=sorted({p for e in eps for p in _effective_partitions(e)}),
+                departed_writers=_departed_of(e for e in gone_eps if e.role == "writer"),
+                departed_readers=_departed_of(e for e in gone_eps if e.role == "reader"),
                 orphan=orphan,
             )
         )
@@ -150,6 +180,8 @@ def build_endpoint_listing(
     participant_guid: str | None = None,
     include_observer: bool = False,
     snapshot_ns: int | None = None,
+    departed_records: Iterable[Mapping[str, Any]] = (),
+    include_departed: bool = False,
 ) -> EndpointListing:
     """Apply the filters to `endpoint_record` dicts and assemble the envelope.
 
@@ -158,29 +190,48 @@ def build_endpoint_listing(
     covers every match, while `endpoints` is capped at `MAX_LISTED_ENDPOINTS`.
     """
     all_records = list(records)
+    gone_records = list(departed_records)
     wanted_participant = participant_guid.lower() if participant_guid else None
+    visible = [r for r in all_records if include_observer or not r["is_observer"]]
+    known = {r["topic"] for r in visible} | {r["topic"] for r in gone_records}
+    resolved: str | None = topic
+    note = None
+    if topic is not None:
+        resolved, note = resolve_topic_filter(topic, known)
+
+    def selected(rec: Mapping[str, Any]) -> bool:
+        return (topic is None or rec["topic"] == resolved) and (
+            wanted_participant is None or rec["participant_guid"].lower() == wanted_participant
+        )
+
     matched = [
         EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective)
-        for rec in all_records
-        if (include_observer or not rec["is_observer"])
-        and (topic is None or rec["topic"] == topic)
-        and (wanted_participant is None or rec["participant_guid"].lower() == wanted_participant)
+        for rec in visible
+        if selected(rec)
     ]
-    matched.sort(key=lambda e: (e.topic, e.role, e.guid))
-    listed = matched[:MAX_LISTED_ENDPOINTS]
-    note = None
-    if topic is not None and not matched:
-        known = {r["topic"] for r in all_records if include_observer or not r["is_observer"]}
-        note = _no_match_note(topic, known)
+    live_guids = {r["guid"] for r in all_records}
+    gone = [
+        EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective)
+        for rec in gone_records
+        if selected(rec) and rec["guid"] not in live_guids
+    ]
+    if topic is not None and resolved is None:
+        note = no_match_note(topic, known) + (
+            f" ({len(all_records)} endpoint(s) discovered on other topics)" if all_records else ""
+        )
+    shown = matched + gone if include_departed else matched
+    shown.sort(key=lambda e: (e.topic, e.role, e.guid))
+    listed = shown[:MAX_LISTED_ENDPOINTS]
     return EndpointListing(
         domain_id=domain_id,
         snapshot_ns=time.time_ns() if snapshot_ns is None else snapshot_ns,
         observer_guid=observer_guid,
         endpoints=listed,
-        by_topic=summarize_by_topic(matched),
+        by_topic=summarize_by_topic(matched, gone),
         total_discovered=len(all_records),
         returned=len(listed),
-        truncated=len(matched) > len(listed),
+        truncated=len(shown) > len(listed),
+        departed_endpoints=len(gone),
         excluded_observer_endpoints=(
             0 if include_observer else sum(1 for r in all_records if r["is_observer"])
         ),
@@ -230,10 +281,32 @@ def endpoint_infos_from_samples(
     ]
 
 
+def departed_endpoint_records(
+    departed: Iterable[tuple[str, Any, int, str | None]],
+    names: Mapping[str, str | None],
+    vendors: Mapping[str, str],
+    observer_guid: str | None,
+) -> list[dict[str, Any]]:
+    """Records of endpoints whose participant left: `(role, sample, gone_ns, name)` in.
+
+    The participant name remembered at departure wins over the (now absent)
+    announcement; `gone_ns` marks the record as departed.
+    """
+    out = []
+    for role, sample, gone_ns, name in departed:
+        rec = endpoint_record(sample, role, names, observer_guid, vendors_by_guid=vendors)  # type: ignore[arg-type]
+        rec["participant_name"] = name or rec["participant_name"]
+        rec["gone_ns"] = gone_ns
+        out.append(rec)
+    return out
+
+
 def listing_from_samples(
     participant_samples: Iterable[Any],
     publication_samples: Iterable[Any],
     subscription_samples: Iterable[Any],
+    *,
+    departed: Iterable[tuple[str, Any, int, str | None]] = (),
     **listing_kwargs: Any,
 ) -> EndpointListing:
     """Raw builtin samples in, `EndpointListing` out: the whole pure pipeline.
@@ -254,19 +327,8 @@ def listing_from_samples(
         endpoint_record(s, "reader", names, observer, vendors_by_guid=vendors)
         for s in subscription_samples
     ]
-    return build_endpoint_listing(records, **listing_kwargs)
-
-
-_MAX_NOTE_TOPICS = 5
-
-
-def _no_match_note(topic: str, known_topics: Iterable[str]) -> str:
-    """Note for a topic filter that matched nothing: the closest known topics first."""
-    known = sorted(set(known_topics), key=lambda t: (levenshtein(topic, t), t))
-    if not known:
-        return f"no endpoint on {topic!r}; no endpoint is known on this domain yet"
-    shown = ", ".join(known[:_MAX_NOTE_TOPICS])
-    return f"no endpoint on {topic!r}; known topics: {shown}"
+    gone = departed_endpoint_records(departed, names, vendors, observer)
+    return build_endpoint_listing(records, departed_records=gone, **listing_kwargs)
 
 
 RAW_TEXT_MAX_CHARS = 300
