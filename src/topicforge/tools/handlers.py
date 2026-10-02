@@ -224,7 +224,7 @@ def register_tools(
             "of that topic (`frequency_basis` `topic_span`), with "
             "`first_timestamp_ns`, `last_timestamp_ns` and `latched`; a "
             "`latched` topic (e.g. `/tf_static`, `/rosout`) is a start-up "
-            "burst, so its `frequency_hz` is not a rate. When the bag cannot "
+            "burst, so its `frequency_hz` is null. When the bag cannot "
             "be read locally the rate falls back to count / bag duration "
             "(`bag_duration`). **Live "
             "mode** runs `ros2 bag info` and accepts `.mcap` and `.db3` "

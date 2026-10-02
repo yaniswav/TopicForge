@@ -85,6 +85,8 @@ def test_analyze_flags_latched_topics(bag_path: str) -> None:
     assert by_name["/tf_static"].latched is True
     assert by_name["/rosout"].latched is True
     assert by_name["/scan"].latched is False
+    assert by_name["/tf_static"].frequency_hz is None
+    assert by_name["/rosout"].frequency_hz is None
 
 
 def test_peek_unknown_topic_lists_the_known_ones(bag_path: str) -> None:

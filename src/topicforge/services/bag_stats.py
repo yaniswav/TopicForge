@@ -47,8 +47,11 @@ def span_frequency(count: int, first_ns: int | None, last_ns: int | None) -> flo
 
 
 def build_topic_stats(span: TopicSpan) -> BagTopicStats:
-    """`BagTopicStats` from a span, with the per-topic-span rate."""
-    freq = span_frequency(span.count, span.first_ns, span.last_ns)
+    """`BagTopicStats` from a span, with the per-topic-span rate.
+
+    A latched topic gets no rate: its messages are a start-up burst.
+    """
+    freq = None if span.latched else span_frequency(span.count, span.first_ns, span.last_ns)
     return BagTopicStats(
         name=span.name,
         message_type=span.message_type,

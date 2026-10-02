@@ -841,9 +841,9 @@ class BagTopicStats(BaseModel):
             "it is `(message_count - 1) / (last - first message time)` for "
             "this topic; with `bag_duration` it is `message_count / bag "
             "duration`, which understates the rate of a topic that started "
-            "late or stopped early. `null` when fewer than 2 messages or a "
-            "zero time span. Not a periodic rate when `latched` is true "
-            "(a latched topic is published in a burst, then silent) or for "
+            "late or stopped early. `null` when fewer than 2 messages, a "
+            "zero time span, or `latched` is true (a latched topic is "
+            "published in a burst, then silent). Not a periodic rate for "
             "event-driven topics such as `/parameter_events`."
         ),
     )
@@ -877,7 +877,7 @@ class BagTopicStats(BaseModel):
             "True when a publisher recorded this topic with transient_local "
             "durability (late joiners get the last samples, e.g. `/tf_static`, "
             "`/rosout`): its messages are a burst at start-up, not a periodic "
-            "stream, so `frequency_hz` is not a rate. `false` when every "
+            "stream, so `frequency_hz` is `null`. `false` when every "
             "recorded publisher was volatile; `null` when the bag carries no "
             "QoS information (ROS 1 bags report their latching flag)."
         ),
