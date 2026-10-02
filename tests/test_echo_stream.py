@@ -9,8 +9,9 @@ from typing import Any
 
 import pytest
 
-from topicforge.adapters.ros2_live import echo_stream
-from topicforge.adapters.ros2_live.echo_stream import kill_process_tree, stream_echo
+from topicforge.adapters.base import AdapterError
+from topicforge.adapters.ros2_live import echo_stream, process_tree
+from topicforge.adapters.ros2_live.echo_stream import stream_echo
 
 _EOF = object()
 
@@ -72,8 +73,10 @@ def _message(i: int) -> str:
 def killed_processes(monkeypatch: pytest.MonkeyPatch) -> list[FakeProcess]:
     """Replace the tree kill with one that records the process and closes its pipes."""
     killed: list[FakeProcess] = []
+    # The fake pid must never be attached to a real Windows job object.
+    monkeypatch.setattr(echo_stream.JobObject, "attach", lambda pid: None)
 
-    def fake_kill(proc: FakeProcess) -> None:
+    def fake_kill(proc: FakeProcess, job: object = None) -> None:
         killed.append(proc)
         proc.killed = True
         proc.stdout.close()
@@ -167,6 +170,7 @@ def test_the_process_is_started_unbuffered_without_a_shell_or_stdin(
     options = run.seen["options"]
     assert run.seen["cmd"] == ["ros2", "topic", "echo", "/t"]
     assert options["env"]["PYTHONUNBUFFERED"] == "1"
+    assert options["env"]["PYTHONIOENCODING"] == "utf-8"
     assert options["stdin"] == subprocess.DEVNULL
     assert options["stdout"] == subprocess.PIPE and options["stderr"] == subprocess.PIPE
     assert options["encoding"] == "utf-8" and options["errors"] == "replace"
@@ -176,7 +180,7 @@ def test_the_process_is_started_unbuffered_without_a_shell_or_stdin(
 def test_the_process_gets_its_own_group_on_posix(
     monkeypatch: pytest.MonkeyPatch, killed_processes: list[FakeProcess]
 ) -> None:
-    monkeypatch.setattr(echo_stream.sys, "platform", "linux")
+    monkeypatch.setattr(process_tree.sys, "platform", "linux")
     run = _run(FakeProcess(_message(0)), count=1, deadline_s=5)
     assert run.seen["options"]["start_new_session"] is True
 
@@ -184,89 +188,60 @@ def test_the_process_gets_its_own_group_on_posix(
 def test_the_process_hides_its_window_on_windows(
     monkeypatch: pytest.MonkeyPatch, killed_processes: list[FakeProcess]
 ) -> None:
-    monkeypatch.setattr(echo_stream.sys, "platform", "win32")
-    monkeypatch.setattr(echo_stream.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(process_tree.sys, "platform", "win32")
+    monkeypatch.setattr(process_tree.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     run = _run(FakeProcess(_message(0)), count=1, deadline_s=5)
     assert run.seen["options"]["creationflags"] == 0x08000000
 
 
-# ---- kill_process_tree -----------------------------------------------------
-
-
-def test_kill_interrupts_the_group_first_then_kills_it_on_posix(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_message_over_the_cap_is_dropped_while_streaming(
+    killed_processes: list[FakeProcess],
 ) -> None:
-    calls: list[tuple[int, int]] = []
-    monkeypatch.setattr(echo_stream.sys, "platform", "linux")
-    monkeypatch.setattr(echo_stream, "_GRACE_SEC", 0.1)
-    monkeypatch.setattr(echo_stream.os, "getpgid", lambda pid: 77, raising=False)
-    monkeypatch.setattr(
-        echo_stream.os, "killpg", lambda pgid, sig: calls.append((pgid, sig)), raising=False
-    )
-    monkeypatch.setattr(echo_stream.signal, "SIGINT", 2, raising=False)
-    monkeypatch.setattr(echo_stream.signal, "SIGKILL", 9, raising=False)
-    proc = FakeProcess("")
-    kill_process_tree(proc)
-    assert calls == [(77, 2), (77, 9)]
-    assert proc.killed  # the plain kill is a backstop
+    big = "data: " + "x" * 200 + "\n"
+    script = _message(0) + big + "more: y\n---\n" + _message(1)
+    run = _run(FakeProcess(script), count=2, deadline_s=5, max_document_chars=100)
+    assert [d.text for d in run.documents] == ["data: m0\n", "data: m1\n"]
+    assert run.oversized == 1
 
 
-def test_kill_does_not_wait_out_the_grace_period_for_a_process_that_stops(
-    monkeypatch: pytest.MonkeyPatch,
+def test_an_unfinished_oversized_message_is_counted(killed_processes: list[FakeProcess]) -> None:
+    script = _message(0) + "data: " + "x" * 200 + "\n"
+    run = _run(FakeProcess(script), count=2, deadline_s=0.3, max_document_chars=100)
+    assert len(run.documents) == 1 and run.oversized == 1
+
+
+def test_no_cap_keeps_every_message(killed_processes: list[FakeProcess]) -> None:
+    run = _run(FakeProcess("data: " + "x" * 5000 + "\n---\n"), count=1, deadline_s=5)
+    assert len(run.documents) == 1 and run.oversized == 0
+
+
+def test_non_ascii_text_survives_the_stream(killed_processes: list[FakeProcess]) -> None:
+    run = _run(FakeProcess("data: h\u00e9llo \u4e16\u754c\n---\n"), count=1, deadline_s=5)
+    assert run.documents[0].text == "data: h\u00e9llo \u4e16\u754c\n"
+
+
+def test_stderr_is_bounded(killed_processes: list[FakeProcess]) -> None:
+    err = "".join(f"line {i}\n" for i in range(500))
+    run = _run(FakeProcess("", exit_code=2, err=err), count=1, deadline_s=5)
+    assert run.stderr_tail.endswith("line 499")
+
+
+@pytest.mark.parametrize(
+    "error", [PermissionError(13, "Permission denied"), OSError(193, "bad exe")]
+)
+def test_a_process_that_cannot_start_is_an_adapter_error(error: OSError) -> None:
+    def factory(cmd: list[str], **_options: Any) -> FakeProcess:
+        raise error
+
+    with pytest.raises(AdapterError, match="could not start `ros2`"):
+        stream_echo(
+            ["/opt/ros/bin/ros2", "topic", "echo", "/t"], count=1, deadline_s=1, popen=factory
+        )
+
+
+def test_the_call_returns_within_the_deadline_plus_the_stop(
+    killed_processes: list[FakeProcess],
 ) -> None:
-    proc = FakeProcess("")
-    monkeypatch.setattr(echo_stream.sys, "platform", "linux")
-    monkeypatch.setattr(echo_stream, "_GRACE_SEC", 30.0)
-    monkeypatch.setattr(echo_stream.os, "getpgid", lambda pid: 77, raising=False)
-    monkeypatch.setattr(echo_stream.signal, "SIGINT", 2, raising=False)
-    monkeypatch.setattr(echo_stream.signal, "SIGKILL", 9, raising=False)
-
-    def killpg(pgid: int, sig: int) -> None:
-        if sig == 2:
-            proc.exit_code = 130  # exits on SIGINT
-
-    monkeypatch.setattr(echo_stream.os, "killpg", killpg, raising=False)
     started = time.monotonic()
-    kill_process_tree(proc)
-    assert time.monotonic() - started < 5
-
-
-def test_kill_uses_taskkill_for_the_whole_tree_on_windows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    commands: list[list[str]] = []
-
-    def fake_run(cmd: list[str], **_kw: Any) -> None:
-        commands.append(cmd)
-
-    monkeypatch.setattr(echo_stream.sys, "platform", "win32")
-    monkeypatch.setattr(echo_stream.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
-    monkeypatch.setattr(echo_stream.subprocess, "run", fake_run)
-    kill_process_tree(FakeProcess(""))
-    assert commands == [["taskkill", "/F", "/T", "/PID", "4242"]]
-
-
-def test_kill_is_a_no_op_for_a_process_that_already_exited(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def boom(*_a: Any, **_k: Any) -> None:
-        raise AssertionError("must not signal an exited process")
-
-    monkeypatch.setattr(echo_stream.subprocess, "run", boom)
-    monkeypatch.setattr(echo_stream.os, "killpg", boom, raising=False)
-    proc = FakeProcess("", exit_code=0)
-    kill_process_tree(proc)
-    assert not proc.killed
-
-
-def test_kill_survives_a_group_that_is_already_gone(monkeypatch: pytest.MonkeyPatch) -> None:
-    def gone(*_a: Any) -> int:
-        raise ProcessLookupError
-
-    monkeypatch.setattr(echo_stream.sys, "platform", "linux")
-    monkeypatch.setattr(echo_stream.os, "getpgid", gone, raising=False)
-    monkeypatch.setattr(echo_stream.os, "killpg", gone, raising=False)
-    monkeypatch.setattr(echo_stream.signal, "SIGINT", 2, raising=False)
-    proc = FakeProcess("")
-    kill_process_tree(proc)
-    assert proc.killed
+    _run(FakeProcess(_message(0)), count=5, deadline_s=1.0)
+    assert time.monotonic() - started < 1.0 + 0.5

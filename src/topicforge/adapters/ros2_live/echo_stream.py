@@ -2,9 +2,9 @@
 
 `echo` has no `--times` option on Humble or Rolling and prints until killed,
 so the runner reads its stdout in a thread, stops at the first of N messages
-or the wall deadline, and kills the whole process tree. The `ros2` entry
-point is a launcher that can leave the real process running when only the
-launcher is killed, and an orphan keeps the pipes open.
+or the wall deadline, and kills the whole process tree (see `process_tree`).
+A message longer than a character cap is dropped while it streams, so a huge
+`Image` is never held in memory or handed to the YAML parser.
 """
 
 from __future__ import annotations
@@ -13,22 +13,29 @@ import contextlib
 import logging
 import os
 import queue
-import signal
 import subprocess
-import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import IO, Any, Protocol
+from typing import IO, Protocol
 
+from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_live.echo_parser import ECHO_DOCUMENT_SEPARATOR, join_document_lines
+from topicforge.adapters.ros2_live.process_tree import (
+    JobObject,
+    kill_process_tree,
+    spawn_options,
+)
+
+__all__ = ["EchoDocument", "EchoRun", "kill_process_tree", "stream_echo"]
 
 log = logging.getLogger(__name__)
 
 _JOIN_TIMEOUT_SEC = 2.0
-_GRACE_SEC = 1.5
 _STDERR_TAIL_LINES = 5
+_STDERR_KEPT_LINES = 50
 
 
 class _Process(Protocol):
@@ -61,12 +68,14 @@ class EchoRun:
     """Outcome of one streaming run.
 
     `exit_code` is the process exit code when it ended on its own before the
-    run was stopped, `None` when the runner stopped it.
+    run was stopped, `None` when the runner stopped it. `oversized` counts the
+    messages dropped for exceeding the character cap.
     """
 
     documents: list[EchoDocument] = field(default_factory=list)
     exit_code: int | None = None
     stderr_tail: str = ""
+    oversized: int = 0
 
 
 def stream_echo(
@@ -74,27 +83,35 @@ def stream_echo(
     *,
     count: int,
     deadline_s: float,
+    max_document_chars: int | None = None,
     popen: PopenFactory = subprocess.Popen,
-    clock: Callable[[], float] = time.monotonic,
 ) -> EchoRun:
-    """Run `cmd` and return up to `count` messages, within `deadline_s` seconds of the start.
+    """Run `cmd` and return up to `count` messages, within `deadline_s` seconds.
 
-    The process is always stopped (with its children) before returning.
-    `popen` and `clock` are injectable for tests.
+    A message over `max_document_chars` is dropped and counted in
+    `EchoRun.oversized`. The process is always stopped (with its children)
+    before returning; stopping takes up to about two more seconds.
+    `popen` is injectable for tests. Raises `AdapterError` when
+    the process cannot be started.
     """
-    started = clock()
-    proc = popen(
-        cmd,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        encoding="utf-8",
-        errors="replace",
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        **_spawn_options(),
-    )
+    try:
+        proc = popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+            **spawn_options(),
+        )
+    except OSError as exc:
+        raise AdapterError(
+            f"could not start `{os.path.basename(cmd[0])}`: {exc.strerror or type(exc).__name__}"
+        ) from exc
+    job = JobObject.attach(proc.pid)
     lines: queue.Queue[tuple[str, int] | None] = queue.Queue()
-    stderr_lines: list[str] = []
+    stderr_lines: deque[str] = deque(maxlen=_STDERR_KEPT_LINES)
     threads = [
         threading.Thread(target=_pump_stdout, args=(proc.stdout, lines), daemon=True),
         threading.Thread(target=_pump_stderr, args=(proc.stderr, stderr_lines), daemon=True),
@@ -103,41 +120,57 @@ def stream_echo(
         thread.start()
 
     run = EchoRun()
-    current: list[str] = []
     try:
-        while len(run.documents) < count:
-            remaining = deadline_s - (clock() - started)
-            if remaining <= 0:
-                break
-            try:
-                item = lines.get(timeout=remaining)
-            except queue.Empty:
-                break
-            if item is None:
-                # A process that closed its output but still runs is killed below.
-                with contextlib.suppress(subprocess.TimeoutExpired):
-                    run.exit_code = proc.wait(timeout=_JOIN_TIMEOUT_SEC)
-                break
-            line, received_ns = item
-            if line.rstrip() == ECHO_DOCUMENT_SEPARATOR:
-                run.documents.append(EchoDocument(join_document_lines(current), received_ns))
-                current = []
-            else:
-                current.append(line.rstrip("\r\n"))
+        _collect(run, proc, lines, count, deadline_s, max_document_chars)
     finally:
-        kill_process_tree(proc)
+        kill_process_tree(proc, job)
         for thread in threads:
             thread.join(timeout=_JOIN_TIMEOUT_SEC)
+        if any(thread.is_alive() for thread in threads):
+            log.warning("echo output pipes still open after the kill: a child process survived")
     tail = [ln for ln in stderr_lines if ln.strip()][-_STDERR_TAIL_LINES:]
     run.stderr_tail = " | ".join(ln.strip() for ln in tail)
     return run
 
 
-def _spawn_options() -> dict[str, Any]:
-    """`Popen` options that make the process tree killable as a unit."""
-    if sys.platform == "win32":
-        return {"creationflags": subprocess.CREATE_NO_WINDOW}
-    return {"start_new_session": True}
+def _collect(
+    run: EchoRun,
+    proc: _Process,
+    lines: queue.Queue[tuple[str, int] | None],
+    count: int,
+    budget_s: float,
+    max_chars: int | None,
+) -> None:
+    """Fill `run` from the line queue until `count` documents, the budget, or end of output."""
+    end = time.monotonic() + budget_s
+    current: list[str] = []
+    size = 0
+    dropping = False
+    while len(run.documents) < count:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            item = lines.get(timeout=remaining)
+        except queue.Empty:
+            return
+        if item is None:
+            # A process that closed its output but still runs is killed afterwards.
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                run.exit_code = proc.wait(timeout=_JOIN_TIMEOUT_SEC)
+            return
+        line, received_ns = item
+        if line.rstrip() == ECHO_DOCUMENT_SEPARATOR:
+            if not dropping:
+                run.documents.append(EchoDocument(join_document_lines(current), received_ns))
+            current, size, dropping = [], 0, False
+        elif not dropping:
+            size += len(line)
+            if max_chars is not None and size > max_chars:
+                run.oversized += 1
+                current, dropping = [], True
+            else:
+                current.append(line.rstrip("\r\n"))
 
 
 def _pump_stdout(stream: IO[str] | None, out: queue.Queue[tuple[str, int] | None]) -> None:
@@ -152,7 +185,7 @@ def _pump_stdout(stream: IO[str] | None, out: queue.Queue[tuple[str, int] | None
         out.put(None)
 
 
-def _pump_stderr(stream: IO[str] | None, out: list[str]) -> None:
+def _pump_stderr(stream: IO[str] | None, out: deque[str]) -> None:
     """Drain stderr so a chatty process cannot block on a full pipe."""
     try:
         if stream is not None:
@@ -160,48 +193,3 @@ def _pump_stderr(stream: IO[str] | None, out: list[str]) -> None:
                 out.append(line)
     except (OSError, ValueError):
         pass
-
-
-def kill_process_tree(proc: _Process) -> None:
-    """Stop `proc` and its descendants; a no-op when it already exited.
-
-    POSIX: interrupt, then kill. Windows: `taskkill /F /T` (no graceful stop).
-    """
-    if proc.poll() is not None:
-        return
-    try:
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                capture_output=True,
-                check=False,
-                timeout=10,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        else:
-            _stop_posix_group(proc)
-    except (OSError, subprocess.SubprocessError) as exc:
-        log.debug("process tree kill failed: %s", exc)
-    try:
-        proc.kill()
-        proc.wait(timeout=_JOIN_TIMEOUT_SEC)
-    except (OSError, subprocess.SubprocessError) as exc:
-        log.debug("process kill failed: %s", exc)
-
-
-def _stop_posix_group(proc: _Process) -> None:
-    """SIGINT the process group so the CLI leaves the DDS graph cleanly, then SIGKILL it.
-
-    A subscriber that is killed outright stays matched on the publisher.
-    Measured on Humble / Fast DDS: repeated hard kills slowed later
-    subscribers from 1.5 s to 4 s and eventually stalled a large reliable
-    topic (an `Image` publisher), while an interrupted CLI did not.
-    """
-    pgid = os.getpgid(proc.pid)
-    os.killpg(pgid, signal.SIGINT)
-    deadline = time.monotonic() + _GRACE_SEC
-    while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            break
-        time.sleep(0.05)
-    os.killpg(pgid, signal.SIGKILL)
