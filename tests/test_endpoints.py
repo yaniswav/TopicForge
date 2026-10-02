@@ -424,3 +424,21 @@ def test_departed_writer_explains_the_orphan_in_by_topic() -> None:
 def test_health_report_states_the_observed_domain(health_service: Any) -> None:
     note = health_service.report().observed_domain_note
     assert note is not None and "another domain is invisible" in note
+
+
+def test_departed_endpoint_keeps_vendor_from_its_guid_prefix() -> None:
+    """A departed participant is no longer in the live vendor map: the endpoint's
+    own participant_key prefix still says Cyclone (01.10), not "unknown"."""
+    from topicforge.adapters.common.endpoints import endpoint_record
+
+    sample = SimpleNamespace(
+        key=uuid.UUID(bytes=bytes.fromhex("0110aaaabbbbccccdddd000000000203")),
+        participant_key=uuid.UUID(bytes=bytes.fromhex("0110aaaabbbbccccdddd0000000001c1")),
+        topic_name="estop",
+        type_name="Heartbeat",
+        typeid=None,
+        qos=[],
+        sample_info=None,
+    )
+    rec = endpoint_record(sample, "writer", {}, observer_guid=None, vendors_by_guid={})
+    assert rec["participant_vendor"] == "cyclone"
