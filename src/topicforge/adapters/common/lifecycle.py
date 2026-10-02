@@ -115,6 +115,7 @@ class LifecycleBuffer:
                     status="active",
                     seen_count=1,
                     announced_ns=announced_ns,
+                    vendor_source="none" if vendor in ("unknown", "mock") else "guid_prefix",
                 )
                 self._append_event(
                     guid=guid,

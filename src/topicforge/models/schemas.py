@@ -33,10 +33,9 @@ _MODE_EFFECTIVE_DESC = (
 class QosProfile(BaseModel):
     """DDS QoS profile snapshot for a single endpoint (reader or writer).
 
-    MVP covers the four policies that explain over 80% of real-world
-    "subscriber doesn't receive" cases. Vendor-specific extensions are
-    intentionally ignored at MVP: `detect_qos_mismatches` compares against
-    canonical DDS spec values only.
+    Covers the policies that explain most "subscriber doesn't receive"
+    cases. Vendor-specific extensions are ignored: `detect_qos_mismatches`
+    compares against canonical DDS spec values only.
     """
 
     model_config = _CONFIG
@@ -164,9 +163,8 @@ Must stay identical to `adapters/common/dds_helpers.py:VendorTag` (pinned by
 class ParticipantInfo(BaseModel):
     """DDS participant discovered on the configured domain.
 
-    v0.4.0 Phase 1 adds lifecycle fields (`first_seen_ns`, `last_seen_ns`,
-    `status`, `seen_count`). All four are optional with safe defaults so
-    v0.3.0 producers and fixtures keep working unchanged.
+    Carries identity (`guid`, `name`, `vendor`) plus lifecycle fields
+    (`first_seen_ns`, `last_seen_ns`, `status`, `seen_count`).
     """
 
     model_config = _CONFIG
@@ -195,8 +193,12 @@ class ParticipantInfo(BaseModel):
             "`opensplice` (ADLink OpenSplice), `opendds` (OCI OpenDDS), "
             "`coredx` (Twin Oaks CoreDX), `intercom` (Kongsberg InterCOM), "
             "`dust` (S2E Dust DDS). `mock` is reserved for synthetic "
-            "fixtures ; `unknown` when the observed vendor_id has no "
-            "first-class tag (the participant is still reported). "
+            "fixtures. `unknown` means the vendor could not be determined: "
+            "TopicForge reads it from the vendor prefix of the participant "
+            "GUID, and some vendors (for example Dust DDS and RTI Connext) do "
+            "not put their vendor id there, while the Cyclone Python binding "
+            "does not expose the RTPS header vendor id. The participant is "
+            "still reported ; see `vendor_source`. "
             "Vendor-neutral: "
             "TopicForge observes every conformant DDS-RTPS participant "
             "on the bus via the OMG protocol guarantee: see "
@@ -208,6 +210,22 @@ class ParticipantInfo(BaseModel):
         description=(
             "Hostname announced in discovery (Cyclone `__Hostname` property). "
             "`None` when the vendor does not announce it."
+        ),
+    )
+    vendor_source: Literal["guid_prefix", "none"] = Field(
+        default="none",
+        description=(
+            "Where `vendor` came from: `guid_prefix` when it was read from the "
+            "vendor prefix of the participant GUID, `none` when the vendor is "
+            "unknown (or synthetic in mock mode)."
+        ),
+    )
+    is_observer: bool = Field(
+        default=False,
+        description=(
+            "True for TopicForge's own read-only observer participant, which "
+            "joins the domain to watch it and appears in this list ; false for "
+            "every other participant."
         ),
     )
     domain_id: int = Field(
@@ -222,9 +240,7 @@ class ParticipantInfo(BaseModel):
         description=(
             "Wall-clock timestamp (nanoseconds since epoch) of the **first** "
             "discovery sample TopicForge observed for this participant. "
-            "`None` when the adapter does not track lifecycle (v0.3.0 "
-            "callers or mock fixtures missing the field). v0.4.0+ live "
-            "adapters populate it."
+            "`None` when the adapter does not track lifecycle."
         ),
     )
     last_seen_ns: int | None = Field(
@@ -244,8 +260,8 @@ class ParticipantInfo(BaseModel):
             "discovery sample for this GUID and the bus has not signalled "
             "removal. `left` means the participant was observed earlier "
             "but has since disappeared (a Fast DDS `REMOVED` callback or a "
-            "Cyclone polling delta). `unknown` is the safe default for "
-            "v0.3.0 callers and fixtures missing the field."
+            "Cyclone polling delta). `unknown` when the adapter does not "
+            "track lifecycle."
         ),
     )
     seen_count: int = Field(
@@ -254,8 +270,8 @@ class ParticipantInfo(BaseModel):
         description=(
             "Number of distinct discovery samples observed for this "
             "participant across all calls to `list_participants` during "
-            "this server's lifetime. `1` is the safe default ; v0.4.0+ "
-            "live adapters increment on each observation."
+            "this server's lifetime. Starts at 1 and "
+            "increments on each observation."
         ),
     )
     announced_ns: int | None = Field(
@@ -298,8 +314,7 @@ class ParticipantEvent(BaseModel):
 
     Distinct from `ParticipantInfo` because events carry intrinsic time
     + type semantics (point-in-time facts), while `ParticipantInfo` is a
-    snapshot of current state. Returned by the `participant_events`
-    MCP tool added in v0.4.0 Phase 1.
+    snapshot of current state. Returned by the `participant_events` tool.
     """
 
     model_config = _CONFIG
@@ -370,13 +385,11 @@ class ParticipantEvent(BaseModel):
 class TopicMetrics(BaseModel):
     """Temporal metrics for a single DDS topic over a recent window.
 
-    Added in v0.4.0 Phase 2 alongside the `topic_metrics` MCP tool.
-    Built from samples that flow through the adapter's existing
-    `peek_dds_samples` path: the buffer is **opportunistic**, not
-    push-based, because neither `cyclonedds` nor `fastdds` Python
-    bindings expose reliable at-sample-receive callbacks. Same
-    caveat shape as Cyclone participant lifecycle in Phase 1: a
-    sample bursting between two tool calls is invisible.
+    Built from samples that flow through the adapter's `peek_dds_samples`
+    path: the buffer is **opportunistic**, not push-based, because neither
+    `cyclonedds` nor `fastdds` Python bindings expose reliable
+    at-sample-receive callbacks. A sample bursting between two tool calls
+    is invisible.
 
     Every numeric field is `None`-tolerant: fields collapse to
     `None` (or `0` for the integer-typed `sequence_gaps_count`)
@@ -428,12 +441,21 @@ class TopicMetrics(BaseModel):
     frequency_hz_declared: float | None = Field(
         default=None,
         description=(
-            "Declared frequency extracted from the topic's QoS Deadline "
-            "policy when the adapter resolved it (Deadline period -> "
-            "1 / period_seconds). `None` when the QoS profile does not "
-            "include Deadline or the adapter could not resolve it. Use "
-            "with `frequency_hz_observed` to diagnose a publisher that "
-            "is failing its declared deadline."
+            "Declared, not measured: `1 / deadline` for the shortest QoS "
+            "Deadline period announced by a writer on this topic in discovery. "
+            "`None` when no writer announced a finite Deadline or the topic "
+            "is not announced. It is the rate the application promised, not "
+            "the rate observed."
+        ),
+    )
+    status: Literal["ok", "no_samples_yet", "unsupported_user_topic"] = Field(
+        default="ok",
+        description=(
+            "How to read the numbers. `unsupported_user_topic`: the topic is a "
+            "user topic, whose payload is not decoded, so no metric exists and "
+            "the null fields are not a measurement. `no_samples_yet`: a "
+            "supported topic with nothing buffered in the window. `ok`: "
+            "metrics computed from buffered samples."
         ),
     )
     sequence_gaps_count: int = Field(
@@ -709,7 +731,7 @@ class MessageSample(BaseModel):
     payload: dict[str, object] = Field(
         default_factory=dict,
         description=(
-            "Structured message payload. **In live mode the MVP parser "
+            "Structured message payload. **In live mode the parser "
             "exposes the message fields as positional CSV columns** keyed "
             "as `col_0`, `col_1`, ... (`header.stamp.sec`/`nanosec` are "
             "stripped out into `timestamp_ns` when detected). The raw CSV "
@@ -742,12 +764,10 @@ class BagTopicStats(BaseModel):
 class BagAnalysis(BaseModel):
     """Structured summary of a ROS2 bag.
 
-    v0.4.0 Phase 3 enriches this model with four **additive optional**
-    fields (`bag_format`, `samples_decoded_count`, `recording_duration_ns`,
-    `participants_recorded`) populated when the new `rosbags`-backed
-    bag service runs. The v0.3.0 `ros2 bag info`-text-parsed path
-    leaves them at their safe defaults so every existing consumer
-    keeps working unchanged.
+    The fields `bag_format`, `samples_decoded_count`,
+    `recording_duration_ns` and `participants_recorded` are populated only
+    when the `rosbags`-backed reader runs; the `ros2 bag info` path leaves
+    them at their defaults.
     """
 
     model_config = _CONFIG
@@ -776,7 +796,7 @@ class BagAnalysis(BaseModel):
         default_factory=list,
         description=(
             "Human-readable notes about gaps, clock jumps, or other oddities. "
-            "MVP populates this in mock mode; live anomaly detection is roadmap."
+            "Populated in mock mode only; live mode does not detect anomalies."
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
@@ -786,9 +806,8 @@ class BagAnalysis(BaseModel):
             "Concrete bag container format detected by the reader: `mcap` "
             "(Foxglove MCAP), `db3` (ROS2 rosbag2 SQLite), `bag` (ROS1 "
             "legacy chunked), or `unknown` when the reader could not "
-            "classify. `None` for the v0.3.0 `ros2 bag info`-text-parsed "
-            "code path that has no format awareness. Added in v0.4.0 "
-            "Phase 3 alongside the `rosbags`-backed bag service."
+            "classify. `None` when the bag was summarized from "
+            "`ros2 bag info` text, which carries no format information."
         ),
     )
     samples_decoded_count: int = Field(
@@ -796,8 +815,7 @@ class BagAnalysis(BaseModel):
         ge=0,
         description=(
             "Total decoded sample count across all topics produced by the "
-            "bag reader. `0` when the reader only parsed metadata (the "
-            "v0.3.0 text-parsed path) or when `rosbags` is not installed "
+            "bag reader. `0` when the reader only parsed metadata or when `rosbags` is not installed "
             "on the host. Use `peek_bag_samples` to pull the actual "
             "sample payloads for a specific topic."
         ),
@@ -807,7 +825,7 @@ class BagAnalysis(BaseModel):
         ge=0,
         description=(
             "Recording duration in nanoseconds when readable from the "
-            "bag's index. `None` when the v0.3.0 text-parsed path runs ; "
+            "bag's index. `None` when only `ros2 bag info` text was parsed ; "
             "`duration_seconds` (float) is the always-populated fallback "
             "that downstream LLM consumers should prefer when this is "
             "`None`."
@@ -819,8 +837,8 @@ class BagAnalysis(BaseModel):
             "DDS participants recorded in the bag when the container "
             "format embeds participant metadata. MCAP can carry it via "
             "channel metadata records ; ROS2 `.db3` and ROS1 `.bag` "
-            "generally do not. Empty list when not available: the "
-            "common case at v0.4.0 Phase 3."
+            "generally do not. Empty list when not available, which "
+            "is the common case."
         ),
     )
 
@@ -837,7 +855,7 @@ class SampleResult(BaseModel):
             "Number of samples actually returned. May be 0 (no publisher active "
             "in live mode, or empty mock fixture), less than the requested count "
             "(topic yielded fewer messages within the timeout), or capped by the "
-            "MVP's silent maximum of 50: request `count > 50` and you will "
+            "the silent maximum of 50: request `count > 50` and you will "
             "receive at most 50 without warning."
         ),
     )
@@ -845,6 +863,14 @@ class SampleResult(BaseModel):
         description="The sampled messages, ordered as received from the backend."
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description=(
+            "Why `samples` is empty or limited, when the cause is not obvious "
+            "(for example payload decoding is disabled for DDS user topics). "
+            "`None` when there is nothing to add."
+        ),
+    )
 
 
 class HealthReport(BaseModel):
@@ -855,7 +881,8 @@ class HealthReport(BaseModel):
     mode: str = Field(
         description=(
             "Runtime mode of the adapter actually serving requests: `mock` "
-            "or `live`. Can differ from `requested_mode` when a live backend "
+            "or `live`. `live` with `ros_backend` `none` means the DDS tools "
+            "are live and the ROS 2 tools are not available. Can differ from `requested_mode` when a live backend "
             "could not start (e.g. `live` requested without `ros2` installed "
             "falls back to `mock`)."
         )
@@ -871,7 +898,7 @@ class HealthReport(BaseModel):
             "agent on a machine the user controls, and exposing the ROS2 "
             "distro lets it adapt to e.g. `humble`/`jazzy` differences. "
             "For a hosted multi-tenant TopicForge endpoint this field "
-            "would be scrubbed ; see the security audit roadmap."
+            "would be scrubbed ."
         ),
     )
     server_version: str = Field(
@@ -959,6 +986,37 @@ class HealthReport(BaseModel):
             "pass. A value far older than `now_ns` means lifecycle is stale."
         ),
     )
+    ros_tools_available: bool = Field(
+        default=False,
+        description=(
+            "True when the ROS 2 tools (`list_topics`, `get_topic_info`, "
+            "`sample_messages`, `analyze_bag`, `peek_bag_samples`) can run, "
+            "i.e. `ros_backend` is not `none`. False on a DDS-only setup: "
+            "use `list_endpoints` for topics and wiring there."
+        ),
+    )
+    payload_decoding: Literal["disabled", "enabled"] = Field(
+        default="disabled",
+        description=(
+            "Whether DDS user-topic payloads are decoded. `disabled` today: "
+            "`peek_dds_samples` and `topic_metrics` do not return message "
+            "content for user topics."
+        ),
+    )
+    payload_decoding_reason: str | None = Field(
+        default=(
+            "user-topic payload decoding is switched off until it is validated "
+            "on a real bus ; builtin discovery topics are still readable"
+        ),
+        description="One-line reason for `payload_decoding`.",
+    )
+    dds_security: Literal["not_supported"] = Field(
+        default="not_supported",
+        description=(
+            "DDS Security is not handled. On a secured domain TopicForge can "
+            "show participants but not protected endpoints or data."
+        ),
+    )
     ros_backend: Literal["mock", "ros2_cli", "none"] = Field(
         default="none",
         description=(
@@ -967,9 +1025,8 @@ class HealthReport(BaseModel):
             "as the ROS half of a composite). `mock` when MockAdapter "
             "serves the ROS surface. `none` when no ROS2 backend is "
             "active (e.g. DDS-only live install with no `ros2` CLI). "
-            "Added in v0.4.0 Phase 1 alongside the composite adapter so "
-            "clients can distinguish the ROS2 and DDS halves of a "
-            "composed runtime."
+            "Together with `dds_backend` it tells the ROS2 and DDS halves "
+            "of the runtime apart."
         ),
     )
 

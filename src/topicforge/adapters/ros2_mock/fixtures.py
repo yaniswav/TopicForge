@@ -180,6 +180,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 60_000_000_000,
         status="active",
         seen_count=3,
+        vendor_source="guid_prefix",
     ),
     ParticipantInfo(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
@@ -192,6 +193,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 55_000_000_000,
         status="active",
         seen_count=2,
+        vendor_source="guid_prefix",
     ),
     # v0.3.0: third participant exercises the multi-vendor positioning:
     # an eProsima Fast DDS participant alongside Cyclone, as the OMG-DDS
@@ -207,6 +209,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 50_000_000_000,
         status="active",
         seen_count=2,
+        vendor_source="guid_prefix",
     ),
     # A Rust Dust DDS participant (S2E, vendor_id 01.14) rounds out the
     # multi-vendor demo: three distinct stacks on one bus.
@@ -220,6 +223,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 45_000_000_000,
         status="active",
         seen_count=2,
+        vendor_source="guid_prefix",
     ),
 )
 
@@ -554,6 +558,9 @@ def _build_mock_metrics_buffer() -> MetricsBuffer:
 
 _MOCK_METRICS_BUFFER: MetricsBuffer = _build_mock_metrics_buffer()
 
+# Declared (Deadline-derived) rate of the one mock writer that announces one.
+_MOCK_DECLARED_HZ: dict[str, float] = {"/dds/heartbeat_10hz": 10.0}
+
 
 def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> TopicMetrics:
     """Deterministic TopicMetrics computed against `_MOCK_METRICS_BUFFER`.
@@ -562,14 +569,16 @@ def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> T
     returns the same numbers regardless of wall clock: required for
     test assertions.
     """
-    return _MOCK_METRICS_BUFFER.compute_metrics(
+    metrics = _MOCK_METRICS_BUFFER.compute_metrics(
         topic=topic,
         window_seconds=window_seconds,
         now_ns=_METRICS_NOW_NS,
-        declared_hz=None,
+        declared_hz=_MOCK_DECLARED_HZ.get(topic),
         mode_effective="mock",
         domain_id=domain_id,
     )
+    status = "ok" if metrics.samples_observed > 0 else "no_samples_yet"
+    return metrics.model_copy(update={"status": status})
 
 
 MOCK_BAG_ANALYSIS = BagAnalysis(

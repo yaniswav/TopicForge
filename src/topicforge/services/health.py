@@ -58,6 +58,7 @@ class HealthService:
             dds_domain_id=self._settings.dds_domain_id,
             middleware_available=_middleware_available(dds_backend, self._settings),
             ros_backend=ros_backend,
+            ros_tools_available=ros_backend != "none",
         )
 
 

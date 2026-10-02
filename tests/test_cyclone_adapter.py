@@ -21,6 +21,26 @@ from topicforge.adapters.common import VendorTag
 from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
 
 
+@pytest.fixture(autouse=True)
+def _close_adapters(monkeypatch: pytest.MonkeyPatch):
+    """Stop every adapter's tracker thread at the end of its test.
+
+    Leaked trackers from earlier tests would keep reading builtin readers
+    concurrently while a later test waits for discovery to warm up.
+    """
+    created: list[CycloneDdsAdapter] = []
+    original = CycloneDdsAdapter.__init__
+
+    def tracking_init(self: CycloneDdsAdapter, *args: object, **kwargs: object) -> None:
+        original(self, *args, **kwargs)
+        created.append(self)
+
+    monkeypatch.setattr(CycloneDdsAdapter, "__init__", tracking_init)
+    yield
+    for adapter in created:
+        adapter.close()
+
+
 def test_adapter_imports_and_is_available() -> None:
     adapter = CycloneDdsAdapter(domain_id=0)
     assert adapter.is_available() is True
@@ -140,3 +160,30 @@ def test_peek_builtin_endpoints_carry_structured_fields() -> None:
         for s in adapter.peek_dds_samples(topic, count=5).samples:
             assert {"role", "participant_guid", "announced_ns", "is_observer"} <= set(s.payload)
             assert "_raw_text" not in s.payload
+
+
+def test_own_participant_is_marked_as_observer() -> None:
+    adapter = CycloneDdsAdapter(domain_id=0)
+    assert adapter.await_discovery_ready() in (True, False)
+    observers = [p for p in adapter.list_participants() if p.is_observer]
+    assert len(observers) == 1
+    assert observers[0].name == "topicforge"
+    assert all(p.vendor_source in ("guid_prefix", "none") for p in adapter.list_participants())
+
+
+def test_await_discovery_ready_is_bounded_and_then_instant() -> None:
+    import time
+
+    adapter = CycloneDdsAdapter(domain_id=0)
+    start = time.monotonic()
+    assert adapter.await_discovery_ready() is True
+    assert time.monotonic() - start <= 3.5
+    start = time.monotonic()
+    assert adapter.await_discovery_ready() is True
+    assert time.monotonic() - start < 0.2
+
+
+def test_topic_metrics_status_for_user_and_builtin_topics() -> None:
+    adapter = CycloneDdsAdapter(domain_id=0)
+    assert adapter.topic_metrics("scan", 60).status == "unsupported_user_topic"
+    assert adapter.topic_metrics("DCPSParticipant", 60).status == "no_samples_yet"
