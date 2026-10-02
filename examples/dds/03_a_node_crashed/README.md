@@ -40,6 +40,9 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 - Cyclone DDS uses a 10 s lease by default. TopicForge polls the bus, so it
   reports the departure a few seconds after the lease expires.
+- TopicForge notices a departure when it is asked about the bus: it polls,
+  it does not keep a continuous history in the background. An agent watching
+  for crashes has to ask regularly.
 - The lease is a per-vendor default you can configure. Dust DDS, for
   example, uses 100 s: a crashed Dust program stays "active" much longer.
 
