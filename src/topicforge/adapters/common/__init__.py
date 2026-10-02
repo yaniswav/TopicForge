@@ -9,13 +9,18 @@ from topicforge.adapters.common.cdr_decoder import (
     iter_field_names,
 )
 from topicforge.adapters.common.dds_helpers import (
+    BUILTIN_DCPS_TOPICS,
     DDS_ONLY_ERROR_MSG,
     DYNAMIC_DECODE_DISABLED_NOTE,
+    USER_TOPIC_NOTE,
     VendorTag,
     canonicalize_vendor_id,
+    declared_hz_from_endpoints,
     format_guid,
+    metrics_status,
     take_bounded,
     user_topic_placeholder,
+    user_topic_result,
     validate_domain_id,
 )
 from topicforge.adapters.common.dds_introspection import (
@@ -81,6 +86,7 @@ from topicforge.adapters.common.xtypes import (
 )
 
 __all__ = [
+    "BUILTIN_DCPS_TOPICS",
     "DDS_ONLY_ERROR_MSG",
     "DEFAULT_PERIOD_S",
     "DYNAMIC_DECODE_DISABLED_NOTE",
@@ -89,6 +95,7 @@ __all__ = [
     "MAX_SAMPLES_PER_TOPIC",
     "POLICIES_CHECKED",
     "POLICIES_UNCHECKED",
+    "USER_TOPIC_NOTE",
     "DecodeStatus",
     "DiscoveryCaches",
     "DiscoveryTracker",
@@ -114,6 +121,7 @@ __all__ = [
     "cyclone_extract_type_name",
     "cyclone_extract_vendor_id",
     "cyclone_qos_to_profile",
+    "declared_hz_from_endpoints",
     "decode_dynamic_sample",
     "decode_field_value",
     "detect_mismatches",
@@ -136,6 +144,7 @@ __all__ = [
     "is_removal",
     "iter_field_names",
     "listing_from_samples",
+    "metrics_status",
     "participant_names",
     "partitions_match",
     "scan_endpoints",
@@ -143,6 +152,7 @@ __all__ = [
     "take_bounded",
     "type_id_text",
     "user_topic_placeholder",
+    "user_topic_result",
     "validate_domain_id",
     "vendor_id_from_guid",
 ]

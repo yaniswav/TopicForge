@@ -85,6 +85,11 @@ class CompositeAdapter:
         status = getattr(self._dds, "observer_status", None)
         return status() if callable(status) else None
 
+    def await_discovery_ready(self) -> bool:
+        """Delegate to the DDS half's warm-up wait; `True` when it has none."""
+        wait = getattr(self._dds, "await_discovery_ready", None)
+        return bool(wait()) if callable(wait) else True
+
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         return self._dds.list_participants(domain_id)
 

@@ -159,7 +159,7 @@ def test_dds_only_error_msg_mentions_composite_remediation() -> None:
     """v0.5.0 polish: the message must name the v0.4.0 CompositeAdapter as the
     canonical remediation for the dual-surface workflow, so an LLM caller can
     suggest the right action immediately."""
-    assert "CompositeAdapter" in DDS_ONLY_ERROR_MSG
+    assert "composite adapter" in DDS_ONLY_ERROR_MSG
 
 
 def test_dds_only_error_msg_lists_affected_tools() -> None:

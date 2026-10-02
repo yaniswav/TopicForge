@@ -70,10 +70,10 @@ def vendor_id_from_guid(guid: bytes | None) -> tuple[int, int] | None:
     The cyclonedds builtin participant sample carries no vendor field (key,
     qos and sample_info only, observed with 11.0.1). RTPS section 9.3.1.5
     recommends that implementations start the GUID prefix with their vendor
-    id, and the major ones do (RTI 01.01, eProsima 01.0F, Eclipse 01.10).
-    This is a convention, not a guarantee: an implementation that fills the
-    prefix differently will map to "unknown" rather than to a wrong vendor,
-    as long as its first two bytes do not collide with an assigned id.
+    id, and some do (eProsima 01.0F, Eclipse 01.10). Others do not: Dust DDS
+    and RTI Connext fill the prefix differently, so they map to "unknown"
+    rather than to a wrong vendor, as long as their first two bytes do not
+    collide with an assigned id. This is a convention, not a guarantee.
     """
     if guid is None or len(guid) < 2:
         return None

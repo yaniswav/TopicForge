@@ -100,13 +100,21 @@ class Inspector:
 
     # ---------------------------- DDS module ------------------------------
 
+    def _await_dds(self) -> None:
+        """Let a freshly started discovery tracker hear the bus (bounded, usually a no-op)."""
+        wait = getattr(self._adapter, "await_discovery_ready", None)
+        if callable(wait):
+            wait()
+
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         _validate_dds_domain(domain_id)
+        self._await_dds()
         return self._adapter.list_participants(domain_id)
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None:
             _validate_topic_name_dds(topic)
+        self._await_dds()
         return self._adapter.detect_qos_mismatches(topic)
 
     def peek_dds_samples(self, topic: str, count: int | None = None) -> SampleResult:
@@ -114,6 +122,7 @@ class Inspector:
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
+        self._await_dds()
         return self._adapter.peek_dds_samples(topic, min(n, MAX_SAMPLE_COUNT))
 
     def participant_events(
@@ -122,6 +131,7 @@ class Inspector:
         _validate_dds_domain(domain_id)
         seconds = DEFAULT_LOOKBACK_SECONDS if lookback_seconds is None else lookback_seconds
         _validate_lookback_seconds(seconds)
+        self._await_dds()
         return self._adapter.participant_events(domain_id, seconds)
 
     def topic_metrics(
@@ -134,6 +144,7 @@ class Inspector:
         _validate_dds_domain(domain_id)
         seconds = DEFAULT_WINDOW_SECONDS if window_seconds is None else window_seconds
         _validate_window_seconds(seconds)
+        self._await_dds()
         return self._adapter.topic_metrics(topic, seconds, domain_id)
 
     def list_endpoints(
@@ -149,6 +160,7 @@ class Inspector:
         guid = participant_guid.strip() if participant_guid else None
         if participant_guid is not None and not guid:
             raise AdapterError("participant_guid must be a non-empty string when given")
+        self._await_dds()
         return self._adapter.list_endpoints(topic, guid, include_observer)
 
     def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:

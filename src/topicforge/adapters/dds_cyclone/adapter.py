@@ -72,13 +72,13 @@ from cyclonedds.util import duration
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
-    DYNAMIC_DECODE_DISABLED_NOTE,
     DiscoveryCaches,
     DiscoveryTracker,
     MetricsBuffer,
     SampleCache,
     announced_ns_of,
     builtin_payload,
+    declared_hz_from_endpoints,
     decode_dynamic_sample,
     decode_field_value,
     dynamic_type_name,
@@ -89,10 +89,11 @@ from topicforge.adapters.common import (
     format_participant_key,
     iter_field_names,
     listing_from_samples,
+    metrics_status,
     participant_names,
     scan_endpoints,
     take_bounded,
-    user_topic_placeholder,
+    user_topic_result,
     validate_domain_id,
 )
 from topicforge.adapters.common import (
@@ -156,7 +157,7 @@ def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[Message
     real bus, and reading the cyclonedds 11.0.1 binding shows it cannot work
     as written. Rather than ship a repair that has never executed, this
     release returns `None` immediately, before any type resolution, so the
-    caller surfaces the annotated placeholder (`DYNAMIC_DECODE_DISABLED_NOTE`).
+    caller reports an empty result with a note.
 
     Known defects, for the future rewrite (validate on `scripts/integration/`):
 
@@ -369,6 +370,10 @@ class CycloneDdsAdapter:
         """Stop the tracker thread. The participant is released with the process."""
         self._tracker.stop()
 
+    def await_discovery_ready(self) -> bool:
+        """Wait (at most 3 s) for the tracker to be warm: 2 passes, observer at least 2 s old."""
+        return self._tracker.wait_warm()
+
     def observer_status(self) -> dict[str, Any]:
         """Observer start time and tracker counters, for `health_check`."""
         return {"observer_started_ns": self.observer_started_ns, **self._tracker.status()}
@@ -421,7 +426,11 @@ class CycloneDdsAdapter:
             domain_id=self._domain_id,
             mode_effective="live",
         )
-        return self._lifecycle.snapshot_participants(domain_id=self._domain_id)
+        observer = self._observer_guid()
+        return [
+            p.model_copy(update={"is_observer": True}) if p.guid == observer else p
+            for p in self._lifecycle.snapshot_participants(domain_id=self._domain_id)
+        ]
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         """Pair cached reader/writer endpoints per topic and scan them.
@@ -488,10 +497,8 @@ class CycloneDdsAdapter:
 
         The 3 builtin DCPS topics keep their v0.3.0 structured-payload
         shape. For a user topic, dynamic decode is disabled in this
-        release: a topic announced on the bus yields one placeholder
-        sample (`_decode_status="raw"`, empty bytes, with a note saying so)
-        and no payload is decoded. The placeholder is not a received
-        sample and is not recorded for `topic_metrics`.
+        release: a topic announced on the bus yields no samples and a
+        `note` saying so. Nothing is recorded for `topic_metrics`.
 
         Raises `AdapterError` only when the topic has not been
         discovered on the bus (no endpoint claims it).
@@ -555,8 +562,8 @@ class CycloneDdsAdapter:
            the placeholder path below is the one that runs. The decoded
            branch is kept for the future rewrite and is currently
            unreachable.
-        3. The placeholder carries `DYNAMIC_DECODE_DISABLED_NOTE`. It is not
-           a received sample, so it is never recorded into `MetricsBuffer`.
+        3. The result is empty (count 0) with a `note` saying decoding is
+           disabled; nothing is recorded into `MetricsBuffer`.
         """
         if not self._is_topic_on_bus(topic):
             raise AdapterError(
@@ -587,15 +594,8 @@ class CycloneDdsAdapter:
                 mode_effective="live",
             )
 
-        # Placeholder only: nothing was received, so nothing is recorded into
-        # the metrics buffer (a placeholder must never count as a sample).
-        fallback_samples = user_topic_placeholder(topic, count, note=DYNAMIC_DECODE_DISABLED_NOTE)
-        return SampleResult(
-            topic=topic,
-            count=len(fallback_samples),
-            samples=fallback_samples,
-            mode_effective="live",
-        )
+        # Nothing was received, so nothing is recorded into the metrics buffer.
+        return user_topic_result(topic, "live")
 
     def _is_topic_on_bus(self, topic: str) -> bool:
         """True iff a sub or pub for `topic` has been discovered."""
@@ -631,12 +631,31 @@ class CycloneDdsAdapter:
         """
         if window_seconds < 1 or window_seconds > 3600:
             raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
-        return self._metrics.compute_metrics(
+        metrics = self._metrics.compute_metrics(
             topic=topic,
             window_seconds=window_seconds,
             domain_id=self._domain_id,
+            declared_hz=self._declared_hz(topic),
             mode_effective="live",
         )
+        return metrics.model_copy(
+            update={"status": metrics_status(topic, metrics.samples_observed)}
+        )
+
+    def _declared_hz(self, topic: str) -> float | None:
+        """Rate implied by the shortest writer Deadline announced on `topic`, else `None`."""
+        writers = [s for s in self._caches.publications.values() if _extract_topic_name(s) == topic]
+        if not writers:
+            return None
+        infos = endpoint_infos_from_samples(
+            [],
+            writers,
+            [],
+            domain_id=self._domain_id,
+            mode_effective="live",
+            observer_guid=None,
+        )
+        return declared_hz_from_endpoints(infos, topic)
 
 
 # Sample-introspection helpers (_extract_guid / _extract_vendor_id /

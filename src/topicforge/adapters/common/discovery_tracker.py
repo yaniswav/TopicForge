@@ -42,6 +42,11 @@ from topicforge.adapters.common.lifecycle import LifecycleBuffer
 DEFAULT_PERIOD_S = 0.5
 """Seconds between two passes of the tracker thread."""
 
+WARM_MIN_PASSES = 2
+WARM_MIN_AGE_S = 2.0
+WARM_MAX_WAIT_S = 3.0
+"""A tracker is warm after 2 passes and 2 s of observation; callers wait at most 3 s."""
+
 MAX_CACHED_SAMPLES = 4096
 """Bound of each sample cache, oldest entry dropped first."""
 
@@ -212,12 +217,14 @@ class DiscoveryTracker:
         self._errors = 0
         self._last_pass_ns: int | None = None
         self._last_error: str | None = None
+        self._started_at: float | None = None
 
     def start(self) -> None:
         """Start the daemon thread (no-op when already running)."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
+        self._started_at = time.monotonic()
         self._thread = threading.Thread(target=self._run, name="topicforge-discovery", daemon=True)
         self._thread.start()
 
@@ -246,6 +253,35 @@ class DiscoveryTracker:
         with self._lock:
             self._passes += 1
             self._last_pass_ns = now_ns
+
+    def is_warm(self, min_passes: int = WARM_MIN_PASSES, min_age_s: float = WARM_MIN_AGE_S) -> bool:
+        """True once enough passes completed and the observer is old enough to have heard the bus."""
+        with self._lock:
+            passes = self._passes
+        started = self._started_at
+        return (
+            started is not None and passes >= min_passes and time.monotonic() - started >= min_age_s
+        )
+
+    def wait_warm(
+        self,
+        timeout_s: float = WARM_MAX_WAIT_S,
+        *,
+        min_passes: int = WARM_MIN_PASSES,
+        min_age_s: float = WARM_MIN_AGE_S,
+    ) -> bool:
+        """Block until `is_warm`, at most `timeout_s`; returns whether it is warm.
+
+        Only matters in the first seconds of a server's life: discovery needs a
+        moment to hear the bus, and a tool answering before that sees it
+        incomplete. Returns immediately once warm, or if the tracker never started.
+        """
+        deadline = time.monotonic() + timeout_s
+        while not self.is_warm(min_passes, min_age_s):
+            if self._started_at is None or time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        return True
 
     def status(self) -> dict[str, Any]:
         """Counters for `health_check`: running, passes, errors, last pass time."""
