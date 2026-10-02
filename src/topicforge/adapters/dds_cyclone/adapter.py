@@ -51,6 +51,7 @@ single odd discovery sample must not break the whole tool call.
 
 from __future__ import annotations
 
+import atexit
 import logging
 import time
 from itertools import islice
@@ -336,6 +337,10 @@ class CycloneDdsAdapter:
             self._builtin_reader(topic_class)
         self._tracker = DiscoveryTracker(self._take_all, self._caches, domain_id=domain_id)
         self._tracker.start()
+        # Stop the tracker before the interpreter and Cyclone tear down: a
+        # pass still reading the builtin readers during teardown crashed the
+        # process (heap corruption seen in tests, 2026-10-02).
+        atexit.register(self.close)
 
     def _builtin_reader(self, topic_class: Any) -> tuple[Any, Any]:
         """The adapter's reader for one builtin topic, and an any-state read condition."""
