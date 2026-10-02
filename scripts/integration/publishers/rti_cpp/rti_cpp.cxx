@@ -32,7 +32,7 @@
 #include <string>
 
 #include <dds/pub/ddspub.hpp>
-#include <rti/util/util.hpp>  // for rti::util::sleep
+#include <rti/util/util.hpp>
 
 #include "Heartbeat.hpp"
 
@@ -78,7 +78,6 @@ bool parse_domain(int argc, char *argv[], unsigned int &domain_id)
 
 void run_publisher_application(unsigned int domain_id)
 {
-    // To customize participant QoS, use file USER_QOS_PROFILES.xml
     dds::domain::DomainParticipant participant(domain_id);
 
     dds::topic::Topic<Heartbeat> topic(participant, kTopicName);

@@ -1,20 +1,18 @@
 """Example 06: durability and the late joiner, in code.
 
-The mission is written ONCE, before the navigation planner exists. Three
-publishers write it on three topics, then three subscribers join late:
+The mission is written once, before the planner exists; three subscribers
+join late, one per topic:
 
-  mission_tl               writer TRANSIENT_LOCAL, reader TRANSIENT_LOCAL: the
-                           writer kept the sample, the late reader gets it.
-  mission_volatile_writer  writer VOLATILE, reader TRANSIENT_LOCAL: a reader
-                           cannot demand more than the writer offers, no match.
-  mission_volatile_both    both VOLATILE: they match, but there is nothing to
-                           hand over. Not a QoS incompatibility.
+  mission_tl               TRANSIENT_LOCAL on both sides: the late reader gets it.
+  mission_volatile_writer  VOLATILE writer, TRANSIENT_LOCAL reader: no match.
+  mission_volatile_both    both VOLATILE: they match, nothing to hand over.
+                           Not a QoS incompatibility.
 
-This is the only example where start order matters: the publishers must have
-written before the subscribers exist. Read publisher.py and subscriber.py.
+Start order matters here: the publishers must write before the subscribers
+exist. Read publisher.py and subscriber.py.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import asyncio

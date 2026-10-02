@@ -1,18 +1,13 @@
 """Example 10: the LIDAR went silent after a driver swap.
 
-The robot's LIDAR driver was replaced by one from another supplier, running
-on another DDS implementation. Since then the navigation planner receives no
-scan. Two things went wrong at once, as in a real incident:
+The new driver, from another supplier and another DDS implementation, publishes
+on `lidar/scan` instead of `scan`, so nobody reads it. The old driver's
+container was never stopped: it still publishes `scan` BEST_EFFORT, which the
+RELIABLE planner refuses. TopicForge finds both. An empty mismatch report
+does not mean a healthy bus: check who writes and who reads each topic too.
 
-- the new driver publishes on `lidar/scan`, not `scan`: nobody reads it;
-- the old driver's container was never stopped. It still publishes `scan`,
-  BEST_EFFORT, which the RELIABLE planner refuses.
-
-TopicForge finds both. The lesson: an empty mismatch report does not mean a
-healthy bus. Look at who writes and who reads each topic too.
-
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys
