@@ -310,7 +310,8 @@ def register_tools(
             '*"when did this participant first appear?"*. Returns '
             "`list[ParticipantEvent]`: each entry carries `guid`, "
             "`event_type`, `vendor`, `timestamp_ns` (wall-clock ns since "
-            "epoch), optional `hostname`, `domain_id`, and `mode_effective` "
+            "epoch), optional `name` (the participant's announced DDS name), "
+            "optional `hostname`, `domain_id`, and `mode_effective` "
             '(`"live"`/`"mock"`). Sorted newest-first. Hard cap at 200 '
             "events (silent truncation, mirrors `sample_messages`'s 50 cap "
             "; reduce `lookback_seconds` if you hit it). "
@@ -322,9 +323,7 @@ def register_tools(
             "between two polls is invisible) ; mock returns a deterministic "
             "fixture timeline. **Raises an MCP error** when no DDS module "
             "is active (install `pip install topicforge[dds]` and set "
-            "`TOPICFORGE_DDS_BACKEND=cyclone|fast`). Added in v0.4.0 "
-            "Phase 1: the 9th MCP tool ; v0.3.0 clients are unaffected "
-            "until they call it."
+            "`TOPICFORGE_DDS_BACKEND=cyclone|fast`)."
         )
     )
     @instrument(telemetry, "participant_events")

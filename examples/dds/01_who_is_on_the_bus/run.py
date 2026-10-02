@@ -48,8 +48,13 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     for node in NODES:
         if node.vendor == "dust":
             # Dust DDS cannot announce a participant name: it shows up, unnamed.
-            seen = any(p.get("vendor") == VENDOR_TAG["dust"] and not p.get("name") for p in parts)
-            checks.expect(seen, f"{node.name} ({node.vendor}) seen, without a name")
+            # Exactly one such participant: this example starts exactly one.
+            unnamed = [
+                p for p in parts if p.get("vendor") == VENDOR_TAG["dust"] and not p.get("name")
+            ]
+            checks.expect(
+                len(unnamed) == 1, f"{node.name} ({node.vendor}) seen once, without a name"
+            )
             continue
         found = by_name(parts, node.name)
         checks.expect(found is not None, f"{node.name} found by name")

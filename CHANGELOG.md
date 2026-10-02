@@ -29,7 +29,9 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
   header.
 - **The OMG vendor-id table was wrong.** It mapped `01.05` to Fast DDS and
   `01.16` to Cyclone; the correct ids are `01.0F` (eProsima) and `01.10`
-  (Eclipse), verified against both vendors' sources. The `vendor` field of
+  (Eclipse), verified against both vendors' sources. The Cyclone side ran on a
+  live bus; the Fast DDS side (`fast_extract_vendor_id`) is verified
+  statically only, since its tests need a binding that is not on PyPI. The `vendor` field of
   `ParticipantInfo` and `ParticipantEvent` now also accepts `rti_micro`,
   `opensplice`, `opendds`, `coredx`, `intercom` and `dust` (soft-breaking for
   clients validating the previous enum).
@@ -52,9 +54,9 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
 - A real Rust / Dust DDS participant (`publishers/dust_publisher`) and a real
   Python / Cyclone participant replacing the previous scaffold, which never
   wrote a sample.
-- Fourteen demo participants in total, one per vendor and language that has a
-  usable binding (Cyclone C / C++ / Rust / Python, Dust Rust / Python / C,
-  Fast DDS C++ / Python, RTI Connext C / C++ / Rust / Python, OpenSplice C),
+- Twelve interop programs in total, one per vendor and language with an
+  officially released binding (Cyclone C / C++ / Rust / Python, Dust Rust /
+  Python, Fast DDS C++ / Python, RTI Connext C / C++ / Python, OpenSplice C),
   all following the contract in `scripts/integration/DEMO_CONTRACT.md`. The
   driver starts whichever ones are built on the host and adapts its checks;
   `--list` shows what can run. Only Cyclone Python and Dust Rust / Python / C
