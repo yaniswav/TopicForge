@@ -78,7 +78,7 @@ pip install topicforge[dds]                      # Eclipse CycloneDDS ([dds-cycl
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `fast` and `auto` (`fast`, then `cyclone`, then `mock`, whichever binding imports). An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the five ROS2 graph and bag tools to the CLI and the five DDS tools to the DDS backend.
+`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `fast` and `auto` (`fast`, then `cyclone`, then `mock`, whichever binding imports). An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the five ROS2 graph and bag tools to the CLI and the seven DDS tools to the DDS backend.
 
 A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Python binding is not on PyPI: build it from eProsima's sources and install it next to TopicForge. There is no `[dds-fast]` extra. `opendds` and `dust` are permanent stubs that never serve. `rti`, `opensplice`, `coredx` and `intercom` are rejected with a configuration error, since the Pro tier is retired (see [`docs/pro.md`](docs/pro.md)). Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
@@ -98,9 +98,12 @@ Samples with comments are in [`.env.example`](.env.example). Any invalid value s
 ## Limitations
 
 - **DDS validation is partial.** The Cyclone adapter has run against a real bus, with Cyclone and Dust DDS participants, on Windows and in CI on Ubuntu and Windows (`.github/workflows/demo.yml`). The Fast DDS adapter has never run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed by this project. The multi-vendor claim rests on the RTPS protocol guarantee, not on a recorded cross-vendor run.
-- **User-topic payloads are not decoded.** `peek_dds_samples` on a user topic reports that the topic is announced on the bus and returns one placeholder sample (`_decode_status="raw"`, empty `_raw_bytes_hex`); no traffic is read. Consequently `topic_metrics` only has data for the builtin discovery topics, its observed frequency is the cadence of your own `peek_dds_samples` calls, and latency and sequence gaps are `null`. It is a discovery-layer probe, not a publish-rate monitor.
+- **User-topic payloads are not decoded.** `peek_dds_samples` on a user topic returns count 0 and a note that the topic is announced on the bus; no traffic is read. `topic_metrics` therefore has data only for the builtin discovery topics and says so in its `status`. It is a discovery-layer probe, not a publish-rate monitor.
+- **Liveliness at runtime is not observed.** A writer that is alive but silent (a hung process whose lease is still renewed) looks healthy, because TopicForge reads discovery, not data. An opt-in data probe is planned for 0.5.6. A crash and a clean leave cannot be told apart, and `lost_ns` is an upper bound of the death.
 - **Cyclone vendor ids.** Participants that do not follow the RTPS vendor-id convention in their GUID prefix (Dust DDS, and RTI by default) are reported with vendor `unknown`.
-- **DDS Security is not handled.** A participant without credentials sees an empty secure bus. `detect_qos_mismatches` checks Partition, type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder and DataRepresentation (History as a risk); Presentation, XTypes assignability and runtime behavior are not checked, and the result lists them.
+- **Single domain.** The server observes the domain it joined at startup; changing it needs a restart.
+- **DDS Security is not handled.** A participant without credentials sees an empty secure bus. `detect_qos_mismatches` checks Partition, type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership (kind), DestinationOrder and DataRepresentation (History as a risk); Presentation, XTypes assignability and runtime behavior are not checked, and the result lists them in `policies_unchecked`. It returns a `MismatchScan` envelope: read `reports` for the mismatches.
+- **Fast DDS** serves no `list_endpoints`.
 - **`sample_messages` (live)** runs `ros2 topic echo --csv --once` with a short timeout; a topic with no current publisher returns an empty sample. `timestamp_ns` is the message `header.stamp` for `Header`-stamped types and `0` for headerless ones.
 - **`analyze_bag` (live)** parses `ros2 bag info` text and does not use `rosbags`; anomaly detection is mock-only. `peek_bag_samples` is the only tool that reads the file itself, through `rosbags`, and is served only by the ROS2 CLI adapter or the mock. Without `ros2`, bag tools return fixtures: check `health_check` for `mode: "mock"` before trusting bag output.
 - **Synchronous handlers.** The tools run on the MCP event loop; on Windows a hung `ros2` launcher can block the server.
@@ -125,7 +128,7 @@ When on, each tool call emits one event with exactly six fields:
 | `tool_name`  | `"list_topics"` | One of the twelve tools, never argument values              |
 | `latency_ms` | `12.34`         | Handler wall-clock duration, 2 decimals                     |
 | `mode`       | `"mock"`        | Mode of the adapter actually serving: `mock` or `live`      |
-| `version`    | `"0.5.3"`       | TopicForge server version                                   |
+| `version`    | `"0.5.5"`       | TopicForge server version                                   |
 | `session_id` | `"a1b2c3..."`   | Random UUID per process, never persisted                    |
 | `success`    | `true`          | Whether the handler returned or raised                      |
 

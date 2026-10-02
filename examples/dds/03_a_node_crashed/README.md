@@ -28,21 +28,22 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 [2] The LIDAR driver crashes. How long until the bus notices?
     -> list_participants
   killed lidar_driver
-    lidar_driver reported as left after 14 s
+    lidar_driver reported as left after 10 s
 
 [3] What happened on the bus, in order?
     -> participant_events
     lost       lidar_driver
-    discovered lidar_driver
-    discovered nav_planner
     discovered topicforge
+    discovered nav_planner
+    discovered lidar_driver
 ```
 
-- Cyclone DDS uses a 10 s lease by default. TopicForge polls the bus, so it
-  reports the departure a few seconds after the lease expires.
-- TopicForge notices a departure when it is asked about the bus: it polls,
-  it does not keep a continuous history in the background. An agent watching
-  for crashes has to ask regularly.
+- Cyclone DDS uses a 10 s lease by default, so the departure is reported when
+  the lease expires.
+- TopicForge tracks discovery in the background, so the event is there when
+  you ask, and its time comes from DDS rather than from your question. The
+  `lost` time is an upper bound of the death: after a crash it is the lease
+  expiry, and a crash looks the same as a clean leave.
 - The lease is a per-vendor default you can configure. Dust DDS, for
   example, uses 100 s: a crashed Dust program stays "active" much longer.
 

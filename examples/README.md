@@ -17,6 +17,6 @@ TOPICFORGE_MODE=mock python -m topicforge
 # Windows PowerShell: $env:TOPICFORGE_MODE="mock"; python -m topicforge
 ```
 
-Point any MCP client at the server with `"env": { "TOPICFORGE_MODE": "mock" }`. The mock exposes all 11 tools against deterministic fixtures, so every example is reproducible byte for byte.
+Point any MCP client at the server with `"env": { "TOPICFORGE_MODE": "mock" }`. The mock exposes all 12 tools against deterministic fixtures, so every example is reproducible byte for byte.
 
 To run against a real bus, use `TOPICFORGE_MODE=live` and, for the DDS tools, `TOPICFORGE_DDS_BACKEND=cyclone` (see [`docs/DDS_QUICKSTART.md`](../docs/DDS_QUICKSTART.md)). The mock shows the shape of every response, not the behaviour of the live DDS adapters, which differ in two ways that examples 02 and 04 call out: user-topic payloads are not decoded, and `topic_metrics` only has data for the builtin discovery topics.
