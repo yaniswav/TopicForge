@@ -25,9 +25,7 @@ TopicForge is a small project run by one maintainer, so the contribution loop is
 
 ## What contributions are harder to land
 
-- New MCP tools. The tool surface is kept deliberately small (see
-  `docs/product-plan.md section 11`, "Scope creep within the TopicForge
-  umbrella"). File an issue describing the use case first; the
+- New MCP tools. The tool surface is kept deliberately small. File an issue describing the use case first; the
   maintainer will close, defer, or sponsor the work.
 - New backends. The `RosAdapter` / `MiddlewareAdapter` protocol is
   designed to take new adapters, but each one comes with a long-term
@@ -98,9 +96,9 @@ so a new-distro fix is a 5-line patch instead of an adapter rewrite.
   shape.
 - Body explains the *why*, not the *what* (the diff is the what).
 - One concern per commit: no "fix tests + add feature + docs" bundles.
-- We do not use the `Co-Authored-By: Claude` trailer, even when an AI
-  assistant was used. The contributor's authorship line is the
-  contract.
+- TopicForge is developed with an AI coding assistant (Claude Code).
+  Commits carry no AI attribution trailer: the contributor who commits
+  has read, run and stands behind the change.
 
 ## Releasing
 

@@ -92,13 +92,13 @@ def test_invalid_dds_backend_rejected() -> None:
 
 @pytest.mark.parametrize("vendor", ["rti", "opensplice", "coredx", "intercom", "RTI"])
 def test_removed_pro_vendors_rejected_with_explicit_message(vendor: str) -> None:
-    """Removed vendor names are rejected with a message that points at docs/pro.md."""
+    """Removed vendor names are rejected with a message that points at the cyclone backend."""
     with pytest.raises(ValueError) as excinfo:
         load_settings(env={"TOPICFORGE_DDS_BACKEND": vendor, "TOPICFORGE_MODE": "live"})
     message = str(excinfo.value)
     assert "TOPICFORGE_DDS_BACKEND" in message
     assert "removed in 0.5.3" in message
-    assert "docs/pro.md" in message
+    assert "cyclone" in message
 
 
 def test_explicit_dds_backend_opendds_accepted() -> None:

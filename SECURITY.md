@@ -28,9 +28,7 @@ Consequences:
   off (the default), the code path is a verified no-op (pinned
   by `tests/test_telemetry.py::test_build_app_off_makes_no_transport_calls`).
 
-The roadmap to harden TopicForge for hosted / multi-tenant
-deployments lives in
-[`docs/product-plan.md section 5`](docs/product-plan.md):
+Hardening for hosted / multi-tenant deployments is not done:
 `TOPICFORGE_ROS2_BIN` allowlist, `subprocess.run` env scrub,
 `analyze_bag` workspace-root sandbox, path traversal rejection.
 Those land if a hosted MCP endpoint is ever built.

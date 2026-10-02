@@ -38,7 +38,7 @@ Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes importable bindings in the order `fa
 
 Domain. `TOPICFORGE_DDS_DOMAIN_ID` (`0..232`, default `0`) is joined at startup; the `domain_id` tool parameter exists for protocol uniformity only. Changing domains needs a restart.
 
-Commercial vendors. `rti`, `opensplice`, `coredx` and `intercom` are rejected at startup with a configuration error. You do not need them to observe an RTI bus; for what a native RTI adapter would add (secure domains with vendor credentials, shared-memory-only deployments) see [`pro.md`](pro.md).
+Commercial vendors. `rti`, `opensplice`, `coredx` and `intercom` are rejected at startup with a configuration error. You do not need them to observe an RTI bus: the Cyclone backend sees RTI participants through standard discovery. Secure domains (DDS Security) and shared-memory-only deployments stay invisible to a foreign participant.
 
 ## 3. The QoS mismatch scenario
 
@@ -123,4 +123,4 @@ Lifecycle. On Cyclone a background thread (0.5 s period) reads the three builtin
 
 ## 6. Open work
 
-Wider real-bus validation (Fast DDS, RTI, OpenDDS, CoreDX, OpenSplice; re-enabling user-topic decoding depends on it), an opt-in data probe to catch a hung writer (planned for 0.5.6), and DDS Security, which is not handled at all: a participant without credentials sees an empty secure bus. The roadmap is in [`product-plan.md`](product-plan.md). Errors and fixes: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). Report what you see on a real domain at https://github.com/yaniswav/TopicForge/issues.
+Wider real-bus validation (Fast DDS, RTI, OpenDDS, CoreDX, OpenSplice; re-enabling user-topic decoding depends on it), an opt-in data probe to catch a hung writer (planned for 0.5.6), and DDS Security, which is not handled at all: a participant without credentials sees an empty secure bus. Errors and fixes: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). Report what you see on a real domain at https://github.com/yaniswav/TopicForge/issues.
