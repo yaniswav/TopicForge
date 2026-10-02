@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-02
+
 First run of the DDS code against a live multi-vendor bus (Windows 11, a
 Python / Cyclone DDS participant and a Rust / Dust DDS participant, TopicForge
 driven by a real MCP client). Until now every DDS adapter had only been
@@ -44,6 +46,17 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
   left when its lease expires, and a dead endpoint no longer produces a
   mismatch.
 
+- Cyclone adapter created a new DDS reader on a builtin discovery topic on
+  every tool call and never deleted it. It now keeps one reader per builtin
+  topic and takes a non-blocking snapshot, so calls no longer wait 2 s each
+  (`detect_qos_mismatches` waited 4 s).
+- `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription` reported the
+  endpoints of participants that had left; disposed entries are now dropped.
+  Its payload also carries the endpoint `type_name`.
+- `test_dds_cross_vendor.py` expected an error message from v0.3; it had
+  never run, since CI has no DDS binding. First run against the real Cyclone
+  binding.
+
 ### Added
 
 - `scripts/integration/interop_check.py`: one-command multi-vendor demo
@@ -74,31 +87,15 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
 - `scripts/integration/README.md` rewritten around the demo: it previously
   described the removed docker / scenario rig.
 
+- `examples/dds/`: real use cases 10 to 14 (driver swap, wiring, safety
+  monitor dropout, deadline not offered, restart loop) next to the concept
+  examples 01 to 04. All nine pass on a live bus.
+
 ### Removed
 
 - The docker / scenario integration rig (`scenarios_runner.py`, `run-local.*`,
   `docker-compose.yml`, per-vendor Dockerfiles, scenario JSON files, schema
   test and `integration.yml`) is removed in favour of the demo driver.
-
-
-### Fixed (live-bus runs, 2026-10-02)
-
-- Cyclone adapter created a new DDS reader on a builtin discovery topic on
-  every tool call and never deleted it. It now keeps one reader per builtin
-  topic and takes a non-blocking snapshot, so calls no longer wait 2 s each
-  (`detect_qos_mismatches` waited 4 s).
-- `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription` reported the
-  endpoints of participants that had left; disposed entries are now dropped.
-  Its payload also carries the endpoint `type_name`.
-- `test_dds_cross_vendor.py` expected an error message from v0.3; it had
-  never run, since CI has no DDS binding. First run against the real Cyclone
-  binding.
-
-### Added (examples)
-
-- `examples/dds/`: real use cases 10 to 14 (driver swap, wiring, safety
-  monitor dropout, deadline not offered, restart loop) next to the concept
-  examples 01 to 04. All nine pass on a live bus.
 
 ## [0.5.3] - 2026-10-01
 
@@ -1101,7 +1098,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/yaniswav/TopicForge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/yaniswav/TopicForge/compare/v0.5.0...v0.5.1
