@@ -26,10 +26,10 @@ from harness import (
     Node,
     TopicForge,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     step,
+    who,
 )
 
 PUB = HERE / "publisher.py"
@@ -96,12 +96,11 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(found is not None, "scan_a: Deadline mismatch reported")
     if found:
         checks.expect(
-            owner(found.get("writer_guid"), parts) == "pub_a"
-            and owner(found.get("reader_guid"), parts) == "sub_a",
+            who(found, "writer", parts) == "pub_a" and who(found, "reader", parts) == "sub_a",
             "scan_a: pub_a promises nothing, sub_a requires 200 ms",
         )
     checks.expect(
-        not any(m["topic"] == "scan_b" for m in mismatches),
+        not any(m["topic"] == "scan_b" for m in mismatches["reports"]),
         "scan_b: no mismatch, the declarations are compatible (the promise is broken at runtime)",
     )
 

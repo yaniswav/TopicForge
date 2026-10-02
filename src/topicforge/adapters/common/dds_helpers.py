@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.xtypes import annotate_raw
-from topicforge.models import MessageSample
+from topicforge.models import MessageSample, SampleResult
 
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
@@ -60,6 +60,51 @@ DYNAMIC_DECODE_DISABLED_NOTE = (
 The placeholder says the topic is on the bus. It says nothing about traffic:
 no sample was received, so it must never feed the metrics buffer.
 """
+
+
+BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
+"""The builtin discovery topics: the only DDS topics whose samples are readable."""
+
+USER_TOPIC_NOTE = (
+    "payload decoding is disabled for DDS user topics, so no samples are "
+    "returned; this does not mean the topic is silent. Use list_endpoints for "
+    "the topic's presence, writers, readers and QoS"
+)
+"""`SampleResult.note` of a user-topic peek."""
+
+
+def user_topic_result(topic: str, mode_effective: Literal["mock", "live"]) -> SampleResult:
+    """Honest result of peeking a user topic: no samples, and a note saying why."""
+    return SampleResult(
+        topic=topic, count=0, samples=[], mode_effective=mode_effective, note=USER_TOPIC_NOTE
+    )
+
+
+def metrics_status(
+    topic: str, samples_observed: int
+) -> Literal["ok", "no_samples_yet", "unsupported_user_topic"]:
+    """Status of a `TopicMetrics`: user topics are unsupported, builtin ones are data or not yet."""
+    if topic not in BUILTIN_DCPS_TOPICS:
+        return "unsupported_user_topic"
+    return "ok" if samples_observed > 0 else "no_samples_yet"
+
+
+def declared_hz_from_endpoints(endpoints: Iterable[Any], topic: str) -> float | None:
+    """`1 / deadline` of the shortest finite writer Deadline on `topic`, else `None`.
+
+    Declared by the application in discovery, not measured. Readers are
+    ignored: their Deadline is a requirement, not a promise.
+    """
+    periods = [
+        e.qos.deadline_ns
+        for e in endpoints
+        if e.role == "writer"
+        and e.topic == topic
+        and e.qos is not None
+        and e.qos.deadline_ns
+        and e.qos.deadline_ns > 0
+    ]
+    return 1e9 / min(periods) if periods else None
 
 
 def user_topic_placeholder(topic: str, count: int, *, note: str) -> list[MessageSample]:
@@ -183,9 +228,11 @@ DDS_ONLY_ERROR_MSG = (
     "graph tools (list_topics, get_topic_info, sample_messages, analyze_bag, "
     "peek_bag_samples). To get both surfaces in one process: install ROS2 "
     "and source the workspace so `ros2` is on PATH, then re-run with "
-    "TOPICFORGE_MODE=live: the v0.4.0 CompositeAdapter routes ROS2 tools to "
+    "TOPICFORGE_MODE=live: the composite adapter routes ROS2 tools to "
     "the CLI and DDS tools to your TOPICFORGE_DDS_BACKEND automatically. "
-    "For offline development use TOPICFORGE_MODE=mock."
+    "For offline development use TOPICFORGE_MODE=mock. On a DDS-only setup "
+    "use list_endpoints for topics and wiring, and peek_dds_samples on "
+    "DCPSPublication / DCPSSubscription for the raw discovery records."
 )
 """Standard message raised by DDS adapters when asked for ROS2 introspection.
 

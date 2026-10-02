@@ -22,10 +22,10 @@ from harness import (
     Node,
     TopicForge,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     step,
+    who,
 )
 from received import show_received
 
@@ -47,8 +47,8 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(found is not None, "mission: Durability mismatch reported")
     if found:
         checks.expect(
-            owner(found.get("writer_guid"), parts) == "mission_control"
-            and owner(found.get("reader_guid"), parts) == "nav_planner",
+            who(found, "writer", parts) == "mission_control"
+            and who(found, "reader", parts) == "nav_planner",
             "mission: VOLATILE writer mission_control, TRANSIENT_LOCAL reader nav_planner",
         )
         checks.expect(

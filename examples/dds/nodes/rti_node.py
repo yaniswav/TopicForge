@@ -23,6 +23,14 @@ RTI API calls, checked against rticommunity sources (gh api):
   - rti-genesis, genesis_lib/graph_monitoring.py:
     `durability.kind = dds.DurabilityKind.TRANSIENT_LOCAL`,
     `reliability.kind = dds.ReliabilityKind.RELIABLE`.
+Partition, liveliness and ownership (NOT verified against a source, mapped
+from the RTI Python API naming): `publisher_qos.partition.name = [...]` on the
+implicit publisher / subscriber (applied through a new Publisher / Subscriber
+per partition set), `qos.liveliness.kind = dds.LivelinessKind.AUTOMATIC |
+MANUAL_BY_PARTICIPANT | MANUAL_BY_TOPIC`, `qos.liveliness.lease_duration`,
+`qos.ownership.kind = dds.OwnershipKind.EXCLUSIVE`,
+`qos.ownership_strength.value = N`, `participant.assert_liveliness()`.
+`--stop-asserting-after S` stops writing and asserting after S seconds.
 Not verified against a source: `dds.Duration.from_milliseconds`,
 `dds.DurabilityKind.VOLATILE`, `dds.ReliabilityKind.BEST_EFFORT` (symmetric
 with verified names), `reader.take_data()`, `str` as an unbounded string
@@ -81,7 +89,29 @@ def _apply_qos(dds: Any, base: Any, qos: spec.QosSpec) -> Any:
         base.history.depth = qos.history_depth
     if qos.deadline_ms is not None:
         base.deadline.period = dds.Duration.from_milliseconds(qos.deadline_ms)
+    base.liveliness.kind = {
+        "automatic": dds.LivelinessKind.AUTOMATIC,
+        "manual_participant": dds.LivelinessKind.MANUAL_BY_PARTICIPANT,
+        "manual_topic": dds.LivelinessKind.MANUAL_BY_TOPIC,
+    }[qos.liveliness]
+    if qos.lease_ms is not None:
+        base.liveliness.lease_duration = dds.Duration.from_milliseconds(qos.lease_ms)
+    if qos.ownership == "exclusive":
+        base.ownership.kind = dds.OwnershipKind.EXCLUSIVE
+        if hasattr(base, "ownership_strength"):  # DataWriterQos only
+            base.ownership_strength.value = qos.strength
     return base
+
+
+def _group(dds: Any, dp: Any, cache: dict[tuple[str, ...], Any], e: spec.Endpoint, writer: bool):
+    """The Publisher / Subscriber for the endpoint's partition set (implicit one if none)."""
+    if not e.qos.partition:
+        return dp.implicit_publisher if writer else dp.implicit_subscriber
+    if e.qos.partition not in cache:
+        qos = dp.default_publisher_qos if writer else dp.default_subscriber_qos
+        qos.partition.name = list(e.qos.partition)
+        cache[e.qos.partition] = (dds.Publisher if writer else dds.Subscriber)(dp, qos)
+    return cache[e.qos.partition]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,11 +133,12 @@ def main(argv: list[str] | None = None) -> int:
         participant_qos = dds.DomainParticipantQos()
         participant_qos.participant_name.name = args.name
         dp = dds.DomainParticipant(args.domain, participant_qos)
+        groups: dict[tuple[str, ...], Any] = {}
         writers = [
             (
                 e,
                 dds.DataWriter(
-                    dp.implicit_publisher,
+                    _group(dds, dp, groups, e, True),
                     dds.Topic(dp, e.topic, dds_types[e.type_name]),
                     _apply_qos(dds, dp.default_datawriter_qos, e.qos),
                 ),
@@ -118,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
             (
                 e,
                 dds.DataReader(
-                    dp.implicit_subscriber,
+                    _group(dds, dp, groups, e, False),
                     dds.Topic(dp, e.topic, dds_types[e.type_name]),
                     _apply_qos(dds, dp.default_datareader_qos, e.qos),
                 ),
@@ -150,10 +181,19 @@ def main(argv: list[str] | None = None) -> int:
     # below the requested rate (about 7 Hz for 10 Hz on Windows).
     next_tick = time.monotonic()
     seq = 0
-    rx = spec.RxReport(args.name, [e.topic for e, _ in readers], time.monotonic())
+    started = time.monotonic()
+    silent_at = None if args.stop_asserting_after is None else started + args.stop_asserting_after
+    hung = False
+    manual_participant = any(e.qos.liveliness == "manual_participant" for e, _ in writers)
+    rx = spec.RxReport(args.name, [e.topic for e, _ in readers], started)
     try:
         while not stop:
-            for endpoint, writer in writers:
+            if not hung and silent_at is not None and time.monotonic() >= silent_at:
+                hung = True
+                print(f"[{args.name}] stopped writing and asserting liveliness", flush=True)
+            if manual_participant and not hung:
+                dp.assert_liveliness()
+            for endpoint, writer in [] if hung else writers:
                 cls = dds_types[endpoint.type_name]
                 writer.write(cls(**spec.sample_values(endpoint.type_name, seq)))
             # take, so that a KEEP_ALL reader does not grow without bound

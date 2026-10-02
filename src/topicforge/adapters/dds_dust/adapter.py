@@ -21,8 +21,9 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import validate_domain_id
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -77,7 +78,7 @@ class DustDdsAdapter:
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
@@ -91,6 +92,15 @@ class DustDdsAdapter:
     def topic_metrics(
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
+        raise AdapterError(_DUST_ROADMAP_MSG)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+        include_departed: bool = False,
+    ) -> EndpointListing:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:

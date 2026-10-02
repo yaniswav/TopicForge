@@ -28,10 +28,12 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 [1] Is a QoS mismatch blocking the scan?
     -> detect_qos_mismatches
     scan: Reliability (incompatible): writer lidar_old -> reader nav_planner
+        Reliability: reader asks RELIABLE, writer offers BEST_EFFORT
+    hint: Topic 'lidar/scan' has a writer but no reader, and 'scan' is the same name with or without a namespace: may be the same data under a namespaced/remapped name.
 
 [2] Who writes and who reads each topic?
     -> peek_dds_samples (discovery)
-    lidar/scan   writers: a9febda2.1ca20000.00000000.000001c1 (LidarScan)
+    lidar/scan   writers: a9febda2.64c50000.00000000.000001c1 (LidarScan)
                  readers: NOBODY
     scan         writers: lidar_old (LidarScan)
                  readers: nav_planner (LidarScan)
@@ -42,9 +44,11 @@ python run.py --hold     # keep the programs running, ask your own MCP client
     [nav_planner] rx scan: 0 in 1.0 s
 ```
 
-- The mismatch report only finds the forgotten old driver. Stop there and
-  you "fix" it by making the old driver RELIABLE, and the planner then
-  receives scans from a driver that should not be running.
+- The mismatch report finds the forgotten old driver. Stop there and you
+  "fix" it by making the old driver RELIABLE, and the planner then receives
+  scans from a driver that should not be running.
+- The scan's `hints` already point at the orphan: `lidar/scan` has a writer
+  and no reader, and `scan` is the same name without the namespace.
 - The wiring shows the real cause: the new driver publishes on `lidar/scan`,
   a topic nobody reads. It appears by GUID: Dust DDS announces no name.
 

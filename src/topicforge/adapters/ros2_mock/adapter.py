@@ -13,8 +13,9 @@ from topicforge.adapters.ros2_mock import fixtures
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -81,13 +82,13 @@ class MockAdapter:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         return [p for p in fixtures.MOCK_PARTICIPANTS if p.domain_id == domain_id]
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None and topic not in fixtures.MOCK_DDS_TOPICS:
             raise AdapterError(
                 f"Unknown DDS topic: {topic!r}. Known mock DDS topics: "
                 f"{list(fixtures.MOCK_DDS_TOPICS)}"
             )
-        return fixtures.mock_mismatches_for(topic)
+        return fixtures.mock_mismatch_scan(topic)
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         if count < 0:
@@ -99,6 +100,15 @@ class MockAdapter:
             )
         clamped = min(count, MAX_SAMPLE_COUNT)
         return fixtures.mock_dds_samples_for(topic, clamped)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+        include_departed: bool = False,
+    ) -> EndpointListing:
+        return fixtures.mock_endpoint_listing(topic, participant_guid, include_observer)
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300

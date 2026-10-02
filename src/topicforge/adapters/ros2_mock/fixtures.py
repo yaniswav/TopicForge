@@ -10,12 +10,16 @@ If you change a value here, expect to update tests under `tests/`.
 
 from __future__ import annotations
 
+from topicforge.adapters.common.endpoints import build_endpoint_listing
 from topicforge.adapters.common.metrics_buffer import MetricsBuffer
+from topicforge.adapters.common.qos_scan import scan_endpoints
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
+    EndpointInfo,
+    EndpointListing,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     QosProfile,
@@ -176,6 +180,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 60_000_000_000,
         status="active",
         seen_count=3,
+        vendor_source="guid_prefix",
     ),
     ParticipantInfo(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
@@ -188,6 +193,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 55_000_000_000,
         status="active",
         seen_count=2,
+        vendor_source="guid_prefix",
     ),
     # v0.3.0: third participant exercises the multi-vendor positioning:
     # an eProsima Fast DDS participant alongside Cyclone, as the OMG-DDS
@@ -203,6 +209,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 50_000_000_000,
         status="active",
         seen_count=2,
+        vendor_source="guid_prefix",
     ),
     # A Rust Dust DDS participant (S2E, vendor_id 01.14) rounds out the
     # multi-vendor demo: three distinct stacks on one bus.
@@ -216,6 +223,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 45_000_000_000,
         status="active",
         seen_count=2,
+        vendor_source="guid_prefix",
     ),
 )
 
@@ -295,17 +303,6 @@ MOCK_DDS_TOPICS: tuple[str, ...] = (
     "/dds/qos_mismatch",
     "/dds/ddsforge/example",
     "/dds/ddsforge/opaque",
-)
-
-_MOCK_MISMATCHES: tuple[MismatchReport, ...] = (
-    MismatchReport(
-        topic="/dds/qos_mismatch",
-        reader_guid="010f1c2a-3b4c-5d6e-7f80-000000000001",
-        writer_guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
-        incompatible_policies=["Reliability"],
-        severity="incompatible",
-        mode_effective="mock",
-    ),
 )
 
 
@@ -404,11 +401,114 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
     )
 
 
-def mock_mismatches_for(topic: str | None) -> list[MismatchReport]:
-    """Return the mock mismatches filtered by topic. None returns all."""
-    if topic is None:
-        return list(_MOCK_MISMATCHES)
-    return [m for m in _MOCK_MISMATCHES if m.topic == topic]
+# ---------------------------------------------------------------------------
+# Endpoint fixtures (`list_endpoints`)
+# ---------------------------------------------------------------------------
+# Same scenario as the participants and the mismatch above: nav_planner writes
+# `/dds/qos_mismatch` BEST_EFFORT while lidar_driver reads it RELIABLE (the
+# `Reliability` mismatch), `/dds/ddsforge/opaque` has a writer and no reader (an
+# orphan), and the dust writer carries partition, manual liveliness and
+# exclusive ownership so those fields are exercised.
+MOCK_OBSERVER_GUID = "010f1c2a-3b4c-5d6e-7f80-000000000099"
+
+_PARTICIPANT_NAMES: dict[str, str | None] = {p.guid: p.name for p in MOCK_PARTICIPANTS}
+_PARTICIPANT_VENDORS: dict[str, str] = {p.guid: p.vendor for p in MOCK_PARTICIPANTS}
+
+
+def _mock_endpoint(
+    index: int,
+    participant: int,
+    role: str,
+    topic: str,
+    type_name: str,
+    qos: QosProfile,
+    announced_offset_s: int,
+) -> dict[str, object]:
+    participant_guid = f"010f1c2a-3b4c-5d6e-7f80-{participant:012d}"
+    return {
+        "guid": f"010f1c2a-3b4c-5d6e-7f80-{participant:04d}{index:08d}",
+        "role": role,
+        "participant_guid": participant_guid,
+        "participant_name": _PARTICIPANT_NAMES.get(participant_guid),
+        "participant_vendor": _PARTICIPANT_VENDORS.get(participant_guid, "unknown"),
+        "topic": topic,
+        "type_name": type_name,
+        "type_id": None,
+        "qos": qos,
+        "announced_ns": _LIFECYCLE_BASE_TS_NS + announced_offset_s * 1_000_000_000,
+        "is_observer": False,
+    }
+
+
+def _qos(reliability: str, **extra: object) -> QosProfile:
+    extra.setdefault("partitions", [""])
+    return QosProfile(
+        reliability=reliability,  # type: ignore[arg-type]
+        durability="VOLATILE",
+        history="KEEP_LAST",
+        history_depth=10,
+        **extra,  # type: ignore[arg-type]
+    )
+
+
+_MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
+    _mock_endpoint(1, 2, "writer", "/dds/well_matched", "dds/Heartbeat", _qos("RELIABLE"), 6),
+    _mock_endpoint(2, 1, "reader", "/dds/well_matched", "dds/Heartbeat", _qos("RELIABLE"), 2),
+    _mock_endpoint(3, 2, "writer", "/dds/qos_mismatch", "dds/Heartbeat", _qos("BEST_EFFORT"), 7),
+    _mock_endpoint(4, 1, "reader", "/dds/qos_mismatch", "dds/Heartbeat", _qos("RELIABLE"), 3),
+    _mock_endpoint(
+        5, 3, "writer", "/dds/ddsforge/example", "ddsforge/Example", _qos("RELIABLE"), 11
+    ),
+    _mock_endpoint(
+        6, 2, "reader", "/dds/ddsforge/example", "ddsforge/Example", _qos("RELIABLE"), 8
+    ),
+    _mock_endpoint(
+        7,
+        4,
+        "writer",
+        "/dds/ddsforge/opaque",
+        "ddsforge/Opaque",
+        _qos(
+            "RELIABLE",
+            partitions=["left"],
+            liveliness_kind="MANUAL_BY_TOPIC",
+            liveliness_lease_ns=500_000_000,
+            ownership_kind="EXCLUSIVE",
+            ownership_strength=10,
+        ),
+        16,
+    ),
+)
+
+
+def mock_mismatch_scan(topic: str | None) -> MismatchScan:
+    """Deterministic `MismatchScan` for the mock scenario.
+
+    Runs the real pure scan over the endpoint fixtures above, so the mock and
+    the live path cannot disagree on the rules: `/dds/qos_mismatch` yields one
+    `Reliability` report, the opaque topic an orphan hint.
+    """
+    endpoints = [
+        EndpointInfo(**rec, domain_id=0, mode_effective="mock")  # type: ignore[arg-type]
+        for rec in _MOCK_ENDPOINT_RECORDS
+    ]
+    return scan_endpoints(endpoints, topic=topic, mode_effective="mock")
+
+
+def mock_endpoint_listing(
+    topic: str | None, participant_guid: str | None, include_observer: bool
+) -> EndpointListing:
+    """Deterministic `EndpointListing` for the mock scenario, filtered like the live one."""
+    return build_endpoint_listing(
+        _MOCK_ENDPOINT_RECORDS,
+        domain_id=0,
+        mode_effective="mock",
+        observer_guid=MOCK_OBSERVER_GUID,
+        topic=topic,
+        participant_guid=participant_guid,
+        include_observer=include_observer,
+        snapshot_ns=_LIFECYCLE_BASE_TS_NS + 60_000_000_000,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +561,9 @@ def _build_mock_metrics_buffer() -> MetricsBuffer:
 
 _MOCK_METRICS_BUFFER: MetricsBuffer = _build_mock_metrics_buffer()
 
+# Declared (Deadline-derived) rate of the one mock writer that announces one.
+_MOCK_DECLARED_HZ: dict[str, float] = {"/dds/heartbeat_10hz": 10.0}
+
 
 def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> TopicMetrics:
     """Deterministic TopicMetrics computed against `_MOCK_METRICS_BUFFER`.
@@ -469,14 +572,16 @@ def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> T
     returns the same numbers regardless of wall clock: required for
     test assertions.
     """
-    return _MOCK_METRICS_BUFFER.compute_metrics(
+    metrics = _MOCK_METRICS_BUFFER.compute_metrics(
         topic=topic,
         window_seconds=window_seconds,
         now_ns=_METRICS_NOW_NS,
-        declared_hz=None,
+        declared_hz=_MOCK_DECLARED_HZ.get(topic),
         mode_effective="mock",
         domain_id=domain_id,
     )
+    status = "ok" if metrics.samples_observed > 0 else "no_samples_yet"
+    return metrics.model_copy(update={"status": status})
 
 
 MOCK_BAG_ANALYSIS = BagAnalysis(

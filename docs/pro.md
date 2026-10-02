@@ -22,7 +22,7 @@ Integration and adaptation to a specific ROS2 / DDS environment, native RTI Conn
 
 ## Known limitations
 
-DDS Security is not implemented on any adapter: if your domain requires authenticated or encrypted RTPS, TopicForge cannot join it today. `detect_qos_mismatches` covers Reliability, Durability, History and Deadline; Liveliness, Ownership and Partition are not checked.
+DDS Security is not implemented on any adapter: if your domain requires authenticated or encrypted RTPS, TopicForge cannot join it today. `detect_qos_mismatches` covers Partition, type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership (kind), DestinationOrder and DataRepresentation, with History as a risk; Presentation, XTypes assignability and runtime behavior are not checked.
 
 ## Contact
 

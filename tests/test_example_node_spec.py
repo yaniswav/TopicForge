@@ -116,3 +116,75 @@ def test_start_line() -> None:
 def test_start_line_nothing() -> None:
     args = spec.parse_args("X", ["--name", "n", "--read", "t:Imu"])
     assert "writes nothing; reads t (Imu" in spec.start_line("dust", args)
+
+
+def test_parse_safety_options() -> None:
+    ep = spec.parse_endpoint(
+        "scan:LidarScan:reliable,partition=left|right,liveliness=manual_topic,lease=500,"
+        "ownership=exclusive,strength=10",
+        "write",
+    )
+    assert ep.qos.partition == ("left", "right")
+    assert ep.qos.liveliness == "manual_topic"
+    assert ep.qos.lease_ms == 500
+    assert ep.qos.ownership == "exclusive"
+    assert ep.qos.strength == 10
+
+
+def test_safety_defaults() -> None:
+    qos = spec.parse_endpoint("t:Imu").qos
+    assert (qos.partition, qos.liveliness, qos.lease_ms) == ((), "automatic", None)
+    assert (qos.ownership, qos.strength) == ("shared", 0)
+
+
+def test_lease_without_liveliness_is_automatic() -> None:
+    qos = spec.parse_endpoint("t:Imu:lease=300").qos
+    assert (qos.liveliness, qos.lease_ms) == ("automatic", 300)
+
+
+def test_strength_zero_allowed_on_writer() -> None:
+    assert spec.parse_endpoint("t:Imu:strength=0", "write").qos.strength == 0
+
+
+def test_strength_on_reader_rejected() -> None:
+    with pytest.raises(ValueError, match="writers"):
+        spec.parse_endpoint("t:Imu:ownership=exclusive,strength=3", "read")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "t:Imu:partition=",
+        "t:Imu:partition=a||b",
+        "t:Imu:liveliness=sometimes",
+        "t:Imu:liveliness",
+        "t:Imu:lease=0",
+        "t:Imu:lease=x",
+        "t:Imu:ownership=both",
+        "t:Imu:strength=-1",
+        "t:Imu:strength=x",
+    ],
+)
+def test_safety_option_errors(text: str) -> None:
+    with pytest.raises(ValueError):
+        spec.parse_endpoint(text)
+
+
+def test_describe_safety_options() -> None:
+    ep = spec.parse_endpoint(
+        "scan:LidarScan:partition=a|b,liveliness=manual_topic,lease=500,ownership=exclusive,"
+        "strength=10",
+        "write",
+    )
+    assert spec.describe(ep) == (
+        "scan (LidarScan, RELIABLE, VOLATILE, KEEP_LAST 1), partition a|b, "
+        "liveliness MANUAL_TOPIC lease 500 ms, ownership EXCLUSIVE strength 10"
+    )
+
+
+def test_stop_asserting_after_option() -> None:
+    args = spec.parse_args("X", ["--name", "n", "--write", "t:Imu", "--stop-asserting-after", "3"])
+    assert args.stop_asserting_after == 3.0
+    assert spec.parse_args("X", ["--name", "n", "--write", "t:Imu"]).stop_asserting_after is None
+    with pytest.raises(SystemExit):
+        spec.parse_args("X", ["--name", "n", "--read", "t:Imu:strength=1"])

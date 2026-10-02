@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-02
+
+Driven by a blind evaluation: agents given only TopicForge's tools had to
+diagnose live DDS buses with planted faults. The first rounds (on 0.5.4) found
+wrong blame on QoS, missed Liveliness and Ownership faults, hand-joined GUIDs
+and empty results read as "healthy". After the changes below, 16 of 16
+scenarios were diagnosed correctly, with no false alarm on a healthy bus.
+
+### Added
+
+- **`list_endpoints`, the 12th MCP tool.** Returns every announced DDS writer
+  and reader as a typed `EndpointInfo` (role, topic, type, owning participant
+  guid, name and vendor, structured QoS, announcement timestamp) plus a
+  `by_topic` roll-up that flags orphans (`no_reader`, `no_writer`). TopicForge's
+  own endpoints are excluded unless `include_observer`, and counted in
+  `excluded_observer_endpoints`. Endpoints of a participant that left are kept
+  (200 entries, 1 hour) and shown as `departed_writers` / `departed_readers`;
+  `include_departed` lists them. Served by Cyclone and the mock. Fast raises a
+  clear "not supported yet" error.
+- **Continuous discovery tracking on Cyclone.** A daemon thread (0.5 s period)
+  is the only code that reads the builtin discovery topics and feeds in-memory
+  caches that every discovery tool reads. Lifecycle no longer moves only when a
+  tool is called: a node restarted three times shows as 3 `lost` and 4
+  `discovered`, dated by DDS. The 2 s warm-up sleep is gone.
+- Timestamps on `participant_events` and `list_participants`: `announced_ns`,
+  `lost_ns`, `lost_time_source`, and on events `time_source` and `observed_ns`.
+  A DDS source timestamp and a local observation are never mixed.
+- `health_check` gains `now_ns`, `observer_started_ns`, `observed_domain_note`
+  and the tracker status (`tracker_running`, `tracker_passes`, `tracker_errors`,
+  `tracker_last_pass_ns`).
+- `QosProfile` gains optional `liveliness_kind`, `liveliness_lease_ns`,
+  `ownership_kind`, `ownership_strength`, `partitions`, `latency_budget_ns`,
+  `destination_order` and `data_representation`, read from Cyclone discovery.
+  A missing Partition policy is reported as `[""]` everywhere.
+- `peek_dds_samples` on `DCPSPublication`, `DCPSSubscription` and
+  `DCPSParticipant` carries structured `role`, `participant_guid`,
+  `participant_name`, `type_id`, `qos`, `announced_ns` and `is_observer`, and
+  sets `timestamp_ns` from the announcement. `_raw_text` is kept only for a
+  sample with nothing structured to read, truncated to 300 characters.
+- `peek_dds_samples` on a builtin topic returns the cached discovery state, not
+  a stream.
+- Topic filters accept `rt/x` and `x` interchangeably and report which form
+  matched. A filter that matches nothing returns the list of known topics.
+- Examples: the generic role nodes take partition, liveliness and ownership
+  options.
+
+### Changed
+
+- **Breaking: `detect_qos_mismatches` returns a `MismatchScan` envelope instead
+  of a bare list.** To migrate, read `["reports"]` where you used the list. The
+  envelope also carries `matched`, `not_matched`, `hints`, `pairs_checked`,
+  `topics_scanned`, `policies_checked`, `policies_unchecked` and
+  `mode_effective`. Why: an empty list was read as a healthy bus although only
+  four policies were checked, and readers and writers in different partitions
+  were blamed on Reliability.
+- Partition is checked first (`*` and `?` wildcards; a wildcard against a
+  wildcard never matches). A pair it separates is a `not_matched` entry with
+  reason `partition`; differing type names give reason `type_name`. The RxO
+  rules are not run on either. A `not_matched` pair lists the policies that
+  would be incompatible if it matched (`latent_incompatible_policies`).
+- Liveliness (kind and lease), LatencyBudget, Ownership (kind equality),
+  DestinationOrder and DataRepresentation join Reliability, Durability and
+  Deadline. History stays a labelled `risky` finding. A policy a side did not
+  announce is skipped, never guessed.
+- `MismatchReport` gains, additively, the reader and writer participant guid and
+  name, type names, `details` (requested and offered value, failed rule) and
+  `unchecked`.
+- Hints cover orphan topics whose names differ by at most 2 edits (compared
+  against all topics), path-suffix matches and XTypes type id differences (a
+  note, never a mismatch). Hints are prioritized and say how many were omitted.
+- A late joiner is not a hint (it is normal on most buses): a `MatchedPair` is
+  flagged `late_joiner` when its writer is VOLATILE and the reader, on the same
+  host, appeared more than 1 s later.
+- `reports`, `matched` and `not_matched` are capped at 200 entries each, with
+  `reports_total`, `matched_total`, `not_matched_total` and `truncated`.
+- `topic_metrics` reports a `status`, and on a user topic says it has no data
+  instead of returning zeros. `peek_dds_samples` on a user topic returns count
+  0 and a note. `ParticipantInfo` and endpoints gain `is_observer`, and
+  `vendor_source` says where a vendor came from.
+- Tool descriptions no longer carry internal history, and state the
+  single-domain and EXCLUSIVE-ownership facts.
+- `EndpointInfo.activity` is reserved (always `None`) with an `activity_note`
+  saying liveness is not observed.
+
+### Fixed
+
+- Infinite durations (cyclonedds reports 9223372036854775807) are normalized
+  to `None`; an infinite Deadline used to surface as a 9.2e18 ns deadline.
+- The Cyclone discovery tracker is stopped at interpreter exit.
+- A race between the tracker and a tool call could mark a live participant as
+  lost for good; a failed read could drop a participant's departure; endpoints
+  of a participant that had just left could stay listed as live. The tracker
+  and every tool now share one lock, and taken samples are never discarded.
+- The cyclonedds Python binding is not thread-safe when it converts QoS: two
+  threads in `take()` at once corrupted the heap on Windows. Every binding call
+  now goes through one process-wide lock, and tool handlers no longer call the
+  binding at all.
+- If every tracker pass fails, tools no longer wait 3 s each: warm-up is bounded
+  once. `health_check` reports failed passes and cache evictions.
+- An unreadable QoS duration is treated as unknown (`QosProfile.unknown_policies`),
+  not as infinite, so it cannot produce a false Deadline incompatibility.
+- Topic-name typo hints are bounded (banded edit distance, orphan cap, call
+  budget), so a bus with a thousand topics does not stall the call.
+- Partition matching was checked against a live Cyclone bus: `*` and `?` are
+  wildcards, `[...]` is literal, and two wildcard expressions never match each
+  other. Pinned by tests.
+
+### Known limits
+
+- A hung writer (alive, lease renewed, no data) is not observable without a
+  data probe. An opt-in probe is planned for 0.5.6.
+- A crash and a clean leave cannot be told apart, and `lost_ns` is an upper
+  bound of the death (the lease expiry after a crash).
+- A participant that cycles faster than the discovery history depth between two
+  tracker passes can be missed.
+- The Fast DDS backend has never run on a bus, and `list_endpoints` is not
+  supported there.
+- DDS Security is not supported.
+- User-topic payload decoding is disabled, so `topic_metrics` has no data on
+  user topics.
+
 ## [0.5.4] - 2026-10-02
 
 First run of the DDS code against a live multi-vendor bus (Windows 11, a
@@ -1114,7 +1235,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/yaniswav/TopicForge/compare/v0.5.1...v0.5.2
