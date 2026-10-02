@@ -107,7 +107,7 @@ def test_participant_info_rejects_unknown_vendor():
     with pytest.raises(ValidationError):
         ParticipantInfo(
             guid="abc",
-            vendor="opensplice",  # type: ignore[arg-type]
+            vendor="vortex",  # type: ignore[arg-type]
             domain_id=0,
             mode_effective="live",
         )

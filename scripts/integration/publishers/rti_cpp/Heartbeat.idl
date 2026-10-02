@@ -1,0 +1,5 @@
+// Heartbeat type of the TopicForge multi-vendor demo (see ../../DEMO_CONTRACT.md).
+// The type name must stay exactly "Heartbeat": every vendor registers the same name.
+struct Heartbeat {
+    unsigned long seq;
+};

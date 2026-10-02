@@ -21,13 +21,17 @@ from topicforge.adapters.common.dds_helpers import (
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
     cyclone_extract_hostname,
+    cyclone_extract_participant_name,
     cyclone_extract_topic_name,
+    cyclone_extract_type_name,
     cyclone_extract_vendor_id,
     fast_extract_guid,
     fast_extract_hostname,
     fast_extract_topic_name,
     fast_extract_vendor_id,
+    is_alive_sample,
     is_removal,
+    vendor_id_from_guid,
 )
 from topicforge.adapters.common.lifecycle import MAX_EVENTS, LifecycleBuffer
 from topicforge.adapters.common.metrics_buffer import (
@@ -64,7 +68,9 @@ __all__ = [
     "canonicalize_vendor_id",
     "cyclone_extract_guid",
     "cyclone_extract_hostname",
+    "cyclone_extract_participant_name",
     "cyclone_extract_topic_name",
+    "cyclone_extract_type_name",
     "cyclone_extract_vendor_id",
     "cyclone_qos_to_profile",
     "decode_dynamic_sample",
@@ -80,9 +86,11 @@ __all__ = [
     "fast_extract_vendor_id",
     "fast_qos_to_profile",
     "format_guid",
+    "is_alive_sample",
     "is_removal",
     "iter_field_names",
     "take_bounded",
     "user_topic_placeholder",
     "validate_domain_id",
+    "vendor_id_from_guid",
 ]

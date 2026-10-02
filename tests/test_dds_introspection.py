@@ -17,6 +17,7 @@ import pytest
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
     cyclone_extract_hostname,
+    cyclone_extract_participant_name,
     cyclone_extract_topic_name,
     cyclone_extract_vendor_id,
     fast_extract_guid,
@@ -213,3 +214,122 @@ def test_fast_extract_hostname_missing_returns_none():
 
 def test_fast_extract_topic_name_missing_returns_none():
     assert fast_extract_topic_name(_Obj()) is None
+
+
+# --- Regressions found by the first real-bus run (2026-10-01) ----------------
+
+import uuid  # noqa: E402
+
+from topicforge.adapters.common.dds_introspection import (  # noqa: E402
+    is_alive_sample,
+    vendor_id_from_guid,
+)
+
+_ECLIPSE_GUID = uuid.UUID("01107b9a-c109-4b9c-7bcc-95ae000001c1")
+
+
+def test_cyclone_guid_accepts_uuid_key():
+    """cyclonedds 11.0.1 exposes the builtin key as uuid.UUID."""
+    sample = _Obj(key=_ECLIPSE_GUID)
+    assert cyclone_extract_guid(sample) == _ECLIPSE_GUID.bytes
+
+
+def test_cyclone_vendor_falls_back_to_guid_prefix():
+    """No vendor field on the builtin sample: read it from the GUID prefix."""
+    sample = _Obj(key=_ECLIPSE_GUID)
+    assert cyclone_extract_vendor_id(sample) == (0x01, 0x10)
+
+
+def test_vendor_id_from_guid_edge_cases():
+    assert vendor_id_from_guid(None) is None
+    assert vendor_id_from_guid(b"\x01") is None
+    assert vendor_id_from_guid(bytes([0x01, 0x0F]) + bytes(14)) == (0x01, 0x0F)
+
+
+@pytest.mark.parametrize(
+    ("instance_state", "valid_data", "expected"),
+    [
+        (16, True, True),  # ALIVE
+        (32, True, False),  # NOT_ALIVE_DISPOSED
+        (64, True, False),  # NOT_ALIVE_NO_WRITERS: lease expired
+        (16, False, False),  # invalid sample
+    ],
+)
+def test_is_alive_sample(instance_state: int, valid_data: bool, expected: bool):
+    sample = _Obj(sample_info=_Obj(instance_state=instance_state, valid_data=valid_data))
+    assert is_alive_sample(sample) is expected
+
+
+def test_is_alive_sample_without_sample_info_is_kept():
+    assert is_alive_sample(_Obj(key=b"x")) is True
+
+
+# ---------------------------------------------------------------------------
+# Participant name and hostname from the builtin sample's `qos` (cyclonedds 11)
+# ---------------------------------------------------------------------------
+
+
+def _policy(type_name: str, **attrs):
+    return type(type_name, (), attrs)()
+
+
+def _live_qos_sample(*, with_name: bool = True):
+    policies = [_policy("Policy.Liveliness.Automatic", lease_duration=10_000_000_000)]
+    if with_name:
+        policies.insert(0, _policy("Policy.EntityName", name="lidar_driver"))
+    policies.append(_policy("Property", key="__Pid", value="18132"))
+    policies.append(_policy("Property", key="__Hostname", value="DESKTOP-H0N0S7G"))
+    return _Obj(qos=policies)
+
+
+def test_cyclone_extract_participant_name_from_entity_name_policy():
+    assert cyclone_extract_participant_name(_live_qos_sample()) == "lidar_driver"
+
+
+def test_cyclone_extract_participant_name_absent_returns_none():
+    assert cyclone_extract_participant_name(_live_qos_sample(with_name=False)) is None
+
+
+def test_cyclone_extract_participant_name_attribute_fallback():
+    assert cyclone_extract_participant_name(_Obj(participant_name="p1")) == "p1"
+
+
+def test_cyclone_extract_participant_name_unscoped_class_name():
+    sample = _Obj(qos=[_policy("EntityName", name="n1")])
+    assert cyclone_extract_participant_name(sample) == "n1"
+
+
+def test_cyclone_extract_hostname_from_property():
+    assert cyclone_extract_hostname(_live_qos_sample()) == "DESKTOP-H0N0S7G"
+
+
+def test_cyclone_extract_hostname_ignores_other_properties():
+    sample = _Obj(qos=[_policy("Property", key="__Pid", value="1")])
+    assert cyclone_extract_hostname(sample) is None
+
+
+def test_cyclone_extractors_tolerate_odd_qos():
+    for qos in (None, 42, object(), [object(), None]):
+        sample = _Obj(qos=qos)
+        assert cyclone_extract_participant_name(sample) is None
+        assert cyclone_extract_hostname(sample) is None
+
+
+def test_cyclone_extractors_never_raise_on_hostile_qos():
+    class _Boom:
+        def __iter__(self):
+            raise RuntimeError("boom")
+
+    sample = _Obj(qos=_Boom())
+    assert cyclone_extract_participant_name(sample) is None
+    assert cyclone_extract_hostname(sample) is None
+
+
+def test_cyclone_extract_type_name_reads_the_endpoint_type() -> None:
+    from types import SimpleNamespace
+
+    from topicforge.adapters.common import cyclone_extract_type_name
+
+    assert cyclone_extract_type_name(SimpleNamespace(type_name="LidarScan")) == "LidarScan"
+    assert cyclone_extract_type_name(SimpleNamespace(type_name="")) is None
+    assert cyclone_extract_type_name(SimpleNamespace()) is None

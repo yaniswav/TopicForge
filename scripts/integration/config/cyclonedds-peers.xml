@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cyclone DDS (Python node and TopicForge itself) for a bus that spans two
+  machines. Replace the two addresses, then:
+    Linux:   export CYCLONEDDS_URI=file://$PWD/cyclonedds-peers.xml
+    Windows: $env:CYCLONEDDS_URI = "file://$PWD\cyclonedds-peers.xml"
+  NetworkInterface pins the card to use: with WSL, Hyper-V or Docker virtual
+  adapters present, Cyclone can otherwise pick the wrong one.
+-->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="THIS_MACHINE_IP" />
+      </Interfaces>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers>
+        <Peer address="OTHER_MACHINE_IP" />
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

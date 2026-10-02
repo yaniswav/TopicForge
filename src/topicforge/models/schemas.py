@@ -79,6 +79,26 @@ class QosProfile(BaseModel):
     )
 
 
+_DdsVendor = Literal[
+    "cyclone",
+    "fast",
+    "rti",
+    "rti_micro",
+    "opensplice",
+    "opendds",
+    "coredx",
+    "intercom",
+    "dust",
+    "mock",
+    "unknown",
+]
+"""Wire values of the `vendor` field on `ParticipantInfo` / `ParticipantEvent`.
+
+Must stay identical to `adapters/common/dds_helpers.py:VendorTag` (pinned by
+`tests/test_dds_helpers.py`); the models layer cannot import from adapters.
+"""
+
+
 class ParticipantInfo(BaseModel):
     """DDS participant discovered on the configured domain.
 
@@ -95,14 +115,27 @@ class ParticipantInfo(BaseModel):
             "stable across discovery events within a single deployment."
         )
     )
-    vendor: Literal["cyclone", "fast", "rti", "mock", "unknown"] = Field(
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Participant name the application announced through the standard "
+            "DDS EntityName QoS (PID_ENTITY_NAME in RTPS discovery), for "
+            "example `lidar_driver`. `None` when the application did not set "
+            "one (Dust DDS cannot) or the backend does not expose it."
+        ),
+    )
+    vendor: _DdsVendor = Field(
         description=(
             "DDS implementation that announced this participant, decoded "
             "from the OMG-RTPS `vendor_id` field on the discovery sample. "
-            "`cyclone` (Eclipse Foundation), `fast` (eProsima), `rti` "
-            "(Real-Time Innovations). `mock` is reserved for synthetic "
-            "fixtures ; `unknown` when the live adapter could not map "
-            "the observed vendor_id to a known tag. Vendor-neutral: "
+            "`cyclone` (Eclipse Cyclone DDS), `fast` (eProsima Fast DDS), "
+            "`rti` (RTI Connext), `rti_micro` (RTI Connext Micro), "
+            "`opensplice` (ADLink OpenSplice), `opendds` (OCI OpenDDS), "
+            "`coredx` (Twin Oaks CoreDX), `intercom` (Kongsberg InterCOM), "
+            "`dust` (S2E Dust DDS). `mock` is reserved for synthetic "
+            "fixtures ; `unknown` when the observed vendor_id has no "
+            "first-class tag (the participant is still reported). "
+            "Vendor-neutral: "
             "TopicForge observes every conformant DDS-RTPS participant "
             "on the bus via the OMG protocol guarantee: see "
             "`docs/dds-interop-matrix.md`."
@@ -110,7 +143,10 @@ class ParticipantInfo(BaseModel):
     )
     hostname: str | None = Field(
         default=None,
-        description="Hostname announced by the participant, if available.",
+        description=(
+            "Hostname announced in discovery (Cyclone `__Hostname` property). "
+            "`None` when the vendor does not announce it."
+        ),
     )
     domain_id: int = Field(
         ge=0,
@@ -184,7 +220,7 @@ class ParticipantEvent(BaseModel):
             "state change."
         )
     )
-    vendor: Literal["cyclone", "fast", "rti", "mock", "unknown"] = Field(
+    vendor: _DdsVendor = Field(
         description=(
             "DDS implementation tag for the participant involved, decoded "
             "the same way as `ParticipantInfo.vendor`."
@@ -202,6 +238,10 @@ class ParticipantEvent(BaseModel):
     hostname: str | None = Field(
         default=None,
         description="Hostname announced by the participant when known, else `None`.",
+    )
+    name: str | None = Field(
+        default=None,
+        description="Participant name (EntityName QoS) when known, else `None`.",
     )
     domain_id: int = Field(
         ge=0,

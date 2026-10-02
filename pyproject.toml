@@ -141,6 +141,9 @@ ignore = ["E501"]
 # come after: E402 is intentional.
 "tests/test_cyclone_adapter.py" = ["B011", "E402"]
 "tests/test_fast_adapter.py" = ["B011", "E402"]
+# Each example is a standalone script that puts examples/dds on sys.path
+# before importing the shared harness.
+"examples/dds/*/run.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

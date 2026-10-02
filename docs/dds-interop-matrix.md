@@ -1,6 +1,6 @@
 # DDS Interoperability: what TopicForge observes
 
-TopicForge does not implement the DDS-RTPS wire protocol from scratch. It joins a DDS domain as a read-only participant (via the [Eclipse CycloneDDS](https://cyclonedds.io) or [eProsima Fast DDS](https://fast-dds.docs.eprosima.com/) Python bindings, your choice) and reports what it sees on the bus.
+TopicForge does not implement the DDS-RTPS wire protocol from scratch. It joins a DDS domain as a read-only participant (via the [Eclipse CycloneDDS](https://cyclonedds.io) Python binding, or [eProsima Fast DDS](https://fast-dds.docs.eprosima.com/) with a binding built from source) and reports what it sees on the bus.
 
 The OMG-DDS-RTPS standard guarantees that all conformant implementations interoperate. This means **TopicForge sees publishers and subscribers from any vendor, including those written in C, C++11, C++17, Rust, Java, .NET, or any other language with DDS-RTPS bindings**, as long as they share the same DDS domain.
 
@@ -35,7 +35,7 @@ The two known interop gaps from the 2025-05 OMG report (Dust DDS <-> OpenDDS, Du
 
 ## Limits of this claim
 
-The claim is about **discovery**: which participants, readers and writers exist, and what QoS they announce. It does not extend to user-topic payloads. Since 0.5.3 `peek_dds_samples` reports that a user topic is present on the bus but does not decode its contents, on any vendor's data. The claim has also not been verified by this project on a live multi-vendor bus: it follows from the RTPS standard and from the OMG's published results above, and the project's own real-bus rig is not implemented yet (see [`../scripts/integration/README.md`](../scripts/integration/README.md)). Domains that use DDS Security are not observable at all, because TopicForge joins without credentials.
+The claim is about **discovery**: which participants, readers and writers exist, and what QoS they announce. It does not extend to user-topic payloads: `peek_dds_samples` reports that a user topic is present on the bus but does not decode its contents, for any vendor. The project's own real-bus runs cover Cyclone and Dust DDS participants only (see [`../scripts/integration/README.md`](../scripts/integration/README.md)); RTI, OpenDDS, CoreDX, OpenSplice and Fast DDS have not been observed. For the rest the claim follows from the RTPS standard and from the OMG's published results above. Vendors that do not follow the RTPS vendor-id convention in the GUID prefix (Dust DDS, RTI by default) are reported with vendor `unknown` on Cyclone. Domains that use DDS Security are not observable at all, because TopicForge joins without credentials.
 
 ## What TopicForge is not
 
@@ -49,6 +49,10 @@ The claim is about **discovery**: which participants, readers and writers exist,
 - [OMG DDS Foundation: the standard](https://www.dds-foundation.org/omg-dds-standard/)
 - [OMG DDS-RTPS interoperability test description](https://omg-dds.github.io/dds-rtps/test_description.html)
 - [OMG DDS-RTPS interoperability test results (current)](https://omg-dds.github.io/dds-rtps/test_results.html)
-- [Source data archived in this repo](projet-file/references/omg-dds-interop-2025-05-08.xlsx) (internal copy of the 2025-05-08 snapshot used as reference for TopicForge v0.3.0)
+- [Source data archived in this repo](projet-file/references/omg-dds-interop-2025-05-08.xlsx) (2025-05-08 snapshot)
 
-The TopicForge team does not run the OMG interop tests itself; the results above are the OMG Foundation's published artifact. We track the test results page and update this document at each major release if the matrix shifts materially.
+TopicForge does not run the OMG interop tests itself; the results above are the OMG Foundation's published artifact.
+
+If you already run the OMG DDS interoperability demo
+(https://github.com/omg-dds/dds-rtps), TopicForge sees its participants like
+any others.

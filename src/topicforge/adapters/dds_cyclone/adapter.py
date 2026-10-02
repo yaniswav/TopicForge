@@ -45,6 +45,7 @@ single odd discovery sample must not break the whole tool call.
 from __future__ import annotations
 
 import logging
+import time
 from itertools import islice
 from typing import Any
 
@@ -57,6 +58,7 @@ from cyclonedds.builtin import (
     BuiltinTopicDcpsPublication,
     BuiltinTopicDcpsSubscription,
 )
+from cyclonedds.core import InstanceState, Policy, Qos, ReadCondition, SampleState, ViewState
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.util import duration
 
@@ -86,13 +88,22 @@ from topicforge.adapters.common import (
     cyclone_extract_hostname as _extract_hostname,
 )
 from topicforge.adapters.common import (
+    cyclone_extract_participant_name as _extract_participant_name,
+)
+from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_type_name as _extract_type_name,
 )
 from topicforge.adapters.common import (
     cyclone_extract_vendor_id as _extract_vendor_id,
 )
 from topicforge.adapters.common import (
     cyclone_qos_to_profile as _cyclone_qos_to_profile,
+)
+from topicforge.adapters.common import (
+    is_alive_sample as _is_alive,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -134,6 +145,9 @@ _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
+# Discovery needs a moment after our participant joins before the first
+# snapshot is complete: SPDP/SEDP exchanges take a few hundred ms locally.
+_DISCOVERY_WARMUP_SEC = 2.0
 
 # Builtin DCPS topics that `peek_dds_samples` serves with structured
 # payloads. Arbitrary user topics route through `_peek_user_topic`, which
@@ -312,11 +326,50 @@ class CycloneDdsAdapter:
         # `peek_dds_samples` flows. See `_peek_builtin` / `_peek_user_topic`.
         self._metrics = MetricsBuffer()
         try:
-            self._dp = DomainParticipant(domain_id)
+            # Announce ourselves by name, so that TopicForge's own read-only
+            # participant is recognizable in every listing, ours included.
+            self._dp = DomainParticipant(domain_id, qos=Qos(Policy.EntityName("topicforge")))
         except Exception as exc:  # binding-side errors vary by version
             raise AdapterError(
                 f"Failed to create CycloneDDS DomainParticipant on domain {domain_id}: {exc}"
             ) from exc
+        self._joined_at = time.monotonic()
+        # One reader per builtin discovery topic, kept for the adapter's
+        # lifetime. Creating one per call leaked a DDS reader per tool call.
+        self._builtin: dict[Any, tuple[Any, Any]] = {}
+        for topic_class in (
+            BuiltinTopicDcpsParticipant,
+            BuiltinTopicDcpsPublication,
+            BuiltinTopicDcpsSubscription,
+        ):
+            self._builtin_reader(topic_class)
+
+    def _builtin_reader(self, topic_class: Any) -> tuple[Any, Any]:
+        """The adapter's reader for one builtin topic, and an any-state read condition."""
+        entry = self._builtin.get(topic_class)
+        if entry is None:
+            reader = BuiltinDataReader(self._dp, topic_class)
+            # Alive instances only, in any read state: the limit then applies
+            # to live entries, so departed ones can never crowd them out.
+            condition = ReadCondition(reader, SampleState.Any | ViewState.Any | InstanceState.Alive)
+            entry = self._builtin[topic_class] = (reader, condition)
+        return entry
+
+    def _discovery_snapshot(self, topic_class: Any, limit: int) -> list[Any]:
+        """Every live entry the discovery cache holds for one builtin topic.
+
+        Non-blocking, and blind to the read/unread state, so each call sees
+        the whole current cache rather than only what arrived since the
+        previous call. Disposed entries (participants or endpoints that are
+        gone) are filtered out.
+        """
+        # Paid once, by a call made within 2 s of startup. It blocks the MCP
+        # event loop like every handler does today (handlers are synchronous).
+        wait = _DISCOVERY_WARMUP_SEC - (time.monotonic() - self._joined_at)
+        if wait > 0:
+            time.sleep(wait)
+        reader, condition = self._builtin_reader(topic_class)
+        return [s for s in reader.read(N=limit, condition=condition) if _is_alive(s)]
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -362,11 +415,7 @@ class CycloneDdsAdapter:
         raw discovery samples.
         """
         try:
-            reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsParticipant)
-            samples = take_bounded(
-                reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_PARTICIPANTS,
-            )
+            samples = self._discovery_snapshot(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS)
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS participant discovery failed on domain {self._domain_id} "
@@ -383,6 +432,7 @@ class CycloneDdsAdapter:
                 guid=guid,
                 vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
                 hostname=_extract_hostname(sample),
+                name=_extract_participant_name(sample),
                 domain_id=self._domain_id,
                 mode_effective="live",
             )
@@ -404,16 +454,8 @@ class CycloneDdsAdapter:
         gathers the vendor-native endpoint samples and hands them over.
         """
         try:
-            sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
-            pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = take_bounded(
-                sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
-            pubs = take_bounded(
-                pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
+            subs = self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS)
+            pubs = self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS)
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS endpoint discovery failed on domain {self._domain_id} "
@@ -454,10 +496,7 @@ class CycloneDdsAdapter:
         """Builtin DCPS topic peek: unchanged from v0.3.0."""
         topic_class = _BUILTIN_DCPS_TOPICS[topic]
         try:
-            reader = BuiltinDataReader(self._dp, topic_class)
-            samples_raw = take_bounded(
-                reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)), count
-            )
+            samples_raw = self._discovery_snapshot(topic_class, count)
         except Exception as exc:
             raise AdapterError(
                 f"CycloneDDS sample peek failed on topic {topic!r} ({type(exc).__name__}: {exc})."
@@ -475,6 +514,7 @@ class CycloneDdsAdapter:
                     "vendor": canonicalize_vendor_id(_extract_vendor_id(s)),
                     "guid": format_guid(_extract_guid(s)),
                     "topic_name": _extract_topic_name(s),
+                    "type_name": _extract_type_name(s),
                     "_raw_text": repr(s),
                 },
             )
@@ -555,16 +595,8 @@ class CycloneDdsAdapter:
     def _is_topic_on_bus(self, topic: str) -> bool:
         """True iff a sub or pub for `topic` has been discovered."""
         try:
-            sub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsSubscription)
-            pub_reader = BuiltinDataReader(self._dp, BuiltinTopicDcpsPublication)
-            subs = take_bounded(
-                sub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
-            pubs = take_bounded(
-                pub_reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)),
-                _MAX_ENDPOINTS,
-            )
+            subs = self._discovery_snapshot(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS)
+            pubs = self._discovery_snapshot(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS)
         except Exception:  # pragma: no cover: defensive
             log.exception("cyclone discovery probe for topic %r failed", topic)
             return False

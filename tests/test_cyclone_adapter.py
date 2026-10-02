@@ -9,12 +9,15 @@ against networking edge cases on CI runners.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 cyclonedds = pytest.importorskip("cyclonedds")
 pytestmark = pytest.mark.requires_cyclonedds
 
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common import VendorTag
 from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
 
 
@@ -55,7 +58,7 @@ def test_list_participants_returns_list() -> None:
     participants = adapter.list_participants()
     assert isinstance(participants, list)
     for p in participants:
-        assert p.vendor in ("cyclone", "fast", "rti", "mock", "unknown")
+        assert p.vendor in get_args(VendorTag)
         assert p.mode_effective == "live"
         assert p.domain_id == 0
 

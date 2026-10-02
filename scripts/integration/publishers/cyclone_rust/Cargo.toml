@@ -1,0 +1,25 @@
+[package]
+name = "cyclone_rust"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "TopicForge demo participant: Cyclone DDS (Rust) writing DemoHeartbeat"
+
+[[bin]]
+name = "cyclone_rust"
+path = "src/main.rs"
+
+[dependencies]
+# Official Cyclone DDS binding. Without the "vendored" feature it links an
+# installed libddsc found through CYCLONEDDS_HOME.
+eclipse-cyclonedds = "0.0.4"
+serde = { version = "1", features = ["derive"] }
+# "termination" adds SIGTERM and SIGHUP on Unix next to SIGINT/Ctrl+C.
+ctrlc = { version = "3", features = ["termination"] }
+
+[features]
+# Build Cyclone DDS from the sources bundled in the crate (needs cmake).
+vendored = ["eclipse-cyclonedds/vendored"]
+
+[profile.release]
+opt-level = 2
