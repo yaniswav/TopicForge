@@ -36,7 +36,7 @@ dev = [
     # bag-analysis I/O tests actually run in CI instead of self-skipping on
     # `requires_rosbags`. It is NOT a runtime dependency: end users opt in
     # via `topicforge[bags]`.
-    "rosbags>=0.10",
+    "rosbags>=0.11.3",
 ]
 # DDS extras. Only bindings that are actually published on PyPI and used by
 # a working adapter are declared here.
@@ -60,7 +60,7 @@ dds = [
 # Optional because rosbags pulls in SQLite / msgpack / zstd-side deps
 # users without bag analysis don't need.
 bags = [
-    "rosbags>=0.10",
+    "rosbags>=0.11.3",
 ]
 all = [
     "topicforge[dds]",
@@ -80,7 +80,7 @@ packages = ["src/topicforge"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/topicforge", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
-exclude = [".claude", "docs/projet-file/**", "docs/projet-file", "CLAUDE.md", "*.pdf", ".pytest_cache", "pytest-cache-files-*", "pro"]
+exclude = [".claude", "docs/projet-file/**", "docs/projet-file", "tests/fixtures/bags/**", "CLAUDE.md", "*.pdf", ".pytest_cache", "pytest-cache-files-*", "pro"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
