@@ -80,6 +80,7 @@ from topicforge.adapters.common import (
 )
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
@@ -289,6 +290,16 @@ class FastDdsAdapter:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     # ----- DDS surface (v0.3.0) -----
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+    ) -> EndpointListing:
+        # The Fast listener keeps raw discovery info objects whose layout has
+        # never been read on a real bus, so no endpoint record is built from them.
+        raise AdapterError("list_endpoints is not supported on the Fast backend yet.")
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         """Snapshot of discovered participants from the lifecycle buffer.

@@ -13,6 +13,7 @@ from topicforge.adapters.ros2_mock import fixtures
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
@@ -99,6 +100,14 @@ class MockAdapter:
             )
         clamped = min(count, MAX_SAMPLE_COUNT)
         return fixtures.mock_dds_samples_for(topic, clamped)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+    ) -> EndpointListing:
+        return fixtures.mock_endpoint_listing(topic, participant_guid, include_observer)
 
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300

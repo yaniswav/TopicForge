@@ -27,6 +27,7 @@ from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
+    EndpointListing,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
@@ -90,6 +91,14 @@ class Ros2CliAdapter:
     def topic_metrics(
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
+        raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+    ) -> EndpointListing:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:

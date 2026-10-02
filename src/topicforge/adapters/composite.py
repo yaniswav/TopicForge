@@ -24,6 +24,7 @@ from __future__ import annotations
 from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
@@ -95,6 +96,14 @@ class CompositeAdapter:
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         return self._dds.topic_metrics(topic, window_seconds, domain_id)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+    ) -> EndpointListing:
+        return self._dds.list_endpoints(topic, participant_guid, include_observer)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         # Bag analysis lives on the ROS half: MCAP is the canonical

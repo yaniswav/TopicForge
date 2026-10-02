@@ -12,6 +12,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
@@ -125,6 +126,13 @@ class MiddlewareAdapter(Protocol):
     ) -> TopicMetrics: ...
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult: ...
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+    ) -> EndpointListing: ...
 
 
 # Backward-compat alias. External code importing `RosAdapter` continues

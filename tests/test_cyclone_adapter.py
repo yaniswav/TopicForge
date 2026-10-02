@@ -118,3 +118,24 @@ def test_peek_builtin_dcps_publication_returns_sample_result() -> None:
     result = adapter.peek_dds_samples("DCPSPublication", count=3)
     assert result.topic == "DCPSPublication"
     assert result.mode_effective == "live"
+
+
+def test_list_endpoints_shape_and_observer_exclusion() -> None:
+    adapter = CycloneDdsAdapter(domain_id=0)
+    listing = adapter.list_endpoints()
+    assert listing.mode_effective == "live"
+    assert listing.domain_id == 0
+    assert listing.observer_guid is not None
+    assert listing.returned == len(listing.endpoints)
+    assert all(not e.is_observer for e in listing.endpoints)
+    assert all(e.participant_guid != listing.observer_guid for e in listing.endpoints)
+    with_observer = adapter.list_endpoints(include_observer=True)
+    assert with_observer.total_discovered == listing.total_discovered
+
+
+def test_peek_builtin_endpoints_carry_structured_fields() -> None:
+    adapter = CycloneDdsAdapter(domain_id=0)
+    for topic in ("DCPSPublication", "DCPSSubscription", "DCPSParticipant"):
+        for s in adapter.peek_dds_samples(topic, count=5).samples:
+            assert {"role", "participant_guid", "announced_ns", "is_observer"} <= set(s.payload)
+            assert len(str(s.payload["_raw_text"])) <= 400

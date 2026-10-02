@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- **`list_endpoints`, the 12th MCP tool** (approved 2026-10-02: a blind
+  evaluation had 6 of 6 agents parsing a Python repr and joining GUID prefixes
+  by hand). Returns every announced DDS writer and reader as a typed
+  `EndpointInfo` (role, topic, type, owning participant guid and name,
+  structured QoS, announcement timestamp) plus a `by_topic` roll-up that flags
+  orphans (`no_reader`, `no_writer`). TopicForge's own endpoints are excluded
+  unless `include_observer`. Served by Cyclone and the mock; the Fast backend
+  raises a clear "not supported yet" error; the ROS2 CLI adapter and the stubs
+  raise their usual DDS-module errors.
+- `QosProfile` gains optional `liveliness_kind`, `liveliness_lease_ns`,
+  `ownership_kind`, `ownership_strength`, `partitions`, `latency_budget_ns`,
+  `destination_order` and `data_representation`, read from Cyclone discovery.
+  `detect_qos_mismatches` output and rules are unchanged.
+- `peek_dds_samples` on `DCPSPublication`, `DCPSSubscription` and
+  `DCPSParticipant` now carries structured `role`, `participant_guid`,
+  `participant_name`, `type_id`, `qos`, `announced_ns` and `is_observer`, and
+  sets the sample `timestamp_ns` from the announcement. `_raw_text` is kept but
+  truncated to about 300 characters.
+
+### Fixed
+
+- Infinite durations (cyclonedds reports 9223372036854775807) are normalized
+  to `None`; an infinite Deadline used to surface as a 9.2e18 ns deadline.
+
 ## [0.5.4] - 2026-10-02
 
 First run of the DDS code against a live multi-vendor bus (Windows 11, a
