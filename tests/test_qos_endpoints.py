@@ -1,6 +1,6 @@
 """Tests for `common.qos_endpoints.detect_mismatches_across_endpoints`.
 
-The endpoint-pairing logic extracted from both DDS adapters (Lot 5): tested
+The Fast-side endpoint-pairing logic extracted from both DDS adapters (Lot 5): tested
 in isolation with synthetic endpoint objects, and once through the real
 Cyclone helpers to pin the exact call shape the adapter makes. No binding.
 """
@@ -61,9 +61,9 @@ def _detect(subs: list[_Endpoint], pubs: list[_Endpoint], topic: str | None = No
 def test_reliable_reader_best_effort_writer_reported() -> None:
     reader = _Endpoint("/t", b"\x01" * 16, _profile(reliability="RELIABLE"))
     writer = _Endpoint("/t", b"\x02" * 16, _profile(reliability="BEST_EFFORT"))
-    reports = _detect([reader], [writer])
-    assert len(reports) == 1
-    r = reports[0]
+    scan = _detect([reader], [writer])
+    assert len(scan.reports) == 1
+    r = scan.reports[0]
     assert r.topic == "/t"
     assert "Reliability" in r.incompatible_policies
     assert r.severity == "incompatible"
@@ -73,7 +73,8 @@ def test_reliable_reader_best_effort_writer_reported() -> None:
 def test_compatible_pair_yields_no_report() -> None:
     reader = _Endpoint("/t", b"\x01" * 16, _profile())
     writer = _Endpoint("/t", b"\x02" * 16, _profile())
-    assert _detect([reader], [writer]) == []
+    scan = _detect([reader], [writer])
+    assert scan.reports == [] and scan.not_matched == []
 
 
 def test_topic_scoping_filters_other_topics() -> None:
@@ -85,21 +86,24 @@ def test_topic_scoping_filters_other_topics() -> None:
         _Endpoint("/a", b"\x02" * 16, _profile(reliability="BEST_EFFORT")),
         _Endpoint("/b", b"\x04" * 16, _profile(reliability="BEST_EFFORT")),
     ]
-    reports = _detect(subs, pubs, topic="/a")
-    assert {r.topic for r in reports} == {"/a"}
+    scan = _detect(subs, pubs, topic="/a")
+    assert {r.topic for r in scan.reports} == {"/a"}
+    assert scan.topics_scanned == 1
 
 
 def test_endpoint_with_unresolvable_topic_skipped() -> None:
     reader = _Endpoint(None, b"\x01" * 16, _profile(reliability="RELIABLE"))
     writer = _Endpoint("/t", b"\x02" * 16, _profile(reliability="BEST_EFFORT"))
     # reader has no topic -> no pairing possible.
-    assert _detect([reader], [writer]) == []
+    assert _detect([reader], [writer]).reports == []
 
 
 def test_endpoint_with_unresolvable_qos_skipped() -> None:
     reader = _Endpoint("/t", b"\x01" * 16, None)  # qos_to_profile -> None
     writer = _Endpoint("/t", b"\x02" * 16, _profile(reliability="BEST_EFFORT"))
-    assert _detect([reader], [writer]) == []
+    scan = _detect([reader], [writer])
+    assert scan.reports == [] and scan.pairs_checked == 0
+    assert any("no usable QoS" in h for h in scan.hints)
 
 
 def test_multiple_readers_and_writers_cartesian() -> None:
@@ -112,7 +116,7 @@ def test_multiple_readers_and_writers_cartesian() -> None:
         _Endpoint("/t", b"\x04" * 16, _profile(reliability="BEST_EFFORT")),
     ]
     # 2 readers by 2 writers, all incompatible -> 4 reports.
-    assert len(_detect(subs, pubs)) == 4
+    assert len(_detect(subs, pubs).reports) == 4
 
 
 def test_end_to_end_with_real_cyclone_helpers() -> None:
@@ -144,7 +148,7 @@ def test_end_to_end_with_real_cyclone_helpers() -> None:
 
     reader = _CycEndpoint("/scan", b"\x01" * 16, Reliable)
     writer = _CycEndpoint("/scan", b"\x02" * 16, BestEffort)
-    reports = detect_mismatches_across_endpoints(
+    scan = detect_mismatches_across_endpoints(
         subs=[reader],
         pubs=[writer],
         topic=None,
@@ -152,5 +156,6 @@ def test_end_to_end_with_real_cyclone_helpers() -> None:
         extract_topic_name=_tname,
         extract_guid=_k,
     )
-    assert len(reports) == 1
-    assert "Reliability" in reports[0].incompatible_policies
+    assert len(scan.reports) == 1
+    assert "Reliability" in scan.reports[0].incompatible_policies
+    assert scan.reports[0].details[0].requested == "RELIABLE"

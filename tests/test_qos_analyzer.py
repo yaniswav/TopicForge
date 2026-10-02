@@ -281,3 +281,178 @@ def test_both_deadline_none_compatible() -> None:
     reader = _profile(deadline_ns=None)
     writer = _profile(deadline_ns=None)
     assert detect_mismatches(reader, writer) is None
+
+
+# ------------------------- exact RxO rules (lot B) -------------------------
+
+from topicforge.adapters.common import analyze_pair, format_duration, partitions_match  # noqa: E402
+
+_MS = 1_000_000
+
+
+def _full(**extra: object) -> QosProfile:
+    """A profile with every optional policy announced, defaults all compatible."""
+    base: dict[str, object] = {
+        "reliability": "RELIABLE",
+        "durability": "VOLATILE",
+        "history": "KEEP_LAST",
+        "history_depth": 10,
+        "liveliness_kind": "AUTOMATIC",
+        "liveliness_lease_ns": None,
+        "ownership_kind": "SHARED",
+        "latency_budget_ns": 0,
+        "destination_order": "BY_RECEPTION_TIMESTAMP",
+        "data_representation": ["XCDR2"],
+    }
+    base.update(extra)
+    return QosProfile(**base)  # type: ignore[arg-type]
+
+
+def _policies(reader: QosProfile, writer: QosProfile) -> list[str]:
+    return [d.policy for d in analyze_pair(reader, writer).incompatible]
+
+
+def test_full_compatible_pair_has_no_findings_and_nothing_unchecked() -> None:
+    analysis = analyze_pair(_full(), _full())
+    assert analysis.details == [] and analysis.unchecked == []
+
+
+def test_details_carry_readable_values() -> None:
+    (detail,) = analyze_pair(_full(), _full(reliability="BEST_EFFORT")).incompatible
+    assert (detail.policy, detail.requested, detail.offered) == (
+        "Reliability",
+        "RELIABLE",
+        "BEST_EFFORT",
+    )
+
+
+@pytest.mark.parametrize(
+    ("reader", "writer", "expected"),
+    [
+        ("PERSISTENT", "TRANSIENT", True),
+        ("TRANSIENT", "PERSISTENT", False),
+        ("TRANSIENT_LOCAL", "TRANSIENT", False),
+    ],
+)
+def test_durability_order(reader: str, writer: str, expected: bool) -> None:
+    found = _policies(_full(durability=reader), _full(durability=writer))
+    assert ("Durability" in found) is expected
+
+
+def test_deadline_infinite_semantics() -> None:
+    assert _policies(_full(deadline_ns=100 * _MS), _full(deadline_ns=None)) == ["Deadline"]
+    assert _policies(_full(deadline_ns=None), _full(deadline_ns=100 * _MS)) == []
+    (d,) = analyze_pair(_full(deadline_ns=100 * _MS), _full(deadline_ns=None)).incompatible
+    assert (d.requested, d.offered) == ("100 ms", "infinite")
+
+
+@pytest.mark.parametrize(
+    ("reader", "writer", "expected"),
+    [
+        (("MANUAL_BY_TOPIC", None), ("AUTOMATIC", None), True),
+        (("AUTOMATIC", None), ("MANUAL_BY_TOPIC", None), False),
+        (("MANUAL_BY_PARTICIPANT", None), ("MANUAL_BY_TOPIC", None), False),
+        (("AUTOMATIC", 100 * _MS), ("AUTOMATIC", 500 * _MS), True),
+        (("AUTOMATIC", 500 * _MS), ("AUTOMATIC", 100 * _MS), False),
+        (("AUTOMATIC", 500 * _MS), ("AUTOMATIC", None), True),
+        (("AUTOMATIC", None), ("AUTOMATIC", 500 * _MS), False),
+    ],
+)
+def test_liveliness_kind_and_lease(reader: tuple, writer: tuple, expected: bool) -> None:
+    r = _full(liveliness_kind=reader[0], liveliness_lease_ns=reader[1])
+    w = _full(liveliness_kind=writer[0], liveliness_lease_ns=writer[1])
+    assert ("Liveliness" in _policies(r, w)) is expected
+
+
+def test_liveliness_detail_text() -> None:
+    r = _full(liveliness_kind="MANUAL_BY_TOPIC", liveliness_lease_ns=500 * _MS)
+    (d,) = analyze_pair(r, _full()).incompatible
+    assert d.requested == "MANUAL_BY_TOPIC lease 500 ms"
+    assert d.offered == "AUTOMATIC lease infinite"
+
+
+def test_latency_budget() -> None:
+    assert _policies(_full(latency_budget_ns=10 * _MS), _full(latency_budget_ns=50 * _MS)) == [
+        "LatencyBudget"
+    ]
+    assert _policies(_full(latency_budget_ns=50 * _MS), _full(latency_budget_ns=10 * _MS)) == []
+
+
+def test_ownership_kinds_must_be_equal_strength_ignored() -> None:
+    exclusive, shared = _full(ownership_kind="EXCLUSIVE"), _full(ownership_kind="SHARED")
+    assert _policies(exclusive, shared) == ["Ownership"]
+    assert _policies(shared, exclusive) == ["Ownership"]
+    weak = _full(ownership_kind="EXCLUSIVE", ownership_strength=1)
+    strong = _full(ownership_kind="EXCLUSIVE", ownership_strength=99)
+    assert _policies(weak, strong) == []
+
+
+def test_destination_order() -> None:
+    by_src = "BY_SOURCE_TIMESTAMP"
+    assert _policies(_full(destination_order=by_src), _full()) == ["DestinationOrder"]
+    assert _policies(_full(), _full(destination_order=by_src)) == []
+
+
+def test_data_representation() -> None:
+    xcdr1, xcdr2 = _full(data_representation=["XCDR1"]), _full(data_representation=["XCDR2"])
+    assert _policies(xcdr1, xcdr2) == ["DataRepresentation"]
+    both = _full(data_representation=["XCDR1", "XCDR2"])
+    assert _policies(both, xcdr2) == []
+
+
+def test_unknown_values_are_unchecked_not_findings() -> None:
+    bare = _profile()
+    analysis = analyze_pair(bare, bare)
+    assert analysis.details == []
+    assert analysis.unchecked == [
+        "Liveliness",
+        "LatencyBudget",
+        "Ownership",
+        "DestinationOrder",
+        "DataRepresentation",
+    ]
+
+
+def test_history_is_risky_and_labelled() -> None:
+    analysis = analyze_pair(_full(history="KEEP_ALL"), _full())
+    assert analysis.incompatible == []
+    (d,) = analysis.risky
+    assert d.policy == "History" and "not an RxO" in d.rule
+    assert detect_mismatches(_full(history="KEEP_ALL"), _full()) == (["History"], "risky")
+
+
+@pytest.mark.parametrize(
+    ("reader", "writer", "expected"),
+    [
+        (None, None, True),
+        ([], [""], True),
+        (["a"], ["b"], False),
+        (["a", "b"], ["b"], True),
+        (["robot*"], ["robot1"], True),
+        (["robot1"], ["robot*"], True),
+        (["robot*"], ["robot*"], False),
+        (["robot*"], ["other*"], False),
+        (["*"], [], True),
+        (["*"], ["x"], True),
+        (["r?bot"], ["robot"], True),
+        (["r?bot"], ["rbot"], False),
+        (["Robot"], ["robot"], False),
+        (["a"], [], False),
+    ],
+)
+def test_partitions_match(reader, writer, expected: bool) -> None:
+    assert partitions_match(reader, writer) is expected
+
+
+@pytest.mark.parametrize(
+    ("ns", "text"),
+    [
+        (None, "infinite"),
+        (500, "500 ns"),
+        (2_500, "2.5 us"),
+        (100 * _MS, "100 ms"),
+        (3_000_000_000, "3 s"),
+    ],
+)
+def test_format_duration(ns: int | None, text: str) -> None:
+    assert format_duration(ns) == text

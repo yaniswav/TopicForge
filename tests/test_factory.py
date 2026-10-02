@@ -30,6 +30,7 @@ from collections.abc import Callable
 import pytest
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common import scan_endpoints
 from topicforge.adapters.composite import CompositeAdapter
 from topicforge.adapters.ros2_live import Ros2CliAdapter
 from topicforge.adapters.ros2_mock import MockAdapter
@@ -37,7 +38,7 @@ from topicforge.config import Settings
 from topicforge.models import (
     BagAnalysis,
     MessageSample,
-    MismatchReport,
+    MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -108,8 +109,8 @@ class _StubDdsAdapter:
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         return []
 
-    def detect_qos_mismatches(self, topic: str | None = None) -> list[MismatchReport]:
-        return []
+    def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
+        return scan_endpoints([])
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         return SampleResult(topic=topic, count=0, samples=[], mode_effective="live")

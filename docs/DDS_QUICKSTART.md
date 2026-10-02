@@ -14,7 +14,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 ```
 
 - `list_participants(domain_id=0)` returns four participants: two CycloneDDS (`mock-robot`, `mock-laptop`), one Fast DDS (`mock-aerospace-node`) and one Dust DDS in Rust (`mock-rust-node`). The `vendor` field comes from the OMG vendor id: `cyclone`, `fast`, `rti`, `rti_micro`, `opensplice`, `opendds`, `coredx`, `intercom`, `dust`, `mock` or `unknown`.
-- `detect_qos_mismatches(topic=None)` returns one report for `/dds/qos_mismatch`: a RELIABLE reader against a BEST_EFFORT writer.
+- `detect_qos_mismatches(topic=None)` returns a `MismatchScan` with one report for `/dds/qos_mismatch`: a RELIABLE reader against a BEST_EFFORT writer.
 - `peek_dds_samples(topic="/dds/well_matched", count=3)` returns three deterministic samples. The mock only knows `/dds/well_matched`, `/dds/qos_mismatch`, `/dds/ddsforge/example` and `/dds/ddsforge/opaque`, and raises "Unknown DDS topic" for anything else.
 - `topic_metrics(topic="/dds/heartbeat_10hz", window_seconds=60)` returns a pre-filled 10 Hz buffer (100 samples, no gaps, 50 ms latency). A live adapter behaves differently, see section 5 and [`examples/04-monitor-topic-frequency.md`](../examples/04-monitor-topic-frequency.md).
 
@@ -47,19 +47,31 @@ The canonical "my subscriber does not receive" case. Against the mock:
 > Detect QoS mismatches on the current bus.
 
 [tool call: detect_qos_mismatches]
-[
-  {
-    "topic": "/dds/qos_mismatch",
-    "reader_guid": "010f1c2a-3b4c-5d6e-7f80-000000000001",
-    "writer_guid": "010f1c2a-3b4c-5d6e-7f80-000000000002",
-    "incompatible_policies": ["Reliability"],
-    "severity": "incompatible",
-    "mode_effective": "mock"
-  }
-]
+{
+  "reports": [
+    {
+      "topic": "/dds/qos_mismatch",
+      "reader_guid": "...", "writer_guid": "...",
+      "reader_participant_name": "lidar_driver", "writer_participant_name": "nav_planner",
+      "incompatible_policies": ["Reliability"],
+      "severity": "incompatible",
+      "details": [{"policy": "Reliability", "requested": "RELIABLE",
+                   "offered": "BEST_EFFORT", "rule": "a RELIABLE reader needs a RELIABLE writer"}],
+      "mode_effective": "mock"
+    }
+  ],
+  "not_matched": [],
+  "hints": ["Topic '/dds/ddsforge/opaque' has writers but no reader: there is no pair to compare."],
+  "pairs_checked": 3, "topics_scanned": 4,
+  "policies_checked": ["Reliability", "Durability", "Deadline", "Liveliness", "..."],
+  "policies_unchecked": ["Presentation: ...", "..."],
+  "mode_effective": "mock"
+}
 ```
 
-Live adapters render GUIDs in dotted form (`xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx`). From this the agent can suggest a concrete fix: the writer is BEST_EFFORT but the reader requires RELIABLE, so relax the reader or upgrade the writer. The analysis is a vendor-neutral pure function (`adapters/common/qos_analyzer.py`) over canonical `QosProfile` models, so it does not depend on which backend produced the discovery samples. It covers four policies: Reliability, Durability, History and Deadline. Liveliness, Ownership, Partition, TimeBasedFilter and LatencyBudget are not checked, and a mismatch on those is not reported.
+The result is a `MismatchScan` envelope. Live adapters render GUIDs in dotted form (`xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx`). From this the agent can suggest a concrete fix: the writer is BEST_EFFORT but the reader requires RELIABLE, so relax the reader or upgrade the writer. The analysis is vendor-neutral pure code (`adapters/common/qos_analyzer.py`, `qos_scan.py`) over canonical `QosProfile` models, so it does not depend on which backend produced the discovery samples.
+
+Order of checks per reader/writer pair: Partition first (wildcards `*` and `?` on one side match; wildcard against wildcard never does), then the type name, then the RxO policies. A pair separated by partition or type goes to `not_matched` and no QoS rule is run on it, so a partition split is never reported as a Reliability problem; an empty `reports` with a non-empty `not_matched` still means no data flows. RxO policies compared: Reliability, Durability, Deadline, Liveliness (kind and lease), LatencyBudget, Ownership (kind only), DestinationOrder, DataRepresentation. History (KEEP_ALL reader, KEEP_LAST writer) is reported as `risky`, not as an incompatibility. A policy a side did not announce is skipped and counted in a hint. `policies_unchecked` lists what stays out of scope (Presentation, XTypes assignability, runtime liveliness, anything not discoverable): discovery shows declared QoS, not runtime behavior, so an empty result is not proof the bus is healthy.
 
 ## 4. Composite adapter and backend selection
 

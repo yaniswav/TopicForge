@@ -262,9 +262,12 @@ def test_mock_listing_is_coherent_with_other_mock_tools() -> None:
     by_topic = {t.topic: t for t in listing.by_topic}
     assert by_topic["/dds/ddsforge/opaque"].orphan == "no_reader"
     assert by_topic["/dds/qos_mismatch"].orphan is None
-    mismatch = adapter.detect_qos_mismatches("/dds/qos_mismatch")[0]
+    scan = adapter.detect_qos_mismatches("/dds/qos_mismatch")
+    mismatch = scan.reports[0]
     readers = [e for e in listing.endpoints if e.topic == mismatch.topic and e.role == "reader"]
-    assert readers[0].participant_guid == mismatch.reader_guid
+    assert readers[0].guid == mismatch.reader_guid
+    assert readers[0].participant_guid == mismatch.reader_participant_guid
+    assert readers[0].participant_name == mismatch.reader_participant_name
 
 
 def test_mock_listing_filters_and_dust_qos() -> None:

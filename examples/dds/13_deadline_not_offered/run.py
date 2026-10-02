@@ -28,10 +28,10 @@ from harness import (
     Node,
     TopicForge,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     step,
+    who,
 )
 from received import show_received
 
@@ -58,12 +58,12 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(scan is not None, "scan: Deadline mismatch reported")
     if scan:
         checks.expect(
-            owner(scan.get("writer_guid"), parts) == "lidar_driver"
-            and owner(scan.get("reader_guid"), parts) == "nav_planner",
+            who(scan, "writer", parts) == "lidar_driver"
+            and who(scan, "reader", parts) == "nav_planner",
             "scan: lidar_driver offers no deadline, nav_planner requires 100 ms",
         )
     checks.expect(
-        not any(m["topic"] == "imu" for m in mismatches),
+        not any(m["topic"] == "imu" for m in mismatches["reports"]),
         "imu: 10 ms offered for 100 ms requested is compatible, not reported",
     )
     await show_received(bus, checks, 2, "nav_planner", "scan", receives=False)

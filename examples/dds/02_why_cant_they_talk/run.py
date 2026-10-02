@@ -24,10 +24,10 @@ from harness import (
     Node,
     TopicForge,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     step,
+    who,
 )
 from received import show_received
 
@@ -59,12 +59,12 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(scan is not None, "scan: Reliability mismatch reported")
     if scan:
         checks.expect(
-            owner(scan.get("writer_guid"), parts) == "lidar_driver"
-            and owner(scan.get("reader_guid"), parts) == "nav_planner",
+            who(scan, "writer", parts) == "lidar_driver"
+            and who(scan, "reader", parts) == "nav_planner",
             "scan: the BEST_EFFORT writer is lidar_driver, the RELIABLE reader nav_planner",
         )
     checks.expect(
-        not any(m["topic"] == "odom" for m in mismatches),
+        not any(m["topic"] == "odom" for m in mismatches["reports"]),
         "odom: RELIABLE writer to BEST_EFFORT reader is allowed, not reported",
     )
     await show_received(bus, checks, 3, "nav_planner", "scan", receives=False)

@@ -27,10 +27,10 @@ from harness import (
     Node,
     TopicForge,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     step,
+    who,
 )
 
 NODES = (
@@ -81,12 +81,12 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(scan is not None, "scan: Reliability mismatch reported")
     if scan:
         checks.expect(
-            owner(scan.get("writer_guid"), parts) == "lidar_driver"
-            and owner(scan.get("reader_guid"), parts) == "nav_planner",
+            who(scan, "writer", parts) == "lidar_driver"
+            and who(scan, "reader", parts) == "nav_planner",
             "writer lidar_driver, reader nav_planner (DDS alone only gave the policy id)",
         )
     checks.expect(
-        not any(owner(m.get("reader_guid"), parts) == "scan_logger" for m in mismatches),
+        not any(who(m, "reader", parts) == "scan_logger" for m in mismatches["reports"]),
         "scan_logger is not reported: BEST_EFFORT reader, compatible",
     )
 

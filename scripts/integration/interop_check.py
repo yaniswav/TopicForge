@@ -367,12 +367,16 @@ async def _scenario(domain: str, running: list[Running]) -> int:
                 failures.append(f"no participant tagged {r.spec.vendor!r} for {r.spec.name}")
 
         print("\n[2] detect_qos_mismatches: which reader/writer pairs can never talk?")
-        mismatches = await _call(session, "detect_qos_mismatches")
+        scan = await _call(session, "detect_qos_mismatches")
+        mismatches = scan["reports"]
         for m in mismatches:
             print(
                 f"    {m['topic']}: {', '.join(m['incompatible_policies'])} ({m['severity']}) "
-                f"reader {m['reader_guid']} <- writer {m['writer_guid']}"
+                f"reader {m['reader_participant_name'] or m['reader_guid']} <- "
+                f"writer {m['writer_participant_name'] or m['writer_guid']}"
             )
+        for n in scan["not_matched"]:
+            print(f"    {n['topic']}: not matched ({n['reason']}): {n['detail']}")
         for topic, writer, reader in EXPECTED_MISMATCHES:
             if {writer, reader} <= names and not any(
                 m["topic"] == topic and "Reliability" in m["incompatible_policies"]

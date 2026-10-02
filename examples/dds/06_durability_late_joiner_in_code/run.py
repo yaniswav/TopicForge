@@ -31,11 +31,11 @@ from harness import (
     TopicForge,
     by_name,
     mismatch_on,
-    owner,
     run_example,
     show_mismatches,
     step,
     wait_for,
+    who,
 )
 
 VARIANTS = (  # (topic, writer durability, reader durability)
@@ -114,16 +114,15 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(found is not None, "mission_volatile_writer: Durability mismatch reported")
     if found:
         checks.expect(
-            owner(found.get("writer_guid"), parts) == "pub_1"
-            and owner(found.get("reader_guid"), parts) == "sub_1",
+            who(found, "writer", parts) == "pub_1" and who(found, "reader", parts) == "sub_1",
             "mission_volatile_writer: VOLATILE writer pub_1, TRANSIENT_LOCAL reader sub_1",
         )
     checks.expect(
-        not any(m["topic"] == "mission_tl" for m in mismatches),
+        not any(m["topic"] == "mission_tl" for m in mismatches["reports"]),
         "mission_tl: nothing to report, the pair is compatible",
     )
     checks.expect(
-        not any(m["topic"] == "mission_volatile_both" for m in mismatches),
+        not any(m["topic"] == "mission_volatile_both" for m in mismatches["reports"]),
         "mission_volatile_both: not reported, and it cannot be: no incompatibility exists",
     )
 
