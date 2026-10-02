@@ -801,8 +801,8 @@ class MessageSample(BaseModel):
             "`geometry_msgs/Twist`). It is the publisher's clock, not the "
             "arrival time: on simulated time it is sim time since the "
             "simulation started (a few seconds, not a date) and 0 is a valid "
-            "value. Use `received_ns` for when TopicForge saw the message. "
-            "Mock samples carry synthetic increasing values."
+            "value. Use `received_ns` for when the CLI printed the message. "
+            "Mock samples with a header carry synthetic increasing values."
         )
     )
     stamp_source: Literal["header", "none"] | None = Field(
@@ -816,10 +816,11 @@ class MessageSample(BaseModel):
     received_ns: int | None = Field(
         default=None,
         description=(
-            "Wall-clock nanoseconds since epoch at which TopicForge read this "
-            "message from the `ros2` CLI. Includes CLI buffering, so it is "
-            "only accurate to a fraction of a second. Live `sample_messages` "
-            "only; `None` otherwise."
+            "Wall-clock nanoseconds since epoch at which the `ros2` CLI "
+            "printed this message, after it deserialized and formatted it: not "
+            "the network receive time, and it lags more for large messages. "
+            "Accurate to a fraction of a second. Live `sample_messages` only; "
+            "`None` otherwise."
         ),
     )
     payload: dict[str, object] = Field(
@@ -830,7 +831,8 @@ class MessageSample(BaseModel):
             '"base_laser"}, "ranges": [1.0, 1.001]}`. Non-finite floats '
             "are the strings `nan`, `inf`, `-inf`. Live `sample_messages` "
             "adds `_truncated_fields` (dotted paths of arrays, strings or "
-            "bytes cut at `max_array_length`) when something was cut, and "
+            "bytes cut at `max_array_length`; a string of exactly that length plus "
+            "`...` that was not cut is listed too) when something was cut, and "
             "`_raw_text` (the unparsed output) only when a message could not "
             "be parsed. With `arrays_summary_only` an array is a string like "
             "`<sequence type: float, length: 541>`. Large messages may be "

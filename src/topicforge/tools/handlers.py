@@ -75,10 +75,12 @@ _SAMPLE_COUNT_PARAM_DESC = (
 )
 
 _SAMPLE_TIMEOUT_PARAM_DESC = (
-    "Seconds to wait for the messages, 1..60, default 10. Counted from the "
-    "start of the `ros2` CLI, whose own start-up can take a few seconds on a "
-    "slow machine. Whatever arrived by then is returned with a `note`. Raise "
-    "it for a topic that publishes slower than 1 Hz."
+    "Seconds to wait for the messages, 1..45, default 10. Bounds the whole "
+    "call, topic lookup and the `ros2` CLI start-up (a few seconds on a slow "
+    "machine) included: the call returns within about `timeout_s` + 2 s. "
+    "Whatever arrived by then is returned with a `note`. Raise it for a topic "
+    "that publishes slower than 1 Hz. The server handles one call at a time, "
+    "so a long wait delays other tool calls."
 )
 
 _MAX_ARRAY_LENGTH_PARAM_DESC = (
@@ -202,13 +204,14 @@ def register_tools(
             "work, and returns whatever arrived by the deadline: `count` is the "
             "actual number and `note` says `N of M messages` and why it is short "
             "(no publisher, or a publisher that is silent, slow or too large to "
-            "print in time). It never hides a timeout behind an empty list "
+            "print in time; a latched topic usually holds only its last "
+            "message, so use `count` 1). It never hides a timeout behind an empty list "
             "without a `note`. Each sample has the message fields as nested "
             "named values in `payload` (e.g. `payload.header.stamp.sec`), "
             "`timestamp_ns` from the message's `header.stamp` (the publisher's "
             "clock: sim time on a simulation, 0 for a headerless message such "
             "as `std_msgs/String`) with `stamp_source` `header` or `none`, and "
-            "`received_ns`, the wall clock when TopicForge read it. **Arrays**: "
+            "`received_ns`, the wall clock when the CLI printed it. **Arrays**: "
             "by default arrays, strings and bytes are cut at 128 elements (a "
             "541-beam `LaserScan` loses beams 128 and up); the cut fields are "
             "listed in `payload._truncated_fields` and in `note`. Raise "
@@ -216,7 +219,8 @@ def register_tools(
             "or set `arrays_summary_only` to see only the non-array fields. "
             "`nan` and `inf` floats come back as strings. A message over the "
             "1 MiB size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped and "
-            "`note` says so. **Mock mode** returns structured samples for the "
+            "`note` says so; it is dropped while it streams, so it costs no "
+            "decoding time. **Mock mode** returns structured samples for the "
             "fictional demo robot, instantly. **Raises an MCP error** when no "
             "`ros2` CLI is available, the topic is unknown, or the CLI fails. "
             "Read-only; never publishes. Distinct from `peek_dds_samples`, "

@@ -98,6 +98,22 @@ def test_analyze_bag_rejects_non_bag_extension(mock_adapter: MockAdapter, bad_pa
         mock_adapter.analyze_bag(bad_path)
 
 
+def test_headerless_mock_samples_match_the_live_shape(mock_adapter: MockAdapter) -> None:
+    for topic in ("/cmd_vel", "/tf"):
+        for sample in mock_adapter.sample_messages(topic, 5).samples:
+            assert sample.timestamp_ns == 0 and sample.stamp_source == "none"
+    for sample in mock_adapter.sample_messages("/odom", 5).samples:
+        assert sample.stamp_source == "header" and sample.timestamp_ns > 0
+
+
+def test_mock_summaries_use_the_live_summary_format(mock_adapter: MockAdapter) -> None:
+    scan = mock_adapter.sample_messages("/scan", 1).samples[0].payload
+    image = mock_adapter.sample_messages("/camera/image_raw", 1).samples[0].payload
+    assert scan["ranges"] == "<sequence type: float, length: 720>"
+    assert image["data"] == "<sequence type: uint8, length: 921600>"
+    assert "ranges_summary" not in scan and "data_summary" not in image
+
+
 # ---------------------- fixture-coherence regression -----------------------
 # These tests catch the "added a topic to MOCK_TOPICS but forgot to add
 # samples" (or vice-versa) drift documented in `.claude/skills/topicforge/

@@ -82,7 +82,8 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/cmd_vel",
             message_type="geometry_msgs/msg/Twist",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=0,
+            stamp_source="none",
             payload={
                 "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},
                 "angular": {"x": 0.0, "y": 0.0, "z": 0.05 * i},
@@ -116,7 +117,7 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
                 "angle_max": 3.14,
                 "range_min": 0.05,
                 "range_max": 12.0,
-                "ranges_summary": {"min": 0.32, "max": 11.5, "n": 720},
+                "ranges": "<sequence type: float, length: 720>",
             },
         )
         for i in range(3)
@@ -125,7 +126,8 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/tf",
             message_type="tf2_msgs/msg/TFMessage",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=0,
+            stamp_source="none",
             payload={
                 "transforms": [
                     {"frame_id": "odom", "child_frame_id": "base_link"},
@@ -146,7 +148,7 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
                 "width": 640,
                 "height": 480,
                 "encoding": "rgb8",
-                "data_summary": "<binary 921600 bytes elided>",
+                "data": "<sequence type: uint8, length: 921600>",
             },
         )
     ],
@@ -600,7 +602,8 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/cmd_vel",
             message_type="geometry_msgs/msg/Twist",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=0,
+            stamp_source="none",
             payload={
                 "_decode_status": "full",
                 "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},

@@ -27,15 +27,25 @@ on simulated time).
   of `MessageSample` and takes `timeout_s`. `parse_csv_echo` and `parse_echo_yaml`
   are removed.
 - `pyyaml>=6` is a runtime dependency.
+- A failing `ros2 topic echo` (non-zero exit with no message, or a CLI that cannot
+  be started) raises an MCP error instead of returning an empty list. `count` 0 now
+  validates the topic in live mode too, as it already did in the mock.
 
 ### Added
 
-- `sample_messages` parameter `timeout_s` (1..60, default 10): a wall deadline
-  counted from the start of `ros2 topic echo`.
+- `sample_messages` parameter `timeout_s` (1..45, default 10): a wall deadline for
+  the whole call, topic lookup included. The call returns within about `timeout_s`
+  plus 2 s (stopping the CLI, decoding what arrived).
 - `MessageSample.stamp_source` (`header` or `none`) and `received_ns` (wall clock
   when TopicForge read the message).
 - A short result carries a `note` (`N of M messages within T s`) that tells "no
-  publisher is announced" from "a publisher exists but nothing arrived in time".
+  publisher is announced" from "a publisher exists but nothing arrived in time",
+  hints `count` 1 for a latched topic, and gives the exit code and stderr when the
+  CLI exited early.
+- A message over the per-message size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`, 1 MiB) is
+  dropped while it streams and counted in the `note`, so a large `Image` no longer
+  costs tens of seconds of YAML decoding. Decoding uses libyaml when available and
+  stops at the call deadline.
 - `count` above 50 is capped with a note, and the tool schema declares the
   maximum.
 
@@ -47,6 +57,11 @@ on simulated time).
   started with explicit `--qos-reliability` and `--qos-durability` taken from the
   publishers, so a latched (`transient_local`) topic is no longer returned empty
   because the CLI picked its QoS against a cold daemon.
+- Stopping the CLI kills the whole process tree even when the launcher already
+  exited (POSIX: always signals the process group; Windows: a Job Object), so no
+  orphan `ros2` process keeps running. The CLI is started with UTF-8 output.
+- The mock `sample_messages` matches the live shape: headerless messages have
+  `timestamp_ns` 0 and `stamp_source` `none`.
 - `timestamp_ns` is the top-level `header.stamp` whatever its value, so a
   simulated clock (seconds since the simulation start) no longer falls back to 0
   and shifts every following column by two (OmniSim D4).
