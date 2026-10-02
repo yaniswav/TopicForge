@@ -146,17 +146,25 @@ def main(argv: list[str] | None = None) -> int:
             signal.signal(getattr(signal, sig_name), _stop)
 
     period_s = 1.0 / args.rate_hz
+    # Absolute schedule: sleeping a full period after the work would drift
+    # below the requested rate (about 7 Hz for 10 Hz on Windows).
+    next_tick = time.monotonic()
     seq = 0
+    rx = spec.RxReport(args.name, [e.topic for e, _ in readers], time.monotonic())
     try:
         while not stop:
             for endpoint, writer in writers:
                 cls = dds_types[endpoint.type_name]
                 writer.write(cls(**spec.sample_values(endpoint.type_name, seq)))
+            # take, so that a KEEP_ALL reader does not grow without bound
             for endpoint, reader in readers:
-                if endpoint.qos.history_depth is None:
-                    reader.take_data()  # KEEP_ALL would otherwise grow without bound
+                rx.record(endpoint.topic, [d.seq for d in reader.take_data()])
+            if rx.due(time.monotonic()):
+                for line in rx.lines():
+                    print(line, flush=True)
             seq += 1
-            time.sleep(period_s)
+            next_tick += period_s
+            time.sleep(max(0.0, next_tick - time.monotonic()))
     except KeyboardInterrupt:
         pass
     except Exception as exc:

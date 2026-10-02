@@ -35,6 +35,11 @@ python run.py --hold     # keep the programs running, ask your own MCP client
                  readers: NOBODY
     scan         writers: lidar_old (LidarScan)
                  readers: nav_planner (LidarScan)
+
+[3] What does nav_planner actually receive on scan?
+    -> nav_planner output
+    [nav_planner] rx scan: 0 in 1 s
+    [nav_planner] rx scan: 0 in 1 s
 ```
 
 - The mismatch report only finds the forgotten old driver. Stop there and

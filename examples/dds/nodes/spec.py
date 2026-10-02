@@ -194,3 +194,45 @@ def start_line(vendor: str, args: argparse.Namespace) -> str:
     writes = "; ".join(describe(e) for e in args.write) or "nothing"
     reads = "; ".join(describe(e) for e in args.read) or "nothing"
     return f"[{args.name}] {vendor} domain {args.domain}: writes {writes}; reads {reads}"
+
+
+class RxReport:
+    """Once per second, one line per reader: how many samples it received.
+
+    Lines look like `[nav_planner] rx scan: 10 in 1 s, last seq 123`, or
+    `[nav_planner] rx scan: 0 in 1 s` when nothing arrived (printed anyway, so
+    that absence is visible). The class does no I/O: the caller passes the
+    clock to `due()` and prints what `lines()` returns.
+    """
+
+    PERIOD_S = 1.0
+
+    def __init__(self, name: str, topics: list[str], now: float) -> None:
+        self.name = name
+        self._counts = {t: 0 for t in topics}
+        self._last_seq: dict[str, int] = {}
+        self._next = now + self.PERIOD_S
+
+    def record(self, topic: str, seqs: list[int]) -> None:
+        """Count the valid samples of one `take` and remember the last `seq`."""
+        if seqs:
+            self._counts[topic] += len(seqs)
+            self._last_seq[topic] = seqs[-1]
+
+    def due(self, now: float) -> bool:
+        """True once per period; the next period starts from `now`."""
+        if now < self._next:
+            return False
+        self._next = now + self.PERIOD_S
+        return True
+
+    def lines(self) -> list[str]:
+        """The report lines for the period that just ended, then reset the counts."""
+        out = []
+        for topic, count in self._counts.items():
+            line = f"[{self.name}] rx {topic}: {count} in 1 s"
+            if count:
+                line += f", last seq {self._last_seq[topic]}"
+            out.append(line)
+            self._counts[topic] = 0
+        return out

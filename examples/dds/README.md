@@ -11,7 +11,23 @@ DDS applications, and TopicForge reads the standard DDS discovery topics.
 
 ## Learning path
 
-Start with the concepts, one per example:
+Three tracks. Follow them in order, or jump to the one you need.
+
+**Write the code.** Each example is a readable `publisher.py` and
+`subscriber.py` (Cyclone DDS, Python, commented line by line). You see the
+problem from inside, in what the subscriber prints, and from outside, in
+what TopicForge reports.
+
+| # | Example | You learn | Pairs with |
+|---|---|---|---|
+| 00 | [Hello, publisher and subscriber](00_hello_pub_sub/) | participant, topic, type, writer, reader; a typo in a topic name | 11 |
+| 05 | [Reliability, in code](05_reliability_in_code/) | the incompatible-QoS status, and what DDS does not tell you | 02 |
+| 06 | [Durability and the late joiner, in code](06_durability_late_joiner_in_code/) | TRANSIENT_LOCAL; the case TopicForge cannot see | 04 |
+| 07 | [The deadline, declared and kept, in code](07_deadline_in_code/) | Deadline at match time and at run time | 13 |
+| 08 | [A crash, seen from inside and from outside](08_crash_seen_from_inside/) | Liveliness lease against discovery lease | 03, 12 |
+
+**Concepts, through TopicForge.** One concept per example, the programs
+configured from a table:
 
 | # | Example | You learn | TopicForge tool |
 |---|---|---|---|
@@ -20,7 +36,7 @@ Start with the concepts, one per example:
 | 03 | [A node crashed](03_a_node_crashed/) | leases, crash detection | `participant_events` |
 | 04 | [A late joiner misses the data](04_late_joiner_misses_data/) | Durability | `detect_qos_mismatches` |
 
-Then real incidents, simple ones, each a few programs:
+**Real incidents**, simple ones, each a few programs:
 
 | # | Example | The incident | What it teaches |
 |---|---|---|---|
@@ -88,6 +104,8 @@ Then ask the question from the example's README.
 - `harness.py`: starts and stops the programs (no orphan processes, no
   console windows on Windows), talks to TopicForge over MCP, prints the
   checks.
+- `NN_*/publisher.py`, `subscriber.py` (00, 05 to 08): explicit programs,
+  written to be read. Run them yourself in two terminals, see each README.
 - `nodes/`: one role program per vendor (`cyclone_node.py`, `dust_node.py`,
   `rti_node.py`), all with the same command line. An endpoint is
   `TOPIC:TYPE[:options]`, for example:
