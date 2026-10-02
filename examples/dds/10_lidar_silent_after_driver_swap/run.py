@@ -32,6 +32,7 @@ from harness import (
     show_wiring,
     step,
 )
+from received import show_received
 
 NODES = (
     Node("nav_planner", "cyclone", reads=("scan:LidarScan:reliable",)),
@@ -70,6 +71,7 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     checks.expect(not new["readers"], "lidar/scan: nobody reads it (orphan writer)")
     scan_writers = [who for who, _ in wiring.get("scan", {}).get("writers", [])]
     checks.expect(scan_writers == ["lidar_old"], "scan: only the old driver still writes it")
+    await show_received(bus, checks, 3, "nav_planner", "scan", receives=False)
 
 
 if __name__ == "__main__":
