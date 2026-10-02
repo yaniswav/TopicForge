@@ -72,9 +72,68 @@ class QosProfile(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Deadline QoS in nanoseconds. `None` means no deadline. "
+            "Deadline QoS in nanoseconds. `None` means no deadline (infinite, "
+            "the DDS default). "
             "A reader deadline tighter (smaller) than a writer deadline is "
             "incompatible: the writer cannot guarantee the reader's promise."
+        ),
+    )
+    liveliness_kind: Literal["AUTOMATIC", "MANUAL_BY_PARTICIPANT", "MANUAL_BY_TOPIC"] | None = (
+        Field(
+            default=None,
+            description=(
+                "Liveliness QoS kind. `AUTOMATIC` is asserted by the middleware ; "
+                "the two `MANUAL_*` kinds need the application to write or assert "
+                "liveliness, and the endpoint is declared not alive when it does "
+                "not within `liveliness_lease_ns`. `None` when not announced."
+            ),
+        )
+    )
+    liveliness_lease_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Liveliness lease duration in nanoseconds. `None` means infinite "
+            "(the DDS default) or not announced."
+        ),
+    )
+    ownership_kind: Literal["SHARED", "EXCLUSIVE"] | None = Field(
+        default=None,
+        description=(
+            "Ownership QoS kind. With `EXCLUSIVE`, only the writer with the "
+            "highest `ownership_strength` delivers samples to a reader. "
+            "`None` when not announced."
+        ),
+    )
+    ownership_strength: int | None = Field(
+        default=None,
+        description="Ownership strength of a writer (`EXCLUSIVE` ownership). `None` when not announced.",
+    )
+    partitions: list[str] | None = Field(
+        default=None,
+        description=(
+            "Partition names the endpoint's Publisher or Subscriber belongs "
+            'to. An empty list is the default partition (`""`). Endpoints '
+            "only match when their partitions intersect. `None` when not announced."
+        ),
+    )
+    latency_budget_ns: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "LatencyBudget QoS in nanoseconds (a delivery-delay hint). `0` is "
+            "the DDS default. `None` means infinite or not announced."
+        ),
+    )
+    destination_order: Literal["BY_RECEPTION_TIMESTAMP", "BY_SOURCE_TIMESTAMP"] | None = Field(
+        default=None,
+        description="DestinationOrder QoS. `None` when not announced.",
+    )
+    data_representation: list[str] | None = Field(
+        default=None,
+        description=(
+            "Data representations the endpoint accepts or offers, from "
+            "`XCDR1` and `XCDR2`. `None` when not announced."
         ),
     )
 
@@ -704,3 +763,92 @@ class HealthReport(BaseModel):
             "composed runtime."
         ),
     )
+
+
+class EndpointInfo(BaseModel):
+    """One DDS endpoint (writer or reader) announced through discovery."""
+
+    model_config = _CONFIG
+
+    guid: str = Field(description="GUID of the endpoint, `xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx`.")
+    role: Literal["writer", "reader"] = Field(
+        description="`writer` publishes the topic ; `reader` subscribes to it."
+    )
+    participant_guid: str = Field(
+        description="GUID of the owning participant, same format as `list_participants`."
+    )
+    participant_name: str | None = Field(
+        default=None,
+        description="Announced name of the owning participant, `None` when it set none.",
+    )
+    topic: str = Field(description="DDS topic name.")
+    type_name: str | None = Field(default=None, description="Announced data type name.")
+    type_id: str | None = Field(
+        default=None,
+        description="Compact XTypes type identifier (`COMPLETE:<hex>`), `None` when not announced.",
+    )
+    qos: QosProfile | None = Field(
+        default=None,
+        description=(
+            "QoS the endpoint announced. Durations (`deadline_ns`, "
+            "`liveliness_lease_ns`, `latency_budget_ns`) of `None` mean "
+            "infinite or not set. `None` when the essential policies "
+            "(reliability, durability, history) could not be resolved."
+        ),
+    )
+    announced_ns: int | None = Field(
+        default=None,
+        description=(
+            "Source timestamp of the discovery announcement, ns since epoch, "
+            "read on the announcing side's clock (it can differ from this "
+            "host's clock). `None` when not available."
+        ),
+    )
+    is_observer: bool = Field(
+        description="True when the endpoint belongs to TopicForge's own observer participant."
+    )
+    domain_id: int = Field(ge=0, le=232, description="DDS domain the endpoint was observed on.")
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+
+
+class TopicSummary(BaseModel):
+    """Per-topic roll-up of the listed endpoints, for spotting orphans."""
+
+    model_config = _CONFIG
+
+    topic: str = Field(description="DDS topic name.")
+    type_names: list[str] = Field(description="Distinct type names announced on this topic.")
+    writer_count: int = Field(ge=0, description="Number of listed writers.")
+    reader_count: int = Field(ge=0, description="Number of listed readers.")
+    partitions: list[str] = Field(
+        description='Union of the endpoints\' partitions, sorted. `""` is the default partition.'
+    )
+    orphan: Literal["no_reader", "no_writer"] | None = Field(
+        default=None,
+        description=(
+            "`no_reader`: writers but no reader. `no_writer`: readers but no "
+            "writer. `None` when both sides exist."
+        ),
+    )
+
+
+class EndpointListing(BaseModel):
+    """Envelope returned by `list_endpoints`."""
+
+    model_config = _CONFIG
+
+    domain_id: int = Field(ge=0, le=232, description="DDS domain observed.")
+    snapshot_ns: int = Field(description="Wall-clock time of the snapshot, ns since epoch.")
+    observer_guid: str | None = Field(
+        default=None, description="GUID of TopicForge's own participant, `None` in mock."
+    )
+    endpoints: list[EndpointInfo] = Field(
+        description="Matching endpoints, capped (see `truncated`)."
+    )
+    by_topic: list[TopicSummary] = Field(description="Roll-up over every matching endpoint.")
+    total_discovered: int = Field(
+        ge=0, description="Endpoints in the discovery cache before any filter."
+    )
+    returned: int = Field(ge=0, description="Length of `endpoints`.")
+    truncated: bool = Field(description="True when matching endpoints exceeded the cap.")
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)

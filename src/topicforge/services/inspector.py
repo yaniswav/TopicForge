@@ -13,6 +13,7 @@ from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapte
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     MismatchReport,
     ParticipantEvent,
     ParticipantInfo,
@@ -134,6 +135,21 @@ class Inspector:
         seconds = DEFAULT_WINDOW_SECONDS if window_seconds is None else window_seconds
         _validate_window_seconds(seconds)
         return self._adapter.topic_metrics(topic, seconds, domain_id)
+
+    def list_endpoints(
+        self,
+        topic: str | None = None,
+        participant_guid: str | None = None,
+        include_observer: bool = False,
+        domain_id: int = 0,
+    ) -> EndpointListing:
+        _validate_dds_domain(domain_id)
+        if topic is not None:
+            _validate_topic_name_dds(topic)
+        guid = participant_guid.strip() if participant_guid else None
+        if participant_guid is not None and not guid:
+            raise AdapterError("participant_guid must be a non-empty string when given")
+        return self._adapter.list_endpoints(topic, guid, include_observer)
 
     def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
         clean_path = _validate_bag_path(path)

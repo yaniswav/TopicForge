@@ -3,6 +3,8 @@
 from topicforge.models.schemas import (
     BagAnalysis,
     BagTopicStats,
+    EndpointInfo,
+    EndpointListing,
     HealthReport,
     MessageSample,
     MismatchReport,
@@ -12,11 +14,14 @@ from topicforge.models.schemas import (
     SampleResult,
     TopicInfo,
     TopicMetrics,
+    TopicSummary,
 )
 
 __all__ = [
     "BagAnalysis",
     "BagTopicStats",
+    "EndpointInfo",
+    "EndpointListing",
     "HealthReport",
     "MessageSample",
     "MismatchReport",
@@ -26,4 +31,5 @@ __all__ = [
     "SampleResult",
     "TopicInfo",
     "TopicMetrics",
+    "TopicSummary",
 ]

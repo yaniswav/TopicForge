@@ -27,6 +27,7 @@ from pydantic import Field
 
 from topicforge.models import (
     BagAnalysis,
+    EndpointListing,
     HealthReport,
     MismatchReport,
     ParticipantEvent,
@@ -446,6 +447,81 @@ def register_tools(
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
     ) -> SampleResult:
         return inspector.peek_bag_samples(path, topic, count)
+
+    @mcp.tool(
+        description=(
+            "List every DDS endpoint (writer and reader) announced on the bus, "
+            "already normalized: one `EndpointInfo` per endpoint with `role`, "
+            "`topic`, `type_name`, `type_id`, the owning `participant_guid` "
+            "joined with its `participant_name`, and a structured `qos` "
+            "(reliability, durability, history, deadline, liveliness kind and "
+            "lease, ownership kind and strength, partitions, latency budget, "
+            "destination order, data representation). Use it instead of "
+            "parsing `peek_dds_samples` output and joining GUID prefixes by "
+            "hand. **Spotting orphans**: `by_topic` rolls the endpoints up per "
+            "topic with `writer_count`, `reader_count` and `orphan` "
+            '(`"no_reader"` = a writer nobody subscribes to, `"no_writer"` = '
+            "a reader nobody publishes to), plus the union of partitions. "
+            "**Reading `qos`**: a duration of `None` (`deadline_ns`, "
+            "`liveliness_lease_ns`, `latency_budget_ns`) means infinite or "
+            "not set ; a policy field of `None` means the endpoint did not "
+            "announce it. `announced_ns` is the discovery announcement's "
+            "source timestamp on the announcing side's clock, which can "
+            "differ from this host's clock. **This lists discovery facts, not "
+            "data flow**: it shows what endpoints exist and how they are "
+            "configured, not whether samples are moving ; pair it with "
+            "`detect_qos_mismatches` to see which pairs cannot match. "
+            "TopicForge's own observer participant is excluded unless "
+            "`include_observer` is true. Output is capped at 500 endpoints "
+            "(`truncated`, `total_discovered`) ; `by_topic` still covers all "
+            "matches. Read-only. **Raises an MCP error** when no DDS module "
+            "is active. Mock mode returns a deterministic fixture matching "
+            "the other mock DDS tools."
+        )
+    )
+    @instrument(telemetry, "list_endpoints")
+    def list_endpoints(
+        topic: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Only endpoints on this DDS topic name (exact match). Omit to list every topic."
+                )
+            ),
+        ] = None,
+        participant_guid: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Only endpoints owned by this participant, as the guid "
+                    "reported by `list_participants` or by an earlier "
+                    "`list_endpoints`. Omit for all participants."
+                )
+            ),
+        ] = None,
+        include_observer: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Include TopicForge's own observer participant's endpoints. Defaults to false."
+                )
+            ),
+        ] = False,
+        domain_id: Annotated[
+            int,
+            Field(
+                description=(
+                    "Accepted for uniformity with the other DDS tools (0..232). "
+                    "The server observes only the domain it joined at startup "
+                    "(`TOPICFORGE_DDS_DOMAIN_ID`) ; the response `domain_id` "
+                    "says which one."
+                ),
+                ge=0,
+                le=232,
+            ),
+        ] = 0,
+    ) -> EndpointListing:
+        return inspector.list_endpoints(topic, participant_guid, include_observer, domain_id)
 
     # TODO(roadmap): URDF tools: validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection: clock jumps, frame drops, TF gaps.

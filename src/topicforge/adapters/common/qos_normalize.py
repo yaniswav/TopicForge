@@ -39,6 +39,89 @@ CYCLONE_DURABILITY_NAMES: dict[str, str] = {
     "Persistent": "PERSISTENT",
 }
 CYCLONE_HISTORY_NAMES: dict[str, str] = {"KeepLast": "KEEP_LAST", "KeepAll": "KEEP_ALL"}
+CYCLONE_LIVELINESS_NAMES: dict[str, str] = {
+    "Automatic": "AUTOMATIC",
+    "ManualByParticipant": "MANUAL_BY_PARTICIPANT",
+    "ManualByTopic": "MANUAL_BY_TOPIC",
+}
+CYCLONE_OWNERSHIP_NAMES: dict[str, str] = {"Shared": "SHARED", "Exclusive": "EXCLUSIVE"}
+CYCLONE_DESTINATION_ORDER_NAMES: dict[str, str] = {
+    "ByReceptionTimestamp": "BY_RECEPTION_TIMESTAMP",
+    "BySourceTimestamp": "BY_SOURCE_TIMESTAMP",
+}
+
+# cyclonedds reports an infinite duration as the largest int64.
+INFINITE_DURATION_NS = 9_223_372_036_854_775_807
+
+
+def duration_to_ns(value: Any) -> int | None:
+    """A binding duration as nanoseconds; `None` when infinite or unreadable.
+
+    `None` is the canonical "infinite / not set" on every duration field of
+    `QosProfile`, so the infinite sentinel must never leak through as a
+    9.2e18 deadline (it would also read as a finite reader request in the
+    mismatch analyzer).
+    """
+    if hasattr(value, "to_nanoseconds"):
+        value = value.to_nanoseconds()
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < 0 or value >= INFINITE_DURATION_NS:
+        return None
+    return int(value)
+
+
+def _first_attr(policy: Any, names: tuple[str, ...]) -> Any:
+    """First non-None attribute of `policy` among `names`."""
+    for name in names:
+        value = getattr(policy, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _data_representation(policy: Any) -> list[str] | None:
+    """`XCDR1` / `XCDR2` flags of a DataRepresentation policy, `None` if neither is set."""
+    found = []
+    if getattr(policy, "use_cdrv0_representation", False):
+        found.append("XCDR1")
+    if getattr(policy, "use_xcdrv2_representation", False):
+        found.append("XCDR2")
+    return found or None
+
+
+def _extended_policies(qos: Any) -> dict[str, Any]:
+    """The liveliness / ownership / partition / latency / ordering / representation fields.
+
+    Reads by the last component of the scoped class name, like the core
+    policies. Absent policies leave their key out, which `QosProfile`
+    defaults to `None`.
+    """
+    out: dict[str, Any] = {}
+    for policy in qos:
+        cls_name = type(policy).__name__.rsplit(".", 1)[-1]
+        if cls_name in CYCLONE_LIVELINESS_NAMES:
+            out["liveliness_kind"] = CYCLONE_LIVELINESS_NAMES[cls_name]
+            out["liveliness_lease_ns"] = duration_to_ns(
+                _first_attr(policy, ("lease_duration", "duration"))
+            )
+        elif cls_name in CYCLONE_OWNERSHIP_NAMES:
+            out["ownership_kind"] = CYCLONE_OWNERSHIP_NAMES[cls_name]
+        elif cls_name == "OwnershipStrength":
+            strength = getattr(policy, "strength", None)
+            if isinstance(strength, int) and not isinstance(strength, bool):
+                out["ownership_strength"] = strength
+        elif cls_name == "Partition":
+            names = getattr(policy, "partitions", None)
+            if names is not None:
+                out["partitions"] = [str(n) for n in names]
+        elif cls_name == "LatencyBudget":
+            out["latency_budget_ns"] = duration_to_ns(_first_attr(policy, ("budget", "duration")))
+        elif cls_name in CYCLONE_DESTINATION_ORDER_NAMES:
+            out["destination_order"] = CYCLONE_DESTINATION_ORDER_NAMES[cls_name]
+        elif cls_name == "DataRepresentation":
+            out["data_representation"] = _data_representation(policy)
+    return out
 
 
 def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
@@ -75,13 +158,8 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
                 if isinstance(depth, int):
                     history_depth = depth
             elif cls_name == "Deadline":
-                d = getattr(policy, "duration", None)
-                if d is None:
-                    d = getattr(policy, "deadline", None)
-                if hasattr(d, "to_nanoseconds"):
-                    deadline_ns = int(d.to_nanoseconds())
-                elif isinstance(d, int):
-                    deadline_ns = d
+                deadline_ns = duration_to_ns(_first_attr(policy, ("duration", "deadline")))
+        extended = _extended_policies(qos)
     except (TypeError, AttributeError):  # defensive against odd qos shapes
         return None
 
@@ -94,6 +172,7 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
         history=history,  # type: ignore[arg-type]
         history_depth=history_depth,
         deadline_ns=deadline_ns,
+        **extended,
     )
 
 
@@ -177,6 +256,8 @@ __all__ = [
     "CYCLONE_DURABILITY_NAMES",
     "CYCLONE_HISTORY_NAMES",
     "CYCLONE_RELIABILITY_NAMES",
+    "INFINITE_DURATION_NS",
     "cyclone_qos_to_profile",
+    "duration_to_ns",
     "fast_qos_to_profile",
 ]

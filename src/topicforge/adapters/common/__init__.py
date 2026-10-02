@@ -33,6 +33,15 @@ from topicforge.adapters.common.dds_introspection import (
     is_removal,
     vendor_id_from_guid,
 )
+from topicforge.adapters.common.endpoints import (
+    MAX_LISTED_ENDPOINTS,
+    announced_ns_of,
+    build_endpoint_listing,
+    endpoint_record,
+    format_participant_key,
+    summarize_by_topic,
+    type_id_text,
+)
 from topicforge.adapters.common.lifecycle import MAX_EVENTS, LifecycleBuffer
 from topicforge.adapters.common.metrics_buffer import (
     MAX_SAMPLES_PER_TOPIC,
@@ -43,6 +52,7 @@ from topicforge.adapters.common.qos_analyzer import detect_mismatches
 from topicforge.adapters.common.qos_endpoints import detect_mismatches_across_endpoints
 from topicforge.adapters.common.qos_normalize import (
     cyclone_qos_to_profile,
+    duration_to_ns,
     fast_qos_to_profile,
 )
 from topicforge.adapters.common.xtypes import (
@@ -56,6 +66,7 @@ __all__ = [
     "DDS_ONLY_ERROR_MSG",
     "DYNAMIC_DECODE_DISABLED_NOTE",
     "MAX_EVENTS",
+    "MAX_LISTED_ENDPOINTS",
     "MAX_SAMPLES_PER_TOPIC",
     "DecodeStatus",
     "LifecycleBuffer",
@@ -65,6 +76,8 @@ __all__ = [
     "annotate_full",
     "annotate_partial",
     "annotate_raw",
+    "announced_ns_of",
+    "build_endpoint_listing",
     "canonicalize_vendor_id",
     "cyclone_extract_guid",
     "cyclone_extract_hostname",
@@ -77,7 +90,9 @@ __all__ = [
     "decode_field_value",
     "detect_mismatches",
     "detect_mismatches_across_endpoints",
+    "duration_to_ns",
     "dynamic_type_name",
+    "endpoint_record",
     "extract_publish_ns_from_payload",
     "extract_seq_from_payload",
     "fast_extract_guid",
@@ -86,10 +101,13 @@ __all__ = [
     "fast_extract_vendor_id",
     "fast_qos_to_profile",
     "format_guid",
+    "format_participant_key",
     "is_alive_sample",
     "is_removal",
     "iter_field_names",
+    "summarize_by_topic",
     "take_bounded",
+    "type_id_text",
     "user_topic_placeholder",
     "validate_domain_id",
     "vendor_id_from_guid",

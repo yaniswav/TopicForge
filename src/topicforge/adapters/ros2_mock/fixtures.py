@@ -10,10 +10,12 @@ If you change a value here, expect to update tests under `tests/`.
 
 from __future__ import annotations
 
+from topicforge.adapters.common.endpoints import build_endpoint_listing
 from topicforge.adapters.common.metrics_buffer import MetricsBuffer
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
+    EndpointListing,
     MessageSample,
     MismatchReport,
     ParticipantEvent,
@@ -409,6 +411,99 @@ def mock_mismatches_for(topic: str | None) -> list[MismatchReport]:
     if topic is None:
         return list(_MOCK_MISMATCHES)
     return [m for m in _MOCK_MISMATCHES if m.topic == topic]
+
+
+# ---------------------------------------------------------------------------
+# Endpoint fixtures (`list_endpoints`)
+# ---------------------------------------------------------------------------
+# Same scenario as the participants and the mismatch above: nav_planner writes
+# `/dds/qos_mismatch` BEST_EFFORT while lidar_driver reads it RELIABLE (the
+# `Reliability` mismatch), `/dds/ddsforge/opaque` has a writer and no reader (an
+# orphan), and the dust writer carries partition, manual liveliness and
+# exclusive ownership so those fields are exercised.
+MOCK_OBSERVER_GUID = "010f1c2a-3b4c-5d6e-7f80-000000000099"
+
+_PARTICIPANT_NAMES: dict[str, str | None] = {p.guid: p.name for p in MOCK_PARTICIPANTS}
+
+
+def _mock_endpoint(
+    index: int,
+    participant: int,
+    role: str,
+    topic: str,
+    type_name: str,
+    qos: QosProfile,
+    announced_offset_s: int,
+) -> dict[str, object]:
+    participant_guid = f"010f1c2a-3b4c-5d6e-7f80-{participant:012d}"
+    return {
+        "guid": f"010f1c2a-3b4c-5d6e-7f80-{participant:04d}{index:08d}",
+        "role": role,
+        "participant_guid": participant_guid,
+        "participant_name": _PARTICIPANT_NAMES.get(participant_guid),
+        "topic": topic,
+        "type_name": type_name,
+        "type_id": None,
+        "qos": qos,
+        "announced_ns": _LIFECYCLE_BASE_TS_NS + announced_offset_s * 1_000_000_000,
+        "is_observer": False,
+    }
+
+
+def _qos(reliability: str, **extra: object) -> QosProfile:
+    return QosProfile(
+        reliability=reliability,  # type: ignore[arg-type]
+        durability="VOLATILE",
+        history="KEEP_LAST",
+        history_depth=10,
+        **extra,  # type: ignore[arg-type]
+    )
+
+
+_MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
+    _mock_endpoint(1, 2, "writer", "/dds/well_matched", "dds/Heartbeat", _qos("RELIABLE"), 6),
+    _mock_endpoint(2, 1, "reader", "/dds/well_matched", "dds/Heartbeat", _qos("RELIABLE"), 2),
+    _mock_endpoint(3, 2, "writer", "/dds/qos_mismatch", "dds/Heartbeat", _qos("BEST_EFFORT"), 7),
+    _mock_endpoint(4, 1, "reader", "/dds/qos_mismatch", "dds/Heartbeat", _qos("RELIABLE"), 3),
+    _mock_endpoint(
+        5, 3, "writer", "/dds/ddsforge/example", "ddsforge/Example", _qos("RELIABLE"), 11
+    ),
+    _mock_endpoint(
+        6, 2, "reader", "/dds/ddsforge/example", "ddsforge/Example", _qos("RELIABLE"), 8
+    ),
+    _mock_endpoint(
+        7,
+        4,
+        "writer",
+        "/dds/ddsforge/opaque",
+        "ddsforge/Opaque",
+        _qos(
+            "RELIABLE",
+            partitions=["left"],
+            liveliness_kind="MANUAL_BY_TOPIC",
+            liveliness_lease_ns=500_000_000,
+            ownership_kind="EXCLUSIVE",
+            ownership_strength=10,
+        ),
+        16,
+    ),
+)
+
+
+def mock_endpoint_listing(
+    topic: str | None, participant_guid: str | None, include_observer: bool
+) -> EndpointListing:
+    """Deterministic `EndpointListing` for the mock scenario, filtered like the live one."""
+    return build_endpoint_listing(
+        _MOCK_ENDPOINT_RECORDS,
+        domain_id=0,
+        mode_effective="mock",
+        observer_guid=MOCK_OBSERVER_GUID,
+        topic=topic,
+        participant_guid=participant_guid,
+        include_observer=include_observer,
+        snapshot_ns=_LIFECYCLE_BASE_TS_NS + 60_000_000_000,
+    )
 
 
 # ---------------------------------------------------------------------------
