@@ -59,7 +59,6 @@ def test_get_topic_info_counts(adapter: Ros2CliAdapter) -> None:
     assert info.publisher_count == 1
 
 
-@pytest.mark.xfail(strict=False, reason="D5: qos_reliability is never filled in")
 def test_get_topic_info_reports_qos_reliability(adapter: Ros2CliAdapter) -> None:
     assert adapter.get_topic_info("/scan").qos_reliability == "reliable"
 
@@ -75,9 +74,12 @@ def test_sample_scan_returns_a_message(adapter: Ros2CliAdapter) -> None:
     assert samples[0].message_type == "sensor_msgs/msg/LaserScan"
 
 
-@pytest.mark.xfail(strict=False, reason="D2: arrays truncated to 128 elements")
+@pytest.mark.xfail(
+    strict=False, reason="D4: sim-time stamp columns stay in the CSV and shift ranges by two"
+)
 def test_sample_scan_delivers_all_541_ranges(adapter: Ros2CliAdapter) -> None:
-    ranges = _ranges(adapter.sample_messages("/scan", 1)[0].payload)
+    samples = adapter.sample_messages("/scan", 1, max_array_length=None)
+    ranges = _ranges(samples[0].payload)
     assert len(ranges) == N_BEAMS
     assert ranges[270] == pytest.approx(1.27, abs=1e-4)
     assert ranges[540] == pytest.approx(1.54, abs=1e-4)
@@ -94,7 +96,6 @@ def test_sample_scan_timestamp_from_header_on_sim_time(adapter: Ros2CliAdapter) 
     assert 0 < ts < MAX_SIM_NS
 
 
-@pytest.mark.xfail(strict=False, reason="D3: latched topic yields nothing within the timeout")
 def test_sample_latched_topic(adapter: Ros2CliAdapter) -> None:
     samples = adapter.sample_messages("/robot_description_lite", 1)
     assert len(samples) == 1
@@ -139,18 +140,12 @@ def test_analyze_bag_frequency_of_full_span_topic(adapter: Ros2CliAdapter, bag: 
     assert by_name["/scan"].frequency_hz == pytest.approx(10.0, rel=0.2)
 
 
-@pytest.mark.xfail(strict=False, reason="D6: frequency is count / whole-bag duration")
 def test_analyze_bag_frequency_of_late_topic(adapter: Ros2CliAdapter, bag: Path) -> None:
     # The camera starts several seconds into the recording at 2 Hz.
     by_name = {t.name: t for t in adapter.analyze_bag(str(bag)).topics}
     assert by_name["/camera/image_raw"].frequency_hz == pytest.approx(2.0, rel=0.2)
 
 
-# On Jazzy the bag decodes but `ranges` arrives as a truncated numpy repr string.
-@pytest.mark.xfail(
-    strict=False,
-    reason="D7: Humble bags need a custom typestore; D2: array payloads are truncated reprs",
-)
 def test_peek_bag_samples_decodes_scan(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.peek_bag_samples(str(bag), "/scan", 2)
     assert result.count == 2
@@ -161,7 +156,6 @@ def test_peek_bag_samples_decodes_scan(adapter: Ros2CliAdapter, bag: Path) -> No
     assert ranges[270] == pytest.approx(1.27, abs=1e-4)
 
 
-@pytest.mark.xfail(IS_HUMBLE, strict=False, reason="D7: Humble bags need a custom typestore")
 def test_peek_bag_samples_decodes_string(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.peek_bag_samples(str(bag), "/robot_description_lite", 1)
     assert result.count == 1
