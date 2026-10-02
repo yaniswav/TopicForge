@@ -1,24 +1,12 @@
 """Vendor QoS -> canonical `QosProfile` normalization: binding-free, testable.
 
-Extracted from `dds_cyclone/adapter.py` and `dds_fast/adapter.py`
-(Lot 0, audit 2026-07-08) so the QoS normalization that feeds
-`detect_qos_mismatches` (the flagship DDS diagnostic) is unit-testable
-**without** the `cyclonedds` / `fastdds` bindings installed. Previously
-these functions lived below a top-level `import fastdds` / `from cyclonedds
-...` in their adapters, so the entire QoS normalization path (and the bug
-class where a renamed policy key silently returns `None` -> no mismatch ever
-reported) was unreachable by the test suite.
+Lives outside the adapters because they import their SDK at module top
+level and so cannot be tested without it. A renamed policy key here would
+silently return `None` and hide every mismatch.
 
-Both adapters import these and alias them back to their original
-`_cyclone_qos_to_profile` / `_fast_qos_to_profile` names, so their call
-sites are unchanged.
-
-The Cyclone path keys policies by their binding class name (pure string
-constants below). The Fast path keys by integer enum value, and those
-integers come from the `fastdds` module: so `fast_qos_to_profile` takes
-the three int->str maps as parameters (the adapter builds them from
-`fastdds` and passes them in), keeping this module free of any binding
-import.
+The Cyclone path keys policies by binding class name. The Fast path keys
+by integer enum value, so `fast_qos_to_profile` takes the three int->str
+maps as parameters and this module imports no binding.
 """
 
 from __future__ import annotations
@@ -28,9 +16,8 @@ from typing import Any
 
 from topicforge.models import QosProfile
 
-# CycloneDDS exposes QoS policies as instances of nested classes under
-# `cyclonedds.qos.Policy.*`: we read them by simple class name to stay
-# binding-version-agnostic.
+# Cyclone exposes QoS policies as nested classes under
+# `cyclonedds.qos.Policy.*`; they are matched by bare class name.
 CYCLONE_RELIABILITY_NAMES: dict[str, str] = {"Reliable": "RELIABLE", "BestEffort": "BEST_EFFORT"}
 CYCLONE_DURABILITY_NAMES: dict[str, str] = {
     "Volatile": "VOLATILE",
@@ -57,12 +44,10 @@ INFINITE_DURATION_NS = 9_223_372_036_854_775_807
 def duration_state(value: Any) -> tuple[int | None, bool]:
     """A binding duration as `(nanoseconds, readable)`.
 
-    Infinite is `(None, True)`: the canonical "infinite" on every duration
-    field of `QosProfile`, so the infinite sentinel never leaks through as a
-    9.2e18 deadline (it would also read as a finite reader request in the
-    mismatch analyzer). A value that cannot be read at all is `(None, False)`:
-    the caller records the policy as unknown instead of letting it pass for
-    infinite.
+    Infinite is `(None, True)`, so the int64 sentinel never leaks through as
+    a 9.2e18 deadline (the mismatch analyzer would read it as a finite
+    request). An unreadable value is `(None, False)`: the caller records the
+    policy as unknown instead of letting it pass for infinite.
     """
     if hasattr(value, "to_nanoseconds"):
         value = value.to_nanoseconds()
@@ -109,11 +94,9 @@ def _data_representation(policy: Any) -> list[str] | None:
 
 
 def _extended_policies(qos: Any) -> dict[str, Any]:
-    """The liveliness / ownership / partition / latency / ordering / representation fields.
+    """The liveliness, ownership, partition, latency, ordering and representation fields.
 
-    Reads by the last component of the scoped class name, like the core
-    policies. Absent policies leave their key out, which `QosProfile`
-    defaults to `None`.
+    Absent policies leave their key out; `QosProfile` defaults it to `None`.
     """
     out: dict[str, Any] = {}
     unknown: list[str] = []
@@ -150,11 +133,10 @@ def _extended_policies(qos: Any) -> dict[str, Any]:
 
 
 def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
-    """Map a Cyclone discovery sample's QoS into the canonical QosProfile.
+    """Map a Cyclone discovery sample's QoS to a `QosProfile`.
 
-    Returns `None` when essential QoS policies (reliability, durability,
-    history) are missing: the analyzer needs all three present to
-    produce a meaningful pair report.
+    Returns `None` when reliability, durability or history is missing; the
+    analyzer needs all three.
     """
     qos = getattr(sample, "qos", None)
     if qos is None:
@@ -169,10 +151,8 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
 
     try:
         for policy in qos:
-            # cyclonedds 11.0.1 names policy classes with their scope,
-            # e.g. "Reliability.BestEffort" (observed on a live bus). Matching
-            # the bare "BestEffort" against that full name never succeeded, so
-            # no profile was ever built and no mismatch was ever reported.
+            # cyclonedds 11.0.1 scopes policy class names, e.g.
+            # "Reliability.BestEffort" (observed on a live bus).
             cls_name = type(policy).__name__.rsplit(".", 1)[-1]
             if cls_name in CYCLONE_RELIABILITY_NAMES:
                 reliability = CYCLONE_RELIABILITY_NAMES[cls_name]
@@ -214,15 +194,11 @@ def fast_qos_to_profile(
     durability_map: Mapping[int, str],
     history_map: Mapping[int, str],
 ) -> QosProfile | None:
-    """Map a Fast DDS discovery sample's QoS into the canonical QosProfile.
+    """Map a Fast DDS discovery sample's QoS to a `QosProfile`.
 
-    `reliability_map` / `durability_map` / `history_map` are the binding's
-    integer-enum -> canonical-string tables. The adapter builds them from
-    `fastdds` constants and passes them in, so this function stays free of
-    any binding import and is testable with synthetic maps.
-
-    Returns `None` when reliability, durability, or history cannot be
-    resolved: the analyzer needs all three.
+    The three maps are the binding's integer-enum -> canonical-string
+    tables, built by the adapter from `fastdds` constants. Returns `None`
+    when reliability, durability or history cannot be resolved.
     """
     qos = getattr(sample, "qos", None)
     if qos is None:

@@ -1,16 +1,10 @@
-"""Adapter selection.
+"""Adapter selection: maps `Settings` to a concrete adapter and degrades gracefully.
 
-This is the only place that knows how to map a `Settings` to a concrete
-adapter, and where graceful degradation (`live` -> `mock`, any DDS
-backend -> `ros2_cli`) happens.
-
-Decision tree: explicit `mock` mode returns `MockAdapter`. Otherwise the
-ROS2 CLI adapter and the DDS adapter are each built best-effort; when both
-come up they are wrapped in a `CompositeAdapter`, when only one does it is
-returned alone, and when neither does the factory falls back to
-`MockAdapter`. A DDS backend named explicitly is honored even when `ros2`
-is not installed (`auto` mode included), so DDS-only users get their bus
-rather than fixtures.
+Explicit `mock` mode returns `MockAdapter`. Otherwise the ROS2 CLI adapter
+and the DDS adapter are each built best-effort. Both up gives a
+`CompositeAdapter`, one gives that adapter alone, neither falls back to
+`MockAdapter`. A DDS backend named explicitly is honored even without
+`ros2` installed, so DDS-only users get their bus rather than fixtures.
 """
 
 from __future__ import annotations
@@ -28,15 +22,10 @@ log = logging.getLogger(__name__)
 
 
 def build_adapter(settings: Settings) -> MiddlewareAdapter:
-    """Return the adapter matching the effective runtime mode + DDS backend.
+    """Return the adapter for the effective mode and DDS backend.
 
-    See module docstring for the full decision tree. The function never
-    raises ; every failure path degrades to a logged warning plus the
-    next-best backend, ending at `MockAdapter` which is always available.
-
-    Predictive resolution (`auto`) lives in
-    `config/settings.py:Settings.effective_mode` and
-    `Settings.effective_dds_backend`.
+    Never raises: each failure logs a warning and falls to the next-best
+    backend, ending at `MockAdapter`. `auto` is resolved in `Settings`.
     """
     if settings.effective_mode == "mock" and settings.effective_dds_backend == "mock":
         return MockAdapter()
@@ -54,13 +43,11 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
         return CompositeAdapter(ros_adapter, dds_adapter)
 
     if dds_adapter is not None:
-        # ROS2 CLI not available but a DDS backend is: DDS-only live.
         log.info("DDS-only live adapter active: %s", dds_adapter.name)
         return dds_adapter
 
     if ros_adapter is not None:
-        # ROS2 CLI available, DDS backend either not configured or not
-        # importable. v0.3.0 behavior preserved exactly.
+        # DDS backend not configured or not importable.
         return ros_adapter
 
     log.warning(
@@ -81,13 +68,11 @@ def _try_build_ros2_cli(settings: Settings) -> MiddlewareAdapter | None:
 
 
 def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort DDS adapter per the resolved backend.
+    """The DDS adapter for the resolved backend, or `None` with a logged warning.
 
-    Returns `None` when the backend is `mock`, when the SDK is not
-    importable, or when the adapter fails or reports unavailable at
-    construction. Logged warnings explain each fallback.
-
-    Vendors lazy-import their adapter from `topicforge.adapters.dds_<vendor>`.
+    `None` when the backend is `mock`, the SDK is not importable, or the
+    adapter fails or reports unavailable at construction. Adapters are
+    imported lazily from `topicforge.adapters.dds_<vendor>`.
     """
     dds_backend = settings.effective_dds_backend
     if dds_backend == "fast":
@@ -102,10 +87,9 @@ def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:
 
 
 def _try_build_cyclone(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort instantiate `CycloneDdsAdapter`. Returns None on failure.
+    """Instantiate `CycloneDdsAdapter`, or `None` on failure.
 
-    Lazy import: this is the only call site that pulls in `cyclonedds`.
-    Mock-only, Fast-only, and ROS2-only installs never load the module.
+    The only place that imports `cyclonedds`, so other installs never load it.
     """
     try:
         from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
@@ -131,10 +115,9 @@ def _try_build_cyclone(settings: Settings) -> MiddlewareAdapter | None:
 
 
 def _try_build_fast(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort instantiate `FastDdsAdapter`. Returns None on failure.
+    """Instantiate `FastDdsAdapter`, or `None` on failure.
 
-    Lazy import: this is the only call site that pulls in `fastdds`.
-    Mock-only, Cyclone-only, and ROS2-only installs never load the module.
+    The only place that imports `fastdds`, so other installs never load it.
     """
     try:
         from topicforge.adapters.dds_fast import FastDdsAdapter
@@ -158,11 +141,10 @@ def _try_build_fast(settings: Settings) -> MiddlewareAdapter | None:
 
 
 def _try_build_opendds(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort instantiate `OpenDdsAdapter` (permanent stub).
+    """Instantiate the `OpenDdsAdapter` stub, which is never available.
 
-    The stub adapter's `is_available()` always returns False. The factory
-    still routes here so users running `TOPICFORGE_DDS_BACKEND=opendds`
-    explicitly get a clear warning rather than a silent mock fallback.
+    Routing here makes an explicit `TOPICFORGE_DDS_BACKEND=opendds` log a
+    warning instead of falling back to mock silently.
     """
     try:
         from topicforge.adapters.dds_opendds import OpenDdsAdapter
@@ -184,11 +166,7 @@ def _try_build_opendds(settings: Settings) -> MiddlewareAdapter | None:
 
 
 def _try_build_dust(settings: Settings) -> MiddlewareAdapter | None:
-    """Best-effort instantiate `DustDdsAdapter` (permanent stub).
-
-    The stub adapter's `is_available()` always returns False ; the
-    factory falls back transparently.
-    """
+    """Instantiate the `DustDdsAdapter` stub, which is never available."""
     try:
         from topicforge.adapters.dds_dust import DustDdsAdapter
     except ImportError:
@@ -209,13 +187,11 @@ def _try_build_dust(settings: Settings) -> MiddlewareAdapter | None:
 
 
 def _instantiate(label: str, build: Callable[[], MiddlewareAdapter]) -> MiddlewareAdapter | None:
-    """Construct a DDS adapter without ever letting construction escape.
+    """Construct a DDS adapter; any failure or unavailability returns `None`.
 
-    Vendor constructors join the DDS domain and raise `AdapterError` when
-    that fails (e.g. an invalid `CYCLONEDDS_URI`). Any other exception is
-    logged with its cause as a last resort: `build_adapter` documents that
-    it never raises, and a crash at startup is worse than a mock fallback.
-    Returns `None` on failure or when the adapter reports unavailable.
+    Vendor constructors join the domain and raise `AdapterError` when that
+    fails (e.g. an invalid `CYCLONEDDS_URI`). Other exceptions are logged
+    too, because a crash at startup is worse than a mock fallback.
     """
     try:
         adapter = build()

@@ -1,22 +1,12 @@
-"""Bag analysis service: wraps the `rosbags` library.
+"""Bag analysis service over the `rosbags` library.
 
-v0.4.0 Phase 3 surface for analyzing recorded bags across the three
-formats the OMG / ROS ecosystem actually ships :
+`rosbags` (pure Python) reads MCAP, ROS2 `.db3` and ROS1 `.bag` through one
+`AnyReader` API. It is imported lazily so the core installs without it.
+`peek_bag_samples` requires it; `analyze_bag` can fall back to the text
+parsing of `ros2 bag info`.
 
-* MCAP (Foxglove container, CDR-encoded payloads)
-* ROS2 `.db3` (SQLite-backed rosbag2)
-* ROS1 `.bag` (legacy binary chunked, non-CDR serialization)
-
-`rosbags` (Apache 2.0, pure-Python) handles all three via a single
-`AnyReader` API. We lazy-import it so the OSS core stays installable
-without `rosbags` ; the factory and Ros2CliAdapter fall back to the
-v0.3.0 text-parsed `ros2 bag info` behavior when the library is
-absent. `peek_bag_samples` requires `rosbags` (no graceful fallback;
-the tool description tells the LLM exactly what to ask the user).
-
-The decoded sample shape mirrors `peek_dds_samples`: the CDR
-decoder in `adapters/common/cdr_decoder.py` is the shared decode
-core (Phase 3 sub-milestone 3.1).
+Decoded samples share the payload shape of `peek_dds_samples`, through
+`adapters/common/cdr_decoder.py`.
 """
 
 from __future__ import annotations
@@ -51,17 +41,16 @@ _ROSBAGS_REQUIRED_MSG = (
 
 
 def detect_bag_format(path: str) -> str:
-    """Best-effort format classification from the path extension.
+    """Classify a bag by path extension: `"mcap"`, `"db3"`, `"bag"` or `"unknown"`.
 
-    Returns one of `"mcap"`, `"db3"`, `"bag"`, `"unknown"`. Pure
-    string operation: does not touch the filesystem.
+    Does not touch the filesystem.
     """
     suffix = Path(path).suffix.lower()
     return _BAG_FORMAT_BY_EXTENSION.get(suffix, "unknown")
 
 
 def is_rosbags_available() -> bool:
-    """True iff the `rosbags` Python library is importable on this host."""
+    """True when `rosbags` is importable."""
     import importlib.util
 
     try:
@@ -71,34 +60,25 @@ def is_rosbags_available() -> bool:
 
 
 class BagService:
-    """High-level facade over `rosbags` for the Inspector layer.
+    """Facade over `rosbags`.
 
-    Two public methods:
-
-    * `analyze(path)` returns an enriched `BagAnalysis` with per-topic
-      stats, format detection, decoded sample counts, recording
-      duration. Falls through to a "rosbags-not-installed" error when
-      the library is absent: callers (Ros2CliAdapter) should check
-      `is_rosbags_available()` first and fall back to their v0.3.0
-      text-parse path when False.
-    * `peek_samples(path, topic, count)` returns up to `count` decoded
-      samples for `topic` as a `SampleResult`. Same payload shape as
-      `peek_dds_samples` (with `_decode_status` annotations).
+    * `analyze(path)` returns a `BagAnalysis` with per-topic stats, format
+      and duration. It raises when `rosbags` is missing, so callers check
+      `is_rosbags_available()` and fall back to the CLI parser.
+    * `peek_samples(path, topic, count)` returns decoded samples as a
+      `SampleResult`, with `_decode_status` annotations.
     """
 
     def __init__(self) -> None:
         if not is_rosbags_available():
-            # Constructor does NOT raise: we want callers to be able to
-            # introspect the service without crashing. Methods raise
-            # AdapterError when actually called.
+            # Construction does not raise; the methods do.
             log.debug("BagService instantiated without `rosbags` ; methods will raise.")
 
     def analyze(self, path: str, *, mode_effective: str = "live") -> BagAnalysis:
-        """Read `path` with rosbags and return an enriched BagAnalysis.
+        """Read `path` with `rosbags` into a `BagAnalysis`.
 
-        Raises `AdapterError` when `rosbags` is not installed (caller
-        should fall back). Raises `AdapterError` when the path does
-        not exist or rosbags cannot open it.
+        Raises `AdapterError` when `rosbags` is missing, the path does not
+        exist, or the bag cannot be opened.
         """
         if not is_rosbags_available():
             raise AdapterError(_ROSBAGS_REQUIRED_MSG)
@@ -167,20 +147,12 @@ class BagService:
         )
 
 
-# ---------------------------------------------------------------------------
-# rosbags I/O: lazy-imported helpers
-# ---------------------------------------------------------------------------
-
-
 def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
-    """Open `resolved` with rosbags and compute per-topic stats.
+    """Open `resolved` with `rosbags` and compute per-topic stats.
 
-    Returns a dict with keys `duration_seconds`, `message_count`,
-    `topics` (list[BagTopicStats]), `samples_decoded_count`,
-    `recording_duration_ns`.
+    Returns a dict with `duration_seconds`, `message_count`, `topics`,
+    `samples_decoded_count` and `recording_duration_ns`.
     """
-    # Lazy import: this function is only reached after
-    # is_rosbags_available() returned True.
     from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
 
     with AnyReader([resolved]) as reader:
@@ -211,13 +183,13 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
         "duration_seconds": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
         "message_count": total_messages,
         "topics": topics,
-        "samples_decoded_count": 0,  # analyze() reads stats only ; peek_samples() decodes
+        "samples_decoded_count": 0,  # analysis reads stats only; peek_samples decodes
         "recording_duration_ns": duration_ns if duration_ns > 0 else None,
     }
 
 
 def _peek_with_rosbags(resolved: Path, topic: str, count: int) -> list[MessageSample]:
-    """Iterate messages on `topic` via rosbags ; return up to `count` decoded samples."""
+    """Up to `count` decoded samples on `topic`; `AdapterError` if the bag has no such topic."""
     from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
 
     samples: list[MessageSample] = []
@@ -246,13 +218,7 @@ def _peek_with_rosbags(resolved: Path, topic: str, count: int) -> list[MessageSa
 
 
 def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, Any]:
-    """Best-effort decode of a single bag message via rosbags + cdr_decoder.
-
-    rosbags returns the raw payload bytes ; we attempt to deserialize
-    through the reader's typestore and then run the result through the
-    shared `cdr_decoder.decode_dynamic_sample` for the same payload
-    shape as live DDS samples.
-    """
+    """Deserialize one bag message and run it through `decode_dynamic_sample`."""
     try:
         deserialized = reader.deserialize(raw, connection.msgtype)
     except Exception as exc:  # pragma: no cover: binding-side error
@@ -261,13 +227,9 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
             note=f"rosbags deserialize failed: {exc}",
         )
 
-    # Run through the shared decoder for the same _decode_status shape
-    # the live DDS path produces.
     from topicforge.adapters.common.cdr_decoder import decode_dynamic_sample
 
     decoded = decode_dynamic_sample(deserialized)
-    # decode_dynamic_sample stamps _decode_status (full / partial / raw)
-    # ; we additionally surface the rosbags-side message type for the LLM.
     if isinstance(decoded, dict):
         decoded.setdefault("_msgtype", getattr(connection, "msgtype", "<unknown>"))
     return decoded

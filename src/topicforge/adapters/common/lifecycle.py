@@ -1,30 +1,16 @@
-"""Lifecycle buffer: shared participant tracking across DDS adapters.
+"""Participant tracking shared by the DDS adapters.
 
-A bounded, RLock-protected ring buffer of `ParticipantEvent` plus a
-dictionary of currently-known participants. Both Cyclone (polling-delta)
-and Fast DDS (listener-callback) adapters feed this buffer ; the
-`participant_events` MCP tool reads from it.
+A bounded ring of `ParticipantEvent` plus a map of known participants,
+read by `participant_events`. The Fast adapter feeds it from listener
+callbacks, Cyclone from the `DiscoveryTracker` thread
+(`common/discovery_tracker.py`); the buffer starts no thread itself.
 
-Design rules:
-
-* **Pure logic at module level.** No DDS dependency. Tests pin behavior
-  against synthetic input: same convention as `parse_topic_list` and
-  `detect_mismatches` (the *"pure parsers / analyzers"* convention).
-* **Bounded.** The event ring tops out at `MAX_EVENTS` (default 200) and
-  the participant map at `MAX_PARTICIPANTS` (default 4096) ; overflow drops
-  the oldest (tombstoned `"left"` participants first). Matches the
-  `MAX_SAMPLE_COUNT=50` ergonomic of `sample_messages`: tools should
-  never return unbounded collections, and a long-running server on a churny
-  bus (each restarted node mints a fresh RTPS GUID) must not grow without
-  bound.
-* **Thread-safe.** Discovery callbacks fire on the underlying DDS
-  library's worker thread (Fast) ; tool calls fire on the MCP request
-  thread. An RLock guards every mutating method ; readers (
-  `snapshot_participants`, `events_since`) return defensive copies.
-* **No background thread of its own.** The buffer is fed by whoever owns
-  it: Fast DDS listener callbacks, or the Cyclone `DiscoveryTracker`
-  thread (`common/discovery_tracker.py`), which applies builtin-reader
-  samples carrying DDS timestamps.
+The event ring holds `MAX_EVENTS` entries and the participant map
+`MAX_PARTICIPANTS` (tombstoned `"left"` entries are dropped first). A
+restarted node mints a new RTPS GUID, so a long-running server on a churny
+bus would otherwise grow without bound. An RLock guards mutation because
+discovery callbacks run on the DDS library's thread; readers get copies.
+No DDS import, so tests use synthetic input.
 """
 
 from __future__ import annotations
@@ -51,16 +37,11 @@ EffectiveMode = Literal["mock", "live"]
 
 
 class LifecycleBuffer:
-    """Tracks discovered DDS participants + a bounded ring of events.
+    """Known DDS participants keyed by GUID, plus a bounded ring of events.
 
-    The buffer is keyed by GUID. A `record_seen` call either inserts a
-    new participant (emitting a `discovered` event) or updates
-    `last_seen_ns` + `seen_count` on an existing one. A `record_lost`
-    call flips `status` to `"left"` and emits a `lost` event.
-
-    The implementation uses `time.time_ns()` for timestamps so
-    timestamps are wall-clock and comparable to user logs. Lookback
-    filtering happens via the same clock.
+    `record_seen` inserts a participant (emitting `discovered`) or updates
+    `last_seen_ns` and `seen_count`; `record_lost` flips `status` to
+    `"left"` and emits `lost`. Timestamps are wall-clock `time.time_ns()`.
     """
 
     def __init__(
@@ -70,8 +51,6 @@ class LifecycleBuffer:
         self._participants: dict[str, ParticipantInfo] = {}
         self._events: deque[ParticipantEvent] = deque(maxlen=max_events)
         self._max_participants = max_participants
-
-    # ------------------------- mutating operations --------------------------
 
     def record_seen(
         self,
@@ -92,10 +71,9 @@ class LifecycleBuffer:
         `dds_source_timestamp`), while `first_seen_ns` / `last_seen_ns` stay
         on the local clock.
 
-        Idempotent on re-observation: updates `last_seen_ns`, increments
-        `seen_count`, and re-emits a `discovered` event only when the
-        participant was previously absent or in `"left"` state (i.e. a
-        re-join, not a steady-state heartbeat).
+        Re-observation updates `last_seen_ns` and `seen_count`; a
+        `discovered` event is emitted again only for a participant that was
+        absent or `"left"`.
         """
         ts = now_ns if now_ns is not None else time.time_ns()
         with self._lock:
@@ -167,14 +145,11 @@ class LifecycleBuffer:
         lost_ns: int | None = None,
         time_source: TimeSource | None = None,
     ) -> None:
-        """Mark a participant as left. Idempotent: emits one event per
-        transition `active -> left`. Re-calls while already `"left"` are
-        no-ops. If the GUID was never seen, falls through to a no-op
-        (we cannot synthesize a participant we never observed).
+        """Mark a participant as left, emitting one event per `active -> left`.
 
-        `lost_ns` / `time_source` carry a DDS-derived loss time when the
-        caller has one; otherwise the loss is stamped `observed_local` at
-        `now_ns`.
+        A GUID that is unknown or already `"left"` is a no-op. `lost_ns` and
+        `time_source` carry a DDS-derived loss time; without them the loss is
+        stamped `observed_local` at `now_ns`.
         """
         ts = now_ns if now_ns is not None else time.time_ns()
         with self._lock:
@@ -209,13 +184,10 @@ class LifecycleBuffer:
         mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
     ) -> None:
-        """Mark every previously-active GUID not in `observed_guids` as lost.
+        """Mark every active GUID of this domain missing from `observed_guids` as lost.
 
-        Used by Cyclone's polling adapter: after every snapshot of the
-        DCPSParticipant builtin reader, the adapter passes the set of
-        currently-observed GUIDs and the buffer flips anyone missing to
-        `"left"`. Fast DDS uses its listener-driven `record_lost` path
-        and does not need to call this.
+        For polling adapters (Cyclone); Fast DDS reports losses through its
+        listener and calls `record_lost` directly.
         """
         with self._lock:
             for guid, info in list(self._participants.items()):
@@ -234,20 +206,13 @@ class LifecycleBuffer:
                     now_ns=now_ns,
                 )
 
-    # ------------------------- read-only snapshots --------------------------
-
     def is_known(self, guid: str) -> bool:
         """True when `guid` has been recorded, active or left."""
         with self._lock:
             return guid in self._participants
 
     def snapshot_participants(self, *, domain_id: int | None = None) -> list[ParticipantInfo]:
-        """Return a defensive copy of currently-known participants.
-
-        `domain_id=None` returns all domains ; pass a value to filter.
-        Order is insertion-stable (oldest first), which keeps the
-        wire output deterministic for tests.
-        """
+        """Copy of the known participants, oldest first; `domain_id` filters."""
         with self._lock:
             if domain_id is None:
                 return list(self._participants.values())
@@ -260,31 +225,18 @@ class LifecycleBuffer:
         domain_id: int | None = None,
         now_ns: int | None = None,
     ) -> list[ParticipantEvent]:
-        """Return events younger than `lookback_seconds`, newest first.
-
-        Hard cap mirrors `MAX_EVENTS`: the underlying ring is already
-        bounded so this is implicit. `domain_id=None` skips filtering.
-        """
+        """Events younger than `lookback_seconds`, newest first; `domain_id` filters."""
         ts = now_ns if now_ns is not None else time.time_ns()
         cutoff = ts - lookback_seconds * 1_000_000_000
         with self._lock:
             events = [e for e in self._events if e.timestamp_ns >= cutoff]
             if domain_id is not None:
                 events = [e for e in events if e.domain_id == domain_id]
-        # Newest first ; deque is append-right so reverse here.
         events.reverse()
         return events
 
-    # --------------------------- private helpers ----------------------------
-
     def _evict_participant(self) -> None:
-        """Drop one participant to keep the map bounded. Called under lock.
-
-        Prefers a tombstoned (`status == "left"`) entry so currently-active
-        participants survive ; falls back to the oldest-inserted entry
-        (dicts preserve insertion order) when every tracked participant is
-        still active.
-        """
+        """Drop one participant, under the lock: a `"left"` one first, else the oldest."""
         for guid, info in self._participants.items():
             if info.status == "left":
                 del self._participants[guid]
@@ -308,9 +260,8 @@ class LifecycleBuffer:
         time_source: TimeSource | None = None,
         observed_ns: int | None = None,
     ) -> None:
-        # Called under self._lock: do not acquire again.
-        # `ts` is the local observation time; a DDS announcement time, when
-        # given, takes over as the event time.
+        # Called under self._lock. `ts` is the local observation time; a DDS
+        # announcement time, when given, becomes the event time.
         if time_source is None:
             time_source = "dds_source_timestamp" if announced_ns else "observed_local"
         self._events.append(

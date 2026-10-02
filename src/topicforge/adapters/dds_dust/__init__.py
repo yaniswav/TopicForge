@@ -1,10 +1,8 @@
-"""Dust DDS adapter: v0.4.0 Phase 1.5 stub.
+"""Dust DDS adapter stub.
 
-This package is **never imported** unless `services.factory` resolves
-the DDS backend to `dust`. Even thinner than the OpenDDS stub :
-Dust DDS is a Rust-native implementation and no Python binding is
-maintained on PyPI as of 2026-05-14. `is_available()` always returns
-False ; the factory falls back transparently.
+Imported only when `services.factory` resolves the DDS backend to `dust`.
+Dust DDS is Rust-native with no maintained Python binding, so
+`is_available()` is always False and the factory falls back.
 """
 
 from topicforge.adapters.dds_dust.adapter import DustDdsAdapter

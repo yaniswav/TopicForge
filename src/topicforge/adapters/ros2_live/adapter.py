@@ -1,18 +1,14 @@
-"""Live adapter: defensive wrappers over the `ros2` CLI.
+"""Live adapter: wrappers over the `ros2` CLI.
 
-Why CLI and not `rclpy`?
-  * `rclpy` is hard to depend on portably: distro-pinned, requires a sourced
-    setup file, and ships with the ROS2 install rather than from PyPI.
-  * The `ros2` CLI is stable, widely available wherever ROS2 is installed,
-    and trivial to mock in tests by stubbing `subprocess.run`.
-  * A richer `rclpy`-backed adapter can ship later behind the same protocol.
-    See `# TODO(roadmap): rclpy-backed adapter` below.
+The CLI is used instead of `rclpy` because `rclpy` is pinned to the distro,
+needs a sourced setup file and does not come from PyPI, while the CLI is
+available wherever ROS2 is installed and easy to stub in tests. An
+`rclpy` adapter can later sit behind the same protocol (see the
+`TODO(roadmap)` below).
 
-Public methods never raise raw subprocess errors. They raise `AdapterError`
-with a message that is safe to surface to an MCP client.
-
-The pure parsers at module level are split out from the adapter class so
-they can be unit-tested without a running ROS2 install.
+Failures surface as `AdapterError` with a message that is safe to show to
+an MCP client. The parsers are module-level functions so they can be tested
+without ROS2.
 """
 
 from __future__ import annotations
@@ -69,10 +65,8 @@ class Ros2CliAdapter:
     def is_available(self) -> bool:
         return shutil.which(self._exe) is not None
 
-    # ---------------------------- DDS module ------------------------------
-    # The ROS2 CLI cannot reach the DDS layer directly. The 3 DDS methods
-    # below raise AdapterError with a clear remediation path. This is the
-    # MVP D6 limitation, documented in CHANGELOG and README.
+    # The CLI cannot reach the DDS layer: these methods raise with a
+    # remediation message.
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
@@ -103,19 +97,14 @@ class Ros2CliAdapter:
         raise AdapterError(_DDS_MODULE_INACTIVE_MSG)
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
-        """Read decoded samples from a bag file via the BagService facade.
+        """Read decoded samples from a bag through `BagService` (the `rosbags` library).
 
-        v0.4.0 Phase 3: delegates to `services.bag_service.BagService`
-        which wraps the `rosbags` library. Raises `AdapterError` when
-        rosbags is not installed (clear `pip install topicforge[bags]`
-        remediation in the message). No silent fallback for sample
-        peek: the LLM tool description tells the user what to do.
+        Raises `AdapterError` with an install hint when `rosbags` is missing;
+        there is no fallback.
         """
         from topicforge.services.bag_service import BagService
 
         return BagService().peek_samples(path, topic, count)
-
-    # ----------------------------- topics --------------------------------
 
     def list_topics(self) -> list[TopicInfo]:
         out = self._run([self._exe, "topic", "list", "-t"])
@@ -141,17 +130,11 @@ class Ros2CliAdapter:
         return info
 
     def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
-        # `ros2 topic echo` blocks indefinitely; --once + bounded timeout is the
-        # safe MVP shape. Richer windowed sampling is a roadmap item.
-        #
-        # We invoke `--csv --once`: ros2cli's `message_to_csv` flattens the
-        # message in declaration order, so for any `Header`-stamped message
-        # the first two columns are `header.stamp.sec` and
-        # `header.stamp.nanosec`. That gives a real publish-time timestamp
-        # without depending on rclpy. Headerless messages (e.g.
-        # `std_msgs/String`, `geometry_msgs/Twist`) have no embedded
-        # timestamp and the parser returns 0 for those rows: documented in
-        # the `MessageSample.timestamp_ns` schema.
+        # `ros2 topic echo` blocks indefinitely, so use --once with a timeout.
+        # `--csv` flattens the message in declaration order: for a message
+        # starting with a `Header` the first two columns are the stamp, which
+        # gives a publish time without rclpy. Headerless messages
+        # (`std_msgs/String`, `geometry_msgs/Twist`) get timestamp 0.
         # TODO(roadmap): rclpy-backed adapter: windowed echo, time-range,
         # access to rmw receive timestamps (vs publish-time from Header),
         # better deserialization of complex message payloads.
@@ -179,8 +162,6 @@ class Ros2CliAdapter:
             for ts_ns, payload in rows
         ]
 
-    # ------------------------------ bag ----------------------------------
-
     def analyze_bag(self, path: str) -> BagAnalysis:
         bag_path = Path(path)
         if not bag_path.exists():
@@ -189,13 +170,8 @@ class Ros2CliAdapter:
         out = self._run([self._exe, "bag", "info", str(bag_path)])
         return parse_bag_info(out, fallback_path=str(bag_path), mode_effective=self.effective_mode)
 
-    # ---------------------------- internals ------------------------------
-
     def _safe_counts(self, topic: str) -> tuple[int, int]:
-        """Return (pub_count, sub_count) for a topic, defaulting to (0, 0).
-
-        Failing to fetch counts for a single topic must not break `list_topics`.
-        """
+        """`(pub_count, sub_count)` for a topic, `(0, 0)` if the lookup fails."""
         try:
             text = self._run([self._exe, "topic", "info", topic])
         except AdapterError:
@@ -203,8 +179,7 @@ class Ros2CliAdapter:
         return parse_pub_sub_counts(text)
 
     def _run(self, cmd: list[str], timeout: float = _DEFAULT_TIMEOUT_SEC) -> str:
-        # Resolve the executable to a full path so Windows .cmd/.bat shims work
-        # without shell=True.
+        # Resolve to a full path so Windows .cmd/.bat shims work without shell=True.
         resolved = shutil.which(cmd[0]) if cmd[0] == self._exe else cmd[0]
         if resolved is None:
             raise AdapterError(f"`{self._exe}` not found on PATH. Source your ROS2 setup file.")
@@ -238,9 +213,7 @@ class Ros2CliAdapter:
         return result.stdout
 
 
-# ---------------------------------------------------------------------------
-# Pure parsers: unit-testable without ROS2 present.
-# ---------------------------------------------------------------------------
+# Parsers
 
 _LIST_LINE = re.compile(r"^(\S+)\s+\[(.+)\]\s*$")
 _TYPE_LINE = re.compile(r"^\s*Type:\s*(.+)$")
@@ -281,13 +254,11 @@ def parse_pub_sub_counts(stdout: str) -> tuple[int, int]:
 def parse_topic_info(
     stdout: str, *, fallback_name: str, mode_effective: EffectiveMode
 ) -> TopicInfo | None:
-    """Parse `ros2 topic info <topic> --verbose` output into a TopicInfo.
+    """Parse `ros2 topic info <topic> --verbose` output.
 
-    Returns None if no message type was found, which the adapter treats as
-    "topic not found".
-
-    `mode_effective` is kwarg-only and injected by the adapter (not parsed
-    from the CLI output): same pattern as `fallback_name`.
+    Returns None when no message type is found (the adapter reports the topic
+    as not found). `fallback_name` and `mode_effective` come from the caller,
+    not from the output.
     """
     msg_type: str | None = None
     pub = sub = 0
@@ -309,29 +280,14 @@ def parse_topic_info(
     )
 
 
-# Status, post-v0.1.2: this parser is **no longer called by the live
-# adapter**: `sample_messages` switched to `parse_csv_echo` against
-# `ros2 topic echo --csv --once`, which exposes Header timestamps cleanly
-# (see `parse_csv_echo` below). `parse_echo_yaml` is kept for two reasons:
-#   1. Its test coverage in `tests/test_live_adapter_parse.py` documents
-#      the YAML-ish shape ROS2's plain echo produces: useful reference if
-#      we ever need to fall back from CSV.
-#   2. An rclpy-backed adapter will eventually return native typed payloads
-#      and obsolete both parsers (see `docs/product-plan.md` Phase 1).
-# Removal is a v0.3+ candidate ; the audit's recommendation to "either
-# remove it or document why it stays" is satisfied by this comment.
+# Not called by the adapter: `sample_messages` uses `parse_csv_echo`. Kept as
+# a fallback for the plain YAML echo format until an rclpy adapter makes both
+# parsers obsolete.
 def parse_echo_yaml(stdout: str) -> dict[str, object]:
-    """Best-effort parse of `ros2 topic echo --once` YAML-ish output.
+    """Parse `ros2 topic echo --once` output into a flat dict.
 
-    We deliberately avoid a hard YAML dependency for the MVP: instead we emit
-    a flat `{key: value}` dict (top-level keys only) plus the raw text under
-    a reserved `_raw_text` key. LLMs can still reason over the raw text, and
-    downstream tools can upgrade this parser without changing the contract.
-
-    `_raw_text` is intentionally not dunder-named (no leading/trailing `__`):
-    a dunder key signals Python special-attribute semantics, which this is
-    not. A single leading underscore is enough to flag it as parser metadata
-    while keeping it a plain dict key.
+    Only top-level keys are kept, and the raw text goes under `_raw_text`.
+    This avoids a YAML dependency.
     """
     flat: dict[str, object] = {}
     for raw in stdout.splitlines():
@@ -347,45 +303,28 @@ def parse_echo_yaml(stdout: str) -> dict[str, object]:
     return flat
 
 
-# Plausible bounds for a ROS2 Header timestamp in `sec, nanosec` form.
-# `sec` is seconds since the epoch; we accept anything from year 2000 to
-# year 2100 as "clearly an epoch second". `nanosec` is the sub-second
-# remainder and is strictly < 1e9. These bounds let the parser decide
-# whether the leading two CSV columns look like a real timestamp or are
-# just the first two scalar fields of a headerless message.
+# Bounds for reading the first two CSV columns as a Header stamp: `sec` between
+# the years 2000 and 2100, `nanosec` below 1e9. Anything else is taken to be
+# the first fields of a headerless message.
 _TS_SEC_MIN = 946_684_800  # 2000-01-01 UTC
 _TS_SEC_MAX = 4_102_444_800  # 2100-01-01 UTC
 _TS_NSEC_MAX = 1_000_000_000
 
 
 def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
-    """Parse `ros2 topic echo --csv [--once]` output.
+    """Parse `ros2 topic echo --csv [--once]` output into `(timestamp_ns, payload)` rows.
 
-    Returns a list of `(timestamp_ns, payload)` tuples: one per CSV row.
+    `message_to_csv` flattens a message in declaration order, so a message
+    that starts with a `Header` begins with `header.stamp.sec,nanosec`. When
+    the first two columns fall within the bounds above they become
+    `timestamp_ns` and are dropped from the payload, which is re-indexed from
+    `col_0`. Otherwise `timestamp_ns` is 0 (see `MessageSample.timestamp_ns`).
 
-    `ros2cli`'s `message_to_csv` flattens the message in declaration order,
-    so for any message whose first field is a `std_msgs/Header` the first
-    two columns are `header.stamp.sec` and `header.stamp.nanosec`. We
-    detect that shape by checking whether the leading two columns parse as
-    a plausible epoch-second / nanosec pair (`2000-01-01` <= sec <
-    `2100-01-01`, `0` <= nanosec < `1e9`). When they do, `timestamp_ns` is
-    `sec * 1_000_000_000 + nanosec` and those two columns are dropped from
-    the payload. When they don't, the row is a headerless message and
-    `timestamp_ns` is 0 (documented behavior in
-    `MessageSample.timestamp_ns`).
-
-    Tolerant to blank lines and comment lines starting with `#`: both are
-    skipped. Rows with fewer than two columns are skipped silently (no
-    raise), matching the convention of the other parsers in this module:
-    a malformed CLI artifact must not break the whole sample call.
-
-    Example input (`sensor_msgs/Imu`, single row):
-        1715600000,123456789,base_link,0.0,0.0,0.0,1.0, ...
+    Blank lines, `#` comments and rows with fewer than two columns are
+    skipped. Example (`sensor_msgs/Imu`):
+        1715600000,123456789,base_link,0.0,...
     -> `[(1715600000123456789, {"col_0": "base_link", "col_1": "0.0", ...,
                                 "_raw_text": "..."})]`
-
-    The post-strip payload re-indexes from `col_0` after the two timestamp
-    columns are removed: see `tests/test_live_adapter_parse.py`.
     """
     rows: list[tuple[int, dict[str, object]]] = []
     for raw in stdout.splitlines():
@@ -394,9 +333,6 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
             continue
         parts = [p.strip() for p in line.split(",")]
         if len(parts) < 2:
-            # Single-column rows can't carry a Header timestamp and aren't
-            # useful payloads either: skip rather than emit a degenerate
-            # sample.
             continue
 
         ts_ns = 0
@@ -419,11 +355,7 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
 def parse_bag_info(
     stdout: str, *, fallback_path: str, mode_effective: EffectiveMode
 ) -> BagAnalysis:
-    """Parse `ros2 bag info <path>` text output into a BagAnalysis.
-
-    `mode_effective` is kwarg-only and injected by the adapter (not parsed
-    from the CLI output): same pattern as `fallback_path`.
-    """
+    """Parse `ros2 bag info <path>` output. `fallback_path` and `mode_effective` come from the caller."""
     duration = 0.0
     msg_count = 0
     storage: str | None = None

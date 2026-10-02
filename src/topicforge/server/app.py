@@ -1,9 +1,4 @@
-"""MCP server bootstrap.
-
-Wires settings -> adapter -> services -> tools -> FastMCP. This module is the
-only place that knows the full dependency graph; everything else stays
-narrowly scoped.
-"""
+"""MCP server bootstrap: wires settings -> adapter -> services -> tools -> FastMCP."""
 
 from __future__ import annotations
 
@@ -26,16 +21,11 @@ def build_app(
     telemetry: TelemetryClient | None = None,
     telemetry_transport: Transport | None = None,
 ) -> FastMCP:
-    """Construct a fully wired FastMCP application.
+    """Build the FastMCP application.
 
-    `settings` is optional so tests can build the app with deterministic
-    configuration; production callers (`python -m topicforge`) pass nothing
-    and pick up settings from the environment.
-
-    `telemetry` lets tests inject a pre-built client (e.g. one wired to a
-    spy transport). When omitted, the client is built from settings and
-    `telemetry_transport` is used as the transport (falling back to the
-    default structured-log transport).
+    `settings` defaults to the environment. `telemetry` lets tests inject a
+    client; otherwise one is built from settings with `telemetry_transport`
+    (default: the logging transport).
     """
     settings = settings or load_settings()
     adapter = build_adapter(settings)

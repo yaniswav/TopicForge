@@ -1,8 +1,4 @@
-"""Mock adapter: deterministic fixtures for development, tests, and demos.
-
-Always available. Outputs are stable across runs so tests can assert on
-exact values.
-"""
+"""Mock adapter: deterministic fixtures for development, tests and demos."""
 
 from __future__ import annotations
 
@@ -23,10 +19,8 @@ from topicforge.models import (
     TopicMetrics,
 )
 
-# Extensions the live `ros2 bag info` accepts. The mock mirrors this list so
-# a test that passes `/tmp/demo.txt` fails in mock the same way it would in
-# live: otherwise mock mode would hide a real-world UX problem until the
-# first ROS2 install.
+# Extensions the live `ros2 bag info` accepts; the mock rejects the same
+# paths so mock mode does not hide the error.
 _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
 
 
@@ -74,8 +68,6 @@ class MockAdapter:
             samples=samples,
             mode_effective="mock",
         )
-
-    # ---------------------------- DDS module ------------------------------
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         if domain_id < 0 or domain_id > 232:
@@ -130,15 +122,12 @@ class MockAdapter:
 
 
 def _reject_non_bag_path(path: str) -> None:
-    """Reject paths the live `ros2 bag info` would obviously refuse.
+    """Reject paths `ros2 bag info` would refuse.
 
-    Accepts: `.mcap` / `.db3` / `.bag` files, and any extensionless path
-    (which could legitimately be a `rosbag2_*` directory). Rejects every
-    other extension so mock demos surface the same shape of error a
-    real ROS2 install would produce on, e.g., `/tmp/note.txt`.
+    `.mcap`, `.db3`, `.bag` and extensionless paths (possibly a `rosbag2_*`
+    directory) pass; any other extension raises.
     """
-    # `PurePosixPath` handles `/tmp/foo.mcap`; `PureWindowsPath` handles
-    # `C:\demos\foo.mcap`. The longest suffix wins.
+    # POSIX parsing for `/tmp/foo.mcap`, Windows parsing for `C:\demos\foo.mcap`.
     posix_suffix = PurePosixPath(path).suffix.lower()
     win_suffix = PureWindowsPath(path).suffix.lower()
     suffix = posix_suffix or win_suffix

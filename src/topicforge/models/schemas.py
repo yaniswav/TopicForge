@@ -1,9 +1,7 @@
 """Tool input/output schemas.
 
-Models are deliberately small, frozen, and JSON-friendly so MCP clients
-(particularly LLMs) can reason about them without ambiguity. `extra="forbid"`
-keeps adapters honest: an accidental extra key fails fast in tests rather
-than silently propagating to clients.
+Models are frozen and JSON-friendly. `extra="forbid"` makes an accidental
+extra key fail in tests instead of reaching clients.
 """
 
 from __future__ import annotations
@@ -15,34 +13,28 @@ from pydantic import BaseModel, ConfigDict, Field
 _CONFIG = ConfigDict(extra="forbid", frozen=True)
 
 _MODE_EFFECTIVE_DESC = (
-    "Runtime mode the adapter actually served this response in: `live` "
-    "(real ROS2 introspection) or `mock` (deterministic fixtures). Always "
-    "carried by the response so a downstream LLM can distinguish a real "
-    "graph from a demo one without re-reading `health_check`."
+    "Runtime mode the adapter served this response in: `live` (real ROS2 "
+    "introspection) or `mock` (deterministic fixtures). Lets a caller tell a "
+    "real graph from a demo one without calling `health_check`."
 )
 
-# `mode_effective` is carried on `TopicInfo`, `SampleResult`, `BagAnalysis`,
-# `ParticipantInfo`, and `MismatchReport` (every tool's primary response
-# carrier) but **not** on `HealthReport` (which surfaces mode via its
-# dedicated `mode`/`requested_mode` fields) or `MessageSample` (which
-# nests inside `SampleResult`, whose envelope already carries the field).
-# This asymmetry is deliberate ; do not add `mode_effective` to either
-# without reviewing the wire contract.
+# `mode_effective` is on every top-level response model except `HealthReport`
+# (it has `mode` / `requested_mode`) and `MessageSample` (nested in
+# `SampleResult`, which carries it). Do not add it to those two.
 
 
 class QosProfile(BaseModel):
-    """DDS QoS profile snapshot for a single endpoint (reader or writer).
+    """QoS profile of one DDS endpoint (reader or writer).
 
-    Covers the policies that explain most "subscriber doesn't receive"
-    cases. Vendor-specific extensions are ignored: `detect_qos_mismatches`
-    compares against canonical DDS spec values only.
+    Covers the policies behind most "subscriber receives nothing" cases.
+    Vendor-specific extensions are ignored.
     """
 
     model_config = _CONFIG
 
     reliability: Literal["RELIABLE", "BEST_EFFORT"] = Field(
         description=(
-            "DDS Reliability QoS. `RELIABLE` retries lost samples ; "
+            "DDS Reliability QoS. `RELIABLE` retries lost samples; "
             "`BEST_EFFORT` does not. A `RELIABLE` reader cannot match a "
             "`BEST_EFFORT` writer."
         )
@@ -50,14 +42,14 @@ class QosProfile(BaseModel):
     durability: Literal["VOLATILE", "TRANSIENT_LOCAL", "TRANSIENT", "PERSISTENT"] = Field(
         description=(
             "DDS Durability QoS. `VOLATILE` writers do not retain samples "
-            "for late joiners ; `TRANSIENT_LOCAL` writers do. A "
+            "for late joiners; `TRANSIENT_LOCAL` writers do. A "
             "`TRANSIENT_LOCAL` reader cannot match a `VOLATILE` writer."
         )
     )
     history: Literal["KEEP_LAST", "KEEP_ALL"] = Field(
         description=(
             "DDS History QoS. `KEEP_LAST` keeps a bounded ring buffer "
-            "of size `history_depth` ; `KEEP_ALL` keeps every sample "
+            "of size `history_depth`; `KEEP_ALL` keeps every sample "
             "(memory permitting). Mixed `KEEP_ALL` reader with "
             "`KEEP_LAST` writer is risky but not strictly incompatible."
         )
@@ -81,7 +73,7 @@ class QosProfile(BaseModel):
         Field(
             default=None,
             description=(
-                "Liveliness QoS kind. `AUTOMATIC` is asserted by the middleware ; "
+                "Liveliness QoS kind. `AUTOMATIC` is asserted by the middleware; "
                 "the two `MANUAL_*` kinds need the application to write or assert "
                 "liveliness, and the endpoint is declared not alive when it does "
                 "not within `liveliness_lease_ns`. `None` when not announced."
@@ -208,7 +200,7 @@ class ParticipantInfo(BaseModel):
             "GUID, and some vendors (for example Dust DDS and RTI Connext) do "
             "not put their vendor id there, while the Cyclone Python binding "
             "does not expose the RTPS header vendor id. The participant is "
-            "still reported ; see `vendor_source`. "
+            "still reported; see `vendor_source`. "
             "Vendor-neutral: "
             "TopicForge observes every conformant DDS-RTPS participant "
             "on the bus via the OMG protocol guarantee: see "
@@ -234,7 +226,7 @@ class ParticipantInfo(BaseModel):
         default=False,
         description=(
             "True for TopicForge's own read-only observer participant, which "
-            "joins the domain to watch it and appears in this list ; false for "
+            "joins the domain to watch it and appears in this list; false for "
             "every other participant."
         ),
     )
@@ -320,11 +312,10 @@ class ParticipantInfo(BaseModel):
 
 
 class ParticipantEvent(BaseModel):
-    """A single lifecycle event for a DDS participant: discovered or lost.
+    """A point-in-time lifecycle event (discovered or lost) for a DDS participant.
 
-    Distinct from `ParticipantInfo` because events carry intrinsic time
-    + type semantics (point-in-time facts), while `ParticipantInfo` is a
-    snapshot of current state. Returned by the `participant_events` tool.
+    `ParticipantInfo` is the current state; this is one event in its history.
+    Returned by `participant_events`.
     """
 
     model_config = _CONFIG
@@ -351,8 +342,8 @@ class ParticipantEvent(BaseModel):
         description=(
             "Wall-clock timestamp (nanoseconds since epoch) when TopicForge "
             "captured the event. For Fast DDS this is when the listener "
-            "callback ran ; for Cyclone this is when the polling delta was "
-            "computed ; for mock fixtures this is a deterministic anchor."
+            "callback ran; for Cyclone this is when the polling delta was "
+            "computed; for mock fixtures this is a deterministic anchor."
         ),
     )
     hostname: str | None = Field(
@@ -395,19 +386,14 @@ class ParticipantEvent(BaseModel):
 class TopicMetrics(BaseModel):
     """Temporal metrics for a single DDS topic over a recent window.
 
-    Built from samples that flow through the adapter's `peek_dds_samples`
-    path: the buffer is **opportunistic**, not push-based, because neither
-    `cyclonedds` nor `fastdds` Python bindings expose reliable
-    at-sample-receive callbacks. A sample bursting between two tool calls
-    is invisible.
+    Built from samples that pass through `peek_dds_samples`. The buffer is
+    filled on demand because neither the `cyclonedds` nor the `fastdds`
+    Python binding has a reliable per-sample callback, so a burst between two
+    calls is not seen.
 
-    Every numeric field is `None`-tolerant: fields collapse to
-    `None` (or `0` for the integer-typed `sequence_gaps_count`)
-    when the underlying data is unavailable: no samples observed,
-    no source timestamps to compute latency, no sequence number
-    embedded in the payload, etc. `samples_observed=0` is a valid
-    response shape ; it means the tool ran successfully but the
-    buffer had nothing to report for the requested window.
+    Numeric fields are `None` (`0` for `sequence_gaps_count`) when the data is
+    missing: no samples, no source timestamps, no sequence number in the
+    payload. `samples_observed=0` is a valid result, not an error.
     """
 
     model_config = _CONFIG
@@ -484,7 +470,7 @@ class TopicMetrics(BaseModel):
             "True when the adapter successfully extracted sequence "
             "numbers from at least one sample. Sequence number support "
             "depends on the message type: `Header`-stamped messages "
-            "with a `seq` field expose it ; primitives like "
+            "with a `seq` field expose it; primitives like "
             "`std_msgs/String` do not."
         ),
     )
@@ -583,7 +569,7 @@ class MismatchReport(BaseModel):
     )
     severity: Literal["incompatible", "risky"] = Field(
         description=(
-            "`incompatible` means communication is definitely blocked ; "
+            "`incompatible` means communication is definitely blocked; "
             "`risky` means it may degrade but is not strictly blocked by "
             "the DDS spec (History only). Useful for an LLM to triage user-facing advice."
         )
@@ -895,7 +881,7 @@ class BagAnalysis(BaseModel):
         ge=0,
         description=(
             "Recording duration in nanoseconds when readable from the "
-            "bag's index. `None` when only `ros2 bag info` text was parsed ; "
+            "bag's index. `None` when only `ros2 bag info` text was parsed; "
             "`duration_seconds` (float) is the always-populated fallback "
             "that downstream LLM consumers should prefer when this is "
             "`None`."
@@ -906,7 +892,7 @@ class BagAnalysis(BaseModel):
         description=(
             "DDS participants recorded in the bag when the container "
             "format embeds participant metadata. MCAP can carry it via "
-            "channel metadata records ; ROS2 `.db3` and ROS1 `.bag` "
+            "channel metadata records; ROS2 `.db3` and ROS1 `.bag` "
             "generally do not. Empty list when not available, which "
             "is the common case."
         ),
@@ -996,11 +982,10 @@ class HealthReport(BaseModel):
             "DDS backend of the adapter actually serving requests. `none` "
             "when the DDS module is not active (default for ROS2-only "
             "installs). `mock` for synthetic fixtures. `cyclone` requires "
-            '`pip install "topicforge[dds-cyclone]"` (Eclipse CycloneDDS) ; '
+            '`pip install "topicforge[dds-cyclone]"` (Eclipse CycloneDDS); '
             "`fast` requires a Fast DDS Python binding built from eProsima "
-            "sources (not on PyPI) ; `opendds` and `dust` are permanent stub "
-            "adapters that never serve. The `rti`, `opensplice`, `coredx` "
-            "and `intercom` values were removed in 0.5.3 with the Pro tier."
+            "sources (not on PyPI); `opendds` and `dust` are permanent stub "
+            "adapters that never serve."
         ),
     )
     dds_domain_id: int | None = Field(
@@ -1092,7 +1077,7 @@ class HealthReport(BaseModel):
     payload_decoding_reason: str | None = Field(
         default=(
             "user-topic payload decoding is switched off until it is validated "
-            "on a real bus ; builtin discovery topics are still readable"
+            "on a real bus; builtin discovery topics are still readable"
         ),
         description="One-line reason for `payload_decoding`.",
     )
@@ -1124,7 +1109,7 @@ class EndpointInfo(BaseModel):
 
     guid: str = Field(description="GUID of the endpoint, `xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx`.")
     role: Literal["writer", "reader"] = Field(
-        description="`writer` publishes the topic ; `reader` subscribes to it."
+        description="`writer` publishes the topic; `reader` subscribes to it."
     )
     participant_guid: str = Field(
         description="GUID of the owning participant, same format as `list_participants`."

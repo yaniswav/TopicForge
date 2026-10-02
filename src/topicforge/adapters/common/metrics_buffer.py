@@ -1,31 +1,14 @@
-"""Metrics buffer: per-topic temporal metrics accumulated across sample flows.
+"""Per-topic metrics buffer behind `topic_metrics`.
 
-A bounded, RLock-protected ring buffer per topic, used by the v0.4.0
-Phase 2 `topic_metrics` MCP tool to surface frequency, sequence gaps,
-and latency percentiles from samples that flow through the adapter's
-existing pull paths (`peek_dds_samples`).
+A bounded ring per topic, guarded by an RLock, yields frequency, sequence
+gaps and latency percentiles from the samples that pass through
+`peek_dds_samples`. There is no polling thread: the buffer only fills when
+a peek happens, which the `topic_metrics` tool description tells callers.
 
-Design rules (mirror `lifecycle.py`):
-
-* **Pure logic at module level.** No DDS dependency. Tests pin
-  behavior against synthetic input: same convention as
-  `parse_topic_list`, `detect_mismatches`, `LifecycleBuffer`.
-* **Bounded per-topic and in topic count.** Each topic's ring caps at
-  `MAX_SAMPLES_PER_TOPIC` (default 1000) ; older samples drop out
-  when new ones arrive. The number of distinct topics tracked caps at
-  `MAX_TOPICS` (default 4096), oldest-inserted evicted on overflow, so a
-  churny bus cannot grow the map without bound. Memory footprint is bounded
-  by `O(min(topics, 4096) x 1000 x sample_record_size)`: at 50 topics
-  roughly 10 MB worst case.
-* **Thread-safe.** Cyclone and Fast adapters today fill the buffer
-  on the tool-call thread (synchronous), but a future rclpy adapter
-  (roadmapped in `docs/product-plan.md` section 5) will fire callbacks
-  from a binding worker thread. RLock cost is negligible.
-* **Opportunistic fill.** The buffer accumulates samples only as
-  the existing `peek_dds_samples` path flows them through. No
-  background polling thread: same caveat as `LifecycleBuffer`
-  for Cyclone in Phase 1. The `topic_metrics` tool description
-  surfaces this to LLM callers explicitly.
+Each ring holds at most `MAX_SAMPLES_PER_TOPIC` samples and at most
+`MAX_TOPICS` topics are tracked (oldest inserted is evicted), so a churny
+bus cannot grow memory without bound. No DDS import, so tests use
+synthetic samples.
 """
 
 from __future__ import annotations
@@ -49,16 +32,13 @@ EffectiveMode = Literal["mock", "live"]
 
 @dataclass(frozen=True, slots=True)
 class MetricsSample:
-    """Minimal per-sample record captured at the adapter's sample-flow site.
+    """One captured sample.
 
-    All fields are produced inside the adapter where the binding
-    surfaces the sample. `receive_ns` is `time.time_ns()` at capture
-    moment (wall clock, NOT DDS-RTPS receive timestamp; neither
-    binding exposes the underlying RTPS timestamp through Python
-    reliably). `sequence_number`, `publish_ns`, and `writer_guid` are
-    best-effort: `None` when the sample type / binding doesn't expose
-    them. `writer_guid` lets `compute_metrics` count sequence gaps per
-    writer instead of merging independent counters (Audit C6).
+    `receive_ns` is the wall clock at capture, not an RTPS receive
+    timestamp (neither binding exposes that reliably in Python).
+    `sequence_number`, `publish_ns` and `writer_guid` are `None` when the
+    binding does not expose them. `writer_guid` lets `compute_metrics` count
+    sequence gaps per writer.
     """
 
     topic: str
@@ -82,8 +62,6 @@ class MetricsBuffer:
         self._cap = max_samples_per_topic
         self._max_topics = max_topics
         self._samples: dict[str, deque[MetricsSample]] = {}
-
-    # --------------------------- mutating ------------------------------
 
     def record(
         self,
@@ -117,8 +95,6 @@ class MetricsBuffer:
                 )
             )
 
-    # ---------------------- read-only computation ----------------------
-
     def compute_metrics(
         self,
         *,
@@ -131,14 +107,10 @@ class MetricsBuffer:
     ) -> TopicMetrics:
         """Build a `TopicMetrics` for `topic` over the last `window_seconds`.
 
-        `now_ns` defaults to `time.time_ns()` and is injectable for
-        deterministic tests. `declared_hz` comes from the topic's
-        QoS Deadline policy (when the adapter has resolved it ;
-        callers pass `None` when unknown).
-
-        Returns an `empty` `TopicMetrics` (samples_observed=0, all
-        None / 0 metrics) when the topic has no recorded samples
-        within the window.
+        `now_ns` defaults to `time.time_ns()` and exists for deterministic
+        tests. `declared_hz` is derived from the QoS Deadline; pass `None`
+        when unknown. A topic with no samples in the window yields an empty
+        `TopicMetrics` (`samples_observed=0`, no metrics).
         """
         if now_ns is None:
             import time
@@ -156,7 +128,6 @@ class MetricsBuffer:
 
         samples_observed = len(samples)
         if samples_observed == 0:
-            # Empty path: every metric collapses to its zero-value.
             return TopicMetrics(
                 topic=topic,
                 window_seconds=window_seconds,
@@ -173,21 +144,17 @@ class MetricsBuffer:
                 mode_effective=mode_effective,
             )
 
-        # window_seconds_actual reflects the actual elapsed range
-        # within the window: useful when the buffer is younger than
-        # `window_seconds` (e.g., server just started).
+        # The actual window can be shorter than requested (server just started).
         receive_times = [s.receive_ns for s in samples]
         oldest_ns = min(receive_times)
         newest_ns = max(receive_times)
         elapsed_ns = max(now_ns - oldest_ns, 1)  # >=1 ns to avoid /0
         window_actual_s = elapsed_ns / 1_000_000_000
 
-        # Frequency is measured from the span of the samples' own arrival
-        # instants (newest - oldest) over N-1 intervals: NOT from
-        # (now - oldest), which would fold in idle time since the last peek.
-        # Samples surfaced by one opportunistic peek share a single
-        # receive_ns (span 0), so a snapshot legitimately yields no
-        # frequency rather than a fabricated rate. (Audit C5.)
+        # Frequency is N-1 intervals over (newest - oldest), not (now - oldest),
+        # which would include idle time since the last peek. Samples from one
+        # peek share a receive_ns (span 0) and give no frequency rather than
+        # an invented one.
         sample_span_ns = newest_ns - oldest_ns
         freq_observed: float | None = (
             (samples_observed - 1) / (sample_span_ns / 1_000_000_000)
@@ -195,9 +162,8 @@ class MetricsBuffer:
             else None
         )
 
-        # Sequence gaps are counted per writer: merging sequence numbers
-        # from independent writers on one topic would read each writer's
-        # counter offset as a huge phantom gap. (Audit C6.)
+        # Per writer: merging independent writers would read their counter
+        # offset as one huge gap.
         seq_by_writer: dict[str | None, list[int]] = defaultdict(list)
         for s in samples:
             if s.sequence_number is not None:
@@ -247,32 +213,17 @@ class MetricsBuffer:
             return len(ring) if ring is not None else 0
 
 
-# ---------------------------------------------------------------------------
-# Pure helpers: testable without the buffer
-# ---------------------------------------------------------------------------
-
-
-# A hole wider than this between two consecutive observed sequence numbers is
-# treated as a publisher restart / counter wrap (a discontinuity), not as that
-# many genuinely lost samples: so a 16-bit wrap (65535->0) or a restart is not
-# reported as tens of thousands of gaps. (Audit C6.)
+# A hole wider than this between consecutive sequence numbers is read as a
+# publisher restart or counter wrap, not as that many lost samples.
 _MAX_PLAUSIBLE_GAP = 10_000
 
 
 def _count_sequence_gaps(seq_numbers: list[int]) -> int:
-    """Count missing entries in ONE writer's observed sequence numbers.
+    """Count missing entries in one writer's sequence numbers.
 
-    Sorts + dedupes the input, then sums the holes between consecutive
-    values. Out-of-order arrivals are tolerated (we sort first) and
-    duplicates are removed. A single hole wider than `_MAX_PLAUSIBLE_GAP`
-    is treated as a reset/wrap discontinuity and skipped rather than
-    counted as that many losses.
-
-    Callers pass one writer's sequence numbers: cross-writer merging is
-    handled in `compute_metrics` by grouping on writer GUID first, so an
-    independent writer's counter offset is never read as a phantom gap.
-
-    Example: [0, 1, 2, 5, 6] -> 2 gaps (3 and 4 missing).
+    Input is sorted and deduplicated, so out-of-order arrival is fine. A
+    hole wider than `_MAX_PLAUSIBLE_GAP` is skipped as a reset or wrap.
+    Example: [0, 1, 2, 5, 6] -> 2 (3 and 4 missing).
     """
     if len(seq_numbers) < 2:
         return 0
@@ -288,20 +239,13 @@ def _count_sequence_gaps(seq_numbers: list[int]) -> int:
 
 
 def _percentile(sorted_values: list[int], q: int) -> int | None:
-    """Nearest-rank percentile over a pre-sorted integer list.
-
-    `q` is in `1..100`. Returns the value at the nearest-rank index
-    (matches the `numpy.percentile(..., interpolation="lower")`
-    convention closely enough for diagnostics). `None` for empty
-    input. Pure Python so the OSS core stays NumPy-free.
-    """
+    """Nearest-rank percentile (`q` in 1..100) of a sorted list; `None` if empty."""
     if not sorted_values:
         return None
     if q <= 0:
         return sorted_values[0]
     if q >= 100:
         return sorted_values[-1]
-    # Nearest-rank: idx = ceil(q/100 * n) - 1, clamped.
     n = len(sorted_values)
     idx = max(0, min(n - 1, (q * n + 99) // 100 - 1))
     return sorted_values[idx]

@@ -1,52 +1,30 @@
-"""Cyclone DDS adapter: real implementation (v0.3.0+).
+"""Cyclone DDS adapter.
 
-Joins the bus as a read-only DDS-RTPS participant on the configured
-domain via the `cyclonedds.builtin` builtin data readers, and observes
-every conformant vendor on the wire: see `docs/dds-interop-matrix.md`
-for the canonical multi-vendor positioning.
+Joins the bus as a read-only DDS-RTPS participant through the
+`cyclonedds.builtin` readers. Because it reads the standard discovery
+topics it sees every conformant vendor (`docs/dds-interop-matrix.md`).
+The ROS2 graph methods raise `AdapterError(DDS_ONLY_ERROR_MSG)`; pair it
+with `Ros2CliAdapter` through `CompositeAdapter` to serve both. The
+factory imports this module only for `TOPICFORGE_DDS_BACKEND=cyclone`.
 
-The DDS / observability methods call into the CycloneDDS Python
-bindings ; the ROS2 graph methods raise `AdapterError(DDS_ONLY_ERROR_MSG)`
-(this adapter is DDS-only; pair with `Ros2CliAdapter` via the
-v0.4.0 `CompositeAdapter` to get both surfaces simultaneously). The
-factory only loads this module when `TOPICFORGE_DDS_BACKEND=cyclone`
-(or `auto` resolving to cyclone): see `services/factory.py`.
+A daemon `DiscoveryTracker` thread is the only code that touches the three
+builtin readers (`take()` would hide samples from any other reader). It
+folds what it takes into the caches of `common/discovery_tracker.py`, and
+every tool reads those caches, so no handler reads from DDS and the
+lifecycle does not depend on tool calls.
 
-Current scope (v0.4.0+):
-
-Discovery is tracked continuously: a daemon `DiscoveryTracker` thread is the
-ONLY code that touches the three builtin readers (it `take()`s, which would
-hide samples from any other reader), and folds what it takes into the caches
-of `common/discovery_tracker.py`. Every tool below reads those caches, so no
-handler does DDS reads and the lifecycle does not depend on tool calls.
-
-* `list_participants`: the `LifecycleBuffer` (first/last seen, status,
-  seen_count, announced_ns, lost_ns).
-* `detect_qos_mismatches`: cached DCPSSubscription + DCPSPublication paired
-  by topic, run through the vendor-neutral pure analyzer in
-  `adapters/common/qos_analyzer.py`.
-* `peek_dds_samples`: structured payloads on the 3 builtin DCPS topics
-  (DCPSParticipant, DCPSSubscription, DCPSPublication), served from the
-  caches: the current discovery state, not a stream. Arbitrary user
-  topics go through `_peek_user_topic`, which confirms the topic is on the
-  bus and returns one annotated placeholder (`_decode_status="raw"`, empty
-  bytes). Dynamic XTypes decode of user-topic payloads is DISABLED in this
-  release pending real-bus validation: see `_try_dynamic_decode_cyclone`.
-  The placeholder is not a received sample and never feeds `topic_metrics`.
-* `participant_events`: `discovered` / `lost` events from the
-  `LifecycleBuffer`, timed by the DDS source timestamps of the discovery
-  samples. Caveat: a participant cycle faster than the builtin reader's
-  history depth between two tracker passes can still be missed.
-* `topic_metrics`: opportunistic frequency / sequence-gap / latency
-  metrics buffered as `peek_dds_samples` surfaces samples of the builtin
-  DCPS topics (no native at-sample-receive callback in cyclonedds 2.6.x
-  Python). User topics currently surface no sample, so they stay at
+* `list_participants`, `participant_events`: the `LifecycleBuffer`, timed by
+  DDS source timestamps. A participant that joins and leaves faster than
+  the builtin reader's history depth between two passes can be missed.
+* `detect_qos_mismatches`, `list_endpoints`: cached DCPSPublication and
+  DCPSSubscription samples, run through the pure analyzers in `common/`.
+* `peek_dds_samples`: structured payloads for the three builtin topics,
+  served from the caches (current discovery state, not a stream). A user
+  topic returns one empty placeholder, because dynamic XTypes decoding is
+  disabled (see `_try_dynamic_decode_cyclone`).
+* `topic_metrics`: filled when `peek_dds_samples` surfaces builtin samples
+  (the binding has no per-sample callback). User topics stay at
   `samples_observed=0`.
-
-Sample-introspection helpers below are defensive against binding-version
-shape variations: they read attributes via `getattr` with fallbacks and
-collapse missing data to `None` / `"unknown"` rather than raising. A
-single odd discovery sample must not break the whole tool call.
 """
 
 from __future__ import annotations
@@ -58,9 +36,7 @@ import time
 from itertools import islice
 from typing import Any
 
-# Top-level imports: the factory only loads this module when the
-# cyclonedds bindings are importable. ImportError here propagates to
-# the factory which falls back to mock with a logged warning.
+# ImportError here propagates to the factory, which falls back to mock.
 from cyclonedds.builtin import (
     BuiltinDataReader,
     BuiltinTopicDcpsParticipant,
@@ -113,12 +89,7 @@ from topicforge.models import (
     TopicMetrics,
 )
 
-# v0.4.0 Phase 3: the 6 helpers below were extracted into
-# `adapters/common/cdr_decoder.py` so the same dynamic-type decode logic
-# powers both live Cyclone XTypes samples (Phase 1.5) and recorded
-# bag samples (Phase 3 `services/bag_service.py`). The `_underscore`
-# aliases stay in this module so the pre-Phase-3 call sites
-# (_try_dynamic_decode_cyclone, etc.) keep working without rewrites.
+# Aliases for the shared decoders in `adapters/common/cdr_decoder.py`.
 _decode_dynamic_sample = decode_dynamic_sample
 _iter_field_names = iter_field_names
 _decode_field_value = decode_field_value
@@ -128,20 +99,14 @@ _extract_publish_ns_from_payload = extract_publish_ns_from_payload
 
 log = logging.getLogger(__name__)
 
-# Tunables: kept module-level so a future env-var hook is a one-line
-# change. The builtin readers are drained by the tracker thread alone, with
-# `take()`; the rest of the adapter reads the tracker's caches.
-# `read_iter(timeout=...)` (used by the unreachable dynamic-decode code)
-# resets its timeout on every received sample, so it never ends on a topic
-# publishing faster than the timeout: bound it with `take_bounded`.
+# `read_iter(timeout=...)` (used only by the unreachable dynamic-decode code)
+# resets its timeout on every sample, so bound it with `take_bounded`.
 _DISCOVERY_TIMEOUT_SEC = 2.0
 _SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
 _MAX_ENDPOINTS = 1024
 
-# Builtin DCPS topics that `peek_dds_samples` serves with structured
-# payloads. Arbitrary user topics route through `_peek_user_topic`, which
-# returns an annotated placeholder (dynamic decode is disabled).
+# Builtin topics `peek_dds_samples` serves with structured payloads.
 _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
     "DCPSParticipant": BuiltinTopicDcpsParticipant,
     "DCPSSubscription": BuiltinTopicDcpsSubscription,
@@ -150,27 +115,21 @@ _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
 
 
 def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[MessageSample] | None:
-    """Dynamic XTypes decode of a user topic: DISABLED, always returns `None`.
+    """Dynamic XTypes decode of a user topic: disabled, always returns `None`.
 
-    The pipeline in `_decode_dynamic_unvalidated` has never run against a
-    real bus, and reading the cyclonedds 11.0.1 binding shows it cannot work
-    as written. Rather than ship a repair that has never executed, this
-    release returns `None` immediately, before any type resolution, so the
-    caller reports an empty result with a note.
+    `_decode_dynamic_unvalidated` has never run against a real bus and, per
+    the cyclonedds 11.0.1 binding source, cannot work as written:
 
-    Known defects, for the future rewrite (validate on `scripts/integration/`):
+      1. `cyclonedds.dynamic.get_types_for_typeid(participant, type_id,
+         timeout)` takes three arguments, and needs Cyclone built with
+         `ENABLE_TYPE_DISCOVERY`; the code passes one.
+      2. It returns `(type, nested_types)`; the code passes the whole tuple
+         to `Topic(dp, name, data_type)`, which wants an IDL type.
+      3. `list(reader.read_iter(...))[:count]` never returns on a topic
+         publishing faster than the timeout; use `take_bounded`.
 
-      1. Arity: `cyclonedds.dynamic.get_types_for_typeid(participant,
-         type_id, timeout)` takes three arguments; the old code called
-         `type_resolver(type_id)` with one (TypeError, swallowed at DEBUG).
-         It also needs Cyclone built with `ENABLE_TYPE_DISCOVERY`.
-      2. Tuple not unpacked: that function returns `(type, nested_types)`;
-         the old code passed the whole tuple to `Topic(dp, name, data_type)`,
-         which requires an IDL type (TypeError, swallowed at DEBUG).
-      3. Unbounded read: `read_iter(timeout=...)` resets its timeout on
-         every received sample, so `list(reader.read_iter(...))[:count]`
-         never returns on a topic publishing faster than the timeout.
-         Bound it with `take_bounded` / `islice` instead.
+    Re-enable only behind a flag, after a run on a real bus
+    (`scripts/integration/`).
     """
     return None
 
@@ -178,15 +137,11 @@ def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[Message
 def _decode_dynamic_unvalidated(  # pragma: no cover: unreachable, never validated
     dp: Any, topic: str, count: int
 ) -> list[MessageSample] | None:
-    """Former dynamic decode pipeline, kept unreachable for the rewrite.
+    """Unwired dynamic decode pipeline, kept as the starting point for a rewrite.
 
-    NOT wired to anything and NOT counted as tested: see the defect list in
-    `_try_dynamic_decode_cyclone`. Do not call it before those are fixed.
-
-    Intended steps: discover a type id via DCPSPublication, resolve the
-    TypeObject, build a typed Topic + DataReader, read up to `count` samples
-    and decode them field by field into `annotate_partial` / `annotate_raw`
-    payloads.
+    Discovers a type id via DCPSPublication, resolves the TypeObject, reads
+    up to `count` samples with a typed reader and decodes them. Do not call
+    it before the defects listed in `_try_dynamic_decode_cyclone` are fixed.
     """
     try:
         from cyclonedds import dynamic as cyclone_dynamic  # type: ignore[import-not-found]
@@ -228,13 +183,10 @@ def _decode_dynamic_unvalidated(  # pragma: no cover: unreachable, never validat
 
 
 def _find_dynamic_resolver(cyclone_dynamic: Any) -> Any | None:  # pragma: no cover
-    """Return the first callable resolver on `cyclonedds.dynamic`.
+    """First callable type resolver on `cyclonedds.dynamic`.
 
-    Only used by the unreachable `_decode_dynamic_unvalidated`.
-
-    The dynamic-IDL entry point has been renamed across CycloneDDS
-    Python binding versions. We probe the cited names in order and
-    return the first attribute that is callable.
+    The entry point was renamed across binding versions, so known names are
+    probed in order.
     """
     for attr in ("get_types_for_typeid", "get_type_for_endpoint", "get_type"):
         candidate = getattr(cyclone_dynamic, attr, None)
@@ -244,14 +196,9 @@ def _find_dynamic_resolver(cyclone_dynamic: Any) -> Any | None:  # pragma: no co
 
 
 def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:  # pragma: no cover
-    """Pull a type identifier off the first DCPSPublication sample for `topic`.
+    """Type identifier of the first DCPSPublication sample for `topic`, else `None`.
 
-    Only used by the unreachable `_decode_dynamic_unvalidated`. Reads at most
-    `_MAX_ENDPOINTS` samples.
-
-    Returns `None` when no publication for `topic` is in the discovery
-    cache, or when the binding does not expose a `type_id` / `type_info`
-    attribute on the sample.
+    Reads at most `_MAX_ENDPOINTS` samples.
     """
     try:
         reader = BuiltinDataReader(dp, BuiltinTopicDcpsPublication)
@@ -273,13 +220,9 @@ def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:  # pragma: n
 def _collect_dynamic_samples(  # pragma: no cover: unreachable, never validated
     dp: Any, topic: str, type_object: Any, count: int
 ) -> list[Any] | None:
-    """Build a typed reader against the resolved `type_object` and read samples.
+    """Read at most `count` samples with a typed reader; `None` if it cannot be built.
 
-    Only used by the unreachable `_decode_dynamic_unvalidated`. Returns a
-    list of at most `count` raw sample objects (the binding's typed
-    representation) on success, `None` when the typed reader could not be
-    constructed. `count` is the hard bound: `_SAMPLE_TIMEOUT_SEC` is only the
-    per-sample wait, because `read_iter` resets it on every received sample.
+    `count` is the hard bound: `_SAMPLE_TIMEOUT_SEC` is only a per-sample wait.
     """
     try:
         from cyclonedds.sub import DataReader as DynamicDataReader  # type: ignore[import-not-found]
@@ -293,18 +236,9 @@ def _collect_dynamic_samples(  # pragma: no cover: unreachable, never validated
         return None
 
 
-# The 6 dynamic-type decoders (decode_dynamic_sample, iter_field_names,
-# decode_field_value, dynamic_type_name, extract_seq_from_payload,
-# extract_publish_ns_from_payload) live in
-# `topicforge.adapters.common.cdr_decoder` since v0.4.0 Phase 3 ; the
-# `_underscore` aliases at the top of this module preserve the original
-# Cyclone call sites without rewrites.
-
-
-# The cyclonedds Python binding is not thread-safe when converting QoS: two
-# threads inside take() at once (two adapters in one process, as in the test
-# suite) corrupted the heap on Windows CI (0xc0000374, 2026-10-02). Every
-# binding call made by this module goes through this one process-wide lock.
+# The cyclonedds binding is not thread-safe when converting QoS: two threads
+# inside take() at once (two adapters in one process) corrupted the heap on
+# Windows (0xc0000374). Every binding call goes through this lock.
 _BINDING_LOCK = threading.RLock()
 
 
@@ -316,15 +250,12 @@ class CycloneDdsAdapter:
     def __init__(self, domain_id: int = 0) -> None:
         validate_domain_id(domain_id)
         self._domain_id = domain_id
-        # Lifecycle buffer + endpoint caches, fed by the tracker thread below.
+        # Fed by the tracker thread started below.
         self._caches = DiscoveryCaches()
         self._lifecycle = self._caches.lifecycle
-        # v0.4.0 Phase 2: metrics buffer fed opportunistically by
-        # `peek_dds_samples` flows. See `_peek_builtin` / `_peek_user_topic`.
         self._metrics = MetricsBuffer()
         try:
-            # Announce ourselves by name, so that TopicForge's own read-only
-            # participant is recognizable in every listing, ours included.
+            # Named, so the observer is recognizable in every listing.
             with _BINDING_LOCK:
                 self._dp = DomainParticipant(domain_id, qos=Qos(Policy.EntityName("topicforge")))
                 self._observer = format_participant_key(self._dp.guid)
@@ -333,8 +264,7 @@ class CycloneDdsAdapter:
                 f"Failed to create CycloneDDS DomainParticipant on domain {domain_id}: {exc}"
             ) from exc
         self.observer_started_ns = time.time_ns()
-        # One reader per builtin discovery topic, kept for the adapter's
-        # lifetime, and read by the tracker thread only.
+        # One reader per builtin topic, read by the tracker thread only.
         self._builtin: dict[Any, tuple[Any, Any]] = {}
         with _BINDING_LOCK:
             for topic_class in (
@@ -345,9 +275,8 @@ class CycloneDdsAdapter:
                 self._builtin_reader(topic_class)
         self._tracker = DiscoveryTracker(self._build_take_all(), self._caches, domain_id=domain_id)
         self._tracker.start()
-        # Stop the tracker before the interpreter and Cyclone tear down: a
-        # pass still reading the builtin readers during teardown crashed the
-        # process (heap corruption seen in tests, 2026-10-02).
+        # Stop the tracker before teardown: a pass still reading the builtin
+        # readers while Cyclone shuts down crashed the process.
         atexit.register(self.close)
 
     def _builtin_reader(self, topic_class: Any) -> tuple[Any, Any]:
@@ -355,8 +284,8 @@ class CycloneDdsAdapter:
         entry = self._builtin.get(topic_class)
         if entry is None:
             reader = BuiltinDataReader(self._dp, topic_class)
-            # Every instance state: disposed and no-writers instances come back
-            # as invalid samples (key + sample_info), which is how a leave is seen.
+            # Every instance state: a leave arrives as an invalid sample
+            # (key + sample_info) for a disposed or no-writers instance.
             condition = ReadCondition(reader, SampleState.Any | ViewState.Any | InstanceState.Any)
             entry = self._builtin[topic_class] = (reader, condition)
         return entry
@@ -420,22 +349,17 @@ class CycloneDdsAdapter:
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
-    # ----- DDS surface (v0.3.0 real implementation) -----
+    # ----- DDS surface -----
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
-        """Discover DDS participants via the builtin DCPSParticipant reader.
+        """List participants from the `LifecycleBuffer` the tracker keeps current.
 
-        The `domain_id` argument is accepted for protocol uniformity but
-        the adapter only observes the domain it joined at construction
-        time. Callers asking for a different domain receive what *this*
-        participant sees: spinning up a second participant on the fly
-        would violate the "one bus join per adapter instance" rule.
+        `domain_id` exists for protocol uniformity: the adapter reports the
+        domain it joined at construction.
 
-        Served from the `LifecycleBuffer` the tracker thread keeps current
-        (first/last seen, status, seen_count, announced_ns, lost_ns). No
-        reconcile on this path: the tracker records every loss from the builtin
-        readers' dispose samples, and reconciling against the cache raced with
-        a pass (a participant recorded but not yet cached read as lost).
+        There is no reconcile here. The tracker records losses from dispose
+        samples, and reconciling against the cache raced with a pass (a
+        participant recorded but not yet cached read as lost).
         """
         observer = self._observer_guid()
         return [
@@ -444,11 +368,10 @@ class CycloneDdsAdapter:
         ]
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
-        """Pair cached reader/writer endpoints per topic and scan them.
+        """Pair cached readers and writers per topic and scan them.
 
-        Builds `EndpointInfo` records (with participant names) from the tracker's
-        caches, then hands them to the pure `common.qos_scan.scan_endpoints`:
-        partition and type separation first, RxO rules after.
+        Builds `EndpointInfo` records from the tracker caches and hands them
+        to `common.qos_scan.scan_endpoints`.
         """
         snap = self._caches.snapshot(self._domain_id)
         parts, pubs, subs = snap.participants, snap.publications, snap.subscriptions
@@ -465,7 +388,7 @@ class CycloneDdsAdapter:
 
     def _observer_guid(self) -> str:
         """Formatted GUID of this adapter's own participant."""
-        return self._observer  # read once at startup: no binding call on the handler thread
+        return self._observer  # read at startup, so no binding call on the handler thread
 
     def list_endpoints(
         self,
@@ -474,11 +397,10 @@ class CycloneDdsAdapter:
         include_observer: bool = False,
         include_departed: bool = False,
     ) -> EndpointListing:
-        """List every discovered writer and reader from the builtin discovery readers.
+        """List discovered writers and readers, with participant names.
 
-        Joins DCPSPublication / DCPSSubscription samples with the DCPSParticipant
-        names. A discovery fact, not data flow: it says what endpoints announced,
-        not whether samples move. The pure assembly lives in
+        A discovery fact, not data flow: it shows what endpoints announced,
+        not whether samples move. Assembly is in
         `common.endpoints.build_endpoint_listing`.
         """
         snap = self._caches.snapshot(self._domain_id)
@@ -498,15 +420,11 @@ class CycloneDdsAdapter:
         )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
-        """Peek recent samples on a DDS topic.
+        """Peek samples on a builtin DCPS topic or a user topic.
 
-        The 3 builtin DCPS topics keep their v0.3.0 structured-payload
-        shape. For a user topic, dynamic decode is disabled in this
-        release: a topic announced on the bus yields no samples and a
-        `note` saying so. Nothing is recorded for `topic_metrics`.
-
-        Raises `AdapterError` only when the topic has not been
-        discovered on the bus (no endpoint claims it).
+        A user topic announced on the bus yields no samples and a `note`
+        (decoding is disabled) and records nothing for `topic_metrics`.
+        Raises `AdapterError` when no endpoint claims the topic.
         """
         if count < 0:
             raise AdapterError("count must be >= 0")
@@ -531,10 +449,8 @@ class CycloneDdsAdapter:
             )
             for s in samples_raw
         ]
-        # v0.4.0 Phase 2: opportunistic metrics fill. Builtin topics
-        # do not carry application-level seq# or publish_ns, so both
-        # are recorded as None ; the metrics buffer still tracks
-        # frequency on them.
+        # Builtin topics carry no sequence number or publish time, so only
+        # frequency is tracked.
         for _ in samples:
             self._metrics.record(
                 topic=topic,
@@ -559,16 +475,11 @@ class CycloneDdsAdapter:
         return self._caches.subscriptions
 
     def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
-        """User-topic peek: topic presence plus an annotated placeholder.
+        """User-topic peek: `AdapterError` if the topic is not on the bus, else an empty result.
 
-        1. Confirm the topic is announced on the bus (subscription or
-           publication present). If not -> `AdapterError`.
-        2. `_try_dynamic_decode_cyclone` is disabled and returns `None`, so
-           the placeholder path below is the one that runs. The decoded
-           branch is kept for the future rewrite and is currently
-           unreachable.
-        3. The result is empty (count 0) with a `note` saying decoding is
-           disabled; nothing is recorded into `MetricsBuffer`.
+        `_try_dynamic_decode_cyclone` returns `None`, so the decoded branch
+        is unreachable and the result carries a note that decoding is
+        disabled. Nothing is recorded into `MetricsBuffer`.
         """
         if not self._is_topic_on_bus(topic):
             raise AdapterError(
@@ -580,9 +491,7 @@ class CycloneDdsAdapter:
 
         decoded = _try_dynamic_decode_cyclone(self._dp, topic, count)
         if decoded is not None:
-            # Unreachable while dynamic decode is disabled. Metrics fill
-            # on the decoded user-topic path. Pull seq# and publish_ns from
-            # the decoded payload when available: best-effort.
+            # Unreachable while dynamic decode is disabled.
             now_ns = time.time_ns()
             for sample in decoded:
                 self._metrics.record(
@@ -610,10 +519,10 @@ class CycloneDdsAdapter:
     def participant_events(
         self, domain_id: int = 0, lookback_seconds: int = 300
     ) -> list[ParticipantEvent]:
-        """Return lifecycle events for `self._domain_id` within the window.
+        """Lifecycle events for the joined domain within the window.
 
-        The log is kept current by the tracker thread, independently of tool
-        calls, with DDS-derived timestamps (`time_source`).
+        The tracker thread keeps the log current, with DDS-derived timestamps
+        (`time_source`).
         """
         if lookback_seconds < 1 or lookback_seconds > 86400:
             raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
@@ -625,14 +534,10 @@ class CycloneDdsAdapter:
     def topic_metrics(
         self, topic: str, window_seconds: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
-        """Return temporal metrics computed from the metrics buffer.
+        """Metrics from the buffer that `peek_dds_samples` fills.
 
-        The buffer fills opportunistically via `peek_dds_samples`
-        calls on the builtin DCPS topics (no per-sample callback in
-        cyclonedds Python). User topics stay empty. A topic
-        that has not been peeked recently returns
-        `samples_observed=0`. The tool description surfaces this
-        caveat to LLM callers.
+        There is no per-sample callback in cyclonedds Python, so a topic not
+        peeked recently has `samples_observed=0`, and user topics stay empty.
         """
         if window_seconds < 1 or window_seconds > 3600:
             raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
@@ -661,13 +566,3 @@ class CycloneDdsAdapter:
             observer_guid=None,
         )
         return declared_hz_from_endpoints(infos, topic)
-
-
-# Sample-introspection helpers (_extract_guid / _extract_vendor_id /
-# _extract_hostname / _extract_topic_name) and the QoS normalizer
-# (_cyclone_qos_to_profile) were moved to the binding-free
-# `topicforge.adapters.common.dds_introspection` /
-# `.qos_normalize` modules (Lot 0, audit 2026-07-08) so they are
-# unit-testable without the cyclonedds bindings installed. They are
-# imported and aliased back to their original names at the top of this
-# module, so the call sites above are unchanged.
