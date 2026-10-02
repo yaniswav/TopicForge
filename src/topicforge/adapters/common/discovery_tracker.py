@@ -1,21 +1,15 @@
 """Continuous discovery tracking for polling adapters: binding-free.
 
-The Cyclone binding has no safe at-discovery callback (its listeners run on
-DDS receive threads, where taking the GIL hurts DDS and can deadlock), so a
-dedicated daemon thread drains the three builtin discovery readers every
-`DEFAULT_PERIOD_S` and folds what it took into in-memory caches. Tool
-handlers only read those caches, never the readers: a lifecycle that only
-moved when a tool was called reported one restart for three and dated a
-crash at the next call.
+The Cyclone binding has no safe at-discovery callback, so a daemon thread
+drains the three builtin discovery readers every `DEFAULT_PERIOD_S` into
+in-memory caches that tool handlers read. A lifecycle that moved only when a
+tool was called reported one restart for three and dated a crash at the next
+call.
 
-Everything that decides something is `apply_builtin_samples`, a pure function
-over raw builtin samples (valid or invalid, with a `sample_info`), so it is
-unit-tested with fakes. `DiscoveryTracker` is only the thread around it: it
-swallows and counts errors, and stops cleanly.
-
-Timestamps, never mixed: `announced_ns` is the DDS source timestamp of a
-valid sample (announcing side's clock), `lost_ns` the source timestamp of the
-dispose, `observed_ns` the local time this module saw the sample.
+`apply_builtin_samples` decides everything and is a pure function over raw
+builtin samples, unit-tested with fakes; `DiscoveryTracker` is the thread
+around it. Timestamps are never mixed: `announced_ns` and `lost_ns` are DDS
+source timestamps, `observed_ns` is local time.
 """
 
 from __future__ import annotations

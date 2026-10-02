@@ -2,7 +2,7 @@
 
 TopicForge does not implement the DDS-RTPS wire protocol from scratch. It joins a DDS domain as a read-only participant (via the [Eclipse CycloneDDS](https://cyclonedds.io) Python binding, or [eProsima Fast DDS](https://fast-dds.docs.eprosima.com/) with a binding built from source) and reports what it sees on the bus.
 
-The OMG-DDS-RTPS standard guarantees that all conformant implementations interoperate. This means TopicForge sees publishers and subscribers from any vendor, including those written in C, C++11, C++17, Rust, Java, .NET, or any other language with DDS-RTPS bindings, as long as they share the same DDS domain.
+The OMG-DDS-RTPS standard guarantees that all conformant implementations interoperate. In principle TopicForge therefore sees publishers and subscribers from any vendor on the same DDS domain, whatever language they are written in. The author has so far observed Cyclone DDS and Dust DDS participants only; see the last section of this page.
 
 ## OMG-validated interoperability (May 2025)
 
@@ -25,7 +25,7 @@ One of the six is written in Rust: at the wire level the language does not matte
 
 When you install TopicForge with DDS support (`pip install topicforge[dds]`, which installs the CycloneDDS Python binding), it joins the domain you point it at as a read-only participant. The Fast DDS adapter works the same way, but its Python binding is not on PyPI: you build it from eProsima's sources (see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md)).
 
-From there, TopicForge's discovery-based tools (`list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, and `peek_dds_samples` on the builtin `DCPS*` topics) see every conformant participant on the bus, regardless of:
+From there, TopicForge's discovery-based tools (`list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, and `peek_dds_samples` on the builtin `DCPS*` topics) should see every conformant participant on the bus (observed so far: Cyclone DDS and Dust DDS), regardless of:
 
 - The vendor: RTI Connext, OpenDDS, CoreDX, Fast DDS, Cyclone, InterCOM, Dust DDS, or any other DDS-RTPS conformant stack
 - The host language: C, C++11/14/17/20, Rust, Java, .NET, Python, Ada, anything with a binding

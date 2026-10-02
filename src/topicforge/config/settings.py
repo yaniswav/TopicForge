@@ -142,8 +142,8 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
         raise ValueError(
             f"TOPICFORGE_DDS_BACKEND={raw_dds_backend!r} was removed in 0.5.3 together "
             f"with the Pro tier; expected one of {_VALID_DDS_BACKENDS}. The free tier "
-            "still observes RTI, CoreDX and OpenSplice participants through standard "
-            "RTPS discovery with `cyclone`. See docs/pro.md."
+            "should still see RTI, CoreDX and OpenSplice participants through standard "
+            "RTPS discovery with `cyclone` (not yet observed on a bus). See docs/pro.md."
         )
     if raw_dds_backend not in _VALID_DDS_BACKENDS:
         raise ValueError(

@@ -3,7 +3,7 @@
 You inherit a robot assembled from two suppliers. The design document says how
 it is wired; TopicForge shows how it is wired on the wire.
 
-## The story
+## Programs
 
 | Program | Vendor | Writes | Reads |
 |---|---|---|---|
@@ -18,7 +18,7 @@ python run.py            # run and check
 python run.py --hold     # keep the programs running, ask your own MCP client
 ```
 
-## What TopicForge shows
+## The wiring on the wire
 
 ```
 [1] Who writes and who reads each topic?
@@ -41,10 +41,10 @@ Say so rather than guess.
 nobody consumes yet) or a missing monitor; the wiring raises the question and
 you answer it.
 
-## Ask your agent
+Names and vendor ids are
+optional extras that some vendors do not send.
+
+Prompt to try:
 
 > Draw the wiring of DDS domain 0: for each topic, who writes it, who reads
 > it, and with which type. Point out anything that looks unconnected.
-
-Standard discovery shows every vendor's programs. Names and vendor ids are
-optional extras that some vendors do not send.

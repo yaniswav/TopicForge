@@ -1,11 +1,11 @@
 # 07 The deadline, declared and kept, in code
 
-Concept: Deadline. A reader's Deadline is a demand ("a new sample at least
-every N ms"). A writer's Deadline is a promise. Two separate questions: is the
-promise declared (DDS checks it at connection time) and is it kept
-(DDS only counts misses at runtime).
+A reader's Deadline is a demand ("a new sample at least every N ms"). A
+writer's Deadline is a promise. Two separate questions: is the promise
+declared (DDS checks it at connection time) and is it kept (DDS only counts
+misses at runtime).
 
-## The story
+## The cases
 
 The navigation planner wants a new scan every 200 ms.
 
@@ -92,15 +92,14 @@ behavior, visible only to the endpoints themselves (the status counters above).
 TopicForge's `topic_metrics` frequency is its own peek cadence and is no
 substitute.
 
-## Ask your agent
-
-> Two scan topics on DDS domain 0, scan_a and scan_b. The planner reads both and
-> wants a new scan every 200 ms. Is each one really delivering on its deadline?
-
 A correct answer finds the mismatch on `scan_a`, and says it cannot verify
 that `scan_b` actually keeps its promise.
 
 DDS checks a declared Deadline once, at connection time. Whether it is kept
 is something only a counter inside the reader can tell you, so use the
-reader's `deadline missed` status in your own node as the runtime watchdog. A
-clean mismatch check proves nothing about timing.
+reader's `deadline missed` status in your own node as the runtime watchdog.
+
+Prompt to try:
+
+> Two scan topics on DDS domain 0, scan_a and scan_b. The planner reads both and
+> wants a new scan every 200 ms. Is each one really delivering on its deadline?

@@ -1,11 +1,9 @@
 # 08 A crash, seen from inside and from outside
 
-Concept: two clocks for the same crash. A writer's Liveliness lease is
-chosen by the application and tells its readers within that lease. The
-participant lease of discovery is coarse (10 s by default in Cyclone DDS)
-and is what TopicForge, an outside observer, relies on.
-
-## The story
+A crash has two clocks. A writer's Liveliness lease is chosen by the
+application and tells its readers within that lease. The participant lease of
+discovery is coarse (10 s by default in Cyclone DDS) and is what TopicForge,
+an outside observer, relies on.
 
 Two heartbeat publishers get killed: no goodbye on the bus.
 
@@ -74,7 +72,7 @@ sub_default: matched writers: 0
   `matched writers: 0`, once the participant lease expires, about 10 s after
   the crash. Nothing in its output says "the writer crashed".
 
-## What TopicForge shows
+## From outside
 
 ```
 [3] How long until TopicForge sees it?
@@ -100,11 +98,6 @@ example 12). But it sees the discovery lease, not application liveliness, so it
 cannot say "this writer is silent but its process is up". The `writer lost
 liveliness` event exists only inside the subscriber.
 
-## Ask your agent
-
-> Two heartbeat publishers, pub_leased and pub_default, are about to be stopped on
-> DDS domain 0. Tell me which participants left and when.
-
 (Stop them from another terminal, then ask again.) A good answer says the
 timeline is a lease behind, not instantaneous.
 
@@ -112,4 +105,8 @@ For a safety function, do not wait for discovery: give critical writers a
 Liveliness lease sized to your reaction time, and react to the reader's
 `liveliness changed` status. Without it, a crash is visible only at the
 participant lease, about 10 s here (see examples 03 and 12). An outside
-observer is a diagnostic tool, not a watchdog.
+
+Prompt to try:
+
+> Two heartbeat publishers, pub_leased and pub_default, are about to be stopped on
+> DDS domain 0. Tell me which participants left and when.

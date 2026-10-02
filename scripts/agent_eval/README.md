@@ -1,4 +1,4 @@
-# Blind agent evaluation
+# Agent evaluation
 
 Measures what matters for an MCP server: can an AI agent, given only
 TopicForge's tools and a user's question, find the real cause of a problem on
@@ -31,7 +31,8 @@ its feedback on the tools: the call sequence, what misled it, how often it had
 to parse free text or join GUIDs by hand. Stop a scenario by creating
 `stop_<scenario>` in this directory.
 
-`RESULTS_2026-10-02.md` records the three rounds that shaped 0.5.5. On 0.5.4
-the agents reached 10 of 11 correct diagnoses, mostly by parsing raw text by
-hand, and reported a restart loop as a single restart. On the 0.5.5 branch
-they reached 16 of 16, with no false alarm on a healthy bus.
+`RESULTS_2026-10-02.md` records the three rounds that shaped 0.5.5, run with LLM
+agents on the author's 16 test scenarios (the author wrote them and knows the
+answers). On 0.5.4 the agents reached 10 of 11 correct diagnoses, mostly by
+parsing raw text by hand, and reported a restart loop as a single restart. On
+the 0.5.5 branch they reached 16 of 16, with no false alarm on a healthy bus.

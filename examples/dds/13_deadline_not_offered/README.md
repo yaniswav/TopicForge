@@ -3,7 +3,7 @@
 A reader requires a minimum update rate; the new writer does not promise one.
 The reader gets nothing at all, not even late data.
 
-## The story
+## Scenario
 
 | Program | Writes | Reads |
 |---|---|---|
@@ -51,11 +51,11 @@ TopicForge sees the deadline each side declares. It does not see whether a
 running writer actually meets it: that needs the data itself, which TopicForge
 does not decode yet.
 
-## Ask your agent
+A deadline mismatch blocks the connection entirely. To fix it, declare a
+deadline on the writer at least as strict as the readers require, or relax the
+reader.
+
+Prompt to try:
 
 > nav_planner receives the imu topic but never the scan topic on DDS domain
 > 0. Why?
-
-A deadline mismatch blocks the connection entirely; it is not a "late data"
-warning. To fix it, declare a deadline on the writer at least as strict as the
-readers require, or relax the reader.

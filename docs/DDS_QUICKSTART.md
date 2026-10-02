@@ -1,6 +1,6 @@
 # DDS quickstart
 
-A short tour of TopicForge's DDS observability tools. The server joins the bus as a read-only DDS-RTPS participant and, by the OMG protocol guarantee, observes every conformant vendor through the builtin discovery topics. The `MiddlewareAdapter` protocol has no write method, so the MCP client cannot publish back on any backend. This guide does not assume ROS2.
+A short tour of TopicForge's DDS observability tools. The server joins the bus as a read-only DDS-RTPS participant and reads the builtin discovery topics, which the OMG protocol standardizes for every conformant vendor (observed so far: Cyclone DDS and Dust DDS). The `MiddlewareAdapter` protocol has no write method, so the MCP client cannot publish back on any backend. This guide does not assume ROS2.
 
 Validation status. The Cyclone adapter has run against a live bus, with a Python / Cyclone participant and Dust DDS participants in Rust, Python and C, on Windows and in CI (Ubuntu and Windows, `.github/workflows/demo.yml`); see [`scripts/integration/README.md`](../scripts/integration/README.md). The Fast DDS adapter has never run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed yet. For runnable live scenarios (who is on the bus, why two nodes cannot talk, a node that crashed, a late joiner that misses data), see [`examples/dds/README.md`](../examples/dds/README.md). Multi-vendor positioning: [`dds-interop-matrix.md`](dds-interop-matrix.md).
 
@@ -16,10 +16,10 @@ TOPICFORGE_MODE=mock python -m topicforge
 - `list_participants(domain_id=0)` returns four participants: two CycloneDDS (`mock-robot`, `mock-laptop`), one Fast DDS (`mock-aerospace-node`) and one Dust DDS in Rust (`mock-rust-node`). The `vendor` field comes from the OMG vendor id: `cyclone`, `fast`, `rti`, `rti_micro`, `opensplice`, `opendds`, `coredx`, `intercom`, `dust`, `mock` or `unknown`.
 - `detect_qos_mismatches(topic=None)` returns a `MismatchScan` with one report for `/dds/qos_mismatch`: a RELIABLE reader against a BEST_EFFORT writer.
 - `list_endpoints()` returns the mock writers and readers with their QoS and a `by_topic` roll-up.
-- `peek_dds_samples(topic="/dds/well_matched", count=3)` returns three deterministic samples. The mock only knows `/dds/well_matched`, `/dds/qos_mismatch`, `/dds/ddsforge/example` and `/dds/ddsforge/opaque`, and raises "Unknown DDS topic" for anything else.
+- `peek_dds_samples(topic="/dds/well_matched", count=3)` returns three deterministic samples. The mock only knows `/dds/well_matched`, `/dds/qos_mismatch`, `/dds/topicforge/example` and `/dds/topicforge/opaque`, and raises "Unknown DDS topic" for anything else.
 - `topic_metrics(topic="/dds/heartbeat_10hz", window_seconds=60)` returns a pre-filled 10 Hz buffer (100 samples, no gaps, 50 ms latency). A live adapter behaves differently, see section 5 and [`examples/04-monitor-topic-frequency.md`](../examples/04-monitor-topic-frequency.md).
 
-The mock illustrates payload shapes that no live adapter produces today, such as the `"full"` decode status on `/dds/ddsforge/example`.
+The mock illustrates payload shapes that no live adapter produces today, such as the `"full"` decode status on `/dds/topicforge/example`.
 
 ## 2. Live mode: choose a backend
 
@@ -62,7 +62,7 @@ The canonical "my subscriber does not receive" case. Against the mock:
     }
   ],
   "not_matched": [],
-  "hints": ["Topic '/dds/ddsforge/opaque' has writers but no reader: there is no pair to compare."],
+  "hints": ["Topic '/dds/topicforge/opaque' has writers but no reader: there is no pair to compare."],
   "pairs_checked": 3, "topics_scanned": 4,
   "policies_checked": ["Reliability", "Durability", "Deadline", "Liveliness", "..."],
   "policies_unchecked": ["Presentation: ...", "..."],

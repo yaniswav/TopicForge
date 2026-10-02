@@ -6,13 +6,13 @@
 [![CI](https://github.com/yaniswav/TopicForge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yaniswav/TopicForge/actions/workflows/ci.yml)
 [![Python versions](https://img.shields.io/pypi/pyversions/topicforge.svg)](https://pypi.org/project/topicforge/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/yaniswav/TopicForge/blob/main/LICENSE)
-[![Read-only by architecture](https://img.shields.io/badge/safety-read--only_by_architecture-2563eb)](https://github.com/yaniswav/TopicForge#security-model)
+[![Read-only](https://img.shields.io/badge/safety-read--only-2563eb)](https://github.com/yaniswav/TopicForge#security-model)
 
-A read-only MCP (Model Context Protocol) server that lets an AI agent inspect a ROS2 graph, recorded bag files and the DDS layer underneath ROS, without being able to publish to the bus or command a robot. It is read-only by architecture rather than by configuration: there is no write path to misconfigure and no permission system to audit.
+A read-only MCP (Model Context Protocol) server that lets an AI agent inspect a ROS2 graph, recorded bag files and the DDS layer underneath ROS. The code has no write path: it cannot publish to the bus or command a robot, and there is no permission system to configure.
 
-Without grounding, an LLM asked about a robot will invent topic names, message types and bag contents. TopicForge gives it twelve typed tools that return frozen Pydantic schemas, identical whether the server talks to a real robot or to its built-in mock fixtures. It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
+It gives the agent twelve typed tools that return frozen Pydantic schemas, identical whether the server talks to a real robot or to its built-in mock fixtures. Ask why `nav_planner` gets no scan, and the agent reads the bus, finds the BEST_EFFORT writer facing a RELIABLE reader and names the incompatible policy (see [`examples/02-debug-qos-mismatch.md`](examples/02-debug-qos-mismatch.md)). It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
 
-For DDS, TopicForge joins a domain as a read-only participant through one open-source binding (Eclipse CycloneDDS from PyPI) and reads the builtin discovery topics that the OMG DDS-RTPS protocol standardizes. Every conformant vendor announces itself there, so a Cyclone participant also sees RTI Connext, OpenDDS, CoreDX and Dust DDS endpoints without any proprietary binding. This covers discovery only: participants, readers, writers and their QoS. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md).
+For DDS, TopicForge joins a domain as a read-only participant through one open-source binding (Eclipse CycloneDDS from PyPI) and reads the builtin discovery topics that the OMG DDS-RTPS protocol standardizes. So far the author has observed Cyclone DDS and Dust DDS participants on a live bus. RTI Connext, OpenDDS, CoreDX and Fast DDS announce themselves through the same standard discovery, but none of them has been observed yet. This covers discovery only: participants, readers, writers and their QoS. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md).
 
 ## Quickstart
 
@@ -42,7 +42,7 @@ Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: 
 
 ## Tools
 
-All twelve tools are read-only. Every response except `health_check` carries `mode_effective` (`"live"` or `"mock"`), so a caller can tell a real graph from fixtures.
+Every response except `health_check` carries `mode_effective` (`"live"` or `"mock"`), so a caller can tell a real graph from fixtures.
 
 | Tool                    | Purpose                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
@@ -50,13 +50,13 @@ All twelve tools are read-only. Every response except `health_check` carries `mo
 | `list_topics`           | Discover the ROS2 graph                                                                          |
 | `get_topic_info`        | Message type, publisher/subscriber counts and QoS for one topic                                  |
 | `sample_messages`       | Peek recent messages on a ROS2 topic (count clamped to 50)                                       |
-| `analyze_bag`           | Summarize a `.mcap` / `.db3` / `.bag` recording                                                  |
+| `analyze_bag`           | Summarize a `.mcap` / `.db3` recording or `rosbag2_*` directory (via `ros2 bag info`)      |
 | `list_participants`     | DDS participants on the domain: vendor, `name` (EntityName QoS, Cyclone) and `hostname`          |
 | `detect_qos_mismatches` | Incompatible QoS pairs between DDS readers and writers                                           |
 | `peek_dds_samples`      | Raw DDS samples; structured on the three builtin discovery topics, presence-only on user topics   |
 | `participant_events`    | Timeline of participant `discovered` / `lost` events                                             |
 | `topic_metrics`         | Frequency, sequence-gap and latency schema; data only for builtin discovery topics               |
-| `peek_bag_samples`      | Decoded samples from a recorded bag (needs `pip install topicforge[bags]`)                       |
+| `peek_bag_samples`      | Decoded samples from a recorded bag, including ROS 1 `.bag` (needs `pip install topicforge[bags]`) |
 | `list_endpoints`        | DDS writers and readers with structured QoS, per-topic roll-up that flags orphans (writer with no reader, reader with no writer) |
 
 Walkthroughs against the mock, each with the exact tool calls and payloads, are in [`examples/`](examples/README.md). To run the DDS tools against a real bus with several programs and vendors, see [`examples/dds/README.md`](examples/dds/README.md) (`python examples/dds/run_all.py`).
@@ -141,7 +141,7 @@ TopicForge is designed for local trust: it runs as a subprocess of your MCP clie
 - `TOPICFORGE_ROS2_BIN` accepts an arbitrary path; treat it the way you treat `PATH`.
 - `analyze_bag` and `peek_bag_samples` open whatever path the client passes (no workspace isolation, no symlink restriction).
 - All `ros2` invocations use `subprocess.run` with an argument list, never `shell=True`. ROS2 topic names are validated against `^/[A-Za-z0-9_/]+$` first.
-- The server loads no third-party code at startup. Until 0.5.2 it imported any installed `topicforge_pro` package; that hook was removed in 0.5.3 because it was an opening for a package of that name to add write tools.
+- The server loads no third-party code at startup.
 - No outbound network calls unless telemetry is turned on.
 
 Before exposing TopicForge to untrusted MCP clients (hosted endpoints, shared environments), add path isolation and revisit the `TOPICFORGE_ROS2_BIN` policy. Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
@@ -160,7 +160,7 @@ Tests run against the mock adapter, the live adapter's pure parsers and the bind
 
 ## Upgrading
 
-TopicForge is pre-1.0 and the 0.x releases changed things freely; [`CHANGELOG.md`](CHANGELOG.md) is the record. If you are coming from an old install: releases 0.3.0 to 0.5.2 are yanked, so `pip install -U topicforge` resolves to 0.5.3 or later. And since 0.5.3 the `[dds-fast]`, `[dds-opendds]`, `[dds-dust]` and `[dds-all-oss]` extras no longer exist, the DDS backend values `rti`, `opensplice`, `coredx` and `intercom` are rejected, and `[dds]` and `[all]` resolve to Cyclone only. Schema changes across 0.x were additive optional fields; a client that pins a JSON Schema with `additionalProperties: false` needs to regenerate it.
+TopicForge is pre-1.0; [`CHANGELOG.md`](CHANGELOG.md) lists every change, including the yanked releases and removed extras.
 
 ## Layout
 

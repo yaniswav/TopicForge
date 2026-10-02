@@ -1,11 +1,9 @@
 # 00 Hello, publisher and subscriber
 
-Concept: the five DDS objects every program creates: participant, topic,
-type, writer, reader. Writers and readers meet only if they are in the same
+Every DDS program creates the same five objects: participant, topic, type,
+writer and reader. Writers and readers meet only if they are in the same
 domain, on the same topic name, with the same type (and compatible QoS, see
 example 02 and example 05).
-
-## The story
 
 A battery monitor publishes the battery voltage ten times a second. Two
 dashboards subscribe. One has a typo in the topic name (`batery`). Both run,
@@ -84,7 +82,7 @@ matched writers: 0
 
 Then nothing, forever. `matched writers: 0` is the only hint the program has.
 
-## What TopicForge shows
+## Seen from the bus
 
 ```
 [1] Who writes and who reads each topic?
@@ -99,13 +97,11 @@ From outside, the typo shows: a topic with a reader and no writer. Neither
 program knows about the other, but the discovery traffic on the bus lists
 every reader and writer, and that is all TopicForge reads.
 
-## Ask your agent
-
-> dashboard_typo shows nothing on DDS domain 0. Which topics have a reader but no writer?
-
-## Afterwards
-
 A subscriber to a topic nobody writes is not an error in DDS, so check
 `matched writers` first. Topic names are case-sensitive strings, and a typo
 creates a new topic. Example 05 uses the same programs with the topic right
 and the QoS wrong.
+
+Prompt to try:
+
+> dashboard_typo shows nothing on DDS domain 0. Which topics have a reader but no writer?

@@ -192,7 +192,7 @@ def test_participant_events_invalid_lookback_raises(mock_adapter: MockAdapter) -
 
 
 def test_peek_dds_samples_user_topic_full_decode(mock_adapter: MockAdapter) -> None:
-    result = mock_adapter.peek_dds_samples("/dds/ddsforge/example", count=3)
+    result = mock_adapter.peek_dds_samples("/dds/topicforge/example", count=3)
     assert result.count == 3
     for sample in result.samples:
         assert sample.payload["_decode_status"] == "full"
@@ -205,7 +205,7 @@ def test_peek_dds_samples_user_topic_full_decode(mock_adapter: MockAdapter) -> N
 
 
 def test_peek_dds_samples_user_topic_raw_fallback(mock_adapter: MockAdapter) -> None:
-    result = mock_adapter.peek_dds_samples("/dds/ddsforge/opaque", count=5)
+    result = mock_adapter.peek_dds_samples("/dds/topicforge/opaque", count=5)
     assert result.count == 1  # fixture only emits one sample
     sample = result.samples[0]
     assert sample.payload["_decode_status"] == "raw"
@@ -244,7 +244,7 @@ def test_mock_mismatch_scan_envelope(mock_adapter) -> None:
     assert (report.details[0].requested, report.details[0].offered) == ("RELIABLE", "BEST_EFFORT")
     assert report.reader_participant_name and report.writer_participant_name
     assert scan.not_matched == []
-    assert any("/dds/ddsforge/opaque" in h for h in scan.hints)
+    assert any("/dds/topicforge/opaque" in h for h in scan.hints)
     assert "Partition" in scan.policies_checked and scan.policies_unchecked
 
 

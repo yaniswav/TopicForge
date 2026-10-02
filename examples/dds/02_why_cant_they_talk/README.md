@@ -1,11 +1,8 @@
 # 02 Why can't they talk?
 
-Concept: QoS compatibility, Reliability. A reader and a writer on the
-same topic and the same type only connect if their QoS are compatible. When
-they are not, DDS connects nothing and raises no error in your code by
-default: the reader just receives nothing.
-
-## The story
+A reader and a writer on the same topic and the same type only connect if
+their QoS are compatible. When they are not, DDS connects nothing and raises
+no error in your code by default: the reader just receives nothing.
 
 The navigation planner subscribes to the LIDAR scan and never receives a
 message. Both programs run, the topic name is right, the type is right.
@@ -51,13 +48,13 @@ reader asks for BEST_EFFORT. Offering more than asked is allowed, so
 TopicForge does not report a mismatch and lists the pair under `matched`, the
 pairs DDS will connect on the declared QoS.
 
-## Ask your agent
-
-> nav_planner never receives the scan topic on DDS domain 0. Why?
-
 ## Fix
 
 Make the driver RELIABLE, or the planner BEST_EFFORT (usual for high-rate
 sensor data, where the next scan replaces a lost one). Since a QoS mismatch is
 silent in most applications, it is the first thing to check when a subscriber
 gets nothing.
+
+Prompt to try:
+
+> nav_planner never receives the scan topic on DDS domain 0. Why?

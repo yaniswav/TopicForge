@@ -3,7 +3,7 @@
 Two problems at once: the new supplier renamed the topic, and an old process
 was never stopped.
 
-## The story
+## Scenario
 
 The LIDAR driver was replaced by one from another supplier, built on another
 DDS implementation (Dust DDS). Since then the navigation planner receives no
@@ -53,13 +53,12 @@ the namespace.
 The wiring shows the real cause: the new driver publishes on `lidar/scan`, a
 topic nobody reads. It appears by GUID because Dust DDS announces no name.
 
-## Ask your agent
+A writer nobody reads, or a reader nobody writes, is the other half of the
+picture, so after a swap check for leftovers: two programs claiming the same
+role are easy to miss. TopicForge pairs readers and writers by topic name, assuming the same
+type and the default partition.
+
+Prompt to try:
 
 > Since we swapped the LIDAR driver, nav_planner receives no scan on DDS
 > domain 0. Find every reason.
-
-A short mismatch report does not mean a healthy bus: a writer nobody reads,
-or a reader nobody writes, is the other half of the picture. After a swap,
-check for leftovers, since two programs claiming the same role is easy to
-miss. TopicForge pairs readers and writers by topic name, assuming the same
-type and the default partition.
