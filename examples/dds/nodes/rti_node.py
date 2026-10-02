@@ -160,10 +160,12 @@ def main(argv: list[str] | None = None) -> int:
             for endpoint, reader in readers:
                 rx.record(endpoint.topic, [d.seq for d in reader.take_data()])
             if rx.due(time.monotonic()):
-                for line in rx.lines():
+                for line in rx.lines(time.monotonic()):
                     print(line, flush=True)
             seq += 1
             next_tick += period_s
+            if next_tick < time.monotonic() - period_s:  # overran: do not burst to catch up
+                next_tick = time.monotonic()
             time.sleep(max(0.0, next_tick - time.monotonic()))
     except KeyboardInterrupt:
         pass

@@ -31,8 +31,8 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 [2] What does nav_planner actually receive on mission?
     -> nav_planner output
-    [nav_planner] rx mission: 0 in 1 s
-    [nav_planner] rx mission: 0 in 1 s
+    [nav_planner] rx mission: 0 in 1.0 s
+    [nav_planner] rx mission: 0 in 1.0 s
 ```
 
 - The reader requests TRANSIENT_LOCAL, the writer offers VOLATILE. Same

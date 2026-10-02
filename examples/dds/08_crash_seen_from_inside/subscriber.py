@@ -71,7 +71,10 @@ while not stop.is_set():
         print(f"rx seq={sample.seq}", flush=True)
         last_rx = time.monotonic()
 
-    # Statuses: DDS's own account of the connection, polled each turn.
+    # Statuses: DDS's own account of the connection. They are POLLED here, every
+    # 500 ms turn, not triggered. The event-driven alternative is to attach the
+    # reader's StatusCondition to the WaitSet, so that the wait wakes up on a
+    # status change instead of on the timeout.
     count = reader.get_subscription_matched_status().current_count
     if count != matched:
         matched = count
@@ -82,7 +85,10 @@ while not stop.is_set():
         policy = POLICIES.get(status.last_policy_id, "POLICY")
         print(f"incompatible QoS from a writer: {policy} (id {status.last_policy_id})", flush=True)
 
-    # not_alive_count: writers whose lease ran out (or that went away).
+    # not_alive_count: writers whose liveliness lease ran out while still matched.
+    # Observed on Cyclone: a writer that vanishes WITHOUT a lease (the default)
+    # only drops `matched writers` at the participant lease; not_alive_count
+    # stays 0, so no line is printed for it.
     liveliness = reader.get_liveliness_changed_status()
     if liveliness.not_alive_count > 0 and not lost:
         lost = True

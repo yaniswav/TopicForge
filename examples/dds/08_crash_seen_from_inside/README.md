@@ -18,8 +18,8 @@ Each has its own subscriber (`sub_leased`, `sub_default`).
 
 ## The code
 
-[`publisher.py`](publisher.py) and [`subscriber.py`](subscriber.py) are about
-60 lines each and commented line by line. The key lines:
+[`publisher.py`](publisher.py) and [`subscriber.py`](subscriber.py) are short
+(about 70 and 100 lines) and commented line by line. The key lines:
 
 ```python
 # publisher.py: promise "you will hear from me within 1 s while I am alive"
@@ -69,7 +69,8 @@ sub_default: matched writers: 0
 
 - `sub_leased` is told 1.0 s after the last heartbeat: the lease it was
   promised.
-- `sub_default` prints **no** liveliness event, ever. Its only sign is
+- `sub_default` prints **no** liveliness event (not_alive_count stays 0, checked
+  live). Its only sign is
   `matched writers: 0`, once the participant lease expires, about 10 s after
   the crash. Nothing in its output says "the writer crashed".
 

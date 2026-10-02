@@ -142,10 +142,12 @@ def main(argv: list[str] | None = None) -> int:
                 # disposed instances come back as InvalidSample, without a seq
                 rx.record(endpoint.topic, [s.seq for s in got if hasattr(s, "seq")])
             if rx.due(time.monotonic()):
-                for line in rx.lines():
+                for line in rx.lines(time.monotonic()):
                     print(line, flush=True)
             seq += 1
             next_tick += period_s
+            if next_tick < time.monotonic() - period_s:  # overran: do not burst to catch up
+                next_tick = time.monotonic()
             time.sleep(max(0.0, next_tick - time.monotonic()))
     except KeyboardInterrupt:
         pass

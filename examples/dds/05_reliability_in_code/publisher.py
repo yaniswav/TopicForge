@@ -6,6 +6,8 @@ python publisher.py [--domain 0] [--topic scan] [--rate-hz 10] [--reliable | --b
 # No `from __future__ import annotations` here: Cyclone reads the real field
 # types of the IdlStruct at class creation, and string annotations break it.
 import argparse
+import signal
+import threading
 import time
 from dataclasses import dataclass
 
@@ -34,6 +36,11 @@ group.add_argument("--reliable", dest="reliable", action="store_true", default=T
 group.add_argument("--best-effort", dest="reliable", action="store_false")
 args = parser.parse_args()
 
+stop = threading.Event()  # set by Ctrl+C or a termination request
+for sig in ("SIGINT", "SIGTERM", "SIGBREAK"):  # SIGBREAK exists on Windows only
+    if hasattr(signal, sig):
+        signal.signal(getattr(signal, sig), lambda *_: stop.set())
+
 participant = DomainParticipant(args.domain, qos=Qos(Policy.EntityName(args.name)))
 topic = Topic(participant, args.topic, Scan)
 
@@ -47,10 +54,10 @@ writer = DataWriter(participant, topic, qos=Qos(reliability, Policy.History.Keep
 
 print(f"publishing Scan on '{args.topic}' offering {offered} (domain {args.domain})", flush=True)
 seq, last_log = 0, 0.0
-while True:
+while not stop.is_set():
     writer.write(Scan(seq=seq, range_m=2.0 + 0.01 * seq))
     if time.monotonic() - last_log >= 1.0:  # log once a second, not every sample
         print(f"wrote seq={seq}", flush=True)
         last_log = time.monotonic()
     seq += 1
-    time.sleep(1.0 / args.rate_hz)
+    stop.wait(1.0 / args.rate_hz)

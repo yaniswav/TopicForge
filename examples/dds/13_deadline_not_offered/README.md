@@ -29,13 +29,13 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 [2] What does nav_planner actually receive on scan?
     -> nav_planner output
-    [nav_planner] rx scan: 0 in 1 s
-    [nav_planner] rx scan: 0 in 1 s
+    [nav_planner] rx scan: 0 in 1.0 s
+    [nav_planner] rx scan: 0 in 1.0 s
 
 [3] What does nav_planner actually receive on imu?
     -> nav_planner output
-    [nav_planner] rx imu: 10 in 1 s, last seq 39
-    [nav_planner] rx imu: 10 in 1 s, last seq 49
+    [nav_planner] rx imu: 10 in 1.0 s, last seq 39
+    [nav_planner] rx imu: 10 in 1.0 s, last seq 49
 ```
 
 - A Deadline is a promise: the writer offers "a new sample at least every

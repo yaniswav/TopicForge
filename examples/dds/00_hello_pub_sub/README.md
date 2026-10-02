@@ -65,14 +65,15 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 ## What you see inside
 
-`python subscriber.py`:
+`python subscriber.py` (the first `seq` depends on when you start it: the publisher
+was already running):
 
 ```
 listening on 'battery' (domain 90)
 matched writers: 1
-rx seq=1 voltage=12.599
-rx seq=2 voltage=12.598
-rx seq=3 voltage=12.597
+rx seq=41 voltage=12.559
+rx seq=42 voltage=12.558
+rx seq=43 voltage=12.557
 ...
 ```
 
