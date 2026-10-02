@@ -1,14 +1,12 @@
 """Example 00: hello, publisher and subscriber.
 
-The smallest DDS program pair: `publisher.py` writes a Battery message ten
-times a second on the topic `battery`, `subscriber.py` prints what it gets.
-Two dashboards run at once: one on `battery`, one with a typo (`batery`).
-The typo one connects to nothing, and DDS raises no error: it just never
-receives anything. TopicForge sees it from outside: a topic read by one
-program and written by nobody.
+`publisher.py` writes a Battery message ten times a second on `battery`;
+`subscriber.py` prints what it gets. A second dashboard subscribes to a typo
+(`batery`): DDS raises no error, it just never receives anything.
+TopicForge sees it from outside as a topic with a reader and no writer.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import asyncio

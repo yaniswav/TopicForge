@@ -1,19 +1,18 @@
 """Example 08: a crash, seen from inside and from outside.
 
-A publisher is killed (no goodbye on the bus). Two ways to notice:
+A publisher is killed with no goodbye on the bus.
 
-  inside   the subscriber's reader is told when a writer's liveliness lease
-           runs out. The lease is the writer's own QoS: here 1 s.
-  outside  TopicForge sees the participant discovery lease run out. For
-           Cyclone DDS that is 10 s by default, and TopicForge only notices
-           when it is asked.
+  inside   the subscriber's reader is told when the writer's liveliness lease
+           runs out (the writer's own QoS, here 1 s).
+  outside  TopicForge sees the participant discovery lease run out (10 s in
+           Cyclone DDS by default), when it is asked.
 
-The broken variant: a writer left with the default liveliness (an infinite
-lease). Its subscriber gets no liveliness event. Only the participant lease
-reveals the crash. Read publisher.py and subscriber.py.
+A writer left at the default liveliness (infinite lease) gives its subscriber
+no event; only the participant lease reveals the crash. Read publisher.py and
+subscriber.py.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys
@@ -125,7 +124,7 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
     step(5, "And the subscriber of the writer with the default lease?", "subscriber output")
 
     # Wait for the subscriber to notice the participant lease first, otherwise
-    # "no writer lost line" would hold simply because nothing happened yet.
+    # "no writer lost line" would hold because nothing happened yet.
     # The subscriber also prints "matched writers: 0" at startup, so the drop
     # counts only when it follows a "matched writers: 1".
     async def dropped() -> bool:

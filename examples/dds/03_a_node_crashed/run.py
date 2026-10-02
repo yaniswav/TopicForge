@@ -1,12 +1,11 @@
 """Example 03: a node crashed.
 
-The LIDAR driver dies without a word: no clean shutdown, no goodbye message
-on the bus. DDS notices only when the driver's lease expires (10 s for
-Cyclone DDS by default). TopicForge then reports the participant as left,
-and its event timeline shows when it joined and when it was lost.
+The LIDAR driver dies without a goodbye. DDS notices when its lease expires
+(10 s by default in Cyclone DDS); TopicForge then reports the participant as
+left, with discovered and lost events in the timeline.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

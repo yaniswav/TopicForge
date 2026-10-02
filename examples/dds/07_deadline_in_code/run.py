@@ -1,17 +1,15 @@
 """Example 07: the deadline, declared and kept, in code.
 
-Two lessons on one policy. Read publisher.py and subscriber.py.
+  A. Declared: the reader requires a scan every 200 ms, the writer promises
+     nothing. DDS refuses to match them (DEADLINE, id 4); TopicForge sees it.
+  B. Kept: the writer promises 100 ms, which satisfies the reader, but it
+     only publishes at 2 Hz, so the subscriber counts missed deadlines.
+     TopicForge reads declarations, not behavior, and reports nothing.
 
-  A. Declaring it. The reader requires a new scan every 200 ms; the writer
-     promises nothing. DDS refuses to connect them (DEADLINE, id 4). This is
-     a request/offered mismatch, like example 13, and TopicForge sees it.
-  B. Keeping it. The writer promises 100 ms, which satisfies the reader's
-     200 ms, so they connect. But the writer only publishes at 2 Hz, so the
-     promise is broken at runtime: the subscriber counts missed deadlines.
-     TopicForge reads declarations, not behavior: it reports nothing here.
+Read publisher.py and subscriber.py.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

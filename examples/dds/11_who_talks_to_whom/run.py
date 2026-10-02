@@ -1,16 +1,14 @@
 """Example 11: who talks to whom?
 
-The robot was assembled from two suppliers. The design document says how the
-programs are wired; nobody knows whether the robot matches it. TopicForge
-rebuilds the wiring from what each program announces on the bus: for every
-topic, who writes it and who reads it, with the data type.
+The robot was assembled from two suppliers and nobody knows whether it matches
+the design document. TopicForge rebuilds the wiring from discovery: for each
+topic, its writers, readers and data type.
 
-The motor controller comes from a supplier using Dust DDS. TopicForge sees
-it without any Dust software, through standard discovery, but Dust announces
-no name: it appears by its GUID. Be explicit about what you do not see.
+The motor controller uses Dust DDS. TopicForge sees it through standard
+discovery, but Dust announces no name, so it appears by GUID.
 
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import sys

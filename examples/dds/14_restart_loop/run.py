@@ -1,16 +1,13 @@
 """Example 14: a node in a restart loop.
 
-The navigation planner crashes at startup and its supervisor (systemd, a
-launch file, a container restart policy) brings it back, again and again.
-Each restart is a new process, so a new DDS participant with a new GUID,
-under the same name.
+nav_planner crashes at startup and its supervisor restarts it again and again.
+Each restart is a new process, so a new participant GUID under the same name.
+TopicForge shows one active nav_planner, older ones that left, and a
+discovered/lost pair per crash. A GUID lives as long as one process; a name
+is not unique.
 
-TopicForge shows the pattern: one active nav_planner, older nav_planners
-that left, and a timeline with a discovered/lost pair per crash. The lesson:
-a GUID lives as long as one process, and a name is not unique.
-
-    python run.py           # run the example and check what TopicForge reports
-    python run.py --hold    # keep the programs running and ask your own MCP client
+    python run.py          # run the example and check what TopicForge reports
+    python run.py --hold   # leave the programs up and ask your own MCP client
 """
 
 import asyncio

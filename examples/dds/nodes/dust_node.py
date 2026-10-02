@@ -250,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
                     writer.write(cls(**spec.sample_values(endpoint.type_name, seq)))
                 except Exception as exc:
                     # Dust 0.16 RELIABLE writes time out against a Cyclone
-                    # reader (observed 2026-10-02). A real program would keep
+                    # reader (Dust 0.16). A real program would keep
                     # running, so this one does too and says so once.
                     if "Timeout" not in str(exc):
                         raise
