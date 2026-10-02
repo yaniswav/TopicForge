@@ -31,7 +31,7 @@ You called a ROS2 graph or bag tool (`list_topics`, `get_topic_info`, `sample_me
 2. Re-run with `TOPICFORGE_MODE=live` and your existing `TOPICFORGE_DDS_BACKEND`.
 3. Check `health_check`: `ros_backend` should be `"ros2_cli"` and `dds_backend` your vendor.
 
-If you want a DDS-only deployment, the message is expected: you use the five DDS tools and the two bag tools raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active", means `TOPICFORGE_DDS_BACKEND` is `mock` (the default) while a live adapter serves; set it to `cyclone`.
+If you want a DDS-only deployment, the message is expected: you use the seven DDS tools and the two bag tools raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active", means `TOPICFORGE_DDS_BACKEND` is `mock` (the default) while a live adapter serves; set it to `cyclone`.
 
 ## "rosbags"
 

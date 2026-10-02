@@ -19,8 +19,9 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 ## What TopicForge shows
 
 ```
-    nav_planner        vendor=cyclone  left    host=DESKTOP-H0N0S7G
     lidar_driver       vendor=cyclone  active  host=DESKTOP-H0N0S7G
+    topicforge         vendor=cyclone  active  host=DESKTOP-H0N0S7G
+    nav_planner        vendor=cyclone  left    host=DESKTOP-H0N0S7G
     nav_planner        vendor=cyclone  left    host=DESKTOP-H0N0S7G
     nav_planner        vendor=cyclone  active  host=DESKTOP-H0N0S7G
 
@@ -46,6 +47,6 @@ python run.py --hold     # keep the programs running, ask your own MCP client
 
 - A GUID lives as long as one process. A name is not unique: two programs,
   or two lives of the same program, can share it.
-- TopicForge records a participant when it is asked about the bus. A
-  program that lives and dies between two questions leaves no trace, so ask
-  regularly when you hunt a restart loop.
+- TopicForge tracks discovery every 0.5 s in the background, so each restart
+  shows up in the timeline. A participant that cycles faster than that, between
+  two passes, can still be missed.

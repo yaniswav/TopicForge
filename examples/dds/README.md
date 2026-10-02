@@ -128,12 +128,16 @@ Then ask the question from the example's README.
   appear on the bus with their QoS, which is all these examples need.
 - RTI Connext examples need your own RTI license (`RTI_LICENSE_FILE`). They
   are skipped without one and never run in public CI.
-- TopicForge checks Reliability, Durability and Deadline compatibility, and
-  flags History as risky. Liveliness, Ownership and Partition are not checked.
-  It pairs readers and writers by topic name, assuming the same type and the
-  default partition.
+- TopicForge checks Partition, type name, Reliability, Durability, Deadline,
+  Liveliness (kind and lease), LatencyBudget, Ownership (kind),
+  DestinationOrder and DataRepresentation, and flags History as risky.
+  Presentation, XTypes assignability and runtime behavior are not checked, and
+  the scan lists them in `policies_unchecked`.
 - It sees the QoS each side declares, never whether a running program meets
-  it, and it notices a departure only when asked (it polls).
+  it. A writer that is alive but silent looks healthy, because its lease is
+  still renewed.
+- Departures are dated by DDS. A crash and a clean leave look the same, and the
+  `lost` time is an upper bound: after a crash it is the lease expiry.
 - TopicForge does not decode the data on your topics yet, so it cannot tell
   you a publish rate or a value.
 

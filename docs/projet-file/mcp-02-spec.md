@@ -118,7 +118,7 @@ acknowledgement in CHANGELOG :
 * v0.4.0 Phase 3 added `peek_bag_samples` (11th tool, post-mortem
   bag inspection across MCAP / ROS2 .db3 / ROS1 .bag legacy)
 
-The current ceiling is **11 tools**. A 12th still requires an
+The current ceiling is **12 tools** (`list_endpoints` was approved on 2026-10-02). A 13th still requires an
 explicit re-scope decision documented in
 `topicforge/docs/product-plan.md section 11`.
 

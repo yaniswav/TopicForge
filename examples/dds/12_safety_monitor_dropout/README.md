@@ -49,10 +49,13 @@ Read this before relying on anything like it:
 - The discovery lease is a discovery mechanism, not a safety mechanism.
   Detection takes as long as the lease the **dead** program announced: 10 s
   for Cyclone DDS by default, 100 s for several other vendors. TopicForge
-  also only notices when it is asked, since it polls.
+  reports a crash only when the lease expires, and cannot tell it from a clean
+  leave.
 - A real safety design uses the Liveliness QoS (with a short lease on the
-  safety topics) and a fail-safe reaction in the consumer. TopicForge does
-  not check Liveliness compatibility.
+  safety topics) and a fail-safe reaction in the consumer. TopicForge checks
+  that a reader's Liveliness request is compatible with the writer's offer, but
+  it cannot observe runtime liveliness: a writer that is silent while its
+  process is up looks healthy.
 
 ## Ask your agent
 

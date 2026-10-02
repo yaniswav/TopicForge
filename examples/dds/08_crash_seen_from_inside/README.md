@@ -90,14 +90,15 @@ sub_default: matched writers: 0
 - TopicForge sees **both** crashes, because the participant lease covers every
   writer of the process, even one that never set a liveliness lease. That is
   the broken variant's only safety net.
-- It sees them late: the 10 s lease plus polling (12 s here), not the 1 s the
-  application chose. And only when asked: it polls, it does not push.
+- It sees them late: the 10 s lease (12 s here), not the 1 s the application
+  chose. It cannot tell the crash from a clean leave.
 
 ## What this does not do
 
-TopicForge does **not check Liveliness compatibility**: a reader that demands a
-shorter lease than the writer offers would not be reported (see also example 12). It sees the discovery lease, not application
-liveliness, so it cannot say "this writer is silent but its process is up".
+TopicForge checks Liveliness compatibility: a reader that demands a shorter
+lease than the writer offers is reported by `detect_qos_mismatches` (see also
+example 12). But it sees the discovery lease, not application liveliness, so it
+cannot say "this writer is silent but its process is up".
 The `writer lost liveliness` event exists only inside the subscriber.
 
 ## Ask your agent

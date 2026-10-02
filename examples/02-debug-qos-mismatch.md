@@ -2,7 +2,7 @@
 
 **Scenario.** A subscriber reports "no data" but `ros2 topic list` shows
 the topic and a publisher. Classic DDS QoS incompatibility. **Tools
-exercised.** `list_participants`, `detect_qos_mismatches`,
+exercised.** `list_participants`, `list_endpoints`, `detect_qos_mismatches`,
 `peek_dds_samples`. **Mode.** Mock: exercises the canonical fixture.
 
 ## Setup
@@ -12,8 +12,8 @@ pip install topicforge
 TOPICFORGE_MODE=mock python -m topicforge
 ```
 
-The mock DDS fixture ships three deterministic participants
-(two Cyclone-tagged, one Fast-tagged) on domain `0`, with four topics :
+The mock DDS fixture ships four deterministic participants
+(two Cyclone, one Fast, one Dust) on domain `0`, with four topics :
 `/dds/well_matched` (compatible QoS), `/dds/qos_mismatch`
 (deliberate Reliability incompatibility ; RELIABLE reader vs
 BEST_EFFORT writer), and two user-topic payload exemplars,
@@ -26,11 +26,13 @@ BEST_EFFORT writer), and two user-topic payload exemplars,
 > Who is on the DDS bus right now, and is there a topic where readers
 > and writers don't agree on QoS?
 
-**Claude calls:** `list_participants(domain_id=0)` -> returns 3
+**Claude calls:** `list_participants(domain_id=0)` -> returns 4
 participants with `vendor`, `hostname`, `guid`, lifecycle fields
 (`first_seen_ns`, `status="active"`, `seen_count`). The
 multi-vendor mix exercises the OMG-DDS-RTPS protocol guarantee in
-fixture form. Then `detect_qos_mismatches(topic=None)` -> returns a
+fixture form. `list_endpoints()` then gives every writer and reader with its
+participant, type and structured QoS, and a `by_topic` roll-up that flags
+topics with a writer and no reader. Then `detect_qos_mismatches(topic=None)` -> returns a
 `MismatchScan` whose `reports` hold 1 `MismatchReport` for
 `/dds/qos_mismatch` with `incompatible_policies=["Reliability"]`,
 `severity="incompatible"`, the two participant names and
@@ -71,13 +73,12 @@ that illustrate the payload annotations : `/dds/ddsforge/example`
 returns `_decode_status="full"` with decoded fields, `/dds/ddsforge/opaque`
 returns `_decode_status="raw"` with a `_raw_bytes_hex` preview.
 
-**Mock only.** Those two exemplars show the wire shape, not live
-behaviour. On a real bus, Cyclone and Fast do not decode user-topic
-payloads: `peek_dds_samples` on a user topic returns one placeholder
-sample with `_decode_status="raw"`, an explanatory `_decode_note` and an
-empty `_raw_bytes_hex`, which means "this topic is announced on the bus",
-not "this message was received". Neither `"full"` nor `"partial"` is
-produced by any live adapter today. See
+**Mock only.** Those samples show the wire shape, not live behaviour. On a
+real bus, Cyclone and Fast do not decode user-topic payloads:
+`peek_dds_samples` on a user topic returns `count=0` and a `note` saying
+decoding is disabled and that this does not mean the topic is silent. Use
+`list_endpoints` to see who writes and reads the topic. Neither `"full"` nor
+`"partial"` is produced by any live adapter today. See
 [`docs/DDS_QUICKSTART.md`](../docs/DDS_QUICKSTART.md) section 5.
 
 ## Going live
@@ -90,15 +91,14 @@ TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 The Fast DDS adapter (`TOPICFORGE_DDS_BACKEND=fast`) has no PyPI extra:
 it needs a Python binding built from eProsima's sources.
 
-The first two tool calls, `list_participants` and
-`detect_qos_mismatches`, are discovery-based and work against any real DDS
-domain: Cyclone and Fast both observe every conformant vendor on the wire
-(RTI Connext, OpenDDS, CoreDX, Dust DDS, etc.) via the OMG protocol
-guarantee. The third call, `peek_dds_samples` on a user topic, only
-confirms that the topic exists on a live bus; it cannot show what is
-flowing. See [`docs/dds-interop-matrix.md`](../docs/dds-interop-matrix.md).
-That reach follows from the protocol; it has not been confirmed by a run
-against a live multi-vendor bus.
+`list_participants`, `list_endpoints` and `detect_qos_mismatches` are
+discovery-based and work against any real DDS domain: Cyclone observes every
+conformant vendor on the wire (RTI Connext, OpenDDS, CoreDX, Dust DDS, etc.)
+via the OMG protocol guarantee. `list_endpoints` is not served by the Fast DDS
+backend. `peek_dds_samples` on a user topic cannot show what is flowing. See
+[`docs/dds-interop-matrix.md`](../docs/dds-interop-matrix.md). Cyclone and Dust
+DDS participants have been run together on a live bus; the other vendors are
+covered by the protocol guarantee only.
 
 ## Why this is hard without TopicForge
 
@@ -114,3 +114,5 @@ checks Partition and the type name first: a reader and a writer in
 different partitions are returned in `not_matched` with reason
 `partition`, never blamed on Reliability. Presentation, XTypes
 assignability and runtime behavior are listed in `policies_unchecked`.
+Matching pairs are listed under `matched`, and discovery shows declared QoS
+only: a writer that is alive but silent looks healthy.
