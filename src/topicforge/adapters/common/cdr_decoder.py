@@ -1,30 +1,8 @@
 """Vendor-agnostic CDR / dynamic-type payload decoder.
 
-Extracted from `dds_cyclone/adapter.py` in v0.4.0 Phase 3 so the same
-field-by-field decode logic powers both live DDS samples (via the
-Cyclone XTypes pipeline from Phase 1.5) and recorded bag samples
-(via the Phase 3 `services/bag_service.py`).
-
-The 6 public helpers below operate on **Python value shapes**: they
-do not import any DDS or ROS binding. The CycloneDdsAdapter wraps its
-`cyclonedds.dynamic` typed-reader pipeline around them ; the bag
-service wraps `rosbags.AnyReader` around them.
-
-Public API:
-
-* `iter_field_names(sample)`: list field names from a dynamic-type
-  Python object (dataclass / Pydantic / slots / dict-attr).
-* `decode_field_value(value)`: recursive decode of one field value.
-* `decode_dynamic_sample(sample)`: full sample -> payload dict with
-  `_decode_status` annotation.
-* `dynamic_type_name(type_object)`: best-effort message-type name.
-* `extract_seq_from_payload(payload)`: pull `seq` / `sequence_number`
-  / `sequence_id` from a decoded payload dict.
-* `extract_publish_ns_from_payload(payload)`: pull `publish_ns` or
-  `header.stamp.{sec,nanosec}` from a decoded payload dict.
-
-Tests live in `tests/test_cdr_decoder.py`: pure logic, no DDS / bag
-dependency required.
+Shared by live DDS samples (Cyclone dynamic types) and recorded bag samples
+(`services/bag_service.py`). The helpers operate on plain Python value
+shapes and import no DDS or ROS binding.
 """
 
 from __future__ import annotations
@@ -39,18 +17,11 @@ from topicforge.adapters.common.xtypes import (
 
 
 def decode_dynamic_sample(sample: Any) -> dict[str, object]:
-    """Decode `sample` field-by-field into a payload dict.
+    """Decode `sample` field by field into a payload dict.
 
-    Strategy:
-      * Iterate the sample's declared fields (via `__dataclass_fields__`,
-        `__fields__`, or `__slots__`; whichever the binding chose).
-      * For each field, attempt `getattr` + recursive decode of nested
-        structs / sequences / primitives.
-      * Per-field exception -> mark the field as undecoded ; surface the
-        whole sample as `annotate_partial` with a comma-joined list of
-        failed field names in `_decode_note`.
-      * If no fields could be decoded -> `annotate_raw` with the sample's
-        repr captured in the note.
+    A field that raises is skipped and the result is `annotate_partial`
+    with the failed names in `_decode_note`. If nothing decodes, the result
+    is `annotate_raw`.
     """
     decoded: dict[str, object] = {}
     failed_fields: list[str] = []
@@ -79,11 +50,10 @@ def decode_dynamic_sample(sample: Any) -> dict[str, object]:
 
 
 def iter_field_names(sample: Any) -> list[str]:
-    """Best-effort list of field names on a dynamic-type sample.
+    """List field names on a dynamic-type sample.
 
-    Tries (in order) dataclass-style `__dataclass_fields__`, Pydantic-
-    style `__fields__`, slot-based `__slots__`, then bare `__dict__`
-    keys. Returns an empty list when none apply.
+    Tries `__dataclass_fields__`, `__fields__`, `__slots__`, then public
+    `__dict__` keys. Returns an empty list when none apply.
     """
     fields = getattr(sample, "__dataclass_fields__", None)
     if fields:
@@ -93,9 +63,7 @@ def iter_field_names(sample: Any) -> list[str]:
         return list(fields)
     slots = getattr(sample, "__slots__", None)
     if slots:
-        # `__slots__` may legally be a bare string (a single slot name);
-        # list() on a string explodes it into characters, so wrap it first
-        # to avoid decoding one field as N garbage fields. (Audit C2.)
+        # `__slots__` may be a bare string; list() would split it into characters.
         return [slots] if isinstance(slots, str) else list(slots)
     return (
         [name for name in vars(sample) if not name.startswith("_")]
@@ -105,24 +73,16 @@ def iter_field_names(sample: Any) -> list[str]:
 
 
 _MAX_DECODE_DEPTH = 32
-"""Recursion cap for `decode_field_value`. Beyond this depth a value is
-collapsed to `repr()` rather than recursed into: guards against a
-pathologically deep or self-referential decoded object graph raising
-`RecursionError`. Normal DDS/ROS IDL types nest far shallower. (Audit M6.)"""
+"""Recursion cap for `decode_field_value`. Deeper values collapse to `repr()`
+so a self-referential object graph cannot raise `RecursionError`."""
 
 
 def decode_field_value(value: Any, *, _depth: int = 0) -> object:
-    """Recursive decode of a single dynamic-type field value.
+    """Decode one dynamic-type field value into JSON-serializable data.
 
-    Primitives and strings pass through. Sequences (list / tuple) are
-    decoded element-wise. Dicts are decoded recursively. Nested
-    struct-like objects (exposing dataclass / Pydantic / slot fields)
-    recurse via the same field-iteration logic. Unsupported types
-    (bytes, custom classes that resist iteration) collapse to their
-    `repr()` so the payload remains JSON-serializable.
-
-    `_depth` is internal: recursion beyond `_MAX_DECODE_DEPTH` collapses
-    to `repr()` to bound stack usage.
+    Primitives pass through; lists, tuples, dicts and struct-like objects
+    recurse; anything else (bytes, opaque classes) becomes its `repr()`.
+    `_depth` is internal.
     """
     if _depth >= _MAX_DECODE_DEPTH:
         return repr(value)
@@ -156,13 +116,9 @@ def dynamic_type_name(type_object: Any) -> str:
 
 
 def extract_seq_from_payload(payload: dict[str, object]) -> int | None:
-    """Best-effort sequence-number extraction from a decoded payload.
+    """Return the integer `seq`, `sequence_number` or `sequence_id`, else `None`.
 
-    Looks at common field names used by ROS / DDS message conventions :
-    `seq`, `sequence_number`, `sequence_id`. The `header.seq` form
-    common in ROS1 isn't recursed into here ; ROS2 messages typically
-    flatten it. Returns `None` if no integer-valued sequence key
-    is present.
+    `header.seq` (ROS1 style) is not searched.
     """
     for key in ("seq", "sequence_number", "sequence_id"):
         value = payload.get(key)
@@ -172,13 +128,7 @@ def extract_seq_from_payload(payload: dict[str, object]) -> int | None:
 
 
 def extract_publish_ns_from_payload(payload: dict[str, object]) -> int | None:
-    """Best-effort publish-timestamp extraction from a decoded payload.
-
-    Looks for `publish_ns` directly, then for a ROS-style nested
-    `header.stamp.{sec,nanosec}` shape that the decoded XTypes
-    representation can expose. Returns `None` when neither is
-    present.
-    """
+    """Return `publish_ns`, or `header.stamp` converted to ns, else `None`."""
     direct = payload.get("publish_ns")
     if isinstance(direct, int):
         return direct

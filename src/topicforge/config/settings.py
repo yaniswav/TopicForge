@@ -1,8 +1,7 @@
 """Runtime settings, resolved from environment variables.
 
-Settings are immutable and constructed once at startup. The `auto` mode is
-resolved against the current environment by `Settings.effective_mode`:
-keeping that decision in one place avoids drift between callers.
+Settings are immutable and built once at startup. `auto` is resolved in
+`Settings.effective_mode`, the only place that decision is made.
 """
 
 from __future__ import annotations
@@ -28,24 +27,18 @@ _VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = (
     "dust",
     "auto",
 )
-# Commercial vendor identifiers that 0.5.2 and earlier accepted for the Pro
-# tier. The tier is retired; they are rejected with a dedicated message
-# instead of the generic "invalid value" one so an existing deployment learns
-# why its configuration stopped working.
+# Vendor identifiers of the retired Pro tier. They get a dedicated error so an
+# existing deployment learns why its configuration stopped working.
 _REMOVED_DDS_BACKENDS: frozenset[str] = frozenset({"rti", "opensplice", "coredx", "intercom"})
 _VALID_LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
-# Telemetry is strict opt-in: any value other than the explicit on-set
-# resolves to off. We accept the common affirmatives so users can flip the
-# flag without consulting the docs, but anything ambiguous stays off.
+# Telemetry is opt-in: only the on-values enable it, and unknown values raise.
 _TELEMETRY_ON_VALUES: frozenset[str] = frozenset({"on", "1", "true", "yes", "enabled"})
 _TELEMETRY_OFF_VALUES: frozenset[str] = frozenset({"", "off", "0", "false", "no", "disabled"})
 
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
 
-# Canonical vendor -> Python module mapping used by both `auto` resolution
-# (this file) and `HealthService` (`services/health.py`). Defined here so
-# the two callers cannot drift.
+# Vendor -> Python module, shared by `auto` resolution and `HealthService`.
 _DDS_BACKEND_MODULES: dict[str, str] = {
     "opendds": "pyopendds",
     "fast": "fastdds",
@@ -53,15 +46,10 @@ _DDS_BACKEND_MODULES: dict[str, str] = {
     "dust": "dust_dds_python",
 }
 
-# Auto-detect priority order, evaluated by `effective_dds_backend` when
-# `dds_backend == "auto"`. First entry whose module is importable wins ; the
-# chain terminates at `"mock"` which is always available.
-#
-# Only backends with a working adapter belong here. `opendds` and `dust` are
-# permanent stubs whose `is_available()` is always False: `pyopendds` exists
-# on PyPI, so an auto chain that listed it would pick the stub, find it
-# unavailable and never try Cyclone. They stay selectable explicitly.
-# Fast > Cyclone preserves the v0.3.0 order.
+# Priority for `dds_backend == "auto"`: the first importable module wins, else
+# mock. Only backends with a working adapter belong here: `opendds` and `dust`
+# are stubs, and `pyopendds` is on PyPI, so listing it would pick the stub and
+# never try Cyclone. They stay selectable explicitly.
 _DDS_AUTO_DETECT_ORDER: tuple[str, ...] = ("fast", "cyclone")
 
 
@@ -73,23 +61,15 @@ class Settings:
     log_level: str
     ros2_executable: str
     telemetry_enabled: bool
-    # DDS module knobs: added in v0.2.0. Defaults keep backward-compat
-    # with code constructing `Settings(...)` positionally before v0.2.0.
     dds_backend: DdsBackend = "mock"
     dds_domain_id: int = 0
 
     @property
     def effective_mode(self) -> ResolvedMode:
-        """Resolve `auto` against the current environment.
+        """Resolve `auto`: `live` when the ROS2 executable is on PATH, else `mock`.
 
-        `live` and `mock` are returned as-is; `auto` becomes `live` when the
-        configured ROS2 executable is on PATH, otherwise `mock`. The factory
-        in `services/factory.py` is responsible for final fallback if a live
-        adapter cannot actually start.
-
-        Predictive resolution only. Final operational fallback (when the live
-        adapter is instantiable but cannot actually start) lives in
-        `services/factory.py:build_adapter`.
+        `live` and `mock` pass through. This only predicts; the fallback for a
+        live adapter that cannot start is in `services/factory.py:build_adapter`.
         """
         if self.mode == "auto":
             return "live" if shutil.which(self.ros2_executable) else "mock"
@@ -97,23 +77,17 @@ class Settings:
 
     @property
     def effective_dds_backend(self) -> ResolvedDdsBackend:
-        """Resolve the DDS backend against the current environment.
+        """Resolve the DDS backend.
 
-        - Explicit `TOPICFORGE_MODE=mock` forces the DDS backend to `mock`:
-          mock global mode means no live access of any kind.
-        - Explicit backends (`mock`, `cyclone`, `fast`, `opendds`, `dust`)
-          are returned as-is otherwise, including in `auto` mode when `ros2`
-          is not on PATH: a user who names a DDS backend wants it with or
-          without a ROS2 install, and silently serving fixtures instead
-          would hide the misconfiguration.
-        - `auto` walks `_DDS_AUTO_DETECT_ORDER` in priority order and
-          returns the first vendor whose Python module is importable on
-          this host, ending at `mock`. `auto` is never the default (the
-          default is `mock`), so it always expresses an explicit request
-          for DDS and the chain is walked whether or not `ros2` is on PATH.
+        - `TOPICFORGE_MODE=mock` forces `mock`.
+        - An explicit backend is returned as-is, with or without `ros2` on
+          PATH: serving fixtures instead would hide the misconfiguration.
+        - `auto` walks `_DDS_AUTO_DETECT_ORDER` and returns the first backend
+          whose module is importable, else `mock`. The default is `mock`, so
+          `auto` is always an explicit request for DDS.
 
-        Predictive resolution only. The factory may still fall back to
-        mock if the chosen backend cannot actually instantiate.
+        This only predicts; the factory may still fall back to mock if the
+        backend cannot start.
         """
         if self.mode == "mock":
             return "mock"
@@ -126,12 +100,10 @@ class Settings:
 
 
 def _module_is_importable(module: str) -> bool:
-    """True iff `find_spec(module)` finds the module without raising.
+    """True when `find_spec(module)` finds the module.
 
-    Wraps `importlib.util.find_spec` to swallow `ModuleNotFoundError`
-    raised when the *parent* package of a dotted module path is not
-    installed (find_spec implicitly imports parents) and `ValueError`
-    raised for a half-initialised module.
+    `ModuleNotFoundError` (missing parent package) and `ValueError`
+    (half-initialised module) count as not importable.
     """
     try:
         return importlib.util.find_spec(module) is not None
@@ -140,11 +112,7 @@ def _module_is_importable(module: str) -> bool:
 
 
 def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Settings:
-    """Build a Settings from the given environment (defaults to `os.environ`).
-
-    The `env` parameter is injectable so tests can avoid leaking process
-    state and pin behavior deterministically.
-    """
+    """Build `Settings` from `env` (default `os.environ`); `env` is injectable for tests."""
     src = env if env is not None else os.environ
 
     raw_mode = src.get("TOPICFORGE_MODE", "auto").strip().lower()

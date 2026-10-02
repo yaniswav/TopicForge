@@ -1,18 +1,12 @@
-"""Defensive field extraction from DDS discovery samples: binding-free.
+"""Defensive field extraction from DDS discovery samples, without the bindings.
 
-Extracted from the Cyclone and Fast adapters (Lot 0, audit 2026-07-08) so
-the `getattr`-with-fallback sample introspection is unit-testable without
-the `cyclonedds` / `fastdds` bindings installed.
+Kept here so the `getattr`-with-fallback logic is unit-testable without
+`cyclonedds` or `fastdds` installed. The two vendors expose different
+sample shapes, so the helpers stay vendor-qualified (`cyclone_*`, `fast_*`)
+and are not merged: the Fast paths have never run against a real bus.
 
-The two vendors expose subtly different discovery-sample shapes, so the
-helpers stay **vendor-qualified** (`cyclone_*` / `fast_*`) and preserve each
-adapter's exact behavior byte-for-byte: unifying them into a single set is
-deliberately deferred to the Lot 5 adapter-dedup work, which the real-bus
-integration rig can verify. Merging untested extraction paths blind (no
-bindings here) is exactly the silent-regression risk the audit flagged.
-
-Every helper returns `None` / safe defaults rather than raising: a single
-odd discovery sample must never break a whole tool call.
+Every helper returns `None` or a safe default rather than raising, so one
+odd sample cannot fail a tool call.
 """
 
 from __future__ import annotations
@@ -20,9 +14,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-# ---------------------------------------------------------------------------
 # Cyclone variants
-# ---------------------------------------------------------------------------
 
 
 def cyclone_extract_guid(sample: Any) -> bytes | None:
@@ -30,8 +22,7 @@ def cyclone_extract_guid(sample: Any) -> bytes | None:
 
     cyclonedds 11.0.1 exposes the builtin-topic key as a `uuid.UUID`
     (observed on a live bus), so `.bytes` is checked alongside raw bytes and
-    `.value` wrappers. Before this was handled every participant came back
-    without a GUID and they all collapsed onto one "unknown" entry.
+    `.value` wrappers.
     """
     for attr in ("key", "participant_key", "guid"):
         v = getattr(sample, attr, None)
@@ -67,13 +58,11 @@ def cyclone_extract_vendor_id(sample: Any) -> tuple[int, int] | None:
 def vendor_id_from_guid(guid: bytes | None) -> tuple[int, int] | None:
     """Read the vendor id from the first two bytes of an RTPS GUID prefix.
 
-    The cyclonedds builtin participant sample carries no vendor field (key,
-    qos and sample_info only, observed with 11.0.1). RTPS section 9.3.1.5
-    recommends that implementations start the GUID prefix with their vendor
-    id, and some do (eProsima 01.0F, Eclipse 01.10). Others do not: Dust DDS
-    and RTI Connext fill the prefix differently, so they map to "unknown"
-    rather than to a wrong vendor, as long as their first two bytes do not
-    collide with an assigned id. This is a convention, not a guarantee.
+    The cyclonedds builtin participant sample has no vendor field (key, qos
+    and sample_info only, observed with 11.0.1). RTPS section 9.3.1.5
+    recommends starting the GUID prefix with the vendor id; eProsima (01.0F)
+    and Eclipse (01.10) do. Dust DDS and RTI Connext do not, so they map to
+    "unknown" unless their first two bytes collide with an assigned id.
     """
     if guid is None or len(guid) < 2:
         return None
@@ -89,12 +78,10 @@ def is_alive_sample(sample: Any) -> bool:
     """True unless the sample's SampleInfo says the instance is gone.
 
     Builtin discovery readers keep the last sample of a participant or
-    endpoint after it leaves: its lease expiring, or an explicit dispose,
-    only flips `instance_state` to a NOT_ALIVE value. Treating those cached
-    samples as live meant a stopped participant never disappeared and a
-    dead writer still produced QoS mismatch reports (observed on a live
-    bus). Samples without a SampleInfo are kept, so duck-typed test doubles
-    and bindings that do not expose one keep their previous behaviour.
+    endpoint after it leaves; a lease expiry or dispose only flips
+    `instance_state` to NOT_ALIVE. Without this check a stopped participant
+    never disappears and a dead writer still yields QoS mismatches (observed
+    on a live bus). Samples without a SampleInfo count as alive.
     """
     info = getattr(sample, "sample_info", None)
     if info is None:
@@ -192,16 +179,11 @@ def cyclone_extract_type_name(sample: Any) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
 # Fast DDS variants
-# ---------------------------------------------------------------------------
 
 
 def is_removal(status: Any) -> bool:
-    """Detect a 'participant/endpoint removed' discovery status across
-    binding versions. Fast DDS exposes status as either an enum value
-    or a string label: accept both.
-    """
+    """True when a Fast DDS discovery status (enum or string label) means removal."""
     if status is None:
         return False
     s = str(status).upper()

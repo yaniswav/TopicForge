@@ -1,4 +1,4 @@
-"""Health service: environment & mode introspection."""
+"""Health service: environment and mode introspection."""
 
 from __future__ import annotations
 
@@ -21,12 +21,11 @@ _DDS_TAGS: frozenset[str] = frozenset({"mock", "cyclone", "fast", "opendds", "du
 
 
 class HealthService:
-    """Reports the runtime that was actually built, not the one requested.
+    """Reports the runtime that was built, not the one requested.
 
-    The adapter produced by `services.factory.build_adapter` is the single
-    source of truth for `mode`, `ros_backend` and `dds_backend`: re-deriving
-    them from `Settings` would drift from the factory's fallbacks (e.g.
-    `TOPICFORGE_MODE=live` without `ros2` ends up on the mock adapter).
+    `mode`, `ros_backend` and `dds_backend` come from the adapter that
+    `build_adapter` produced; deriving them from `Settings` would miss its
+    fallbacks (`TOPICFORGE_MODE=live` without `ros2` ends up on the mock adapter).
     """
 
     def __init__(self, settings: Settings, adapter: MiddlewareAdapter) -> None:
@@ -34,11 +33,7 @@ class HealthService:
         self._adapter = adapter
 
     def report(self) -> HealthReport:
-        """Build a HealthReport for the current environment.
-
-        Never raises. `health_check` is the tool a user will reach for when
-        things look broken, so it must always answer.
-        """
+        """Build a `HealthReport`. Never raises: `health_check` is used when things are broken."""
         ros_backend, dds_backend = _backends_from_adapter_name(self._adapter.name)
         observer = _observer_status(self._adapter)
         return HealthReport(
@@ -71,10 +66,9 @@ class HealthService:
 
 
 def _observer_status(adapter: MiddlewareAdapter) -> dict[str, Any]:
-    """Observer start time and tracker counters when the adapter has them, else `{}`.
+    """Observer start time and tracker counters if the adapter has them (Cyclone), else `{}`.
 
-    Optional capability (Cyclone): never part of the protocol, and a failure
-    here must not break `health_check`.
+    Not part of the protocol, and a failure must not break `health_check`.
     """
     status = getattr(adapter, "observer_status", None)
     if not callable(status):
@@ -102,11 +96,10 @@ def _backends_from_adapter_name(name: str) -> tuple[RosBackendTag, DdsBackendTag
 
 
 def _middleware_available(dds_backend: str, settings: Settings) -> bool:
-    """True if the DDS backend's Python bindings are importable on this host.
+    """True if the DDS bindings are importable.
 
-    When a DDS backend is serving (`dds_backend != "none"`) its bindings are
-    loaded by construction. When none is, probe the *requested* backend's
-    module so a configured-but-missing binding stays visible.
+    A serving backend has them loaded. Otherwise the requested backend's module
+    is probed, so a configured but missing binding stays visible.
     """
     if dds_backend != "none":
         return True

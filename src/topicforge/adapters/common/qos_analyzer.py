@@ -1,9 +1,7 @@
 """Pure QoS-mismatch analyzer: no DDS dependency.
 
-Compares a reader QoS profile against a writer QoS profile and surfaces
-the policies that block (or risk degrading) communication. Testable
-against synthesized `QosProfile` pairs without any DDS middleware
-installed: same convention as the live-adapter pure parsers.
+Compares a reader `QosProfile` against a writer `QosProfile` and reports
+the policies that block or risk degrading communication.
 
 Eight RxO (requested/offered) policies are compared: Reliability, Durability,
 Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder and
@@ -86,7 +84,7 @@ def effective_partitions(partitions: list[str] | None) -> list[str]:
 def partitions_match(reader: list[str] | None, writer: list[str] | None) -> bool:
     """True when at least one reader partition matches one writer partition.
 
-    A wildcard on one side matches a concrete name on the other ; two
+    A wildcard on one side matches a concrete name on the other; two
     wildcards never match each other (not even identical ones). Only `*` and
     `?` are wildcards: `[12]` is a literal, so `robot[12]` matches only an
     identical `robot[12]`. Checked against cyclonedds 11.0.1 on a live bus
@@ -141,8 +139,8 @@ def _check_liveliness(reader: QosProfile, writer: QosProfile) -> PolicyMismatch 
 def _check_representation(reader: QosProfile, writer: QosProfile) -> PolicyMismatch | None:
     accepted = reader.data_representation or []
     offered = writer.data_representation or []
-    # The writer's list order is not preserved by the normalization when it
-    # offers several, so a multi-representation writer is checked by overlap.
+    # Normalization does not keep the writer's list order, so several offered
+    # representations are checked by overlap.
     ok = (offered[0] in accepted) if len(offered) == 1 else bool(set(offered) & set(accepted))
     if ok:
         return None

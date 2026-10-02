@@ -1,11 +1,8 @@
 """Deterministic fake-robot fixtures used by `MockAdapter`.
 
-These model a small differential-drive mobile robot with a 2D LIDAR, an
-RGB camera, and a TF tree. The data is rich enough to make demos and
-screenshots believable, and stable enough for tests to assert on exact
-values.
-
-If you change a value here, expect to update tests under `tests/`.
+A small differential-drive robot with a 2D LIDAR, an RGB camera and a TF
+tree. Tests assert on exact values, so changing one here means updating
+`tests/`.
 """
 
 from __future__ import annotations
@@ -153,19 +150,11 @@ def mock_samples_for(topic: str, count: int) -> list[MessageSample]:
     return list(_MOCK_SAMPLES.get(topic, [])[:count])
 
 
-# ---------------------------------------------------------------------------
-# DDS module fixtures: exercise list_participants, detect_qos_mismatches,
-# peek_dds_samples. Four participants on a single domain ; one well-matched
-# topic (reader & writer compatible) and one deliberately mismatched topic
-# (Reliability incompatibility, since RELIABLE reader cannot match a
-# BEST_EFFORT writer).
-# ---------------------------------------------------------------------------
+# DDS fixtures: participants on one domain, one well-matched topic and one
+# with a Reliability mismatch (RELIABLE reader, BEST_EFFORT writer).
 
-# v0.4.0 Phase 1: deterministic lifecycle timeline anchored on this
-# wall-clock value (2024-01-01T00:00:00Z) so tests can assert exact
-# first_seen / last_seen / event timestamps without relying on the
-# system clock. The chosen base sits comfortably inside any plausible
-# `lookback_seconds` window from "today" used in real LLM sessions.
+# Lifecycle timeline anchor (2024-01-01T00:00:00Z), so tests can assert exact
+# timestamps without the system clock.
 _LIFECYCLE_BASE_TS_NS = 1_704_067_200_000_000_000
 
 MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
@@ -195,9 +184,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         seen_count=2,
         vendor_source="guid_prefix",
     ),
-    # v0.3.0: third participant exercises the multi-vendor positioning:
-    # an eProsima Fast DDS participant alongside Cyclone, as the OMG-DDS
-    # interop matrix promises (see docs/dds-interop-matrix.md).
+    # An eProsima Fast DDS participant next to Cyclone (multi-vendor demo).
     ParticipantInfo(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000003",
         vendor="fast",
@@ -211,8 +198,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         seen_count=2,
         vendor_source="guid_prefix",
     ),
-    # A Rust Dust DDS participant (S2E, vendor_id 01.14) rounds out the
-    # multi-vendor demo: three distinct stacks on one bus.
+    # A Dust DDS participant (S2E, vendor_id 01.14): three stacks on one bus.
     ParticipantInfo(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000004",
         vendor="dust",
@@ -227,8 +213,7 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
     ),
 )
 
-# Deterministic lifecycle log for the same scenario. Four discovery
-# events ordered by timestamp, no `lost` event (steady-state demo).
+# Lifecycle log for the same scenario: four discovery events, no `lost`.
 MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
     ParticipantEvent(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000001",
@@ -273,14 +258,10 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
 
 
 def mock_participant_events_for(domain_id: int, lookback_seconds: int) -> list[ParticipantEvent]:
-    """Return mock events filtered by `domain_id`, ordered newest-first.
+    """Mock events for `domain_id`, newest first.
 
-    `lookback_seconds` is honored deterministically against the fixture
-    timeline: events older than `MOCK_PARTICIPANT_EVENTS_NOW_NS -
-    lookback_seconds * 1e9` are dropped. The fixture anchors `now` at
-    `_LIFECYCLE_BASE_TS_NS + 120_000_000_000` (two minutes after the
-    base) so a 60s lookback returns only events younger than that
-    horizon ; a 300s lookback returns everything.
+    `now` is pinned two minutes after `_LIFECYCLE_BASE_TS_NS`, so a 60 s
+    lookback drops older events and a 300 s lookback returns all of them.
     """
     now_ns = _LIFECYCLE_BASE_TS_NS + 120_000_000_000
     cutoff = now_ns - lookback_seconds * 1_000_000_000
@@ -291,13 +272,10 @@ def mock_participant_events_for(domain_id: int, lookback_seconds: int) -> list[P
     return filtered
 
 
-# MOCK_DDS_TOPICS: v0.4.0 Phase 1 adds two user-topic fixtures
-# exercising the XTypes/IDL decode paths in `peek_dds_samples`:
-#   * `/dds/ddsforge/example`: `_decode_status="full"` path
-#   * `/dds/ddsforge/opaque`: `_decode_status="raw"` fallback path
-# The two existing topics (well_matched / qos_mismatch) keep the v0.3.0
-# builtin-style payload (no `_decode_status` key) so backward
-# compatibility with the v0.3.0 wire contract is preserved.
+# MOCK_DDS_TOPICS includes two user-topic fixtures for the decode paths of
+# `peek_dds_samples`: `/dds/ddsforge/example` (`_decode_status="full"`) and
+# `/dds/ddsforge/opaque` (`"raw"`). The other two topics have no
+# `_decode_status` key.
 MOCK_DDS_TOPICS: tuple[str, ...] = (
     "/dds/well_matched",
     "/dds/qos_mismatch",
@@ -340,9 +318,8 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             for i in range(min(count, 3))
         ]
     elif topic == "/dds/qos_mismatch":
-        # The mismatched topic still has a writer producing samples: the
-        # mismatch only prevents one reader from matching, not the bus
-        # from carrying traffic.
+        # The writer still produces samples; the mismatch only stops one
+        # reader from matching.
         samples = [
             MessageSample(
                 topic=topic,
@@ -352,10 +329,8 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             )
         ][:count]
     elif topic == "/dds/ddsforge/example":
-        # v0.4.0 Phase 1: user topic with `_decode_status="full"`. The
-        # IDL is synthetic: a struct{ uint32 seq; string status; float32
-        # battery_pct; } resolved cleanly by `cyclonedds.dynamic` /
-        # `fastdds.DynamicData` (in the real adapters).
+        # Fully decoded user topic: synthetic struct{ uint32 seq; string status;
+        # float32 battery_pct; }.
         from topicforge.adapters.common.xtypes import annotate_full
 
         samples = [
@@ -374,9 +349,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             for i in range(min(count, 3))
         ]
     elif topic == "/dds/ddsforge/opaque":
-        # v0.4.0 Phase 1: user topic with `_decode_status="raw"`. Models
-        # the binding-XTypes-unavailable fallback path: payload bytes
-        # preserved as hex with a short diagnostic note.
+        # Undecoded user topic: bytes kept as hex with a diagnostic note.
         from topicforge.adapters.common.xtypes import annotate_raw
 
         synthetic_bytes = bytes.fromhex("deadbeefcafebabe")
@@ -401,10 +374,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
     )
 
 
-# ---------------------------------------------------------------------------
-# Endpoint fixtures (`list_endpoints`)
-# ---------------------------------------------------------------------------
-# Same scenario as the participants and the mismatch above: nav_planner writes
+# Endpoint fixtures (`list_endpoints`), same scenario as above: nav_planner writes
 # `/dds/qos_mismatch` BEST_EFFORT while lidar_driver reads it RELIABLE (the
 # `Reliability` mismatch), `/dds/ddsforge/opaque` has a writer and no reader (an
 # orphan), and the dust writer carries partition, manual liveliness and
@@ -482,11 +452,11 @@ _MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
 
 
 def mock_mismatch_scan(topic: str | None) -> MismatchScan:
-    """Deterministic `MismatchScan` for the mock scenario.
+    """`MismatchScan` for the mock scenario.
 
-    Runs the real pure scan over the endpoint fixtures above, so the mock and
-    the live path cannot disagree on the rules: `/dds/qos_mismatch` yields one
-    `Reliability` report, the opaque topic an orphan hint.
+    Runs the real scan over the endpoint fixtures, so mock and live share the
+    rules: `/dds/qos_mismatch` gives one `Reliability` report, the opaque
+    topic an orphan hint.
     """
     endpoints = [
         EndpointInfo(**rec, domain_id=0, mode_effective="mock")  # type: ignore[arg-type]
@@ -511,19 +481,10 @@ def mock_endpoint_listing(
     )
 
 
-# ---------------------------------------------------------------------------
-# Topic metrics fixtures (v0.4.0 Phase 2)
-# ---------------------------------------------------------------------------
-# A pre-populated MetricsBuffer holding a deterministic 10 Hz publisher
-# stream on `/dds/heartbeat_10hz`, plus a few empty topics so the tool
-# can be exercised against "no data" scenarios. The buffer is built
-# once at module import time and shared across all `mock_topic_metrics_for`
-# calls ; tests inject specific `now_ns` via `MetricsBuffer.compute_metrics`
-# for deterministic windowing.
-
-# Anchor: 100 samples at 100 ms intervals starting at `_METRICS_BASE_TS_NS`.
-# Each sample carries a sequence number and a publish_ns 50 ms BEFORE
-# the receive_ns, giving a deterministic 50 ms latency.
+# Topic metrics fixtures: a MetricsBuffer built at import with a 10 Hz stream
+# on `/dds/heartbeat_10hz` (100 samples from `_METRICS_BASE_TS_NS`, each with
+# a sequence number and a publish time 50 ms before receipt) plus a few topics
+# with no data.
 _METRICS_BASE_TS_NS = 1_704_067_200_000_000_000  # same anchor as lifecycle
 _METRICS_NOW_NS = _METRICS_BASE_TS_NS + 10_000_000_000  # 10 s after first sample
 
@@ -566,12 +527,7 @@ _MOCK_DECLARED_HZ: dict[str, float] = {"/dds/heartbeat_10hz": 10.0}
 
 
 def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> TopicMetrics:
-    """Deterministic TopicMetrics computed against `_MOCK_METRICS_BUFFER`.
-
-    `now_ns` is pinned at `_METRICS_NOW_NS` so the same call always
-    returns the same numbers regardless of wall clock: required for
-    test assertions.
-    """
+    """TopicMetrics from `_MOCK_METRICS_BUFFER`, with `now_ns` pinned to `_METRICS_NOW_NS`."""
     metrics = _MOCK_METRICS_BUFFER.compute_metrics(
         topic=topic,
         window_seconds=window_seconds,
@@ -622,18 +578,15 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
         "/tf: static transforms only; no dynamic updates during recording",
     ],
     mode_effective="mock",
-    # v0.4.0 Phase 3: enriched fields populated deterministically.
     bag_format="mcap",
-    samples_decoded_count=0,  # analyze() does not decode ; peek_bag_samples does
+    samples_decoded_count=0,  # analysis does not decode; peek_bag_samples does
     recording_duration_ns=42_500_000_000,  # 42.5s
     participants_recorded=[],
 )
 
 
-# v0.4.0 Phase 3: deterministic per-topic mock samples for peek_bag_samples.
-# Same topic names as MOCK_BAG_ANALYSIS so tests can correlate. Each sample
-# carries a `_decode_status="full"` annotation produced by the shared
-# decoder convention.
+# Per-topic samples for peek_bag_samples, on the topics of MOCK_BAG_ANALYSIS,
+# each annotated `_decode_status="full"`.
 MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
     "/cmd_vel": [
         MessageSample(
@@ -667,9 +620,5 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
 
 
 def mock_bag_samples_for(topic: str, count: int) -> list[MessageSample]:
-    """Return up to `count` deterministic mock samples for `topic`.
-
-    Returns empty list for unknown topics: mirrors the
-    `mock_samples_for` convention.
-    """
+    """Up to `count` mock samples for `topic`; empty for an unknown topic."""
     return list(MOCK_BAG_SAMPLES.get(topic, [])[:count])

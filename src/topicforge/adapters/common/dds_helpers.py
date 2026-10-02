@@ -1,15 +1,9 @@
-"""Vendor-neutral DDS helpers: shared between Cyclone and Fast adapters.
+"""Vendor-neutral DDS helpers shared by the Cyclone and Fast adapters.
 
-Pure functions with no DDS dependency at module level. Maps OMG-RTPS
-vendor IDs to TopicForge's canonical vendor tag, renders 16-byte GUIDs
-in the canonical OMG textual form, and centralizes the DDS-only error
-message used when a DDS-only adapter is asked for ROS2 introspection.
-
-The vendor_id table comes from the official OMG Vendor IDs document
-(`omgwiki.org/dds/sites/default/files/Vendor IDs.pdf`). When a new
-vendor is observed in the wild, add a row here ; do NOT widen the
-`ParticipantInfo.vendor` Literal without a CHANGELOG entry: it is a
-soft-breaking wire change.
+Pure functions with no DDS dependency at import time: the OMG vendor-id to
+vendor-tag map, GUID formatting, user-topic placeholders and the DDS-only
+error message. Widening the `ParticipantInfo.vendor` Literal changes the
+wire contract, so it needs a CHANGELOG entry.
 """
 
 from __future__ import annotations
@@ -27,11 +21,7 @@ _DDS_DOMAIN_MAX = 232
 
 
 def validate_domain_id(domain_id: int) -> None:
-    """Raise `AdapterError` when `domain_id` is outside the DDS range 0..232.
-
-    Shared by every DDS adapter constructor (Cyclone, Fast, OpenDDS, Dust) so
-    the bound check (and its exact message) is defined once. (Lot 5.)
-    """
+    """Raise `AdapterError` when `domain_id` is outside the DDS range 0..232."""
     if domain_id < _DDS_DOMAIN_MIN or domain_id > _DDS_DOMAIN_MAX:
         raise AdapterError(
             f"domain_id must be in {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}, got {domain_id}"
@@ -39,14 +29,10 @@ def validate_domain_id(domain_id: int) -> None:
 
 
 def take_bounded(source: Iterable[Any], limit: int) -> list[Any]:
-    """Consume at most `limit` items from `source` and return them as a list.
+    """Consume at most `limit` items from `source`; a negative `limit` yields `[]`.
 
-    Wraps `itertools.islice` so a lazy binding iterator is never fully
-    materialized before truncation. This matters for `read_iter(timeout=...)`
-    on a DataReader: its timeout resets every time a sample arrives, so on a
-    topic publishing faster than the timeout the iterator never ends and
-    `list(read_iter(...))[:n]` would never return. A negative `limit` yields
-    an empty list.
+    `read_iter(timeout=...)` resets its timeout on every sample, so on a
+    fast topic the iterator never ends and `list(...)[:n]` would hang.
     """
     return list(islice(source, max(limit, 0)))
 
@@ -108,11 +94,10 @@ def declared_hz_from_endpoints(endpoints: Iterable[Any], topic: str) -> float | 
 
 
 def user_topic_placeholder(topic: str, count: int, *, note: str) -> list[MessageSample]:
-    """Return the single annotated placeholder for an undecodable user topic.
+    """Return one `annotate_raw(b"", note=note)` sample, or `[]` when `count <= 0`.
 
-    Empty when `count <= 0`, otherwise exactly one `MessageSample` whose
-    payload is `annotate_raw(b"", note=note)`. The placeholder is not a
-    received sample: callers must not record it into a `MetricsBuffer`.
+    The placeholder is not a received sample: never record it into a
+    `MetricsBuffer`.
     """
     if count <= 0:
         return []
@@ -141,26 +126,19 @@ VendorTag = Literal[
 ]
 """Canonical vendor tag exposed on `ParticipantInfo.vendor`.
 
-Kept in sync with `models/schemas.py:ParticipantInfo.vendor` and
-`ParticipantEvent.vendor` Literals. A mismatch between them would surface as
-a Pydantic ValidationError at adapter output construction time: pinned by
-`tests/test_dds_helpers.py`.
+Must match the `vendor` Literals in `models/schemas.py`
+(`tests/test_dds_helpers.py` pins this).
 """
 
 # OMG vendor_id (2-byte octet array) -> canonical tag.
-# Source: the official OMG RTPS vendor ID list (omgwiki.org/dds, "Vendor IDs",
-# mirrored at dds-foundation.org/dds-rtps-vendor-and-product-ids), cross-checked
-# against vendor sources: Fast DDS `VendorId_t.hpp` (eProsima = {0x01, 0x0F}),
-# Cyclone `ddsi__vendor.h` (ECLIPSE 0x10, EPROSIMA 0x0f, ADLINK_OSPL 0x02,
-# RTI 0x01) and Dust DDS `types.rs` (S2E = [0x01, 0x14]).
-# Only vendors with a first-class TopicForge tag are listed. Every other id
-# (01.04 MilSoft, 01.07 / 01.08 Lakota and ICOUP, 01.09 ETRI Diamond, 01.0B
-# Vortex Cafe, 01.0C PrismTech, 01.0D Vortex Lite, 01.0E Qeo, 01.11 Gurum,
-# 01.12 RustDDS, 01.13 ZRDDS, 01.15 eProsima Safe DDS, 01.16 Federated Designs
-# and above) falls through to "unknown": observers still see those
-# participants via RTPS discovery, they just report as "unknown". Safe DDS is
-# deliberately not folded into "fast": it is a separate safety-certified
-# implementation, not Fast DDS.
+# Source: the OMG RTPS vendor ID list (dds-foundation.org/dds-rtps-vendor-and-product-ids),
+# cross-checked against Fast DDS `VendorId_t.hpp`, Cyclone `ddsi__vendor.h`
+# and Dust DDS `types.rs`.
+# Only vendors with their own TopicForge tag are listed; every other id
+# (MilSoft, Lakota, ETRI Diamond, Vortex, Qeo, Gurum, RustDDS, ZRDDS,
+# eProsima Safe DDS, ...) maps to "unknown" but is still observed through
+# RTPS discovery. Safe DDS is not folded into "fast": it is a separate
+# safety-certified implementation.
 _VENDOR_ID_MAP: dict[tuple[int, int], VendorTag] = {
     (0x01, 0x01): "rti",  # Real-Time Innovations, RTI Connext DDS
     (0x01, 0x02): "opensplice",  # ADLink, OpenSplice DDS
@@ -175,11 +153,9 @@ _VENDOR_ID_MAP: dict[tuple[int, int], VendorTag] = {
 
 
 def canonicalize_vendor_id(raw: tuple[int, int] | bytes | None) -> VendorTag:
-    """Map a 2-byte OMG vendor_id to the TopicForge canonical tag.
+    """Map a 2-byte OMG vendor_id, as a tuple or bytes, to a vendor tag.
 
-    Accepts the tuple form `(byte0, byte1)` or a `bytes` of length 2.
-    Returns `"unknown"` for any input not in the lookup table: never
-    raises. `None` (no vendor_id observed) collapses to `"unknown"`.
+    Never raises: `None`, short input and unlisted ids give `"unknown"`.
     """
     if raw is None:
         return "unknown"
@@ -197,16 +173,9 @@ def canonicalize_vendor_id(raw: tuple[int, int] | bytes | None) -> VendorTag:
 def format_guid(raw: bytes | tuple[int, ...] | str | None) -> str:
     """Render a 16-byte OMG GUID in `xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx` form.
 
-    Accepts:
-      * `bytes` of length 16 (the canonical RTPS binary form)
-      * a tuple of 16 ints (each `0..255`)
-      * an already-formatted `str` (returned lowercased)
-      * `None` -> `"unknown"`
-
-    Never raises ; truncates or zero-pads inputs that are shorter than
-    16 bytes so a live-discovery edge case (binding returns a partial
-    GUID) still produces something a downstream LLM can parse rather
-    than crashing the tool call.
+    Accepts 16 bytes, a tuple of 16 ints, or an already formatted string
+    (lowercased); `None` gives `"unknown"`. Never raises: input shorter
+    than 16 bytes is zero-padded, longer input truncated.
     """
     if raw is None:
         return "unknown"
@@ -234,16 +203,8 @@ DDS_ONLY_ERROR_MSG = (
     "use list_endpoints for topics and wiring, and peek_dds_samples on "
     "DCPSPublication / DCPSSubscription for the raw discovery records."
 )
-"""Standard message raised by DDS adapters when asked for ROS2 introspection.
+"""Raised by the DDS adapters for the ROS2 methods they do not serve.
 
-Both `CycloneDdsAdapter` and `FastDdsAdapter` raise
-`AdapterError(DDS_ONLY_ERROR_MSG)` on the 5 ROS2 methods of the
-`MiddlewareAdapter` protocol. The single message keeps the user-facing
-remediation text consistent across vendors. Lists every tool affected so
-the LLM caller can suggest exactly the right next action.
-
-Test contract: must contain the substrings `"DDS observability only"`,
-`"TOPICFORGE_DDS_BACKEND"`, `"TOPICFORGE_MODE"` (pinned by
-`tests/test_dds_helpers.py` and the cross-vendor / cyclone / fast adapter
-test suites).
+Tests pin the substrings `"DDS observability only"`,
+`"TOPICFORGE_DDS_BACKEND"` and `"TOPICFORGE_MODE"`.
 """
