@@ -230,25 +230,113 @@ def test_path_suffix_hint_for_namespaced_orphan() -> None:
     assert not any("typo" in h for h in hints)
 
 
-def test_late_joiner_note_for_volatile_writer() -> None:
-    writer = _ep("writer", name="pub").model_copy(update={"announced_ns": 1_000_000_000})
-    late = _ep("reader", name="sub").model_copy(update={"announced_ns": 5_000_000_000})
-    scan = scan_endpoints([writer, late])
-    assert any(
-        "reader sub joined after writer pub" in h and "VOLATILE" in h and "by design" in h
-        for h in scan.hints
-    )
-
-
-def test_no_late_joiner_note_when_close_or_transient_local() -> None:
-    w = _ep("writer").model_copy(update={"announced_ns": 1_000_000_000})
-    close = _ep("reader").model_copy(update={"announced_ns": 1_500_000_000})
-    assert not any("joined after" in h for h in scan_endpoints([w, close]).hints)
-    tl_w = _ep("writer", durability="TRANSIENT_LOCAL").model_copy(
+def _late(host_w: str | None = None, host_r: str | None = None, **writer_extra: object):
+    writer = _ep("writer", name="pub", **writer_extra).model_copy(
         update={"announced_ns": 1_000_000_000}
     )
-    late = _ep("reader").model_copy(update={"announced_ns": 9_000_000_000})
-    assert not any("joined after" in h for h in scan_endpoints([tl_w, late]).hints)
+    late = _ep("reader", name="sub").model_copy(update={"announced_ns": 5_000_000_000})
+    hosts = {writer.participant_guid: host_w, late.participant_guid: host_r}
+    return scan_endpoints([writer, late], hostnames=hosts)
+
+
+def test_late_joiner_is_a_field_on_the_pair_not_a_hint_and_needs_one_host() -> None:
+    assert _late().matched[0].late_joiner is False  # no host known: clocks may differ
+    scan = _late("robot1", "robot1")
+    pair = scan.matched[0]
+    assert pair.late_joiner is True
+    assert "reader sub joined after writer pub" in (pair.late_joiner_note or "")
+    assert "by design" in (pair.late_joiner_note or "")
+    assert not any("joined after" in h for h in scan.hints)
+
+
+def test_late_joiner_not_set_across_hosts_or_for_durable_writer_or_close_join() -> None:
+    assert _late("a", "b").matched[0].late_joiner is False
+    assert _late("h", "h", durability="TRANSIENT_LOCAL").matched[0].late_joiner is False
+    w = _ep("writer").model_copy(update={"announced_ns": 1_000_000_000})
+    close = _ep("reader").model_copy(update={"announced_ns": 1_500_000_000})
+    same = {w.participant_guid: "h", close.participant_guid: "h"}
+    assert scan_endpoints([w, close], hostnames=same).matched[0].late_joiner is False
+
+
+def test_orphan_near_name_scan_is_fast_on_a_big_bus() -> None:
+    import time
+
+    eps = []
+    for i in range(1000):
+        topic = "/" + "x" * (3 + i % 40) + f"/node_{i}"
+        eps.append(_ep("writer", topic))
+        if i >= 300:
+            eps.append(_ep("reader", topic))
+    started = time.perf_counter()
+    scan = scan_endpoints(eps)
+    assert time.perf_counter() - started < 0.5
+    assert scan.topics_scanned == 1000
+
+
+def test_adversarial_look_alike_names_stay_bounded_and_say_so() -> None:
+    import time
+
+    eps = []
+    for i in range(1000):
+        topic = f"/robot_{i:04d}/sensor_{i % 37}/data"
+        eps.append(_ep("writer", topic))
+        if i >= 300:
+            eps.append(_ep("reader", topic))
+    started = time.perf_counter()
+    scan = scan_endpoints(eps)
+    assert time.perf_counter() - started < 3.0
+    assert any("too large to compare" in h for h in scan.hints)
+
+
+def test_levenshtein_early_exit_matches_the_full_distance_within_the_bound() -> None:
+    assert levenshtein("/scan", "/scna", 2) == 2
+    assert levenshtein("/scan", "/scan2", 2) == 1
+    assert levenshtein("/scan", "/completely_other", 2) == 3
+    assert levenshtein("/abcdef", "/uvwxyz", 2) == 3
+
+
+def test_big_scan_is_capped_with_totals_and_a_truncated_flag() -> None:
+    eps = []
+    for i in range(250):
+        topic = f"/t{i}"
+        eps += [_ep("writer", topic, reliability="BEST_EFFORT"), _ep("reader", topic)]
+    scan = scan_endpoints(eps)
+    assert len(scan.reports) == 200 and scan.reports_total == 250
+    assert scan.truncated is True
+    assert scan.matched_total == 0 and scan.not_matched_total == 0
+    small = scan_endpoints([_ep("reader"), _ep("writer")])
+    assert small.truncated is False and small.matched_total == 1
+
+
+def test_capped_reports_keep_incompatible_before_risky() -> None:
+    eps = []
+    for i in range(205):
+        topic = f"/r{i}"
+        eps += [_ep("writer", topic, history_depth=1), _ep("reader", topic, history="KEEP_ALL")]
+    eps += [
+        _ep("writer", "/bad", reliability="BEST_EFFORT"),
+        _ep("reader", "/bad"),
+    ]
+    scan = scan_endpoints(eps)
+    assert scan.reports[0].severity == "incompatible" and scan.reports[0].topic == "/bad"
+
+
+def test_hints_prioritize_findings_over_noise_and_say_what_was_omitted() -> None:
+    eps = [_ep("writer", "/cmd_vel"), _ep("reader", "/cmd_vell")]
+    for i in range(40):
+        eps.append(_ep("writer", f"/lonely_topic_number_{i * 7919:06d}"))
+    scan = scan_endpoints(eps)
+    assert "typo" in scan.hints[0]
+    assert scan.hints[-1].endswith("more hint(s) omitted.")
+    assert len(scan.hints) == 21
+
+
+def test_unchecked_hints_survive_truncation() -> None:
+    eps = [_ep("writer", "/a", liveliness_kind=None), _ep("reader", "/a")]
+    for i in range(40):
+        eps.append(_ep("writer", f"/lonely_topic_number_{i * 7919:06d}"))
+    scan = scan_endpoints(eps)
+    assert any("could not be checked on Liveliness" in h for h in scan.hints)
 
 
 def test_not_matched_pair_carries_latent_rxo_findings() -> None:

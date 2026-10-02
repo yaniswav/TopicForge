@@ -48,6 +48,7 @@ class HealthService:
             tracker_passes=observer.get("passes"),
             tracker_errors=observer.get("errors"),
             tracker_last_pass_ns=observer.get("last_pass_ns"),
+            tracker_cache_evictions=observer.get("cache_evictions"),
             mode=self._adapter.effective_mode,
             requested_mode=self._settings.mode,
             ros2_available=shutil.which(self._settings.ros2_executable) is not None,

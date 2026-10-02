@@ -13,10 +13,32 @@ from collections.abc import Iterable
 _MAX_NOTE_TOPICS = 5
 
 
-def levenshtein(a: str, b: str) -> int:
-    """Edit distance between two strings (insert, delete, substitute)."""
+def levenshtein(a: str, b: str, max_distance: int | None = None) -> int:
+    """Edit distance between two strings (insert, delete, substitute).
+
+    With `max_distance`, any distance above it returns `max_distance + 1`, and
+    the work is bounded: the common prefix and suffix are stripped first, then
+    only a diagonal band of the table is computed.
+    """
     if a == b:
         return 0
+    if max_distance is None:
+        return _full_distance(a, b)
+    if abs(len(a) - len(b)) > max_distance:
+        return max_distance + 1
+    start = 0
+    limit = min(len(a), len(b))
+    while start < limit and a[start] == b[start]:
+        start += 1
+    a, b = a[start:], b[start:]
+    while a and b and a[-1] == b[-1]:
+        a, b = a[:-1], b[:-1]
+    if not a or not b:
+        return min(len(a) + len(b), max_distance + 1)
+    return _banded_distance(a, b, max_distance)
+
+
+def _full_distance(a: str, b: str) -> int:
     prev = list(range(len(b) + 1))
     for i, ca in enumerate(a, 1):
         cur = [i]
@@ -24,6 +46,27 @@ def levenshtein(a: str, b: str) -> int:
             cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
         prev = cur
     return prev[-1]
+
+
+def _banded_distance(a: str, b: str, k: int) -> int:
+    """Edit distance when it is at most `k`, else `k + 1`; only cells within `k` of the diagonal."""
+    over = k + 1
+    prev = {j: j for j in range(min(len(b), k) + 1)}
+    for i in range(1, len(a) + 1):
+        cur: dict[int, int] = {}
+        for j in range(max(0, i - k), min(len(b), i + k) + 1):
+            if j == 0:
+                cur[j] = i
+                continue
+            cur[j] = min(
+                prev.get(j, over) + 1,
+                cur.get(j - 1, over) + 1,
+                prev.get(j - 1, over) + (a[i - 1] != b[j - 1]),
+            )
+        if min(cur.values()) > k:
+            return over
+        prev = cur
+    return min(prev.get(len(b), over), over)
 
 
 def alternate_forms(topic: str) -> list[str]:

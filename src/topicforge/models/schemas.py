@@ -137,6 +137,14 @@ class QosProfile(BaseModel):
             "`XCDR1` and `XCDR2`. `None` when not announced."
         ),
     )
+    unknown_policies: list[str] | None = Field(
+        default=None,
+        description=(
+            "Policies the endpoint announced but whose value could not be read "
+            "(for example `Deadline`). Their duration fields are `None` here, which "
+            "does NOT mean infinite for these: the scan does not compare them."
+        ),
+    )
 
 
 TimeSource = Literal["dds_source_timestamp", "observed_local"]
@@ -645,6 +653,17 @@ class MatchedPair(BaseModel):
     writer_participant_name: str | None = Field(
         default=None, description="Announced name of the writer's participant."
     )
+    late_joiner: bool = Field(
+        default=False,
+        description=(
+            "True when the writer is VOLATILE and the reader was announced more than 1 s "
+            "after it, both on the same host: samples published before the reader joined "
+            "are not delivered to it. Normal for a VOLATILE writer, not a fault."
+        ),
+    )
+    late_joiner_note: str | None = Field(
+        default=None, description="One-line explanation, set together with `late_joiner`."
+    )
 
 
 class MismatchScan(BaseModel):
@@ -675,6 +694,19 @@ class MismatchScan(BaseModel):
             "Leads that are not findings: orphan topics with near-identical names "
             "(typos), type id differences, pairs that could not be fully checked."
         )
+    )
+    reports_total: int = Field(default=0, ge=0, description="Reports before the size cap.")
+    matched_total: int = Field(default=0, ge=0, description="Matched pairs before the size cap.")
+    not_matched_total: int = Field(
+        default=0, ge=0, description="Not-matched pairs before the size cap."
+    )
+    truncated: bool = Field(
+        default=False,
+        description=(
+            "True when `reports`, `matched` or `not_matched` was cut to its cap "
+            "(200 entries each, incompatible reports first): see the `*_total` fields. "
+            "Narrow the scan with `topic`."
+        ),
     )
     pairs_checked: int = Field(
         ge=0,
@@ -1030,6 +1062,14 @@ class HealthReport(BaseModel):
         description=(
             "Wall-clock time (ns since epoch) of the last completed tracker "
             "pass. A value far older than `now_ns` means lifecycle is stale."
+        ),
+    )
+    tracker_cache_evictions: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Discovery entries dropped because a tracker cache was full (4096 "
+            "per cache). Non-zero means the bus is bigger than what is listed."
         ),
     )
     ros_tools_available: bool = Field(
