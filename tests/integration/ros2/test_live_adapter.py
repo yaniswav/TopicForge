@@ -63,6 +63,11 @@ def test_get_topic_info_reports_qos_reliability(adapter: Ros2CliAdapter) -> None
     assert adapter.get_topic_info("/scan").qos_reliability == "reliable"
 
 
+def test_get_topic_info_reports_latched_durability(adapter: Ros2CliAdapter) -> None:
+    info = adapter.get_topic_info("/robot_description_lite")
+    assert info.qos_durability == "transient_local"
+
+
 def test_get_topic_info_unknown_topic_raises(adapter: Ros2CliAdapter) -> None:
     with pytest.raises(AdapterError):
         adapter.get_topic_info("/does/not/exist")
@@ -83,6 +88,21 @@ def test_sample_scan_delivers_all_541_ranges(adapter: Ros2CliAdapter) -> None:
     assert len(ranges) == N_BEAMS
     assert ranges[270] == pytest.approx(1.27, abs=1e-4)
     assert ranges[540] == pytest.approx(1.54, abs=1e-4)
+
+
+def test_arrays_summary_only_keeps_columns_aligned(adapter: Ros2CliAdapter) -> None:
+    payload = adapter.sample_messages("/scan", 1, arrays_summary_only=True)[0].payload
+    cols = [str(payload[f"col_{i}"]) for i in range(len(payload)) if f"col_{i}" in payload]
+    frame = cols.index("base_laser")
+    # frame_id, 7 scalars, then `ranges` and `intensities` as one cell each.
+    assert len(cols) - frame == 1 + 7 + 2, cols
+    summaries = cols[frame + 8 :]
+    assert all(c.startswith("<sequence type:") and f"length: {N_BEAMS}>" in c for c in summaries)
+
+
+def test_default_array_cut_is_listed_in_the_payload(adapter: Ros2CliAdapter) -> None:
+    payload = adapter.sample_messages("/scan", 1)[0].payload
+    assert payload.get("_truncated_after_columns"), payload
 
 
 @pytest.mark.xfail(strict=False, reason="D3: count is ignored (--once)")
@@ -144,6 +164,15 @@ def test_analyze_bag_frequency_of_late_topic(adapter: Ros2CliAdapter, bag: Path)
     # The camera starts several seconds into the recording at 2 Hz.
     by_name = {t.name: t for t in adapter.analyze_bag(str(bag)).topics}
     assert by_name["/camera/image_raw"].frequency_hz == pytest.approx(2.0, rel=0.2)
+
+
+def test_analyze_bag_reports_topic_span_basis_and_latching(
+    adapter: Ros2CliAdapter, bag: Path
+) -> None:
+    by_name = {t.name: t for t in adapter.analyze_bag(str(bag)).topics}
+    assert by_name["/scan"].frequency_basis == "topic_span"
+    assert by_name["/scan"].latched is False
+    assert by_name["/robot_description_lite"].latched is True
 
 
 def test_peek_bag_samples_decodes_scan(adapter: Ros2CliAdapter, bag: Path) -> None:
