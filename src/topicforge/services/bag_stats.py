@@ -20,6 +20,8 @@ from topicforge.models import BagTopicStats
 log = logging.getLogger(__name__)
 
 _NS_PER_S = 1_000_000_000
+# A latched topic whose messages all fall within this span is a start-up burst.
+_LATCHED_BURST_SPAN_NS = _NS_PER_S
 
 _DURABILITY_LINE = re.compile(r"^\s*-?\s*durability:\s*(\S+)\s*$", re.MULTILINE)
 _DISTRO_LINE = re.compile(r"^\s*ros_distro:\s*[\"']?([A-Za-z]+)[\"']?\s*$", re.MULTILINE)
@@ -49,9 +51,12 @@ def span_frequency(count: int, first_ns: int | None, last_ns: int | None) -> flo
 def build_topic_stats(span: TopicSpan) -> BagTopicStats:
     """`BagTopicStats` from a span, with the per-topic-span rate.
 
-    A latched topic gets no rate: its messages are a start-up burst.
+    A latched topic whose messages span under 1 second gets no rate: that is a
+    start-up burst. One published over a longer span keeps its rate.
     """
-    freq = None if span.latched else span_frequency(span.count, span.first_ns, span.last_ns)
+    freq = (
+        None if _is_latched_burst(span) else span_frequency(span.count, span.first_ns, span.last_ns)
+    )
     return BagTopicStats(
         name=span.name,
         message_type=span.message_type,
@@ -62,6 +67,12 @@ def build_topic_stats(span: TopicSpan) -> BagTopicStats:
         frequency_basis="topic_span" if freq is not None else None,
         latched=span.latched,
     )
+
+
+def _is_latched_burst(span: TopicSpan) -> bool:
+    if not span.latched or span.first_ns is None or span.last_ns is None:
+        return False
+    return span.last_ns - span.first_ns < _LATCHED_BURST_SPAN_NS
 
 
 def parse_offered_qos_latched(text: str) -> bool | None:

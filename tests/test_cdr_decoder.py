@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
+
 from topicforge.adapters.common.cdr_decoder import (
     decode_dynamic_sample,
     decode_field_value,
@@ -238,3 +240,30 @@ def test_decode_field_value_caps_recursion_depth() -> None:
     # Must not raise; the deep interior is repr()'d once the cap is hit.
     result = decode_field_value(nested)
     assert isinstance(result, list)
+
+
+def test_numpy_arrays_are_read_only_one_past_the_cap() -> None:
+    np = pytest.importorskip("numpy")
+    big = np.arange(100_000, dtype=np.float32)
+    out = decode_field_value(big, max_array_elements=4096)
+    assert isinstance(out, list) and len(out) == 4097
+
+
+def test_numpy_arrays_are_whole_without_a_cap() -> None:
+    np = pytest.importorskip("numpy")
+    assert decode_field_value(np.arange(5000)) == list(range(5000))
+
+
+def test_cap_reaches_arrays_inside_nested_samples() -> None:
+    np = pytest.importorskip("numpy")
+
+    @dataclass
+    class Inner:
+        ranges: Any
+
+    @dataclass
+    class Outer:
+        inner: Inner
+
+    decoded = decode_dynamic_sample(Outer(Inner(np.zeros(9000))), max_array_elements=100)
+    assert len(decoded["inner"]["ranges"]) == 101  # type: ignore[index]

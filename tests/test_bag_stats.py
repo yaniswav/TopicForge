@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from topicforge.adapters.ros2_live.adapter import parse_bag_info
-from topicforge.services.bag_service import read_topic_spans
+from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter, parse_bag_info
+from topicforge.services import bag_service
+from topicforge.services.bag_service import read_topic_spans, scan_topic_spans
 from topicforge.services.bag_stats import (
     TopicSpan,
     build_topic_stats,
@@ -177,3 +180,112 @@ def test_overlay_keeps_the_duration_rate_for_a_topic_the_spans_lack() -> None:
 
 def test_read_topic_spans_none_for_a_missing_path(tmp_path: Path) -> None:
     assert read_topic_spans(tmp_path / "nope.mcap") is None
+
+
+def _latched(count: int, span_s: float) -> TopicSpan:
+    return TopicSpan("/l", "t/msg/L", count, 0, int(span_s * 1_000_000_000), True)
+
+
+def test_latched_burst_under_a_second_has_no_rate() -> None:
+    stats = build_topic_stats(_latched(13, 0.008))
+    assert stats.frequency_hz is None and stats.frequency_basis is None
+    assert stats.latched is True
+
+
+def test_latched_topic_published_over_a_longer_span_keeps_its_rate() -> None:
+    stats = build_topic_stats(_latched(11, 10.0))
+    assert stats.frequency_hz == pytest.approx(1.0)
+    assert stats.frequency_basis == "topic_span"
+    assert stats.latched is True
+
+
+def test_latched_span_of_exactly_one_second_keeps_its_rate() -> None:
+    assert build_topic_stats(_latched(3, 1.0)).frequency_hz == pytest.approx(2.0)
+
+
+def test_scan_topic_spans_for_a_missing_path_has_no_note(tmp_path: Path) -> None:
+    assert scan_topic_spans(tmp_path / "nope.mcap") == (None, None)
+
+
+# ---- non-db3 scan budget and rosbags 0.11 connection shapes ---------------------
+
+
+class _FakeReader:
+    def __init__(self, messages: int) -> None:
+        self.connections = [SimpleNamespace(topic="/a", msgtype="t/msg/A", ext=None)]
+        self._n = messages
+
+    def __enter__(self) -> _FakeReader:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def messages(self) -> Iterator[tuple[object, int, bytes]]:
+        for i in range(self._n):
+            yield self.connections[0], i, b""
+
+
+def _fake_mcap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, messages: int) -> Path:
+    bag = tmp_path / "x.mcap"
+    bag.write_bytes(b"0" * 64)
+    monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
+    monkeypatch.setattr(bag_service, "_open_reader", lambda p: (_FakeReader(messages), ""))
+    return bag
+
+
+def test_a_large_non_db3_bag_is_not_scanned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bag = _fake_mcap(tmp_path, monkeypatch, 10)
+    monkeypatch.setattr(bag_service, "SPAN_SCAN_MAX_BYTES", 8)
+    spans, note = scan_topic_spans(bag)
+    assert spans is None
+    assert note is not None and "bag duration" in note
+
+
+def test_a_slow_scan_stops_at_the_time_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bag = _fake_mcap(tmp_path, monkeypatch, 5000)
+    monkeypatch.setattr(bag_service, "SPAN_SCAN_MAX_SECONDS", -1.0)
+    spans, note = scan_topic_spans(bag)
+    assert spans is None
+    assert note is not None and "stopped" in note
+
+
+def test_a_small_fast_scan_returns_spans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bag = _fake_mcap(tmp_path, monkeypatch, 5)
+    spans, note = scan_topic_spans(bag)
+    assert note is None and spans is not None
+    assert (spans["/a"].count, spans["/a"].first_ns, spans["/a"].last_ns) == (5, 0, 4)
+
+
+def test_analyze_bag_carries_the_scan_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = (BAG_DIR / "ros2_bag_info.txt").read_text()
+    adapter = Ros2CliAdapter()
+    monkeypatch.setattr(adapter, "_run", lambda *a, **k: info)
+    monkeypatch.setattr(
+        bag_service,
+        "scan_topic_spans",
+        lambda p: (None, "Per-topic rates are count / bag duration"),
+    )
+    analysis = adapter.analyze_bag(str(BAG_DIR))
+    assert analysis.note == "Per-topic rates are count / bag duration"
+    assert all(t.frequency_basis == "bag_duration" for t in analysis.topics if t.frequency_hz)
+
+
+@pytest.mark.parametrize(
+    ("profiles", "expected"),
+    [
+        ("- durability: 1\n  history: 3\n", True),
+        ("- durability: 2\n  history: 3\n", False),
+        ("", None),
+        ([SimpleNamespace(durability=SimpleNamespace(name="TRANSIENT_LOCAL"))], True),
+    ],
+)
+def test_connection_latched_reads_a_str_or_object_profile(
+    profiles: object, expected: bool | None
+) -> None:
+    connection = SimpleNamespace(ext=SimpleNamespace(offered_qos_profiles=profiles))
+    assert bag_service._connection_latched(connection) is expected

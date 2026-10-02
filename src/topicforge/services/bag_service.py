@@ -17,6 +17,7 @@ Humble when the bag does not record one.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from topicforge.services.bag_stats import (
     TopicSpan,
     build_topic_stats,
     detect_ros_distro,
+    parse_offered_qos_latched,
     read_db3_spans,
 )
 
@@ -49,6 +51,15 @@ _ROSBAGS_REQUIRED_MSG = (
     "through `ros2 bag info` when ROS 2 is installed; `peek_bag_samples` cannot."
 )
 _MAX_ARRAY_ELEMENTS = 4096
+# Per-topic times of a non-db3 bag need a pass over every message; past either
+# budget the scan is skipped and the caller keeps whole-bag rates.
+SPAN_SCAN_MAX_BYTES = 200 * 1024 * 1024
+SPAN_SCAN_MAX_SECONDS = 5.0
+_SCAN_CLOCK_CHECK_EVERY = 1024
+
+
+class _ScanBudgetExceeded(Exception):
+    """The message scan for per-topic spans ran past its time budget."""
 
 
 def detect_bag_format(path: str) -> str:
@@ -162,21 +173,50 @@ class BagService:
 def read_topic_spans(path: Path) -> dict[str, TopicSpan] | None:
     """Per-topic spans of the bag at `path`, or `None` when it cannot be read here.
 
+    See `scan_topic_spans` for the budget on non-db3 bags. Never raises.
+    """
+    return scan_topic_spans(path)[0]
+
+
+def scan_topic_spans(path: Path) -> tuple[dict[str, TopicSpan] | None, str | None]:
+    """`(spans, note)` for the bag at `path`; `spans` is `None` when not readable here.
+
     `.db3` bags need only the standard library. Other containers need
-    `rosbags` and a scan of their message timestamps. Never raises.
+    `rosbags` and a scan of their message timestamps, which is skipped when
+    the bag exceeds `SPAN_SCAN_MAX_BYTES` or the scan runs past
+    `SPAN_SCAN_MAX_SECONDS`; `note` then says why. Never raises.
     """
     try:
         spans = read_db3_spans(path)
         if spans is not None:
-            return spans
+            return spans, None
         if not is_rosbags_available() or not path.exists():
-            return None
+            return None, None
+        size = _bag_size_bytes(path)
+        if size > SPAN_SCAN_MAX_BYTES:
+            return None, (
+                f"Per-topic rates are count / bag duration: the bag is {size // (1024 * 1024)} MiB, "
+                f"over the {SPAN_SCAN_MAX_BYTES // (1024 * 1024)} MiB limit for reading "
+                "per-topic message times."
+            )
         reader, _ = _open_reader(path)
         with reader:
-            return _spans_from_messages(reader)
+            return _spans_from_messages(reader, time_budget_s=SPAN_SCAN_MAX_SECONDS), None
+    except _ScanBudgetExceeded:
+        return None, (
+            "Per-topic rates are count / bag duration: reading per-topic message times "
+            f"took longer than {SPAN_SCAN_MAX_SECONDS:g} s and was stopped."
+        )
     except Exception as exc:
         log.debug("could not read per-topic spans from %s: %s", path, exc)
-        return None
+        return None, None
+
+
+def _bag_size_bytes(path: Path) -> int:
+    """Total size of the bag file, or of the files under a bag directory."""
+    if path.is_file():
+        return path.stat().st_size
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
 def _typestore_for(resolved: Path) -> tuple[Any, str]:
@@ -223,17 +263,31 @@ def _connection_latched(connection: Any) -> bool | None:
     profiles = getattr(ext, "offered_qos_profiles", None)
     if not profiles:
         return None
+    if isinstance(profiles, str):
+        return parse_offered_qos_latched(profiles)
     return any(
         getattr(getattr(p, "durability", None), "name", "") == "TRANSIENT_LOCAL" for p in profiles
     )
 
 
-def _spans_from_messages(reader: Any) -> dict[str, TopicSpan]:
-    """Per-topic spans from message timestamps, without deserializing (non-db3 bags)."""
+def _spans_from_messages(
+    reader: Any, *, time_budget_s: float | None = None
+) -> dict[str, TopicSpan]:
+    """Per-topic spans from message timestamps, without deserializing (non-db3 bags).
+
+    Raises `_ScanBudgetExceeded` when `time_budget_s` runs out.
+    """
     first: dict[str, int] = {}
     last: dict[str, int] = {}
     count: dict[str, int] = {}
-    for connection, timestamp, _raw in reader.messages():
+    deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
+    for seen, (connection, timestamp, _raw) in enumerate(reader.messages(), start=1):
+        if (
+            deadline is not None
+            and seen % _SCAN_CLOCK_CHECK_EVERY == 0
+            and time.monotonic() > deadline
+        ):
+            raise _ScanBudgetExceeded
         topic = connection.topic
         ts = int(timestamp)
         count[topic] = count.get(topic, 0) + 1
@@ -352,7 +406,7 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
 
     from topicforge.adapters.common.cdr_decoder import decode_dynamic_sample
 
-    decoded = decode_dynamic_sample(deserialized)
+    decoded = decode_dynamic_sample(deserialized, max_array_elements=_MAX_ARRAY_ELEMENTS)
     if isinstance(decoded, dict):
         decoded.setdefault("_msgtype", getattr(connection, "msgtype", "<unknown>"))
     return decoded

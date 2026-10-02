@@ -189,3 +189,29 @@ def test_tool_call_rejects_an_out_of_range_length() -> None:
         asyncio.run(
             _app().call_tool("sample_messages", {"topic": "/cmd_vel", "max_array_length": 0})
         )
+
+
+class _LiveRecorder(_Recorder):
+    @property
+    def effective_mode(self) -> Any:
+        return "live"
+
+
+def test_cut_strings_are_reported_in_the_note() -> None:
+    cut = _sample({"col_0": "abcd...", "_truncated_columns": [0]})
+    result = Inspector(_Recorder([cut])).sample_messages("/chat", 1)
+    assert result.note is not None and "_truncated_columns" in result.note
+
+
+def test_live_empty_result_explains_the_echo_timeout() -> None:
+    result = Inspector(_LiveRecorder([])).sample_messages("/scan", 1, max_array_length=None)
+    assert result.count == 0
+    assert result.note is not None and "echo timeout" in result.note
+
+
+def test_empty_result_has_no_timeout_note_when_nothing_was_requested() -> None:
+    assert Inspector(_LiveRecorder([])).sample_messages("/scan", 0).note is None
+
+
+def test_mock_empty_result_has_no_timeout_note() -> None:
+    assert Inspector(_Recorder([])).sample_messages("/scan", 1).note is None

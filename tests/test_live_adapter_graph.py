@@ -183,17 +183,28 @@ _LIST_T = (
 )
 
 
-def test_list_topics_uses_two_calls_whatever_the_topic_count(
+def test_list_topics_reads_counts_from_the_verbose_list(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cli = _Cli({"topic list": _LIST_T, "topic list -v": _LIST_V})
     _install(monkeypatch, cli)
     topics = {t.name: t for t in Ros2CliAdapter().list_topics()}
-    assert len(cli.commands) == 2
     assert (topics["/tf"].publisher_count, topics["/tf"].subscriber_count) == (2, 3)
     assert (topics["/cmd_vel"].publisher_count, topics["/cmd_vel"].subscriber_count) == (0, 1)
-    assert (topics["/lonely"].publisher_count, topics["/lonely"].subscriber_count) == (0, 0)
     assert all(t.qos_reliability is None and t.qos_durability is None for t in topics.values())
+    # Only the topic absent from both sections costs a per-topic call.
+    assert sum(c[1:3] == ["topic", "info"] for c in cli.commands) == 1
+
+
+def test_list_topics_asks_about_a_topic_missing_from_the_verbose_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    info = "Type: std_msgs/msg/String\nPublisher count: 1\nSubscription count: 0\n"
+    cli = _Cli({"topic list": _LIST_T, "topic list -v": _LIST_V, "topic info": info})
+    _install(monkeypatch, cli)
+    topics = {t.name: t for t in Ros2CliAdapter().list_topics()}
+    assert (topics["/lonely"].publisher_count, topics["/lonely"].subscriber_count) == (1, 0)
+    assert (topics["/tf"].publisher_count, topics["/tf"].subscriber_count) == (2, 3)
 
 
 def test_list_topics_falls_back_to_per_topic_info_when_verbose_list_fails(
@@ -343,3 +354,51 @@ def test_live_analyze_bag_keeps_duration_basis_when_the_bag_is_not_readable_here
 def test_live_analyze_bag_missing_path_raises() -> None:
     with pytest.raises(AdapterError, match="does not exist"):
         Ros2CliAdapter().analyze_bag(str(_BAG_DIR / "absent"))
+
+
+# ---- CSV: --no-arr summaries and cut strings ---------------------------------
+
+
+def test_csv_sequence_summaries_stay_one_cell_each() -> None:
+    row = (
+        "1715600000,5,laser,<sequence type: float, length: 541>,"
+        "<sequence type: float[8], length: 3>,<array type: float[9]>,7.5"
+    )
+    [(ts, payload)] = parse_csv_echo(row)
+    assert ts == 1_715_600_000_000_000_005
+    assert payload["col_0"] == "laser"
+    assert payload["col_1"] == "<sequence type: float, length: 541>"
+    assert payload["col_2"] == "<sequence type: float[8], length: 3>"
+    assert payload["col_3"] == "<array type: float[9]>"
+    assert payload["col_4"] == "7.5"
+    assert "col_5" not in payload
+
+
+def test_csv_lists_strings_cut_at_the_truncate_length() -> None:
+    row = "1715600000,5,abcd...,short,xy,1.0"
+    [(_, payload)] = parse_csv_echo(row, truncate_length=4)
+    assert payload["_truncated_columns"] == [0]
+    assert "_truncated_after_columns" not in payload
+    [(_, uncut)] = parse_csv_echo(row)
+    assert "_truncated_columns" not in uncut
+
+
+def test_csv_cut_string_detection_needs_an_active_truncate_length() -> None:
+    [(_, payload)] = parse_csv_echo("1715600000,5,abcd...", truncate_length=None)
+    assert "_truncated_columns" not in payload
+    [(_, payload)] = parse_csv_echo("1715600000,5,abc...", truncate_length=4)
+    assert "_truncated_columns" not in payload
+
+
+def test_sample_messages_passes_the_effective_truncate_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = _Cli(
+        {
+            "topic info": "Type: std_msgs/msg/String\nPublisher count: 1\n",
+            "topic echo": "1715600000,5,hell...\n",
+        }
+    )
+    _install(monkeypatch, cli)
+    [sample] = Ros2CliAdapter().sample_messages("/chat", 1, max_array_length=4)
+    assert sample.payload["_truncated_columns"] == [0]

@@ -16,8 +16,14 @@ from topicforge.adapters.common.xtypes import (
 )
 
 
-def decode_dynamic_sample(sample: Any) -> dict[str, object]:
+def decode_dynamic_sample(
+    sample: Any, *, max_array_elements: int | None = None
+) -> dict[str, object]:
     """Decode `sample` field by field into a payload dict.
+
+    With `max_array_elements`, a numpy array longer than that is read only up
+    to one element past the cap, so the caller can detect and report the cut
+    without converting the whole array.
 
     A field that raises is skipped and the result is `annotate_partial`
     with the failed names in `_decode_note`. If nothing decodes, the result
@@ -29,7 +35,7 @@ def decode_dynamic_sample(sample: Any) -> dict[str, object]:
     for field_name in iter_field_names(sample):
         try:
             value = getattr(sample, field_name)
-            decoded[field_name] = decode_field_value(value)
+            decoded[field_name] = decode_field_value(value, max_array_elements=max_array_elements)
         except Exception:  # pragma: no cover: per-field defense
             failed_fields.append(field_name)
 
@@ -77,31 +83,45 @@ _MAX_DECODE_DEPTH = 32
 so a self-referential object graph cannot raise `RecursionError`."""
 
 
-def decode_field_value(value: Any, *, _depth: int = 0) -> object:
+def decode_field_value(
+    value: Any, *, max_array_elements: int | None = None, _depth: int = 0
+) -> object:
     """Decode one dynamic-type field value into JSON-serializable data.
 
     Primitives pass through; lists, tuples, numpy arrays, dicts and struct-like objects
     recurse; anything else (bytes, opaque classes) becomes its `repr()`.
-    `_depth` is internal.
+    `max_array_elements` is described on `decode_dynamic_sample`. `_depth` is internal.
     """
     if _depth >= _MAX_DECODE_DEPTH:
         return repr(value)
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     if isinstance(value, (list, tuple)):
-        return [decode_field_value(v, _depth=_depth + 1) for v in value]
+        return [
+            decode_field_value(v, max_array_elements=max_array_elements, _depth=_depth + 1)
+            for v in value
+        ]
     # Array-valued fields from `rosbags` are numpy arrays; `tolist` gives plain Python values.
     if callable(getattr(value, "tolist", None)) and hasattr(value, "dtype"):
-        return decode_field_value(value.tolist(), _depth=_depth + 1)
+        if max_array_elements is not None and getattr(value, "ndim", 1) == 1:
+            value = value[: max_array_elements + 1]
+        return decode_field_value(
+            value.tolist(), max_array_elements=max_array_elements, _depth=_depth + 1
+        )
     if isinstance(value, dict):
-        return {str(k): decode_field_value(v, _depth=_depth + 1) for k, v in value.items()}
+        return {
+            str(k): decode_field_value(v, max_array_elements=max_array_elements, _depth=_depth + 1)
+            for k, v in value.items()
+        }
     # Nested struct: recurse.
     if any(hasattr(value, attr) for attr in ("__dataclass_fields__", "__fields__", "__slots__")):
         nested: dict[str, object] = {}
         for field_name in iter_field_names(value):
             try:
                 nested[field_name] = decode_field_value(
-                    getattr(value, field_name), _depth=_depth + 1
+                    getattr(value, field_name),
+                    max_array_elements=max_array_elements,
+                    _depth=_depth + 1,
                 )
             except Exception:  # pragma: no cover
                 nested[field_name] = f"<undecoded {type(value).__name__}.{field_name}>"

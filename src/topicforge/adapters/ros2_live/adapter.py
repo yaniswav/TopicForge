@@ -128,10 +128,8 @@ class Ros2CliAdapter:
         graph_counts = self._graph_counts()
         topics: list[TopicInfo] = []
         for name, msg_type in parse_topic_list(out):
-            if graph_counts is not None:
-                pub_count, sub_count = graph_counts.get(name, (0, 0))
-            else:
-                pub_count, sub_count = self._safe_counts(name)
+            counts = graph_counts.get(name) if graph_counts is not None else None
+            pub_count, sub_count = counts if counts is not None else self._safe_counts(name)
             topics.append(
                 TopicInfo(
                     name=name,
@@ -180,7 +178,7 @@ class Ros2CliAdapter:
             log.info("sample_messages on %s returned no data: %s", topic, exc)
             return []
 
-        rows = parse_csv_echo(out)
+        rows = parse_csv_echo(out, truncate_length=max_array_length)
         return [
             MessageSample(
                 topic=topic,
@@ -202,13 +200,15 @@ class Ros2CliAdapter:
         )
         # `ros2 bag info` has no per-topic times: add them when the bag is readable here.
         # Imported here because `services` imports this package.
-        from topicforge.services.bag_service import read_topic_spans
+        from topicforge.services.bag_service import scan_topic_spans
         from topicforge.services.bag_stats import overlay_spans
 
-        spans = read_topic_spans(bag_path)
+        spans, note = scan_topic_spans(bag_path)
         if spans:
             topics = overlay_spans(analysis.topics, spans)
             analysis = analysis.model_copy(update={"topics": topics})
+        if note:
+            analysis = analysis.model_copy(update={"note": note})
         return analysis
 
     def _graph_counts(self) -> dict[str, tuple[int, int]] | None:
@@ -381,9 +381,13 @@ _TS_SEC_MIN = 946_684_800  # 2000-01-01 UTC
 _TS_SEC_MAX = 4_102_444_800  # 2100-01-01 UTC
 _TS_NSEC_MAX = 1_000_000_000
 _CSV_TRUNCATION_MARK = "..."
+# `--no-arr` prints a sequence as one cell whose text contains a comma.
+_CSV_SUMMARY_PREFIX = "<sequence type:"
 
 
-def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
+def parse_csv_echo(
+    stdout: str, *, truncate_length: int | None = None
+) -> list[tuple[int, dict[str, object]]]:
     """Parse `ros2 topic echo --csv [--once]` output into `(timestamp_ns, payload)` rows.
 
     `message_to_csv` flattens a message in declaration order, so a message
@@ -394,7 +398,13 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
 
     A `...` cell is the CLI's marker for an array cut at `--truncate-length`.
     It is not a data column: it is dropped and the index of the column before
-    it is listed under `_truncated_after_columns`.
+    it is listed under `_truncated_after_columns`. With `truncate_length`, a
+    string or bytes cell the CLI cut is `truncate_length` characters plus
+    `...`: those cells are listed under `_truncated_columns` (a cell that
+    happens to have that length and ends in `...` is indistinguishable).
+
+    A `--no-arr` sequence summary (`<sequence type: float, length: 541>`)
+    contains a comma and is rejoined into one cell.
 
     Blank lines, `#` comments and rows with fewer than two columns are
     skipped. Example (`sensor_msgs/Imu`):
@@ -424,17 +434,46 @@ def parse_csv_echo(stdout: str) -> list[tuple[int, dict[str, object]]]:
 
         payload: dict[str, object] = {}
         truncated_after: list[int] = []
-        for value in value_parts:
+        truncated_cells: list[int] = []
+        cells = _join_sequence_summaries(value_parts)
+        for value in cells:
             if value == _CSV_TRUNCATION_MARK:
                 if payload:
                     truncated_after.append(len(payload) - 1)
                 continue
+            if _is_cut_cell(value, truncate_length):
+                truncated_cells.append(len(payload))
             payload[f"col_{len(payload)}"] = value
         if truncated_after:
             payload["_truncated_after_columns"] = truncated_after
+        if truncated_cells:
+            payload["_truncated_columns"] = truncated_cells
         payload["_raw_text"] = line
         rows.append((ts_ns, payload))
     return rows
+
+
+def _join_sequence_summaries(cells: list[str]) -> list[str]:
+    """Rejoin `<sequence type: T, length: N>` summaries that the comma split in two."""
+    out: list[str] = []
+    i = 0
+    while i < len(cells):
+        cell = cells[i]
+        if cell.startswith(_CSV_SUMMARY_PREFIX) and not cell.endswith(">") and i + 1 < len(cells):
+            cell = f"{cell}, {cells[i + 1]}"
+            i += 1
+        out.append(cell)
+        i += 1
+    return out
+
+
+def _is_cut_cell(value: str, truncate_length: int | None) -> bool:
+    """True for a string cell the CLI cut: `truncate_length` characters plus `...`."""
+    return (
+        truncate_length is not None
+        and len(value) == truncate_length + len(_CSV_TRUNCATION_MARK)
+        and value.endswith(_CSV_TRUNCATION_MARK)
+    )
 
 
 def parse_bag_info(

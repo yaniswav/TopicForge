@@ -95,12 +95,18 @@ class Inspector:
             arrays_summary_only=arrays_summary_only,
         )
         samples, notes = apply_sample_budget(samples, self._max_sample_bytes)
-        if any("_truncated_after_columns" in s.payload for s in samples):
+        if any(
+            "_truncated_after_columns" in s.payload or "_truncated_columns" in s.payload
+            for s in samples
+        ):
             notes.append(
-                f"Arrays longer than {max_array_length} elements were cut; the cut is "
-                "listed in `_truncated_after_columns`. Pass `max_array_length` null for "
-                "full arrays, or `arrays_summary_only` true to drop array contents."
+                f"Arrays, strings or bytes longer than {max_array_length} elements were cut; "
+                "the cut is listed in `_truncated_after_columns` (arrays) and "
+                "`_truncated_columns` (strings, bytes). Pass `max_array_length` null for "
+                "full values, or `arrays_summary_only` true to drop array contents."
             )
+        if not samples and n > 0 and self._adapter.effective_mode == "live":
+            notes.append(_NO_SAMPLE_NOTE)
         return SampleResult(
             topic=topic,
             count=len(samples),
@@ -188,6 +194,14 @@ class Inspector:
             return result
         note = " ".join([n for n in [result.note, *notes] if n])
         return result.model_copy(update={"samples": samples, "count": len(samples), "note": note})
+
+
+_NO_SAMPLE_NOTE = (
+    "No message arrived before the echo timeout. The topic may have no active "
+    "publisher or publish less often than the timeout; with `max_array_length` "
+    "null a very large message may also take too long to print, so retry with a "
+    "finite `max_array_length` or `arrays_summary_only` true."
+)
 
 
 def _validate_max_array_length(value: int | None) -> None:

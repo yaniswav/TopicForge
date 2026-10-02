@@ -842,9 +842,10 @@ class BagTopicStats(BaseModel):
             "this topic; with `bag_duration` it is `message_count / bag "
             "duration`, which understates the rate of a topic that started "
             "late or stopped early. `null` when fewer than 2 messages, a "
-            "zero time span, or `latched` is true (a latched topic is "
-            "published in a burst, then silent). Not a periodic rate for "
-            "event-driven topics such as `/parameter_events`."
+            "zero time span, or the topic is `latched` and all its messages "
+            "fall within 1 second (a start-up burst, not a rate). A latched "
+            "topic published over a longer span keeps its rate. Not a "
+            "periodic rate for event-driven topics such as `/parameter_events`."
         ),
     )
     first_timestamp_ns: int | None = Field(
@@ -876,8 +877,9 @@ class BagTopicStats(BaseModel):
         description=(
             "True when a publisher recorded this topic with transient_local "
             "durability (late joiners get the last samples, e.g. `/tf_static`, "
-            "`/rosout`): its messages are a burst at start-up, not a periodic "
-            "stream, so `frequency_hz` is `null`. `false` when every "
+            "`/rosout`). Such a topic often publishes a start-up burst; when "
+            "all its messages fall within 1 second `frequency_hz` is `null`. "
+            "`false` when every "
             "recorded publisher was volatile; `null` when the bag carries no "
             "QoS information (ROS 1 bags report their latching flag)."
         ),
@@ -924,6 +926,15 @@ class BagAnalysis(BaseModel):
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description=(
+            "Why the result is less detailed than usual, for example per-topic "
+            "rates computed over the whole bag duration because the bag was "
+            "too large to read per-topic message times. `None` when there is "
+            "nothing to add."
+        ),
+    )
     bag_format: Literal["mcap", "db3", "bag", "unknown"] | None = Field(
         default=None,
         description=(
