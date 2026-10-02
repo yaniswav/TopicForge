@@ -57,6 +57,7 @@ from cyclonedds.builtin import (
     BuiltinTopicDcpsPublication,
     BuiltinTopicDcpsSubscription,
 )
+from cyclonedds.core import Policy, Qos
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.util import duration
 
@@ -84,6 +85,9 @@ from topicforge.adapters.common import (
 )
 from topicforge.adapters.common import (
     cyclone_extract_hostname as _extract_hostname,
+)
+from topicforge.adapters.common import (
+    cyclone_extract_participant_name as _extract_participant_name,
 )
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
@@ -315,7 +319,9 @@ class CycloneDdsAdapter:
         # `peek_dds_samples` flows. See `_peek_builtin` / `_peek_user_topic`.
         self._metrics = MetricsBuffer()
         try:
-            self._dp = DomainParticipant(domain_id)
+            # Announce ourselves by name, so that TopicForge's own read-only
+            # participant is recognizable in every listing, ours included.
+            self._dp = DomainParticipant(domain_id, qos=Qos(Policy.EntityName("topicforge")))
         except Exception as exc:  # binding-side errors vary by version
             raise AdapterError(
                 f"Failed to create CycloneDDS DomainParticipant on domain {domain_id}: {exc}"
@@ -390,6 +396,7 @@ class CycloneDdsAdapter:
                 guid=guid,
                 vendor=canonicalize_vendor_id(_extract_vendor_id(sample)),
                 hostname=_extract_hostname(sample),
+                name=_extract_participant_name(sample),
                 domain_id=self._domain_id,
                 mode_effective="live",
             )

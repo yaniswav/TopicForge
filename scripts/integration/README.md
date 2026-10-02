@@ -40,7 +40,7 @@ and stops every process it started, including on error or Ctrl+C.
 To see what would start without starting anything:
 
 ```bash
-python scripts/integration/driver/demo_client.py --list
+python scripts/integration/interop_check.py --list
 ```
 
 Each participant is reported as `ready` or `skipped (<what is missing>)`.

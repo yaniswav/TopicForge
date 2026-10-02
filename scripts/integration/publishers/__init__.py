@@ -1,1 +1,1 @@
-"""Per-vendor demo DDS participants driven by `driver/demo_client.py`."""
+"""Per-vendor demo DDS participants driven by `interop_check.py`."""

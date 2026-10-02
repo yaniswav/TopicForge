@@ -20,7 +20,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO = Path(__file__).resolve().parents[2]
-DRIVER = REPO / "scripts" / "integration" / "driver" / "demo_client.py"
+DRIVER = REPO / "scripts" / "integration" / "interop_check.py"
 EXE = ".exe" if os.name == "nt" else ""
 DUST_BIN = (
     REPO

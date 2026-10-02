@@ -1,7 +1,7 @@
 # Multi-vendor demo: shared contract
 
 Every demo participant follows this contract so that the driver
-(`driver/demo_client.py`) can start any subset of them and know what to
+(`interop_check.py`) can start any subset of them and know what to
 expect. TopicForge itself never publishes; it only reads DDS discovery.
 
 ## Common rules
@@ -44,15 +44,16 @@ participant per vendor and language. Same rules: `--domain N`, one start line
 | Cyclone DDS | C++ | `cyclone_cpp/` | official |
 | Cyclone DDS | Rust | `cyclone_rust/` | official, crate 0.0.x |
 | Dust DDS | Python | `dust_py/` | official |
-| Dust DDS | C | `dust_c/` | official, unpublished binding |
 | RTI Connext | C | `rti_c/` | official, license needed |
 | RTI Connext | C++ | `rti_cpp/` | official, license needed |
-| RTI Connext | Rust | `rti_rust/` | official, experimental |
 | Fast DDS | Python | `fast_py/` | official, built from source |
 
 Combinations with no binding at all: Fast DDS C, Fast DDS Rust, Dust C++,
-OpenSplice Rust. OpenSplice C++ and Python exist but the project stopped in
-2021, so the C program alone represents it. Each directory ships `build.sh`
+OpenSplice Rust. Combinations with a binding that is not officially released
+are left out on purpose: RTI Connector for Rust (experimental, RTI says not
+for production, not on crates.io) and the Dust C binding (unpublished).
+OpenSplice C++ and Python exist but the project stopped in 2021, so the C
+program alone represents it. Each directory ships `build.sh`
 and `build.ps1` (or needs no build) and a README naming the artifact.
 
 ## Programs and where the driver finds them

@@ -8,5 +8,5 @@ if (-not (Test-Path $Py)) {
     Write-Host "[run_demo] .venv-demo is missing: run scripts\integration\launch\setup.ps1 first"
     exit 1
 }
-& $Py (Join-Path $Repo "scripts\integration\driver\demo_client.py") @args
+& $Py (Join-Path $Repo "scripts\integration\interop_check.py") @args
 exit $LASTEXITCODE

@@ -1,9 +1,9 @@
-"""TopicForge multi-vendor demo: drive the MCP server exactly as an agent would.
+"""TopicForge interop check: every vendor and language this host can run, on one bus.
 
 One command, Windows or Linux:
 
-    python scripts/integration/driver/demo_client.py            # run the demo
-    python scripts/integration/driver/demo_client.py --list     # what can run here
+    python scripts/integration/interop_check.py           # run the check
+    python scripts/integration/interop_check.py --list    # what can run here
 
 What it does:
   1. starts every demo participant whose artifact is available on this host
@@ -44,7 +44,7 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[2]
 PUB = REPO / "scripts" / "integration" / "publishers"
 EXE = ".exe" if os.name == "nt" else ""
 LEASE_WAIT_S = 40  # Cyclone's default lease is 10 s; leave margin for discovery
@@ -218,14 +218,6 @@ PARTICIPANTS: tuple[Participant, ...] = (
         writes=("DemoHeartbeat",),
     ),
     Participant(
-        name="c/dust",
-        vendor="unknown",
-        language="C",
-        argv=_binary(PUB / "dust_c" / "build" / f"dust_c_publisher{EXE}"),
-        why_missing="build publishers/dust_c (cargo + a C compiler)",
-        writes=("DemoHeartbeat",),
-    ),
-    Participant(
         name="c/rti",
         vendor="unknown",
         language="C",
@@ -239,14 +231,6 @@ PARTICIPANTS: tuple[Participant, ...] = (
         language="C++",
         argv=_licensed_rti(_binary(*_cmake_artifacts("rti_cpp"))),
         why_missing="build publishers/rti_cpp (Connext 7 + RTI_LICENSE_FILE, local only)",
-        writes=("DemoHeartbeat",),
-    ),
-    Participant(
-        name="rust/rti",
-        vendor="unknown",
-        language="Rust",
-        argv=_licensed_rti(_binary(PUB / "rti_rust" / "target" / "release" / f"rti_rust{EXE}")),
-        why_missing="build publishers/rti_rust (RTI Connector, experimental, local only)",
         writes=("DemoHeartbeat",),
     ),
     Participant(
