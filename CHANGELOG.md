@@ -33,7 +33,18 @@ reported with ground truth by the OmniSim team.
 - `list_topics` (live) uses one `ros2 topic list -v` call for publisher and
   subscriber counts instead of one `ros2 topic info` per topic, falling back to
   the per-topic calls if the output is not recognized. It leaves QoS null.
-- `rosbags>=0.10` is required (the global type store was removed in 0.10.0).
+- `rosbags>=0.11.3` is required (0.10 reads a bare `.db3` as ROS 1 and returns
+  message definitions and QoS as plain strings).
+- A latched topic gets no rate only when its messages span under 1 second (a
+  start-up burst such as `/tf_static`); a latched topic published over a longer
+  span keeps its rate. `latched` is unchanged.
+- `analyze_bag` reads per-topic times of an `.mcap` bag only up to 200 MiB and
+  5 s; past either it keeps `bag_duration` rates and says so in the new
+  `BagAnalysis.note`.
+- The `policies_checked` entry for History reads "History (risky only, where
+  announced)".
+- `max_array_length` also cuts strings and bytes to that many characters plus
+  `...`; those cells are listed under `_truncated_columns`.
 - `QosProfile.history` is now optional, and a new `history_note` explains why it
   is missing. DDS discovery does not carry History (the builtin endpoint data has
   no such member), so TopicForge reports it only for its own endpoints and for
@@ -49,6 +60,20 @@ reported with ground truth by the OmniSim team.
 
 ### Fixed
 
+- `sample_messages` with `arrays_summary_only` shifted every CSV column after an
+  array: `<sequence type: float, length: 541>` contains a comma and was split in
+  two. It is one cell now.
+- `sample_messages` returned no samples and no explanation when the echo timed
+  out (for example a large message with `max_array_length` null); `note` now says
+  so.
+- `list_topics` reported 0 publishers and 0 subscribers for a topic missing from
+  `ros2 topic list -v`; it now asks `ros2 topic info` for that topic.
+- `peek_bag_samples` converted a whole numpy array to a list before cutting it
+  at 4096 elements; it now converts only the part it keeps.
+- Fast DDS endpoints no longer report a History taken from the binding's
+  defaults: `detect_qos_mismatches` treats it as not announced, like the other
+  vendors. This path has never run against a real Fast DDS bus.
+- The `tests/fixtures/bags` bag is left out of the sdist.
 - `peek_bag_samples` failed on every Humble `.db3` bag with "Bag contains no
   type definitions". The reader now gets the type definitions of the distro the
   bag records, or Humble, and `note` says which. `LaserScan.ranges` and other
