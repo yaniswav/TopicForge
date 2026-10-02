@@ -79,4 +79,4 @@ jobs:
         run: python scripts/integration/interop_check.py
 
       - name: Run the learning examples
-        run: python examples/dds/run_all.py
+        run: python examples/dds/run_all.py --strict

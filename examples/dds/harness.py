@@ -28,11 +28,12 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 HERE = Path(__file__).resolve().parent
 NODES = HERE / "nodes"
@@ -49,7 +50,8 @@ VENDOR_INSTALL = {
 # not expose the RTPS header that carries it, so they show as "unknown".
 VENDOR_TAG = {"cyclone": "cyclone", "dust": "unknown", "rti": "unknown"}
 
-SETTLE_S = 6.0  # time for discovery announcements to cross the bus
+SETTLE_S = 2.0  # endpoint announcements trail participant announcements a little
+DISCOVERY_TIMEOUT_S = 30.0  # upper bound for every program to be seen
 
 
 class Unavailable(RuntimeError):
@@ -95,8 +97,10 @@ class Node:
 # ------------------------------------------------------------------ the bus
 
 
-def _spawn(argv: list[str]) -> subprocess.Popen[bytes]:
-    kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL, "stderr": subprocess.PIPE}
+def _spawn(argv: list[str], log: IO[bytes]) -> subprocess.Popen[bytes]:
+    # stderr goes to a file, not a pipe: nobody drains a pipe while the
+    # example runs, and a chatty program would block once it is full.
+    kwargs: dict[str, Any] = {"stdout": subprocess.DEVNULL, "stderr": log}
     if os.name == "nt":
         # CREATE_NO_WINDOW: a console program started from here would
         # otherwise pop a window of its own.
@@ -106,7 +110,7 @@ def _spawn(argv: list[str]) -> subprocess.Popen[bytes]:
     return subprocess.Popen(argv, **kwargs)
 
 
-def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
+def kill_tree(proc: subprocess.Popen[bytes]) -> None:
     """Kill a process and its children, the way a crash would.
 
     On Windows a venv's python.exe is a launcher that starts the real
@@ -125,8 +129,6 @@ def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
                 os.killpg(proc.pid, signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired):
         proc.wait(timeout=5)
-    if proc.stderr is not None:
-        proc.stderr.close()
 
 
 class Bus:
@@ -136,30 +138,36 @@ class Bus:
     def __init__(self, domain: int) -> None:
         self.domain = domain
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
+        self._logs: contextlib.ExitStack = contextlib.ExitStack()
 
     def start(self, *nodes: Node) -> None:
         """Start every node, or none of them if one cannot run here."""
         problems = [f"{n.name}: {why}" for n in nodes if (why := n.missing())]
         if problems:
             raise Unavailable("\n".join(problems))
+        started: dict[str, IO[bytes]] = {}
         for node in nodes:
-            self._procs[node.name] = _spawn(node.argv(self.domain))
+            log = self._logs.enter_context(tempfile.TemporaryFile())  # noqa: SIM115 (ExitStack owns it)
+            self._procs[node.name] = _spawn(node.argv(self.domain), log)
+            started[node.name] = log
             print(f"  started {node.name:<16} ({node.vendor})")
         time.sleep(1.0)
-        for name, proc in self._procs.items():
-            if proc.poll() is not None:
-                err = proc.stderr.read().decode(errors="replace").strip() if proc.stderr else ""
+        for name, log in started.items():
+            if self._procs[name].poll() is not None:
+                log.seek(0)
+                err = log.read().decode(errors="replace").strip()
                 raise RuntimeError(f"{name} exited at startup: {err or 'no message'}")
 
     def crash(self, name: str) -> None:
         """Kill one node abruptly: no goodbye message reaches the bus."""
-        _kill_tree(self._procs.pop(name))
+        kill_tree(self._procs.pop(name))
         print(f"  killed {name}")
 
     def close(self) -> None:
         for proc in self._procs.values():
-            _kill_tree(proc)
+            kill_tree(proc)
         self._procs.clear()
+        self._logs.close()
 
     def __enter__(self) -> Bus:
         return self
@@ -391,14 +399,27 @@ def run_example(
             return 2
         if args.hold:
             return _hold(args.domain, prompt)
-        time.sleep(SETTLE_S)
         checks = Checks()
-        asyncio.run(_drive(args.domain, scenario, bus, checks))
+        asyncio.run(_drive(args.domain, nodes, scenario, bus, checks))
         return checks.report()
 
 
-async def _drive(domain: int, scenario: Scenario, bus: Bus, checks: Checks) -> None:
+async def _drive(
+    domain: int, nodes: Sequence[Node], scenario: Scenario, bus: Bus, checks: Checks
+) -> None:
     async with TopicForge(domain) as tf:
+        # Poll until every program is visible rather than trusting a fixed
+        # delay: a slow CI runner needs longer, a fast laptop much less.
+        named = {n.name for n in nodes if n.vendor == "cyclone"}
+
+        async def everyone_seen() -> bool:
+            parts = await tf.participants()
+            names = {p.get("name") for p in parts if p.get("status") == "active"}
+            return len(parts) >= len(nodes) + 1 and named <= names
+
+        if await wait_for(everyone_seen, DISCOVERY_TIMEOUT_S, every_s=1.0) is None:
+            print(f"    warning: not every program was seen within {DISCOVERY_TIMEOUT_S:.0f} s")
+        await asyncio.sleep(SETTLE_S)
         await scenario(tf, bus, checks)
 
 
