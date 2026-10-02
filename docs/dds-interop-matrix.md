@@ -39,14 +39,14 @@ The claim is about discovery: which participants, readers and writers exist, and
 
 ## What TopicForge is not
 
-TopicForge is not a DDS implementation: it joins as a read-only client using a conformant vendor's participant SDK. It is not tied to one vendor either, since your bus can run RTI Connext, Fast DDS, OpenDDS or anything else conformant. It does not publish, by architecture: there is no write path, which is the safety contract documented in `docs/product-plan.md section 1`. And it is not certified. Certification (DO-178C, ISO 26262 ASIL, etc.) is the responsibility of the deployment environment; being read-only narrows the certification scope but does not remove it.
+TopicForge is not a DDS implementation: it joins as a read-only client using a conformant vendor's participant SDK. It is not tied to one vendor either, since your bus can run RTI Connext, Fast DDS, OpenDDS or anything else conformant. It does not publish, by architecture: there is no write path. And it is not certified. Certification (DO-178C, ISO 26262 ASIL, etc.) is the responsibility of the deployment environment; being read-only narrows the certification scope but does not remove it.
 
 ## References
 
 - [OMG DDS Foundation: the standard](https://www.dds-foundation.org/omg-dds-standard/)
 - [OMG DDS-RTPS interoperability test description](https://omg-dds.github.io/dds-rtps/test_description.html)
 - [OMG DDS-RTPS interoperability test results (current)](https://omg-dds.github.io/dds-rtps/test_results.html)
-- [Source data archived in this repo](projet-file/references/omg-dds-interop-2025-05-08.xlsx) (2025-05-08 snapshot)
+- [OMG DDS-RTPS interoperability tests and results](https://github.com/omg-dds/dds-rtps)
 
 TopicForge does not run the OMG interop tests itself; the results above are the OMG Foundation's published artifact.
 

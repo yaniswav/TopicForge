@@ -140,10 +140,9 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
     raw_dds_backend = src.get("TOPICFORGE_DDS_BACKEND", "mock").strip().lower()
     if raw_dds_backend in _REMOVED_DDS_BACKENDS:
         raise ValueError(
-            f"TOPICFORGE_DDS_BACKEND={raw_dds_backend!r} was removed in 0.5.3 together "
-            f"with the Pro tier; expected one of {_VALID_DDS_BACKENDS}. The free tier "
-            "should still see RTI, CoreDX and OpenSplice participants through standard "
-            "RTPS discovery with `cyclone` (not yet observed on a bus). See docs/pro.md."
+            f"TOPICFORGE_DDS_BACKEND={raw_dds_backend!r} was removed in 0.5.3; expected one of "
+            f"{_VALID_DDS_BACKENDS}. Use `cyclone`: it sees RTI, CoreDX and OpenSplice "
+            "participants through standard RTPS discovery (not yet observed by the author)."
         )
     if raw_dds_backend not in _VALID_DDS_BACKENDS:
         raise ValueError(

@@ -80,7 +80,7 @@ TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 
 `TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `fast` and `auto` (`fast`, then `cyclone`, then `mock`, whichever binding imports). An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the five ROS2 graph and bag tools to the CLI and the seven DDS tools to the DDS backend.
 
-A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Python binding is not on PyPI: build it from eProsima's sources and install it next to TopicForge. There is no `[dds-fast]` extra. `opendds` and `dust` are permanent stubs that never serve. `rti`, `opensplice`, `coredx` and `intercom` are rejected with a configuration error, since the Pro tier is retired (see [`docs/pro.md`](docs/pro.md)). Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Python binding is not on PyPI: build it from eProsima's sources and install it next to TopicForge. There is no `[dds-fast]` extra. `opendds` and `dust` are permanent stubs that never serve. `rti`, `opensplice`, `coredx` and `intercom` are rejected with a configuration error,; Cyclone already sees those vendors' participants through standard discovery. Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 ## Configuration reference
 
@@ -109,7 +109,7 @@ Samples with comments are in [`.env.example`](.env.example). Any invalid value s
 - Synchronous handlers: the tools run on the MCP event loop; on Windows a hung `ros2` launcher can block the server.
 - No streaming or push subscriptions: tools are strictly request/response.
 
-The roadmap and the open work behind these limits are in [`docs/product-plan.md`](docs/product-plan.md).
+Next: an opt-in probe to tell a hung writer from a healthy one, wider real-bus validation (Fast DDS, RTI, OpenDDS), and DDS Security. Open work is tracked in [issues](https://github.com/yaniswav/TopicForge/issues).
 
 ## Telemetry
 
@@ -183,4 +183,4 @@ Layers are strictly separated: handlers never call `subprocess`, adapters are th
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Commercial support and integration work: [`docs/pro.md`](docs/pro.md).
+MIT, see [LICENSE](LICENSE). Integration or support work for a specific ROS 2 / DDS setup: ethvignot.yanis@gmail.com.
