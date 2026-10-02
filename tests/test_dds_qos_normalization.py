@@ -21,6 +21,7 @@ from topicforge.adapters.common import (
     detect_mismatches,
     fast_qos_to_profile,
 )
+from topicforge.adapters.common.qos_analyzer import analyze_pair
 
 # ---------------------------------------------------------------------------
 # Cyclone: policies are objects whose class NAME is read (e.g. "Reliable").
@@ -324,3 +325,46 @@ def test_cyclone_scoped_names_distinguish_reliable_from_best_effort():
     )
     assert reader is not None and writer is not None
     assert (reader.reliability, writer.reliability) == ("RELIABLE", "BEST_EFFORT")
+
+
+class _Unreadable:
+    """A duration the binding exposes in a shape we cannot read."""
+
+
+Liveliness_Automatic = type("Automatic", (), {"lease_duration": _Unreadable()})
+
+
+def test_unreadable_deadline_is_unknown_not_infinite() -> None:
+    bad = Deadline(0)
+    bad.duration = _Unreadable()
+    writer = cyclone_qos_to_profile(_CycloneSample([Reliable(), TransientLocal(), KeepLast(), bad]))
+    reader = cyclone_qos_to_profile(
+        _CycloneSample([Reliable(), TransientLocal(), KeepLast(), Deadline(100_000_000)])
+    )
+    assert writer is not None and reader is not None
+    assert writer.deadline_ns is None and writer.unknown_policies == ["Deadline"]
+    assert reader.unknown_policies is None
+    analysis = analyze_pair(reader, writer)
+    assert analysis.incompatible == []
+    assert "Deadline" in analysis.unchecked
+
+
+def test_infinite_deadline_stays_infinite_and_compared() -> None:
+    inf = Deadline(9_223_372_036_854_775_807)
+    writer = cyclone_qos_to_profile(_CycloneSample([Reliable(), TransientLocal(), KeepLast(), inf]))
+    reader = cyclone_qos_to_profile(
+        _CycloneSample([Reliable(), TransientLocal(), KeepLast(), Deadline(100_000_000)])
+    )
+    assert writer is not None and reader is not None
+    assert writer.unknown_policies is None
+    assert [m.policy for m in analyze_pair(reader, writer).incompatible] == ["Deadline"]
+
+
+def test_unreadable_liveliness_lease_goes_to_unchecked() -> None:
+    writer = cyclone_qos_to_profile(
+        _CycloneSample([Reliable(), TransientLocal(), KeepLast(), Liveliness_Automatic()])
+    )
+    assert writer is not None
+    assert writer.liveliness_kind == "AUTOMATIC"
+    assert writer.unknown_policies == ["Liveliness"]
+    assert "Liveliness" in analyze_pair(writer, writer).unchecked

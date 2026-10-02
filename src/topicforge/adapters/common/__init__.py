@@ -40,6 +40,7 @@ from topicforge.adapters.common.dds_introspection import (
 )
 from topicforge.adapters.common.discovery_tracker import (
     DEFAULT_PERIOD_S,
+    BufferedTake,
     DiscoveryCaches,
     DiscoveryTracker,
     SampleCache,
@@ -96,6 +97,7 @@ __all__ = [
     "POLICIES_CHECKED",
     "POLICIES_UNCHECKED",
     "USER_TOPIC_NOTE",
+    "BufferedTake",
     "DecodeStatus",
     "DiscoveryCaches",
     "DiscoveryTracker",

@@ -456,3 +456,33 @@ def test_partitions_match(reader, writer, expected: bool) -> None:
 )
 def test_format_duration(ns: int | None, text: str) -> None:
     assert format_duration(ns) == text
+
+
+@pytest.mark.parametrize(
+    ("writer", "reader", "expected"),
+    [
+        # Each row was measured on a live cyclonedds 11.0.1 bus (domain 61,
+        # subscription_matched_status.current_count, 2026-10-02).
+        ("r*", "r*", False),
+        ("robot*", "robot?", False),
+        ("robot1", "robot[12]", False),
+        ("robot*", "robot1", True),
+        ("robot1", "robot*", True),
+        ("robot[12]", "robot[12]", True),
+        ("robot?", "robot?", False),
+        ("robot1", "robot1", True),
+        ("robot3", "robot[12]", False),
+        ("r*", "robot1", True),
+        ("a*", "b*", False),
+        ("", "*", True),
+        ("*", "*", False),
+        ("robot[1-3]", "robot2", False),
+        ("robot2", "robot[1-3]", False),
+        ("robot1", "robot[1]", False),
+    ],
+)
+def test_partition_matching_agrees_with_cyclone_on_a_live_bus(
+    writer: str, reader: str, expected: bool
+) -> None:
+    assert partitions_match([reader], [writer]) is expected
+    assert partitions_match([writer], [reader]) is expected

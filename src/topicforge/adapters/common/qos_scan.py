@@ -1,7 +1,7 @@
 """Whole-bus QoS scan over discovered endpoints: binding-free, testable with fakes.
 
 Takes the `EndpointInfo` records every adapter can build, pairs readers with
-writers per topic and applies, in order: type name, Partition, then the RxO
+writers per topic and applies, in order: Partition, type name, then the RxO
 rules of `qos_analyzer`. Pairs DDS will never match (different partitions or
 type names) land in `MismatchScan.not_matched` and are not run through the
 RxO rules, so a partition split is never mislabeled as a Reliability problem.
@@ -9,7 +9,7 @@ RxO rules, so a partition split is never mislabeled as a Reliability problem.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Literal
 
 from topicforge.adapters.common.qos_analyzer import (
@@ -49,6 +49,11 @@ POLICIES_UNCHECKED: list[str] = [
 _MAX_HINTS = 20
 _MAX_NEAR_DISTANCE = 2
 _LATE_JOIN_NS = 1_000_000_000
+MAX_ITEMS = 200
+"""Cap on `reports`, `matched` and `not_matched`; the `*_total` fields carry the real counts."""
+_MAX_COMPARED_ORPHANS = 200
+_MAX_DISTANCE_CALLS = 20_000
+"""Budget of edit-distance computations per scan (pairs whose lengths differ too much are free)."""
 
 
 def _not_matched(
@@ -119,8 +124,47 @@ def _report(
     )
 
 
-def _matched(reader: EndpointInfo, writer: EndpointInfo) -> MatchedPair:
+def _same_host(
+    reader: EndpointInfo, writer: EndpointInfo, hostnames: Mapping[str, str | None]
+) -> bool:
+    """True when both endpoints provably run on one host (same participant, or same hostname)."""
+    if reader.participant_guid == writer.participant_guid and reader.participant_guid != "unknown":
+        return True
+    r_host = hostnames.get(reader.participant_guid)
+    return r_host is not None and r_host == hostnames.get(writer.participant_guid)
+
+
+def _late_joiner_note(
+    reader: EndpointInfo, writer: EndpointInfo, hostnames: Mapping[str, str | None]
+) -> str | None:
+    """Why this reader missed earlier samples of a VOLATILE writer, `None` when it did not.
+
+    Both announce times are on their own clocks, so the comparison is only
+    meaningful when the two run on the same host.
+    """
+    if not (writer.qos and writer.qos.durability == "VOLATILE"):
+        return None
+    if reader.announced_ns is None or writer.announced_ns is None:
+        return None
+    if reader.announced_ns - writer.announced_ns <= _LATE_JOIN_NS:
+        return None
+    if not _same_host(reader, writer, hostnames):
+        return None
+    r = reader.participant_name or reader.guid
+    w = writer.participant_name or writer.guid
+    return (
+        f"reader {r} joined after writer {w}, which is VOLATILE: samples published "
+        f"before {r} joined are not delivered to it (by design)."
+    )
+
+
+def _matched(
+    reader: EndpointInfo, writer: EndpointInfo, hostnames: Mapping[str, str | None]
+) -> MatchedPair:
+    note = _late_joiner_note(reader, writer, hostnames)
     return MatchedPair(
+        late_joiner=note is not None,
+        late_joiner_note=note,
         topic=reader.topic,
         type_name=reader.type_name or writer.type_name,
         reader_guid=reader.guid,
@@ -152,37 +196,69 @@ def _side_text(side: str) -> str:
     return "has a writer but no reader" if side == "writer" else "has readers but no writer"
 
 
-def _orphan_hints(by_topic: dict[str, list[EndpointInfo]], scope: set[str]) -> list[str]:
-    """Orphan topics checked against every other topic: typos and namespaced twins."""
+def _orphan_hints(
+    by_topic: dict[str, list[EndpointInfo]], scope: set[str]
+) -> tuple[list[str], list[str]]:
+    """Orphan topics checked against every other topic: (near-name hints, plain orphan hints).
+
+    Near names are typos and namespaced twins. The comparison is bounded: pairs
+    whose lengths differ by more than the distance are skipped, the edit
+    distance gives up early, and at most `_MAX_COMPARED_ORPHANS` orphans are compared.
+    """
     sides = {t: _orphan_side(e) for t, e in by_topic.items()}
     orphans = sorted(t for t, side in sides.items() if side)
-    hints: list[str] = []
+    topics = sorted(by_topic)
+    near: list[str] = []
     explained: set[str] = set()
     seen: set[frozenset[str]] = set()
-    for orphan in orphans:
-        for other in sorted(by_topic):
-            key = frozenset((orphan, other))
-            if other == orphan or key in seen or not (orphan in scope or other in scope):
+    budget = _MAX_DISTANCE_CALLS
+    over_budget = False
+    for orphan in orphans[:_MAX_COMPARED_ORPHANS]:
+        for other in topics:
+            if other == orphan or not (orphan in scope or other in scope):
                 continue
-            distance = levenshtein(orphan, other)
+            key = frozenset((orphan, other))
+            if key in seen:
+                continue
             both_orphans = sides[other] is not None
+            if abs(len(orphan) - len(other)) > _MAX_NEAR_DISTANCE:
+                distance = _MAX_NEAR_DISTANCE + 1
+            elif budget > 0:
+                budget -= 1
+                distance = levenshtein(orphan, other, _MAX_NEAR_DISTANCE)
+            else:
+                over_budget = True
+                distance = _MAX_NEAR_DISTANCE + 1
             if distance <= _MAX_NEAR_DISTANCE:
                 seen.add(key)
                 explained.update(key if both_orphans else (orphan,))
-                hints.append(_typo_hint(orphan, other, sides, distance))
+                near.append(_typo_hint(orphan, other, sides, distance))
             elif _is_path_suffix(orphan, other) or _is_path_suffix(other, orphan):
                 seen.add(key)
                 explained.update(key if both_orphans else (orphan,))
-                hints.append(
+                near.append(
                     f"Topic {orphan!r} {_side_text(sides[orphan] or 'writer')}, and "
                     f"{other!r} is the same name with or without a namespace: may be the "
                     "same data under a namespaced/remapped name."
                 )
+    plain: list[str] = []
     for topic in orphans:
         if topic in scope and topic not in explained:
             side = "writers but no reader" if sides[topic] == "writer" else "readers but no writer"
-            hints.append(f"Topic {topic!r} has {side}: there is no pair to compare.")
-    return hints
+            plain.append(f"Topic {topic!r} has {side}: there is no pair to compare.")
+    if len(orphans) > _MAX_COMPARED_ORPHANS:
+        near.insert(
+            0,
+            f"{len(orphans)} orphan topics: only the first {_MAX_COMPARED_ORPHANS} were "
+            "compared for typos, narrow the scan with `topic` to check the rest.",
+        )
+    if over_budget:
+        near.insert(
+            0,
+            "The topic list is too large to compare every name for typos: near-name "
+            "hints may be missing, narrow the scan with `topic`.",
+        )
+    return near, plain
 
 
 def _typo_hint(orphan: str, other: str, sides: dict[str, str | None], distance: int) -> str:
@@ -197,24 +273,6 @@ def _typo_hint(orphan: str, other: str, sides: dict[str, str | None], distance: 
         f"Topic {orphan!r} {_side_text(sides[orphan] or 'writer')}; {other!r} differs by "
         f"{distance} edit{'s' if distance != 1 else ''}: likely a typo."
     )
-
-
-def _late_joiner_hints(pairs: list[tuple[EndpointInfo, EndpointInfo]]) -> list[str]:
-    hints = []
-    for reader, writer in pairs:
-        if not (writer.qos and writer.qos.durability == "VOLATILE"):
-            continue
-        if reader.announced_ns is None or writer.announced_ns is None:
-            continue
-        if reader.announced_ns - writer.announced_ns > _LATE_JOIN_NS:
-            r = reader.participant_name or reader.guid
-            w = writer.participant_name or writer.guid
-            hints.append(
-                f"Topic {reader.topic!r}: reader {r} joined after writer {w} and {w} is "
-                f"VOLATILE: samples published before {r} joined are not delivered to it "
-                "(by design)."
-            )
-    return hints
 
 
 def _type_id_hints(pairs: list[tuple[EndpointInfo, EndpointInfo]]) -> list[str]:
@@ -246,13 +304,17 @@ def scan_endpoints(
     *,
     topic: str | None = None,
     mode_effective: Literal["mock", "live"] = "live",
+    hostnames: Mapping[str, str | None] | None = None,
 ) -> MismatchScan:
     """Pair every reader with every writer per topic and build the `MismatchScan`.
 
     The observer's own endpoints are ignored. `topic` scopes reports and
     pairs; near-name hints still look at every topic so a typo on the other
-    side is found.
+    side is found. `hostnames` maps a participant guid to its announced host,
+    used only to tell a late joiner from clock skew. Lists are capped at
+    `MAX_ITEMS` (the `*_total` fields keep the real counts).
     """
+    hostnames = hostnames or {}
     by_topic: dict[str, list[EndpointInfo]] = {}
     for ep in endpoints:
         if not ep.is_observer and not _is_builtin(ep.topic):
@@ -274,7 +336,6 @@ def scan_endpoints(
     unchecked_counts: dict[str, int] = {}
     matched_pairs: list[tuple[EndpointInfo, EndpointInfo]] = []
     matched: list[MatchedPair] = []
-    ok_pairs: list[tuple[EndpointInfo, EndpointInfo]] = []
     for tname in sorted(scope):
         eps = by_topic[tname]
         readers = [e for e in eps if e.role == "reader"]
@@ -294,17 +355,25 @@ def scan_endpoints(
                 if report is not None:
                     reports.append(report)
                 if report is None or report.severity != "incompatible":
-                    matched.append(_matched(reader, writer))
-                    ok_pairs.append((reader, writer))
+                    matched.append(_matched(reader, writer, hostnames))
 
-    hints = scope_hints + _orphan_hints(by_topic, scope) + _type_id_hints(matched_pairs)
-    hints += _late_joiner_hints(ok_pairs)
-    hints += _unchecked_hints(unchecked_counts, skipped)
+    near, plain = _orphan_hints(by_topic, scope)
+    hints = scope_hints + near + _unchecked_hints(unchecked_counts, skipped) + plain
+    hints += _type_id_hints(matched_pairs)
+    if len(hints) > _MAX_HINTS:
+        omitted = len(hints) - _MAX_HINTS
+        hints = [*hints[:_MAX_HINTS], f"{omitted} more hint(s) omitted."]
+    reports.sort(key=lambda r: r.severity != "incompatible")
+    totals = (len(reports), len(matched), len(not_matched))
     return MismatchScan(
-        reports=reports,
-        matched=matched,
-        not_matched=not_matched,
-        hints=hints[:_MAX_HINTS],
+        reports=reports[:MAX_ITEMS],
+        matched=matched[:MAX_ITEMS],
+        not_matched=not_matched[:MAX_ITEMS],
+        reports_total=totals[0],
+        matched_total=totals[1],
+        not_matched_total=totals[2],
+        truncated=any(t > MAX_ITEMS for t in totals),
+        hints=hints,
         pairs_checked=pairs_checked,
         topics_scanned=len(scope),
         policies_checked=list(POLICIES_CHECKED),

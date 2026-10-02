@@ -87,7 +87,13 @@ def partitions_match(reader: list[str] | None, writer: list[str] | None) -> bool
     """True when at least one reader partition matches one writer partition.
 
     A wildcard on one side matches a concrete name on the other ; two
-    wildcards never match each other (not even identical ones).
+    wildcards never match each other (not even identical ones). Only `*` and
+    `?` are wildcards: `[12]` is a literal, so `robot[12]` matches only an
+    identical `robot[12]`. Checked against cyclonedds 11.0.1 on a live bus
+    (2026-10-02, `subscription_matched_status`): `r*`/`r*`, `robot*`/`robot?`
+    and `*`/`*` did not match, `robot*`/`robot1` and `""`/`*` did, `robot1`
+    did not match `robot[12]` or `robot[1]`. Other vendors may treat `[...]`
+    as a character class.
     """
     for rp in effective_partitions(reader):
         for wp in effective_partitions(writer):
@@ -148,6 +154,11 @@ def _check_representation(reader: QosProfile, writer: QosProfile) -> PolicyMisma
     )
 
 
+def _is_unknown(policy: str, reader: QosProfile, writer: QosProfile) -> bool:
+    """True when either side announced `policy` with a value that could not be read."""
+    return policy in (reader.unknown_policies or []) or policy in (writer.unknown_policies or [])
+
+
 def _core_findings(reader: QosProfile, writer: QosProfile) -> list[PolicyMismatch]:
     found: list[PolicyMismatch] = []
     if reader.reliability == "RELIABLE" and writer.reliability == "BEST_EFFORT":
@@ -169,7 +180,9 @@ def _core_findings(reader: QosProfile, writer: QosProfile) -> list[PolicyMismatc
                 "TRANSIENT < PERSISTENT)",
             )
         )
-    if _ns(writer.deadline_ns) > _ns(reader.deadline_ns):
+    if not _is_unknown("Deadline", reader, writer) and _ns(writer.deadline_ns) > _ns(
+        reader.deadline_ns
+    ):
         found.append(
             _finding(
                 "Deadline",
@@ -188,12 +201,20 @@ def _optional_findings(
     found: list[PolicyMismatch] = []
     unchecked: list[str] = []
 
-    if reader.liveliness_kind is None or writer.liveliness_kind is None:
+    if (
+        reader.liveliness_kind is None
+        or writer.liveliness_kind is None
+        or _is_unknown("Liveliness", reader, writer)
+    ):
         unchecked.append("Liveliness")
     elif (f := _check_liveliness(reader, writer)) is not None:
         found.append(f)
 
-    if reader.latency_budget_ns is None or writer.latency_budget_ns is None:
+    if (
+        reader.latency_budget_ns is None
+        or writer.latency_budget_ns is None
+        or _is_unknown("LatencyBudget", reader, writer)
+    ):
         unchecked.append("LatencyBudget")
     elif writer.latency_budget_ns > reader.latency_budget_ns:
         found.append(
@@ -248,6 +269,8 @@ def analyze_pair(reader: QosProfile, writer: QosProfile) -> PairAnalysis:
     `RXO_POLICIES`; History is appended as a risky finding.
     """
     optional, unchecked = _optional_findings(reader, writer)
+    if _is_unknown("Deadline", reader, writer):
+        unchecked.insert(0, "Deadline")
     incompatible = _core_findings(reader, writer) + optional
     incompatible.sort(key=lambda f: RXO_POLICIES.index(f.policy))
     risky: list[PolicyMismatch] = []

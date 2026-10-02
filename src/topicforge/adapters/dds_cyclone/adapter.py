@@ -73,6 +73,7 @@ from cyclonedds.util import duration
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
+    BufferedTake,
     DiscoveryCaches,
     DiscoveryTracker,
     MetricsBuffer,
@@ -86,7 +87,6 @@ from topicforge.adapters.common import (
     endpoint_infos_from_samples,
     extract_publish_ns_from_payload,
     extract_seq_from_payload,
-    format_guid,
     format_participant_key,
     iter_field_names,
     listing_from_samples,
@@ -96,9 +96,6 @@ from topicforge.adapters.common import (
     take_bounded,
     user_topic_result,
     validate_domain_id,
-)
-from topicforge.adapters.common import (
-    cyclone_extract_guid as _extract_guid,
 )
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
@@ -335,7 +332,7 @@ class CycloneDdsAdapter:
             BuiltinTopicDcpsSubscription,
         ):
             self._builtin_reader(topic_class)
-        self._tracker = DiscoveryTracker(self._take_all, self._caches, domain_id=domain_id)
+        self._tracker = DiscoveryTracker(self._build_take_all(), self._caches, domain_id=domain_id)
         self._tracker.start()
         # Stop the tracker before the interpreter and Cyclone tear down: a
         # pass still reading the builtin readers during teardown crashed the
@@ -353,22 +350,25 @@ class CycloneDdsAdapter:
             entry = self._builtin[topic_class] = (reader, condition)
         return entry
 
-    def _take_new(self, topic_class: Any, limit: int) -> list[Any]:
-        """Take everything new from one builtin reader (tracker thread only)."""
+    def _take_new(self, topic_class: Any, limit: int, sink: list[Any]) -> None:
+        """Take everything new from one builtin reader into `sink` (tracker thread only).
+
+        Each batch lands in `sink` as soon as it is taken, so a later failure
+        cannot drop samples `take()` already removed from the reader.
+        """
         reader, condition = self._builtin_reader(topic_class)
-        taken: list[Any] = []
         while True:
             batch = reader.take(N=limit, condition=condition)
-            taken.extend(batch)
+            sink.extend(batch)
             if len(batch) < limit:
-                return taken
+                return
 
-    def _take_all(self) -> tuple[list[Any], list[Any], list[Any]]:
-        """One tracker pass worth of raw samples: participants, publications, subscriptions."""
-        return (
-            self._take_new(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS),
-            self._take_new(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS),
-            self._take_new(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS),
+    def _build_take_all(self) -> BufferedTake:
+        """The tracker's take function: participants, publications, subscriptions."""
+        return BufferedTake(
+            lambda sink: self._take_new(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS, sink),
+            lambda sink: self._take_new(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS, sink),
+            lambda sink: self._take_new(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS, sink),
         )
 
     def close(self) -> None:
@@ -420,21 +420,15 @@ class CycloneDdsAdapter:
         would violate the "one bus join per adapter instance" rule.
 
         Served from the `LifecycleBuffer` the tracker thread keeps current
-        (first/last seen, status, seen_count, announced_ns, lost_ns). The
-        reconcile below is a safety net only: the tracker already records
-        every loss from the builtin readers' dispose samples.
+        (first/last seen, status, seen_count, announced_ns, lost_ns). No
+        reconcile on this path: the tracker records every loss from the builtin
+        readers' dispose samples, and reconciling against the cache raced with
+        a pass (a participant recorded but not yet cached read as lost).
         """
-        self._lifecycle.reconcile(
-            observed_guids={
-                format_guid(_extract_guid(s)) for s in self._caches.participants.values()
-            },
-            domain_id=self._domain_id,
-            mode_effective="live",
-        )
         observer = self._observer_guid()
         return [
             p.model_copy(update={"is_observer": True}) if p.guid == observer else p
-            for p in self._lifecycle.snapshot_participants(domain_id=self._domain_id)
+            for p in self._caches.snapshot(self._domain_id).participant_infos
         ]
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
@@ -444,7 +438,8 @@ class CycloneDdsAdapter:
         caches, then hands them to the pure `common.qos_scan.scan_endpoints`:
         partition and type separation first, RxO rules after.
         """
-        parts, pubs, subs = self._raw_endpoint_samples()
+        snap = self._caches.snapshot(self._domain_id)
+        parts, pubs, subs = snap.participants, snap.publications, snap.subscriptions
         endpoints = endpoint_infos_from_samples(
             parts,
             pubs,
@@ -453,7 +448,8 @@ class CycloneDdsAdapter:
             mode_effective="live",
             observer_guid=self._observer_guid(),
         )
-        return scan_endpoints(endpoints, topic=topic, mode_effective="live")
+        hostnames = {p.guid: p.hostname for p in snap.participant_infos}
+        return scan_endpoints(endpoints, topic=topic, mode_effective="live", hostnames=hostnames)
 
     def _observer_guid(self) -> str:
         """Formatted GUID of this adapter's own participant."""
@@ -473,7 +469,8 @@ class CycloneDdsAdapter:
         not whether samples move. The pure assembly lives in
         `common.endpoints.build_endpoint_listing`.
         """
-        parts, pubs, subs = self._raw_endpoint_samples()
+        snap = self._caches.snapshot(self._domain_id)
+        parts, pubs, subs = snap.participants, snap.publications, snap.subscriptions
         return listing_from_samples(
             parts,
             pubs,
@@ -485,26 +482,7 @@ class CycloneDdsAdapter:
             participant_guid=participant_guid,
             include_observer=include_observer,
             include_departed=include_departed,
-            departed=self._departed(),
-        )
-
-    def _departed(self) -> list[tuple[str, Any, int, str | None]]:
-        """Endpoints whose participant left, from the tracker's bounded departed store."""
-        return [
-            (r.role, r.sample, r.gone_ns, r.participant_name)
-            for _, r in self._caches.departed.records(time.time_ns())
-        ]
-
-    def _raw_endpoint_samples(self) -> tuple[list[Any], list[Any], list[Any]]:
-        """Cached builtin samples (participants, publications, subscriptions).
-
-        The only place `list_endpoints` gets its input: every other step is a
-        pure function over these lists.
-        """
-        return (
-            self._caches.participants.values(),
-            self._caches.publications.values(),
-            self._caches.subscriptions.values(),
+            departed=[(r.role, r.sample, r.gone_ns, r.participant_name) for _, r in snap.departed],
         )
 
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:

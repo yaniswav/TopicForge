@@ -6,6 +6,7 @@ Synthetic duck-typed builtin samples only (valid and invalid, with an integer
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 import uuid
@@ -296,3 +297,166 @@ def test_departed_store_is_bounded_and_expires() -> None:
     assert [g for g, _ in store.records(T0 + 3)] == ["g1", "g2"]
     assert store.records(T0 + 60 * SEC) == []
     assert caches.departed.records(T0) == []
+
+
+# ----- QA fixes: consistent reads, warm bound, no lost takes, phantom endpoints -----
+
+
+def test_snapshot_never_sees_a_half_applied_pass() -> None:
+    """A handler between record_seen and participants.put used to read a live participant as lost."""
+    caches = DiscoveryCaches()
+    seen_by_reader: list[Any] = []
+    real_put = caches.participants.put
+
+    def put_with_reader_in_between(guid: str, sample: Any) -> None:
+        # record_seen already ran; the cache is not updated yet. A handler
+        # starting now must wait for the pass to finish, not read this state.
+        reader = threading.Thread(target=lambda: seen_by_reader.append(caches.snapshot(0)))
+        reader.start()
+        reader.join(0.3)
+        assert reader.is_alive(), "the snapshot did not wait for the pass lock"
+        seen_by_reader.append(reader)
+        real_put(guid, sample)
+
+    caches.participants.put = put_with_reader_in_between  # type: ignore[method-assign]
+    _apply(caches, [_participant(2, name="nav")])
+    thread = seen_by_reader[0]
+    thread.join(2)
+    snap = seen_by_reader[1]
+    assert len(snap.participants) == 1
+    assert [p.status for p in snap.participant_infos] == ["active"]
+
+
+def test_endpoint_of_a_participant_departed_in_the_same_pass_is_not_cached_live() -> None:
+    caches = DiscoveryCaches()
+    _apply(caches, [_participant(1, name="nav", ts=T0)], now=T0)
+    _apply(
+        caches,
+        parts=[_invalid(1, ts=T0 + SEC)],
+        pubs=[_endpoint(7, "/late")],
+        now=T0 + 2 * SEC,
+    )
+    assert caches.publications.values() == []
+    snap = caches.snapshot(0, now_ns=T0 + 3 * SEC)
+    assert [g for g, _ in snap.departed] and snap.publications == []
+    (_, record) = snap.departed[0]
+    assert (record.role, record.participant_name) == ("writer", "nav")
+
+
+def test_revived_participant_guid_caches_endpoints_again() -> None:
+    caches = DiscoveryCaches()
+    _apply(caches, [_participant(1, ts=T0)], now=T0)
+    _apply(caches, parts=[_invalid(1, ts=T0 + SEC)], now=T0 + SEC)
+    _apply(caches, parts=[_participant(1, ts=T0 + 2 * SEC)], pubs=[_endpoint(7)], now=T0 + 3 * SEC)
+    assert len(caches.publications.values()) == 1
+
+
+def test_is_warm_gives_up_waiting_when_every_pass_fails() -> None:
+    def boom() -> Any:
+        raise RuntimeError("take failed")
+
+    tracker = DiscoveryTracker(boom, DiscoveryCaches(), domain_id=0)
+    tracker.run_pass()
+    assert not tracker.is_warm()  # not started: nothing to wait on
+    tracker._started_at = time.monotonic()
+    assert not tracker.is_warm()
+    tracker._started_at = time.monotonic() - 3.5
+    assert tracker.is_warm()
+    assert tracker.wait_warm(timeout_s=0.05) is True
+    status = tracker.status()
+    assert status["passes"] == 0
+    assert status["failed_passes"] == 1
+    assert status["warm"] is True
+
+
+def test_wait_warm_returns_false_within_its_timeout_while_young() -> None:
+    tracker = DiscoveryTracker(lambda: ([], [], []), DiscoveryCaches(), domain_id=0)
+    tracker._started_at = time.monotonic()
+    started = time.monotonic()
+    assert tracker.wait_warm(timeout_s=0.2) is False
+    assert time.monotonic() - started < 1.0
+
+
+def test_buffered_take_keeps_taken_lists_when_a_later_take_raises() -> None:
+    from topicforge.adapters.common import BufferedTake
+
+    calls = {"subs": 0}
+    dispose = _invalid(2, ts=T0 + SEC)
+
+    def subs(sink: list[Any]) -> None:
+        calls["subs"] += 1
+        if calls["subs"] == 1:
+            raise RuntimeError("third take failed")
+        sink.append("sub")
+
+    take = BufferedTake(
+        lambda sink: sink.append(dispose) if not sink and calls["subs"] == 0 else None,
+        lambda sink: sink.append("pub") if calls["subs"] == 0 else None,
+        subs,
+    )
+    with contextlib.suppress(RuntimeError):
+        take()
+    parts, pubs, subs_ = take()
+    assert parts == [dispose] and pubs == ["pub"] and subs_ == ["sub"]
+
+
+def test_tracker_applies_a_dispose_taken_before_a_failing_take() -> None:
+    from topicforge.adapters.common import BufferedTake
+
+    caches = DiscoveryCaches()
+    _apply(caches, [_participant(2, name="nav")])
+    state = {"n": 0}
+
+    def parts(sink: list[Any]) -> None:
+        if state["n"] == 0:
+            sink.append(_invalid(2, ts=T0 + SEC))
+
+    def subs(sink: list[Any]) -> None:
+        state["n"] += 1
+        if state["n"] == 1:
+            raise RuntimeError("boom")
+
+    tracker = DiscoveryTracker(
+        BufferedTake(parts, lambda sink: None, subs), caches, domain_id=0, clock_ns=lambda: T0 + SEC
+    )
+    tracker.run_pass()
+    assert tracker.status()["failed_passes"] == 1
+    tracker.run_pass()
+    (info,) = caches.lifecycle.snapshot_participants()
+    assert info.status == "left"
+
+
+def test_sample_cache_counts_evictions_and_warns_once(caplog) -> None:
+    from topicforge.adapters.common import SampleCache
+
+    cache = SampleCache(max_items=2)
+    with caplog.at_level("WARNING"):
+        for i in range(5):
+            cache.put(str(i), i)
+    assert cache.evictions == 3
+    assert len([r for r in caplog.records if "cache full" in r.getMessage()]) == 1
+    caches = DiscoveryCaches()
+    assert caches.evictions() == 0
+
+
+def test_stop_warns_when_the_thread_does_not_join(caplog) -> None:
+    release = threading.Event()
+
+    def stuck() -> tuple[list[Any], list[Any], list[Any]]:
+        release.wait(2)
+        return [], [], []
+
+    tracker = DiscoveryTracker(
+        stuck,
+        DiscoveryCaches(),
+        domain_id=0,
+        period_s=0.01,
+    )
+    tracker.start()
+    time.sleep(0.1)
+    with caplog.at_level("WARNING"):
+        tracker.stop(timeout=0.05)
+    release.set()
+    tracker.stop(timeout=3)
+    assert tracker.status()["stop_timed_out"] is True
+    assert any("still running" in r.getMessage() for r in caplog.records)
