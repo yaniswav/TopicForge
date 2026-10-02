@@ -23,3 +23,13 @@ MAX_ARRAY_LENGTH = 65536
 # `TOPICFORGE_MAX_SAMPLE_BYTES` (`Settings.max_sample_bytes`).
 DEFAULT_MAX_SAMPLE_BYTES = 1024 * 1024
 MAX_SAMPLE_CALL_FACTOR = 4
+
+# `sample_messages` wall deadline in seconds, from the start of the `ros2 topic
+# echo` process (CLI start-up included). `timeout_s` accepts MIN..MAX.
+DEFAULT_SAMPLE_TIMEOUT_S = 10.0
+MIN_SAMPLE_TIMEOUT_S = 1.0
+MAX_SAMPLE_TIMEOUT_S = 60.0
+
+# Reserved payload key listing the dotted paths of fields `sample_messages`
+# cut at `max_array_length` (arrays, strings, bytes).
+TRUNCATED_FIELDS_KEY = "_truncated_fields"

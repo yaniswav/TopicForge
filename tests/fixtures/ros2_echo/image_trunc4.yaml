@@ -1,0 +1,17 @@
+header:
+  stamp:
+    sec: 33
+    nanosec: 513975190
+  frame_id: came...
+height: 480
+width: 640
+encoding: rgb8
+is_bigendian: 0
+step: 1920
+data:
+- 0
+- 0
+- 0
+- 0
+- '...'
+---
