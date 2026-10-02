@@ -15,11 +15,10 @@ from __future__ import annotations
 from typing import Any
 
 from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
-from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
-    MessageSample,
     MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
@@ -69,12 +68,14 @@ class CompositeAdapter:
         *,
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
-    ) -> list[MessageSample]:
+        timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+    ) -> SampleResult:
         return self._ros.sample_messages(
             topic,
             count,
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
+            timeout_s=timeout_s,
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:

@@ -15,6 +15,7 @@ import pytest
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
+from topicforge.adapters.ros2_live.echo_stream import EchoDocument, EchoRun
 
 _MODULE = "topicforge.adapters.ros2_live.adapter"
 
@@ -90,60 +91,111 @@ def test_analyze_bag_raises_for_missing_path(tmp_path) -> None:  # type: ignore[
         adapter.analyze_bag(str(missing))
 
 
-def test_sample_messages_swallows_echo_timeout_and_returns_empty(
+def _stub_echo(monkeypatch: pytest.MonkeyPatch, run: EchoRun) -> list[list[str]]:
+    """Replace the echo stream with a canned run; returns the commands it was given."""
+    seen: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_kw: object) -> EchoRun:
+        seen.append(cmd)
+        return run
+
+    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    return seen
+
+
+def _doc(text: str, received_ns: int = 1) -> EchoDocument:
+    return EchoDocument(text, received_ns)
+
+
+_IMU_INFO = "Type: sensor_msgs/msg/Imu\nPublisher count: 1\nSubscription count: 0\n"
+_IMU_DOC = "header:\n  stamp:\n    sec: 1715600000\n    nanosec: 123456789\n  frame_id: base_link\n"
+
+
+def test_sample_messages_without_a_message_explains_the_silence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`sample_messages` is expected to degrade gracefully when echo times out."""
     _stub_which_resolves(monkeypatch)
+    _stub_run(
+        monkeypatch,
+        lambda *_a, **_k: SimpleNamespace(
+            returncode=0,
+            stdout="Type: geometry_msgs/msg/Twist\nPublisher count: 1\n",
+            stderr="",
+        ),
+    )
+    _stub_echo(monkeypatch, EchoRun())
+    result = Ros2CliAdapter().sample_messages("/cmd_vel", count=5)
+    assert result.samples == [] and result.count == 0
+    assert result.note is not None and "0 of 5 messages within 10 s" in result.note
+    assert "publisher exists" in result.note
 
-    info_stdout = "Type: geometry_msgs/msg/Twist\nPublisher count: 1\nSubscription count: 0\n"
-    call_count = {"n": 0}
 
-    def run_stub(cmd: list[str], **kwargs: object) -> object:
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            return SimpleNamespace(returncode=0, stdout=info_stdout, stderr="")
-        raise subprocess.TimeoutExpired(cmd=cmd, timeout=float(kwargs.get("timeout", 3.0)))  # type: ignore[arg-type]
-
-    _stub_run(monkeypatch, run_stub)
-    adapter = Ros2CliAdapter()
-    assert adapter.sample_messages("/cmd_vel", count=5) == []
-
-
-def test_sample_messages_invokes_csv_echo_and_extracts_timestamp(
+def test_sample_messages_without_a_publisher_says_so_and_waits_less(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`sample_messages` must shell out with `--csv --once` and surface the
-    `header.stamp`-derived `timestamp_ns` from the parser."""
     _stub_which_resolves(monkeypatch)
+    _stub_run(
+        monkeypatch,
+        lambda *_a, **_k: SimpleNamespace(
+            returncode=0,
+            stdout="Type: geometry_msgs/msg/Twist\nPublisher count: 0\n",
+            stderr="",
+        ),
+    )
+    deadlines: list[float] = []
 
-    info_stdout = "Type: sensor_msgs/msg/Imu\nPublisher count: 1\nSubscription count: 0\n"
-    csv_stdout = "1715600000,123456789,base_link,0.0,0.0,0.0,1.0\n"
-    captured_cmds: list[list[str]] = []
+    def fake_stream(cmd: list[str], *, deadline_s: float, **_kw: object) -> EchoRun:
+        deadlines.append(deadline_s)
+        return EchoRun()
 
-    def run_stub(cmd: list[str], **_kwargs: object) -> object:
-        captured_cmds.append(list(cmd))
-        if "info" in cmd:
-            return SimpleNamespace(returncode=0, stdout=info_stdout, stderr="")
-        return SimpleNamespace(returncode=0, stdout=csv_stdout, stderr="")
+    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    result = Ros2CliAdapter().sample_messages("/cmd_vel", count=2, timeout_s=30)
+    assert deadlines == [3.0]
+    assert result.note is not None and "No publisher" in result.note
+    assert "within 3 s" in result.note
 
-    _stub_run(monkeypatch, run_stub)
-    adapter = Ros2CliAdapter()
-    samples = adapter.sample_messages("/imu", count=1)
 
-    # The echo invocation carries `--csv --once` in that order (per adapter
-    # wiring); flipping it would still work with ros2cli, but the assertion
-    # pins the deliberate shape so a future refactor doesn't silently drop
-    # the flag that makes timestamps available.
-    echo_cmd = next(c for c in captured_cmds if "echo" in c)
-    assert "--csv" in echo_cmd
-    assert "--once" in echo_cmd
-    assert echo_cmd[echo_cmd.index("--csv") + 1] == "--once"
+def test_sample_messages_surfaces_a_cli_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_which_resolves(monkeypatch)
+    _stub_run(
+        monkeypatch,
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=_IMU_INFO, stderr=""),
+    )
+    _stub_echo(monkeypatch, EchoRun(exit_code=1, stderr_tail="rcl not initialized"))
+    with pytest.raises(AdapterError, match=r"exit 1.*rcl not initialized"):
+        Ros2CliAdapter().sample_messages("/imu", count=1)
 
-    assert len(samples) == 1
-    assert samples[0].timestamp_ns == 1715600000 * 1_000_000_000 + 123456789
-    assert samples[0].message_type == "sensor_msgs/msg/Imu"
-    assert samples[0].payload["col_0"] == "base_link"
+
+def test_sample_messages_streams_yaml_and_extracts_the_header_stamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_which_resolves(monkeypatch)
+    _stub_run(
+        monkeypatch,
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=_IMU_INFO, stderr=""),
+    )
+    seen = _stub_echo(monkeypatch, EchoRun(documents=[_doc(_IMU_DOC, 42)]))
+    result = Ros2CliAdapter().sample_messages("/imu", count=1)
+
+    assert seen[0][:4] == ["/fake/bin/ros2", "topic", "echo", "--no-lost-messages"]
+    assert result.count == 1 and result.note is None and result.mode_effective == "live"
+    sample = result.samples[0]
+    assert sample.timestamp_ns == 1715600000 * 1_000_000_000 + 123456789
+    assert sample.stamp_source == "header"
+    assert sample.received_ns == 42
+    assert sample.message_type == "sensor_msgs/msg/Imu"
+    assert sample.payload["header"] == {
+        "stamp": {"sec": 1715600000, "nanosec": 123456789},
+        "frame_id": "base_link",
+    }
+
+
+def test_sample_messages_count_zero_does_not_start_the_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = _stub_echo(monkeypatch, EchoRun())
+    result = Ros2CliAdapter().sample_messages("/imu", count=0)
+    assert result.count == 0 and result.note is None and seen == []
 
 
 def test_list_topics_safe_counts_default_to_zero_on_failure(
@@ -211,15 +263,11 @@ def test_sample_messages_envelope_marks_response_as_live(
     from topicforge.services import Inspector
 
     _stub_which_resolves(monkeypatch)
-    info_stdout = "Type: sensor_msgs/msg/Imu\nPublisher count: 1\nSubscription count: 0\n"
-    csv_stdout = "1715600000,123456789,base_link,0.0,0.0,0.0,1.0\n"
-
-    def run_stub(cmd: list[str], **_kwargs: object) -> object:
-        if "info" in cmd:
-            return SimpleNamespace(returncode=0, stdout=info_stdout, stderr="")
-        return SimpleNamespace(returncode=0, stdout=csv_stdout, stderr="")
-
-    _stub_run(monkeypatch, run_stub)
+    _stub_run(
+        monkeypatch,
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=_IMU_INFO, stderr=""),
+    )
+    _stub_echo(monkeypatch, EchoRun(documents=[_doc(_IMU_DOC)]))
     result = Inspector(Ros2CliAdapter()).sample_messages("/imu", count=1)
     assert result.mode_effective == "live"
     assert result.count == 1

@@ -9,8 +9,12 @@ from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapte
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
+    DEFAULT_SAMPLE_TIMEOUT_S,
     MAX_ARRAY_LENGTH,
     MAX_SAMPLE_COUNT,
+    MAX_SAMPLE_TIMEOUT_S,
+    MIN_SAMPLE_TIMEOUT_S,
+    TRUNCATED_FIELDS_KEY,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -82,37 +86,36 @@ class Inspector:
         *,
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
+        timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
     ) -> SampleResult:
         _validate_topic_name(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
         _validate_max_array_length(max_array_length)
-        samples = self._adapter.sample_messages(
+        _validate_timeout_s(timeout_s)
+        capped = min(n, MAX_SAMPLE_COUNT)
+        result = self._adapter.sample_messages(
             topic,
-            min(n, MAX_SAMPLE_COUNT),
+            capped,
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
+            timeout_s=timeout_s,
         )
-        samples, notes = apply_sample_budget(samples, self._max_sample_bytes)
-        if any(
-            "_truncated_after_columns" in s.payload or "_truncated_columns" in s.payload
-            for s in samples
-        ):
+        samples, notes = apply_sample_budget(result.samples, self._max_sample_bytes)
+        if n > capped:
+            notes.insert(0, f"count capped to {capped} (requested {n}).")
+        if result.note:
+            notes.insert(0, result.note)
+        if any(TRUNCATED_FIELDS_KEY in s.payload for s in samples):
             notes.append(
                 f"Arrays, strings or bytes longer than {max_array_length} elements were cut; "
-                "the cut is listed in `_truncated_after_columns` (arrays) and "
-                "`_truncated_columns` (strings, bytes). Pass `max_array_length` null for "
-                "full values, or `arrays_summary_only` true to drop array contents."
+                f"the cut fields are listed in `{TRUNCATED_FIELDS_KEY}`. Pass "
+                "`max_array_length` null for full values, or `arrays_summary_only` true to "
+                "drop array contents."
             )
-        if not samples and n > 0 and self._adapter.effective_mode == "live":
-            notes.append(_NO_SAMPLE_NOTE)
-        return SampleResult(
-            topic=topic,
-            count=len(samples),
-            samples=samples,
-            mode_effective=self._adapter.effective_mode,
-            note=" ".join(notes) or None,
+        return result.model_copy(
+            update={"samples": samples, "count": len(samples), "note": " ".join(notes) or None}
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -196,12 +199,13 @@ class Inspector:
         return result.model_copy(update={"samples": samples, "count": len(samples), "note": note})
 
 
-_NO_SAMPLE_NOTE = (
-    "No message arrived before the echo timeout. The topic may have no active "
-    "publisher or publish less often than the timeout; with `max_array_length` "
-    "null a very large message may also take too long to print, so retry with a "
-    "finite `max_array_length` or `arrays_summary_only` true."
-)
+def _validate_timeout_s(value: float) -> None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise AdapterError(f"timeout_s must be a number, got {type(value).__name__}")
+    if not MIN_SAMPLE_TIMEOUT_S <= value <= MAX_SAMPLE_TIMEOUT_S:
+        raise AdapterError(
+            f"timeout_s must be in {MIN_SAMPLE_TIMEOUT_S:g}..{MAX_SAMPLE_TIMEOUT_S:g}, got {value}"
+        )
 
 
 def _validate_max_array_length(value: int | None) -> None:

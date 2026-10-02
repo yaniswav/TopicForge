@@ -6,11 +6,14 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.ros2_mock import fixtures
-from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, MAX_SAMPLE_COUNT
+from topicforge.constants import (
+    DEFAULT_MAX_ARRAY_LENGTH,
+    DEFAULT_SAMPLE_TIMEOUT_S,
+    MAX_SAMPLE_COUNT,
+)
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
-    MessageSample,
     MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
@@ -50,13 +53,16 @@ class MockAdapter:
         *,
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
-    ) -> list[MessageSample]:
-        # Mock payloads are small structured dicts: the array options do not apply.
+        timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+    ) -> SampleResult:
+        # Mock payloads are small structured dicts and never wait: the array and
+        # timeout options do not apply.
         if count < 0:
             raise AdapterError("count must be >= 0")
         # Validate the topic exists first so the error is the same as `get_topic_info`.
         self.get_topic_info(topic)
-        return fixtures.mock_samples_for(topic, count)
+        samples = fixtures.mock_samples_for(topic, count)
+        return SampleResult(topic=topic, count=len(samples), samples=samples, mode_effective="mock")
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         _reject_non_bag_path(path)

@@ -36,6 +36,7 @@ class BenchRobot(Node):
         self._scan_pub = self.create_publisher(LaserScan, "/scan", qos)
         self._twist_pub = self.create_publisher(Twist, "/cmd_vel_out", qos)
         self._image_pub = self.create_publisher(Image, "/camera/image_raw", qos)
+        self._edge_pub = self.create_publisher(LaserScan, "/scan_edge", qos)
         latched = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -48,6 +49,7 @@ class BenchRobot(Node):
         self.create_timer(0.1, self._tick_scan)
         self.create_timer(0.2, self._tick_twist)
         self.create_timer(0.5, self._tick_image)
+        self.create_timer(0.5, self._tick_edge)
 
         desc = String()
         desc.data = "bench_robot: differential drive, 2D lidar"
@@ -75,6 +77,14 @@ class BenchRobot(Node):
         msg.ranges = [1.0 + i * 0.001 for i in range(N_BEAMS)]
         msg.intensities = [float(i) for i in range(N_BEAMS)]
         self._scan_pub.publish(msg)
+
+    def _tick_edge(self) -> None:
+        # No-return beams: lidar drivers publish `inf`, and `nan` for invalid ones.
+        msg = LaserScan()
+        msg.header.stamp = sim_time_msg(self._now())
+        msg.header.frame_id = "edge_laser"
+        msg.ranges = [math.inf, math.nan, -math.inf, 1.5]
+        self._edge_pub.publish(msg)
 
     def _tick_twist(self) -> None:
         msg = Twist()

@@ -16,6 +16,12 @@ from typing import Annotated
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
+from topicforge.constants import (
+    DEFAULT_SAMPLE_TIMEOUT_S,
+    MAX_SAMPLE_COUNT,
+    MAX_SAMPLE_TIMEOUT_S,
+    MIN_SAMPLE_TIMEOUT_S,
+)
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -61,16 +67,29 @@ _COUNT_PARAM_DESC = (
     "timeout, mock fixture shorter than requested)."
 )
 
+_SAMPLE_COUNT_PARAM_DESC = (
+    "Number of messages to wait for. Defaults to 5; at most 50 (a larger "
+    "request is capped to 50 and `note` says so). 0 returns nothing. "
+    "`SampleResult.count` is how many arrived: fewer than requested when the "
+    "topic publishes slowly or the deadline (`timeout_s`) ran out."
+)
+
+_SAMPLE_TIMEOUT_PARAM_DESC = (
+    "Seconds to wait for the messages, 1..60, default 10. Counted from the "
+    "start of the `ros2` CLI, whose own start-up can take a few seconds on a "
+    "slow machine. Whatever arrived by then is returned with a `note`. Raise "
+    "it for a topic that publishes slower than 1 Hz."
+)
+
 _MAX_ARRAY_LENGTH_PARAM_DESC = (
     "Longest array, string or bytes value to return in full, 1..65536; "
-    "longer ones are cut. A cut array is listed in the sample's "
-    "`_truncated_after_columns` (index of the last kept column); a cut "
-    "string or bytes value is kept as its first N characters plus `...` and "
-    "listed in `_truncated_columns`. Defaults to 128, the `ros2 topic echo` "
-    "default, which cuts a 541-beam `LaserScan` after 128 ranges. Pass null "
-    "to return everything in full (large for images and point clouds; a "
-    "message over the server's size cap, 1 MiB by default, is dropped with a "
-    "note, and a very large message may not print within the echo timeout)."
+    "longer ones are cut after their first N elements or characters and the "
+    "field's dotted path is listed in the sample's `_truncated_fields`. "
+    "Defaults to 128, the `ros2 topic echo` default, which cuts a 541-beam "
+    "`LaserScan` after 128 ranges. Pass null to return everything in full "
+    "(large for images and point clouds; a message over the server's size "
+    "cap, 1 MiB by default, is dropped with a note, and a very large message "
+    "may not print before the deadline)."
 )
 
 _ARRAYS_SUMMARY_PARAM_DESC = (
@@ -175,48 +194,65 @@ def register_tools(
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints` (topics"
             " and wiring) or `peek_dds_samples` on `DCPSPublication` / "
-            "`DCPSSubscription` (raw discovery records). Peek up to `count` "
-            "recent ROS 2 messages from `topic`. `count` defaults to 5 and is "
-            "silently clamped to 50. Returns a "
-            "`SampleResult` `{topic, count, samples, mode_effective, note}` where "
-            "`count` is the actual number of samples returned (may be 0) and "
-            "`mode_effective` is `live` or `mock`. **Live mode** runs `ros2 "
-            "topic echo --csv --once` with a short timeout, so the result is "
-            "empty when no publisher is active and at most one message comes "
-            "back. **Arrays**: by default `ros2 topic echo` cuts arrays at 128 "
-            "elements (a 541-beam `LaserScan` loses beams 128 and up); the cut "
-            "is listed under `_truncated_after_columns` in the sample payload "
-            "and in `note` (cut strings and bytes are listed under "
-            "`_truncated_columns`). Raise `max_array_length` "
-            "(up to 65536, or null for no cut) to read more, or set "
-            "`arrays_summary_only` to see only the non-array fields. A message "
-            "over the 1 MiB size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is "
-            "dropped and `note` says so. "
-            "`samples[i].timestamp_ns` is the message's `header.stamp` (publish"
-            " time) when the message is `Header`-stamped, and 0 for headerless "
-            "types (e.g. `std_msgs/String`). The live parser exposes fields as "
-            "positional CSV columns under `samples[i].payload` keys `col_0`, "
-            "`col_1`, ..., with the verbatim CSV row under the reserved "
-            "`_raw_text` key. **Mock mode** returns structured samples for the "
-            "fictional demo robot. **Raises an MCP error** when no `ros2` CLI "
-            "is available. Read-only; never publishes. Distinct from "
-            "`peek_dds_samples`, which reads the raw DDS layer."
+            "`DCPSSubscription` (raw discovery records). Collect up to `count` "
+            "live messages from a ROS 2 `topic`, waiting at most `timeout_s` "
+            "seconds. Returns a `SampleResult` `{topic, count, samples, "
+            "mode_effective, note}`. **Live mode** streams `ros2 topic echo`, "
+            "matching the publishers' QoS so latched (transient_local) topics "
+            "work, and returns whatever arrived by the deadline: `count` is the "
+            "actual number and `note` says `N of M messages` and why it is short "
+            "(no publisher, or a publisher that is silent, slow or too large to "
+            "print in time). It never hides a timeout behind an empty list "
+            "without a `note`. Each sample has the message fields as nested "
+            "named values in `payload` (e.g. `payload.header.stamp.sec`), "
+            "`timestamp_ns` from the message's `header.stamp` (the publisher's "
+            "clock: sim time on a simulation, 0 for a headerless message such "
+            "as `std_msgs/String`) with `stamp_source` `header` or `none`, and "
+            "`received_ns`, the wall clock when TopicForge read it. **Arrays**: "
+            "by default arrays, strings and bytes are cut at 128 elements (a "
+            "541-beam `LaserScan` loses beams 128 and up); the cut fields are "
+            "listed in `payload._truncated_fields` and in `note`. Raise "
+            "`max_array_length` (up to 65536, or null for no cut) to read more, "
+            "or set `arrays_summary_only` to see only the non-array fields. "
+            "`nan` and `inf` floats come back as strings. A message over the "
+            "1 MiB size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped and "
+            "`note` says so. **Mock mode** returns structured samples for the "
+            "fictional demo robot, instantly. **Raises an MCP error** when no "
+            "`ros2` CLI is available, the topic is unknown, or the CLI fails. "
+            "Read-only; never publishes. Distinct from `peek_dds_samples`, "
+            "which reads the raw DDS layer."
         )
     )
     @instrument(telemetry, "sample_messages")
     def sample_messages(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
-        count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
+        count: Annotated[
+            int,
+            Field(
+                description=_SAMPLE_COUNT_PARAM_DESC,
+                ge=0,
+                json_schema_extra={"maximum": MAX_SAMPLE_COUNT},
+            ),
+        ] = 5,
         max_array_length: Annotated[
             int | None, Field(description=_MAX_ARRAY_LENGTH_PARAM_DESC, ge=1, le=65536)
         ] = 128,
         arrays_summary_only: Annotated[bool, Field(description=_ARRAYS_SUMMARY_PARAM_DESC)] = False,
+        timeout_s: Annotated[
+            float,
+            Field(
+                description=_SAMPLE_TIMEOUT_PARAM_DESC,
+                ge=MIN_SAMPLE_TIMEOUT_S,
+                le=MAX_SAMPLE_TIMEOUT_S,
+            ),
+        ] = DEFAULT_SAMPLE_TIMEOUT_S,
     ) -> SampleResult:
         return inspector.sample_messages(
             topic,
             count,
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
+            timeout_s=timeout_s,
         )
 
     @mcp.tool(
