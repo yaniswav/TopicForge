@@ -5,7 +5,7 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.6] - Unreleased
+## [0.5.6] - 2026-10-02
 
 Fixes from a live run of 0.5.3 and 0.5.5 against OmniSim's simulated
 Clearpath Husky (ROS 2 Humble, Fast DDS, Cyclone backend for the DDS tools),
@@ -1202,7 +1202,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...v0.5.3
