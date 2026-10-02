@@ -23,6 +23,7 @@ from harness import (
     Checks,
     Node,
     TopicForge,
+    matched_on,
     mismatch_on,
     run_example,
     show_mismatches,
@@ -67,6 +68,12 @@ async def scenario(tf: TopicForge, bus: Bus, checks: Checks) -> None:
         not any(m["topic"] == "odom" for m in mismatches["reports"]),
         "odom: RELIABLE writer to BEST_EFFORT reader is allowed, not reported",
     )
+    odom = matched_on(mismatches, "odom")
+    checks.expect(
+        len(odom) == 1 and who(odom[0], "reader", parts) == "lidar_driver",
+        "odom: `matched` lists lidar_driver as the reader DDS will connect",
+    )
+    checks.expect(not matched_on(mismatches, "scan"), "scan: no matched pair")
     await show_received(bus, checks, 3, "nav_planner", "scan", receives=False)
 
     await show_received(bus, checks, 4, "lidar_driver", "odom", receives=True)

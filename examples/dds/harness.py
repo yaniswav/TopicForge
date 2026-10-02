@@ -338,8 +338,13 @@ def who(item: dict[str, Any], role: str, parts: Sequence[dict[str, Any]]) -> str
 
 def show_mismatches(scan: dict[str, Any], parts: Sequence[dict[str, Any]]) -> None:
     """Print the findings of a `MismatchScan`: reports, pairs DDS never matches, hints."""
-    if not (scan["reports"] or scan["not_matched"] or scan["hints"]):
+    if not (scan["reports"] or scan["not_matched"] or scan["hints"] or scan.get("matched")):
         print("    none")
+    for p in scan.get("matched", []):
+        print(
+            f"    {p['topic']}: matched (declared QoS): writer {who(p, 'writer', parts)} "
+            f"-> reader {who(p, 'reader', parts)}"
+        )
     for m in scan["reports"]:
         policies = ", ".join(m["incompatible_policies"])
         print(
@@ -369,6 +374,11 @@ def mismatch_on(scan: dict[str, Any], topic: str, policy: str) -> dict[str, Any]
         ),
         None,
     )
+
+
+def matched_on(scan: dict[str, Any], topic: str) -> list[dict[str, Any]]:
+    """Every pair DDS will connect on `topic` (declared QoS, data flow not observed)."""
+    return [p for p in scan.get("matched", []) if p["topic"] == topic]
 
 
 def reports_on(scan: dict[str, Any], topic: str) -> list[dict[str, Any]]:
