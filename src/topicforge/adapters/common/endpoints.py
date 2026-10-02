@@ -20,6 +20,7 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_topic_name,
     cyclone_extract_type_name,
     cyclone_extract_vendor_id,
+    vendor_id_from_guid,
 )
 from topicforge.adapters.common.qos_normalize import cyclone_qos_to_profile
 from topicforge.adapters.common.topic_filter import no_match_note, resolve_topic_filter
@@ -102,7 +103,8 @@ def endpoint_record(
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": participants_by_guid.get(participant_guid),
-        "participant_vendor": (vendors_by_guid or {}).get(participant_guid, "unknown"),
+        "participant_vendor": (vendors_by_guid or {}).get(participant_guid)
+        or _vendor_from_participant_key(sample),
         "topic": cyclone_extract_topic_name(sample) or "unknown",
         "type_name": cyclone_extract_type_name(sample),
         "type_id": type_id_text(sample),
@@ -238,6 +240,19 @@ def build_endpoint_listing(
         note=note,
         mode_effective=mode_effective,
     )
+
+
+def _vendor_from_participant_key(sample: Any) -> str:
+    """Vendor from the GUID prefix carried by the endpoint itself.
+
+    Used when the participant is no longer in the live cache (it left): the
+    endpoint's `participant_key` still holds the prefix the vendor came from.
+    """
+    key = getattr(sample, "participant_key", None)
+    raw = getattr(key, "bytes", key)
+    if not isinstance(raw, (bytes, bytearray)):
+        return "unknown"
+    return canonicalize_vendor_id(vendor_id_from_guid(bytes(raw)))
 
 
 def participant_vendors(participant_samples: Iterable[Any]) -> dict[str, str]:
