@@ -14,6 +14,7 @@ from typing import Literal
 
 from topicforge.adapters.common.qos_analyzer import (
     RXO_POLICIES,
+    PairAnalysis,
     analyze_pair,
     effective_partitions,
     partitions_match,
@@ -31,7 +32,12 @@ from topicforge.models import (
     NotMatchedPair,
 )
 
-POLICIES_CHECKED: list[str] = [*RXO_POLICIES, "Partition", "type name", "History (risky only)"]
+POLICIES_CHECKED: list[str] = [
+    *RXO_POLICIES,
+    "Partition",
+    "type name",
+    "History (risky only, where announced)",
+]
 
 POLICIES_UNCHECKED: list[str] = [
     "Presentation: not announced reliably by the discovery data TopicForge reads",
@@ -97,12 +103,12 @@ def _separation(reader: EndpointInfo, writer: EndpointInfo) -> NotMatchedPair | 
 
 def _report(
     reader: EndpointInfo, writer: EndpointInfo, mode: Literal["mock", "live"]
-) -> tuple[MismatchReport | None, list[str]]:
-    """RxO analysis of a pair that DDS would match: the report (if any) and unchecked names."""
+) -> tuple[MismatchReport | None, PairAnalysis]:
+    """RxO analysis of a pair that DDS would match: the report (if any) and the analysis."""
     assert reader.qos and writer.qos
     analysis = analyze_pair(reader.qos, writer.qos)
     if not analysis.details:
-        return None, analysis.unchecked
+        return None, analysis
     return (
         MismatchReport(
             topic=reader.topic,
@@ -120,7 +126,7 @@ def _report(
             unchecked=analysis.unchecked,
             mode_effective=mode,
         ),
-        analysis.unchecked,
+        analysis,
     )
 
 
@@ -308,11 +314,18 @@ def _type_id_hints(pairs: list[tuple[EndpointInfo, EndpointInfo]]) -> list[str]:
     return hints
 
 
-def _unchecked_hints(unchecked_counts: dict[str, int], skipped: int) -> list[str]:
+def _unchecked_hints(
+    unchecked_counts: dict[str, int], skipped: int, history_unknown: int
+) -> list[str]:
     hints = [
         f"{count} pair(s) could not be checked on {name}: a side did not announce a value."
         for name, count in sorted(unchecked_counts.items())
     ]
+    if history_unknown:
+        hints.append(
+            f"History was not compared on {history_unknown} pair(s): DDS discovery does not "
+            "carry History, so this is expected and says nothing wrong about these endpoints."
+        )
     if skipped:
         hints.append(
             f"{skipped} endpoint(s) announced no usable QoS profile and were left out of pairing."
@@ -355,6 +368,7 @@ def scan_endpoints(
     pairs_checked = 0
     skipped = 0
     unchecked_counts: dict[str, int] = {}
+    history_unknown = 0
     matched_pairs: list[tuple[EndpointInfo, EndpointInfo]] = []
     matched: list[MatchedPair] = []
     for tname in sorted(scope):
@@ -370,16 +384,19 @@ def scan_endpoints(
                     not_matched.append(apart)
                     continue
                 matched_pairs.append((reader, writer))
-                report, unchecked = _report(reader, writer, mode_effective)
-                for name in unchecked:
+                report, analysis = _report(reader, writer, mode_effective)
+                for name in analysis.unchecked:
                     unchecked_counts[name] = unchecked_counts.get(name, 0) + 1
+                history_unknown += analysis.history_unknown
                 if report is not None:
                     reports.append(report)
                 if report is None or report.severity != "incompatible":
                     matched.append(_matched(reader, writer, hostnames))
 
     near, plain = _orphan_hints(by_topic, scope)
-    hints = scope_hints + near + _unchecked_hints(unchecked_counts, skipped) + plain
+    hints = (
+        scope_hints + near + _unchecked_hints(unchecked_counts, skipped, history_unknown) + plain
+    )
     hints += _type_id_hints(matched_pairs)
     if len(hints) > _MAX_HINTS:
         omitted = len(hints) - _MAX_HINTS

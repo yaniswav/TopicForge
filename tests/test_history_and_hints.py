@@ -148,10 +148,11 @@ def test_known_history_still_gives_risky_finding() -> None:
         (_profile(None), _profile(None)),
     ],
 )
-def test_unknown_history_is_unchecked_not_a_finding(reader: QosProfile, writer: QosProfile) -> None:
+def test_unknown_history_is_flagged_not_a_finding(reader: QosProfile, writer: QosProfile) -> None:
     result = analyze_pair(reader, writer)
     assert result.risky == [] and result.incompatible == []
-    assert "History" in result.unchecked
+    assert result.history_unknown is True
+    assert "History" not in result.unchecked
 
 
 @pytest.mark.parametrize(
@@ -195,7 +196,9 @@ def _ep(
 def test_scan_with_unknown_history_has_no_report_and_one_hint() -> None:
     scan = scan_endpoints([_ep("reader", "rt/x"), _ep("writer", "rt/x")])
     assert scan.reports == [] and scan.matched_total == 1
-    assert any("History" in h and "could not be checked" in h for h in scan.hints)
+    (hint,) = [h for h in scan.hints if "History" in h]
+    assert "not carry History" in hint and "1 pair(s)" in hint
+    assert all("History" not in r.unchecked for r in scan.reports)
 
 
 def test_late_joiner_does_not_depend_on_history() -> None:

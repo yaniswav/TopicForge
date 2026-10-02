@@ -43,9 +43,9 @@ reported with ground truth by the OmniSim team.
   that assumed `history` is always a string must handle `null`.
 - A discovered endpoint that announced no History keeps its reliability,
   durability and the other policies; before, the whole `qos` became `null`.
-- `detect_qos_mismatches`: when History is unknown for a pair where it could
-  matter, the pair is listed as "could not be checked on History" instead of
-  being judged.
+- `detect_qos_mismatches` judges the KEEP_ALL-vs-KEEP_LAST History risk only
+  where both sides announced History; elsewhere one hint states that discovery
+  does not carry it, instead of a warning on every pair.
 
 ### Fixed
 

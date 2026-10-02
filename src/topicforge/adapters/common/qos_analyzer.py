@@ -48,6 +48,7 @@ class PairAnalysis:
     incompatible: list[PolicyMismatch] = field(default_factory=list)
     risky: list[PolicyMismatch] = field(default_factory=list)
     unchecked: list[str] = field(default_factory=list)
+    history_unknown: bool = False
 
     @property
     def details(self) -> list[PolicyMismatch]:
@@ -279,9 +280,8 @@ def analyze_pair(reader: QosProfile, writer: QosProfile) -> PairAnalysis:
     incompatible = _core_findings(reader, writer) + optional
     incompatible.sort(key=lambda f: RXO_POLICIES.index(f.policy))
     risky: list[PolicyMismatch] = []
-    if _history_verdict_unknown(reader, writer):
-        unchecked.append("History")
-    elif reader.history == "KEEP_ALL" and writer.history == "KEEP_LAST":
+    history_unknown = _history_verdict_unknown(reader, writer)
+    if not history_unknown and reader.history == "KEEP_ALL" and writer.history == "KEEP_LAST":
         depth = f" depth {writer.history_depth}" if writer.history_depth is not None else ""
         risky.append(
             _finding(
@@ -292,7 +292,9 @@ def analyze_pair(reader: QosProfile, writer: QosProfile) -> PairAnalysis:
                 "expects to keep under load",
             )
         )
-    return PairAnalysis(incompatible=incompatible, risky=risky, unchecked=unchecked)
+    return PairAnalysis(
+        incompatible=incompatible, risky=risky, unchecked=unchecked, history_unknown=history_unknown
+    )
 
 
 def detect_mismatches(
