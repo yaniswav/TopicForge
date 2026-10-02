@@ -6,6 +6,8 @@ near-name orphan hints, the type id note and the checked/unchecked lists.
 
 from __future__ import annotations
 
+import pytest
+
 from topicforge.adapters.common import scan_endpoints
 from topicforge.adapters.common.qos_scan import levenshtein
 from topicforge.models import EndpointInfo, QosProfile
@@ -258,9 +260,28 @@ def test_late_joiner_not_set_across_hosts_or_for_durable_writer_or_close_join() 
     assert scan_endpoints([w, close], hostnames=same).matched[0].late_joiner is False
 
 
-def test_orphan_near_name_scan_is_fast_on_a_big_bus() -> None:
+def _count_distance_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count edit-distance computations: a deterministic cost measure (wall time
+    on shared CI runners with coverage on varies by 5x)."""
+    from topicforge.adapters.common import qos_scan as mod
+
+    calls = [0]
+    real = mod.levenshtein
+
+    def counting(a: str, b: str, max_distance: int | None = None) -> int:
+        calls[0] += 1
+        return real(a, b, max_distance)
+
+    monkeypatch.setattr(mod, "levenshtein", counting)
+    return calls
+
+
+def test_orphan_near_name_scan_is_fast_on_a_big_bus(monkeypatch: pytest.MonkeyPatch) -> None:
     import time
 
+    from topicforge.adapters.common.qos_scan import _MAX_DISTANCE_CALLS
+
+    calls = _count_distance_calls(monkeypatch)
     eps = []
     for i in range(1000):
         topic = "/" + "x" * (3 + i % 40) + f"/node_{i}"
@@ -269,13 +290,19 @@ def test_orphan_near_name_scan_is_fast_on_a_big_bus() -> None:
             eps.append(_ep("reader", topic))
     started = time.perf_counter()
     scan = scan_endpoints(eps)
-    assert time.perf_counter() - started < 0.5
+    assert calls[0] <= _MAX_DISTANCE_CALLS
+    assert time.perf_counter() - started < 10.0  # never stalls a handler; not a benchmark
     assert scan.topics_scanned == 1000
 
 
-def test_adversarial_look_alike_names_stay_bounded_and_say_so() -> None:
+def test_adversarial_look_alike_names_stay_bounded_and_say_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import time
 
+    from topicforge.adapters.common.qos_scan import _MAX_DISTANCE_CALLS
+
+    calls = _count_distance_calls(monkeypatch)
     eps = []
     for i in range(1000):
         topic = f"/robot_{i:04d}/sensor_{i % 37}/data"
@@ -284,7 +311,8 @@ def test_adversarial_look_alike_names_stay_bounded_and_say_so() -> None:
             eps.append(_ep("reader", topic))
     started = time.perf_counter()
     scan = scan_endpoints(eps)
-    assert time.perf_counter() - started < 3.0
+    assert calls[0] <= _MAX_DISTANCE_CALLS
+    assert time.perf_counter() - started < 20.0  # bounded, not a benchmark
     assert any("too large to compare" in h for h in scan.hints)
 
 

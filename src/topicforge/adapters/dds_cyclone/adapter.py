@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import threading
 import time
 from itertools import islice
 from typing import Any
@@ -300,6 +301,13 @@ def _collect_dynamic_samples(  # pragma: no cover: unreachable, never validated
 # Cyclone call sites without rewrites.
 
 
+# The cyclonedds Python binding is not thread-safe when converting QoS: two
+# threads inside take() at once (two adapters in one process, as in the test
+# suite) corrupted the heap on Windows CI (0xc0000374, 2026-10-02). Every
+# binding call made by this module goes through this one process-wide lock.
+_BINDING_LOCK = threading.RLock()
+
+
 class CycloneDdsAdapter:
     """Read-only adapter backed by Eclipse CycloneDDS Python bindings."""
 
@@ -317,7 +325,9 @@ class CycloneDdsAdapter:
         try:
             # Announce ourselves by name, so that TopicForge's own read-only
             # participant is recognizable in every listing, ours included.
-            self._dp = DomainParticipant(domain_id, qos=Qos(Policy.EntityName("topicforge")))
+            with _BINDING_LOCK:
+                self._dp = DomainParticipant(domain_id, qos=Qos(Policy.EntityName("topicforge")))
+                self._observer = format_participant_key(self._dp.guid)
         except Exception as exc:  # binding-side errors vary by version
             raise AdapterError(
                 f"Failed to create CycloneDDS DomainParticipant on domain {domain_id}: {exc}"
@@ -326,12 +336,13 @@ class CycloneDdsAdapter:
         # One reader per builtin discovery topic, kept for the adapter's
         # lifetime, and read by the tracker thread only.
         self._builtin: dict[Any, tuple[Any, Any]] = {}
-        for topic_class in (
-            BuiltinTopicDcpsParticipant,
-            BuiltinTopicDcpsPublication,
-            BuiltinTopicDcpsSubscription,
-        ):
-            self._builtin_reader(topic_class)
+        with _BINDING_LOCK:
+            for topic_class in (
+                BuiltinTopicDcpsParticipant,
+                BuiltinTopicDcpsPublication,
+                BuiltinTopicDcpsSubscription,
+            ):
+                self._builtin_reader(topic_class)
         self._tracker = DiscoveryTracker(self._build_take_all(), self._caches, domain_id=domain_id)
         self._tracker.start()
         # Stop the tracker before the interpreter and Cyclone tear down: a
@@ -358,7 +369,8 @@ class CycloneDdsAdapter:
         """
         reader, condition = self._builtin_reader(topic_class)
         while True:
-            batch = reader.take(N=limit, condition=condition)
+            with _BINDING_LOCK:
+                batch = reader.take(N=limit, condition=condition)
             sink.extend(batch)
             if len(batch) < limit:
                 return
@@ -453,7 +465,7 @@ class CycloneDdsAdapter:
 
     def _observer_guid(self) -> str:
         """Formatted GUID of this adapter's own participant."""
-        return format_participant_key(self._dp.guid)
+        return self._observer  # read once at startup: no binding call on the handler thread
 
     def list_endpoints(
         self,
