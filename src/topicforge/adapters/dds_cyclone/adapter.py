@@ -349,7 +349,9 @@ class CycloneDdsAdapter:
         entry = self._builtin.get(topic_class)
         if entry is None:
             reader = BuiltinDataReader(self._dp, topic_class)
-            condition = ReadCondition(reader, SampleState.Any | ViewState.Any | InstanceState.Any)
+            # Alive instances only, in any read state: the limit then applies
+            # to live entries, so departed ones can never crowd them out.
+            condition = ReadCondition(reader, SampleState.Any | ViewState.Any | InstanceState.Alive)
             entry = self._builtin[topic_class] = (reader, condition)
         return entry
 
@@ -361,6 +363,8 @@ class CycloneDdsAdapter:
         previous call. Disposed entries (participants or endpoints that are
         gone) are filtered out.
         """
+        # Paid once, by a call made within 2 s of startup. It blocks the MCP
+        # event loop like every handler does today (handlers are synchronous).
         wait = _DISCOVERY_WARMUP_SEC - (time.monotonic() - self._joined_at)
         if wait > 0:
             time.sleep(wait)

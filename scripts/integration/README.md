@@ -60,10 +60,11 @@ artifact is present, and the checks adapt to what was actually started.
 
 ## Participants
 
-Fourteen programs, one per vendor and language that has a usable binding. The
+Twelve programs, one per vendor and language that has an officially released
+binding. The
 contract they all follow (topics, types, QoS, start line) is in
 [`DEMO_CONTRACT.md`](DEMO_CONTRACT.md). The five scenario programs carry the
-QoS story; the nine language participants each write one topic,
+QoS story; the seven language participants each write one topic,
 `DemoHeartbeat`, so that `list_participants` shows one entry per vendor and
 language.
 
@@ -77,13 +78,11 @@ nobody has built or started it.
 | Cyclone DDS | Python | `cyclone_publisher.py` | writes `DemoOdom`, reads `DemoLidarScan` | Tested |
 | Dust DDS | Rust | `dust_publisher/` | writes `DemoLidarScan` | Tested |
 | Dust DDS | Python | `dust_py/` | `DemoHeartbeat` | Tested |
-| Dust DDS | C | `dust_c/` | `DemoHeartbeat` | Tested |
 | Fast DDS | C++ | `fast_publisher_cpp/` | writes `DemoImu`, reads `DemoOdom` | Written, not run |
 | Fast DDS | Python | `fast_py/` | `DemoHeartbeat` | Written, not run (Linux only, built from source) |
 | RTI Connext | Python | `rti_publisher.py` | writes `DemoHeartbeat`, reads `DemoImu` | Written, not run (local, license) |
 | RTI Connext | C | `rti_c/` | `DemoHeartbeat` | Written, not run (local, license) |
 | RTI Connext | C++ | `rti_cpp/` | `DemoHeartbeat` | Written, not run (local, license) |
-| RTI Connext | Rust | `rti_rust/` | `DemoHeartbeat` | Written, not run (local, license, experimental crate) |
 | Cyclone DDS | C | `cyclone_c/` | `DemoHeartbeat` | Written, not run |
 | Cyclone DDS | C++ | `cyclone_cpp/` | `DemoHeartbeat` | Written, not run |
 | Cyclone DDS | Rust | `cyclone_rust/` | `DemoHeartbeat` | Written, not run (first build stopped on a missing `libclang`) |
@@ -93,7 +92,10 @@ nobody has built or started it.
 starts it for ten seconds. It has no run to show yet.
 
 Four vendor and language combinations have no binding at all and are not
-covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust.
+covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust. Two
+have a binding that is not an official release and are left out on purpose:
+the RTI Connector for Rust (experimental, not on crates.io) and the Dust DDS C
+binding (unpublished).
 OpenSplice C++ and Python exist, but the project has had no release since
 2021, so the C program alone stands for OpenSplice.
 
