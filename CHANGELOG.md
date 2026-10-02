@@ -5,7 +5,100 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.6] - 2026-10-02
+
+Fixes from a live run of 0.5.3 and 0.5.5 against OmniSim's simulated
+Clearpath Husky (ROS 2 Humble, Fast DDS, Cyclone backend for the DDS tools),
+reported with ground truth by the OmniSim team.
+
+### Added
+
+- `sample_messages` takes `max_array_length` (1..65536, default 128, null for no
+  cut) and `arrays_summary_only`. A cut is listed under `_truncated_after_columns`
+  in the sample and in `note`.
+- Size caps on returned samples: 1 MiB per message and 4 MiB per call
+  (`TOPICFORGE_MAX_SAMPLE_BYTES` sets the per-message cap). Over-cap messages are
+  dropped and `note` says so. `peek_bag_samples` is capped the same way, and its
+  arrays are cut at 4096 elements.
+- `BagTopicStats` gains `first_timestamp_ns`, `last_timestamp_ns`,
+  `frequency_basis` (`topic_span` or `bag_duration`) and `latched`.
+- `TopicInfo.qos_durability`; `qos_reliability` and `qos_durability` are filled
+  by `get_topic_info` from the publishers' QoS (`mixed` when they disagree).
+- `HealthReport.dds_inactive_reason` says why `dds_backend` is `none`.
+- A real Humble rosbag2 bag from the OmniSim team as a test fixture
+  (`tests/fixtures/bags/omnisim_humble/`).
+
+### Changed
+
+- `list_topics` (live) uses one `ros2 topic list -v` call for publisher and
+  subscriber counts instead of one `ros2 topic info` per topic, falling back to
+  the per-topic calls if the output is not recognized. It leaves QoS null.
+- `rosbags>=0.11.3` is required (0.10 reads a bare `.db3` as ROS 1 and returns
+  message definitions and QoS as plain strings).
+- A latched topic gets no rate only when its messages span under 1 second (a
+  start-up burst such as `/tf_static`); a latched topic published over a longer
+  span keeps its rate. `latched` is unchanged.
+- `analyze_bag` reads per-topic times of an `.mcap` bag only up to 200 MiB and
+  5 s; past either it keeps `bag_duration` rates and says so in the new
+  `BagAnalysis.note`.
+- The `policies_checked` entry for History reads "History (risky only, where
+  announced)".
+- `max_array_length` also cuts strings and bytes to that many characters plus
+  `...`; those cells are listed under `_truncated_columns`.
+- `QosProfile.history` is now optional, and a new `history_note` explains why it
+  is missing. DDS discovery does not carry History (the builtin endpoint data has
+  no such member), so TopicForge reports it only for its own endpoints and for
+  Cyclone DDS peers that set something other than the default. For Fast DDS, RTI
+  and unknown-vendor endpoints it is `null`; for a Cyclone peer, KEEP_LAST depth 1
+  is also `null` because the binding fills missing QoS with that default. Clients
+  that assumed `history` is always a string must handle `null`.
+- A discovered endpoint that announced no History keeps its reliability,
+  durability and the other policies; before, the whole `qos` became `null`.
+- `detect_qos_mismatches` judges the KEEP_ALL-vs-KEEP_LAST History risk only
+  where both sides announced History; elsewhere one hint states that discovery
+  does not carry it, instead of a warning on every pair.
+
+### Fixed
+
+- `sample_messages` with `arrays_summary_only` shifted every CSV column after an
+  array: `<sequence type: float, length: 541>` contains a comma and was split in
+  two. It is one cell now.
+- `sample_messages` returned no samples and no explanation when the echo timed
+  out (for example a large message with `max_array_length` null); `note` now says
+  so.
+- `list_topics` reported 0 publishers and 0 subscribers for a topic missing from
+  `ros2 topic list -v`; it now asks `ros2 topic info` for that topic.
+- `peek_bag_samples` converted a whole numpy array to a list before cutting it
+  at 4096 elements; it now converts only the part it keeps.
+- Fast DDS endpoints no longer report a History taken from the binding's
+  defaults: `detect_qos_mismatches` treats it as not announced, like the other
+  vendors. This path has never run against a real Fast DDS bus.
+- The `tests/fixtures/bags` bag is left out of the sdist.
+- `peek_bag_samples` failed on every Humble `.db3` bag with "Bag contains no
+  type definitions". The reader now gets the type definitions of the distro the
+  bag records, or Humble, and `note` says which. `LaserScan.ranges` and other
+  numeric arrays now come back as lists, not a numpy repr string.
+- `analyze_bag` rates were count / whole-bag duration, 0.1 to 0.7 percent off on
+  periodic topics and meaningless on latched ones (`/tf_static` showed 0.06 Hz,
+  `/rosout` 0.37 Hz). They are now `(n - 1) / (last - first)` per topic, read
+  from the bag when it is readable locally, and latched topics are flagged.
+- `get_topic_info` returned `qos_reliability: null` on every topic although the
+  CLI prints Reliability and Durability per endpoint.
+- `peek_dds_samples('/scan')` reported the topic as not discovered while
+  `rt/scan` and `scan` worked; it now resolves the name like the other DDS tools
+  and says which topic matched.
+- The "DDS module is not active" error said to install the Cyclone binding even
+  when it was installed. It now states the actual cause: backend not selected,
+  binding missing, or adapter failed to start. README wording aligned.
+- CSV `...` truncation cells from `ros2 topic echo` no longer count as data
+  columns.
+- `ros2` output is decoded as UTF-8 on Windows instead of cp1252.
+- `detect_qos_mismatches` no longer calls service, action, `rosout`,
+  `parameter_events` or `ros_discovery_info` topics typos of each other (for
+  example `get_parametersRequest` vs `set_parametersRequest`), and no longer
+  reports them as orphans. Only plain `rt/` topics and bare DDS names are compared.
+- The "differs by N edits" hint is now only given between a writer-only name and
+  a reader-only name; a topic with both sides is never suggested as a typo.
 
 ## [0.5.5] - 2026-10-02
 
@@ -1109,7 +1202,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/yaniswav/TopicForge/compare/v0.5.2...v0.5.3

@@ -6,7 +6,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.ros2_mock import fixtures
-from topicforge.constants import MAX_SAMPLE_COUNT
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -43,7 +43,15 @@ class MockAdapter:
                 return t
         raise AdapterError(f"Unknown topic: {topic!r}")
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]:
+        # Mock payloads are small structured dicts: the array options do not apply.
         if count < 0:
             raise AdapterError("count must be >= 0")
         # Validate the topic exists first so the error is the same as `get_topic_info`.

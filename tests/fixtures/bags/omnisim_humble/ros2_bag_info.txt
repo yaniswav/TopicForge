@@ -1,0 +1,20 @@
+
+Files:             omnisim_husky_topicforge_20261002_190546_0.db3
+Bag size:          793.1 KiB
+Storage id:        sqlite3
+Duration:          35.358876725s
+Start:             Oct  2 2026 19:05:47.007805503 (1790957147.007805503)
+End:               Oct  2 2026 19:06:22.366682228 (1790957182.366682228)
+Messages:          1434
+Topic information: Topic: /imu/data | Type: sensor_msgs/msg/Imu | Count: 177 | Serialization Format: cdr
+                   Topic: /scan | Type: sensor_msgs/msg/LaserScan | Count: 177 | Serialization Format: cdr
+                   Topic: /gps/local | Type: geometry_msgs/msg/PointStamped | Count: 177 | Serialization Format: cdr
+                   Topic: /clock | Type: rosgraph_msgs/msg/Clock | Count: 353 | Serialization Format: cdr
+                   Topic: /tf | Type: tf2_msgs/msg/TFMessage | Count: 266 | Serialization Format: cdr
+                   Topic: /events/write_split | Type: rosbag2_interfaces/msg/WriteSplitEvent | Count: 0 | Serialization Format: cdr
+                   Topic: /husky/joint_states | Type: sensor_msgs/msg/JointState | Count: 89 | Serialization Format: cdr
+                   Topic: /parameter_events | Type: rcl_interfaces/msg/ParameterEvent | Count: 3 | Serialization Format: cdr
+                   Topic: /odom | Type: nav_msgs/msg/Odometry | Count: 177 | Serialization Format: cdr
+                   Topic: /rosout | Type: rcl_interfaces/msg/Log | Count: 13 | Serialization Format: cdr
+                   Topic: /tf_static | Type: tf2_msgs/msg/TFMessage | Count: 2 | Serialization Format: cdr
+

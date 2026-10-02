@@ -61,6 +61,24 @@ _COUNT_PARAM_DESC = (
     "timeout, mock fixture shorter than requested)."
 )
 
+_MAX_ARRAY_LENGTH_PARAM_DESC = (
+    "Longest array, string or bytes value to return in full, 1..65536; "
+    "longer ones are cut. A cut array is listed in the sample's "
+    "`_truncated_after_columns` (index of the last kept column); a cut "
+    "string or bytes value is kept as its first N characters plus `...` and "
+    "listed in `_truncated_columns`. Defaults to 128, the `ros2 topic echo` "
+    "default, which cuts a 541-beam `LaserScan` after 128 ranges. Pass null "
+    "to return everything in full (large for images and point clouds; a "
+    "message over the server's size cap, 1 MiB by default, is dropped with a "
+    "note, and a very large message may not print within the echo timeout)."
+)
+
+_ARRAYS_SUMMARY_PARAM_DESC = (
+    "When true, array fields are replaced by a short type and length summary "
+    "instead of their elements. Use it to inspect the non-array fields of "
+    "large messages (images, scans, point clouds). Defaults to false."
+)
+
 _PATH_PARAM_DESC = (
     "Path to a bag: a file ending in `.mcap` or `.db3`, or a `rosbag2_*` "
     "directory. `peek_bag_samples` also reads ROS 1 `.bag` files; "
@@ -95,7 +113,9 @@ def register_tools(
             "invisible), the server version and the server-side sample cap. "
             "**Reading `mode`**: `live` with `ros_backend` `none` means the DDS"
             " tools are live and the ROS 2 tools are not available (a DDS-only "
-            "setup: use `list_endpoints` for topics and wiring). "
+            "setup: use `list_endpoints` for topics and wiring). With "
+            "`dds_backend` `none`, `dds_inactive_reason` says why: backend not "
+            "selected, binding not installed, or adapter failed to start. "
             "`payload_decoding` is `disabled`: DDS user-topic payloads are not "
             "decoded. `dds_security` is `not_supported`: on a secured domain "
             "participants show up but protected endpoints and data do not. For "
@@ -118,9 +138,10 @@ def register_tools(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List "
             "every ROS 2 topic on the current graph (or the mock graph in mock "
             "mode). Returns `list[TopicInfo]`: each entry carries `name`, "
-            "`message_type`, `publisher_count`, `subscriber_count`, "
-            "`qos_reliability`, and `mode_effective` (`live` or `mock`) to tell "
-            "a real graph from fixtures. **Empty list** "
+            "`message_type`, `publisher_count`, `subscriber_count`, and "
+            "`mode_effective` (`live` or `mock`) to tell a real graph from "
+            "fixtures. Live mode leaves `qos_reliability` and `qos_durability` "
+            "null here: call `get_topic_info` for a topic's QoS. **Empty list** "
             "when the graph has no topics or when live discovery times out. "
             "**Raises an MCP error** when no `ros2` CLI is available (DDS-only "
             "setup). Read-only; no side effects."
@@ -135,7 +156,11 @@ def register_tools(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Return"
             " info for a single ROS 2 topic. `topic` must be a fully qualified "
             "name, e.g. `/cmd_vel`. Returns a `TopicInfo` with `mode_effective` "
-            "(`live` or `mock`). **Raises an MCP error** if the topic name is "
+            "(`live` or `mock`) and, in live mode, the publishers' "
+            "`qos_reliability` (`reliable` / `best_effort` / `mixed`) and "
+            "`qos_durability` (`volatile` / `transient_local` / `mixed`; "
+            "`transient_local` marks a latched topic such as `/tf_static`). "
+            "**Raises an MCP error** if the topic name is "
             "malformed, the topic is unknown to the active graph, or no `ros2` "
             "CLI is available. Read-only; no side effects."
         )
@@ -153,11 +178,20 @@ def register_tools(
             "`DCPSSubscription` (raw discovery records). Peek up to `count` "
             "recent ROS 2 messages from `topic`. `count` defaults to 5 and is "
             "silently clamped to 50. Returns a "
-            "`SampleResult` `{topic, count, samples, mode_effective}` where "
+            "`SampleResult` `{topic, count, samples, mode_effective, note}` where "
             "`count` is the actual number of samples returned (may be 0) and "
             "`mode_effective` is `live` or `mock`. **Live mode** runs `ros2 "
             "topic echo --csv --once` with a short timeout, so the result is "
-            "empty when no publisher is active. "
+            "empty when no publisher is active and at most one message comes "
+            "back. **Arrays**: by default `ros2 topic echo` cuts arrays at 128 "
+            "elements (a 541-beam `LaserScan` loses beams 128 and up); the cut "
+            "is listed under `_truncated_after_columns` in the sample payload "
+            "and in `note` (cut strings and bytes are listed under "
+            "`_truncated_columns`). Raise `max_array_length` "
+            "(up to 65536, or null for no cut) to read more, or set "
+            "`arrays_summary_only` to see only the non-array fields. A message "
+            "over the 1 MiB size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is "
+            "dropped and `note` says so. "
             "`samples[i].timestamp_ns` is the message's `header.stamp` (publish"
             " time) when the message is `Header`-stamped, and 0 for headerless "
             "types (e.g. `std_msgs/String`). The live parser exposes fields as "
@@ -173,14 +207,32 @@ def register_tools(
     def sample_messages(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
+        max_array_length: Annotated[
+            int | None, Field(description=_MAX_ARRAY_LENGTH_PARAM_DESC, ge=1, le=65536)
+        ] = 128,
+        arrays_summary_only: Annotated[bool, Field(description=_ARRAYS_SUMMARY_PARAM_DESC)] = False,
     ) -> SampleResult:
-        return inspector.sample_messages(topic, count)
+        return inspector.sample_messages(
+            topic,
+            count,
+            max_array_length=max_array_length,
+            arrays_summary_only=arrays_summary_only,
+        )
 
     @mcp.tool(
         description=(
             "Summarize a ROS 2 bag at `path`. Returns a `BagAnalysis` with "
             "storage format, duration, message count, per-topic stats, "
-            "detected anomalies and `mode_effective` (`live` or `mock`). **Live "
+            "detected anomalies and `mode_effective` (`live` or `mock`). Per "
+            "topic, `frequency_hz` is `(n - 1) / (last - first message time)` "
+            "of that topic (`frequency_basis` `topic_span`), with "
+            "`first_timestamp_ns`, `last_timestamp_ns` and `latched`; a "
+            "`latched` topic whose messages all fall within 1 second (e.g. "
+            "`/tf_static`, a start-up burst) has a null `frequency_hz`, while "
+            "a latched topic published over a longer span keeps its rate. "
+            "When the bag cannot be read locally, or is a large `.mcap` "
+            "(over 200 MiB), the rate falls back to count / bag duration "
+            "(`bag_duration`) and `note` says why. **Live "
             "mode** runs `ros2 bag info` and accepts `.mcap` and `.db3` "
             "files plus `rosbag2_*` directories (ROS 1 `.bag` files are not "
             "readable by `ros2 bag info`; use `peek_bag_samples` for those); **mock mode** returns fixture "
@@ -270,7 +322,8 @@ def register_tools(
             "`policies_unchecked`. Checked: Partition (with `*` and `?` "
             "wildcards), type name, Reliability, Durability, Deadline, "
             "Liveliness, LatencyBudget, Ownership, DestinationOrder, "
-            "DataRepresentation, History (risky only). Not checked: see "
+            "DataRepresentation, History (risky only, and only where announced: "
+            "discovery does not carry it). Not checked: see "
             "`policies_unchecked`. **An empty `reports` with a non-empty "
             "`not_matched` still means no data flows**, and an all-empty "
             "result does not prove the bus healthy: discovery shows the QoS "
@@ -316,7 +369,9 @@ def register_tools(
             "state (one record per live participant or endpoint), not a stream "
             "of recent events (use `participant_events` for history). "
             "`DCPSPublication` and `DCPSSubscription` are the raw writers and "
-            "readers behind `list_endpoints`. (b) User-defined topics: payload "
+            "readers behind `list_endpoints`. The topic may be given as `/scan`, "
+            "`scan` or `rt/scan`: all three resolve to the same topic. (b) "
+            "User-defined topics: payload "
             "decoding is DISABLED on every backend. The call returns `count` 0,"
             " `samples` empty and a `note` saying so; that does NOT mean the "
             "topic is silent. Use `list_endpoints` for the topic's presence, "
@@ -462,7 +517,11 @@ def register_tools(
             " to 50. **Requires the `rosbags` library** (`pip install "
             "topicforge[bags]`) and the ROS 2 side of the runtime: on a DDS-"
             "only setup it raises an error. The mock backend returns fixture "
-            "samples on canned bag paths. **Read-only by "
+            "samples on canned bag paths. Bags that embed no message "
+            "definitions (rosbag2 `.db3` from Humble) are decoded with the "
+            "type definitions of the bag's recorded distro, or Humble when it "
+            "records none; `note` says which. Arrays over 4096 elements are "
+            "cut and `note` lists the fields. **Read-only by "
             "architecture**: nothing writes to the bag file. **Raises an MCP "
             "error** when the bag path does not exist, the topic is not present"
             " in the bag, or `rosbags` is not installed."

@@ -78,7 +78,7 @@ pip install topicforge[dds]                      # Eclipse CycloneDDS ([dds-cycl
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `fast` and `auto` (`fast`, then `cyclone`, then `mock`, whichever binding imports). An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the five ROS2 graph and bag tools to the CLI and the seven DDS tools to the DDS backend.
+`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `fast` and `auto` (`fast`, then `cyclone`, then `mock`, whichever binding imports). The default `mock` selects no DDS backend: installing the Cyclone binding is not enough, you must also set `TOPICFORGE_DDS_BACKEND=cyclone`. With `TOPICFORGE_MODE=live` and no backend selected, the DDS tools raise `DDS module is not active: ...` with the actual cause (backend not selected, binding not installed, or binding installed but the adapter failed to start), and `health_check` reports `dds_backend: "none"` plus `dds_inactive_reason`. An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the five ROS2 graph and bag tools to the CLI and the seven DDS tools to the DDS backend.
 
 A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Python binding is not on PyPI: build it from eProsima's sources and install it next to TopicForge. There is no `[dds-fast]` extra. `opendds` and `dust` are permanent stubs that never serve. `rti`, `opensplice`, `coredx` and `intercom` are rejected with a configuration error,; Cyclone already sees those vendors' participants through standard discovery. Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
@@ -90,8 +90,9 @@ A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Pyt
 | `TOPICFORGE_LOG_LEVEL`     | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                                                               |
 | `TOPICFORGE_ROS2_BIN`      | `ros2`  | Name or path of the ROS2 CLI binary                                                               |
 | `TOPICFORGE_TELEMETRY`     | `off`   | Opt-in anonymous telemetry; an unrecognized value aborts startup. See [Telemetry](#telemetry)     |
-| `TOPICFORGE_DDS_BACKEND`   | `mock`  | `mock`, `cyclone`, `fast`, `auto` (`opendds` and `dust` are stubs)                                 |
+| `TOPICFORGE_DDS_BACKEND`   | `mock`  | `mock` (no DDS backend), `cyclone`, `fast`, `auto` (`opendds` and `dust` are stubs)                |
 | `TOPICFORGE_DDS_DOMAIN_ID` | `0`     | DDS domain observed (0..232). Joined at startup; changing it needs a restart                      |
+| `TOPICFORGE_MAX_SAMPLE_BYTES` | `1048576` | Size cap for one sampled message (1 KiB..64 MiB); a call returns at most 4 times that. Over-cap messages are dropped with a note |
 
 Samples with comments are in [`.env.example`](.env.example). Any invalid value stops the server with `topicforge: configuration error: ...` and exit code 2, so a typo cannot silently change behaviour.
 
@@ -104,8 +105,8 @@ Samples with comments are in [`.env.example`](.env.example). Any invalid value s
 - Single domain: the server observes the domain it joined at startup; changing it needs a restart.
 - DDS Security is not handled. A participant without credentials sees an empty secure bus. `detect_qos_mismatches` checks Partition, type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership (kind), DestinationOrder and DataRepresentation (History as a risk); Presentation, XTypes assignability and runtime behavior are not checked, and the result lists them in `policies_unchecked`. It returns a `MismatchScan` envelope: read `reports` for the mismatches.
 - Fast DDS serves no `list_endpoints`.
-- `sample_messages` (live) runs `ros2 topic echo --csv --once` with a short timeout; a topic with no current publisher returns an empty sample. `timestamp_ns` is the message `header.stamp` for `Header`-stamped types and `0` for headerless ones.
-- `analyze_bag` (live) parses `ros2 bag info` text and does not use `rosbags`; anomaly detection is mock-only. `peek_bag_samples` is the only tool that reads the file itself, through `rosbags`, and is served only by the ROS2 CLI adapter or the mock. Without `ros2`, bag tools return fixtures: check `health_check` for `mode: "mock"` before trusting bag output.
+- `sample_messages` (live) runs `ros2 topic echo --csv --once` with a short timeout, so it returns at most one message, and a topic with no current publisher returns an empty sample. `timestamp_ns` is the message `header.stamp` for `Header`-stamped types and `0` for headerless ones. Arrays are cut at 128 elements by default; `max_array_length` (1..65536, or null for no cut) and `arrays_summary_only` change that, and a cut is listed under `_truncated_after_columns`.
+- `analyze_bag` (live) parses `ros2 bag info` text for the totals and counts; anomaly detection is mock-only. Per-topic times, rates (`(n - 1) / span`) and `latched` are added when the bag can be read locally (`.db3` with the standard library, `.mcap` with `rosbags`), else rates fall back to count / bag duration (`frequency_basis`). `peek_bag_samples` reads the file itself, through `rosbags`, and is served only by the ROS2 CLI adapter or the mock; bags that embed no message definitions (Humble `.db3`) are decoded with the Humble definitions, or the distro the bag records, and `note` says so. Without `ros2`, bag tools return fixtures: check `health_check` for `mode: "mock"` before trusting bag output.
 - Synchronous handlers: the tools run on the MCP event loop; on Windows a hung `ros2` launcher can block the server.
 - No streaming or push subscriptions: tools are strictly request/response.
 
@@ -128,7 +129,7 @@ When on, each tool call emits one event with exactly six fields:
 | `tool_name`  | `"list_topics"` | One of the twelve tools, never argument values              |
 | `latency_ms` | `12.34`         | Handler wall-clock duration, 2 decimals                     |
 | `mode`       | `"mock"`        | Mode of the adapter actually serving: `mock` or `live`      |
-| `version`    | `"0.5.5"`       | TopicForge server version                                   |
+| `version`    | `"0.5.6"`       | TopicForge server version                                   |
 | `session_id` | `"a1b2c3..."`   | Random UUID per process, never persisted                    |
 | `success`    | `true`          | Whether the handler returned or raised                      |
 

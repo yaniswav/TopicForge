@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from topicforge.adapters.common.dds_helpers import format_guid
+from topicforge.adapters.common.qos_normalize import apply_history_policy
 from topicforge.adapters.common.qos_scan import scan_endpoints
 from topicforge.models import EndpointInfo, MismatchScan, QosProfile
 
@@ -35,7 +36,8 @@ def _info(
         role=role,
         participant_guid="unknown",
         topic=topic,
-        qos=qos_to_profile(sample),
+        # Fast DDS discovery carries no History; the vendor callable may fill a default.
+        qos=apply_history_policy(qos_to_profile(sample), vendor="fast"),
         is_observer=False,
         domain_id=0,
         mode_effective=mode_effective,

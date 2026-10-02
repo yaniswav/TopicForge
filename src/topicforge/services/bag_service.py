@@ -6,12 +6,18 @@
 parsing of `ros2 bag info`.
 
 Decoded samples share the payload shape of `peek_dds_samples`, through
-`adapters/common/cdr_decoder.py`.
+`adapters/common/cdr_decoder.py`. Per-topic spans and latching are in
+`bag_stats.py`.
+
+rosbag2 bags recorded before Jazzy (`.db3` on Humble) embed no message
+definitions, so the reader is given the typestore of the bag's distro, or
+Humble when the bag does not record one.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +29,13 @@ from topicforge.models import (
     BagTopicStats,
     MessageSample,
     SampleResult,
+)
+from topicforge.services.bag_stats import (
+    TopicSpan,
+    build_topic_stats,
+    detect_ros_distro,
+    parse_offered_qos_latched,
+    read_db3_spans,
 )
 
 log = logging.getLogger(__name__)
@@ -37,6 +50,16 @@ _ROSBAGS_REQUIRED_MSG = (
     "pip install topicforge[bags]. `analyze_bag` can still summarize a bag "
     "through `ros2 bag info` when ROS 2 is installed; `peek_bag_samples` cannot."
 )
+_MAX_ARRAY_ELEMENTS = 4096
+# Per-topic times of a non-db3 bag need a pass over every message; past either
+# budget the scan is skipped and the caller keeps whole-bag rates.
+SPAN_SCAN_MAX_BYTES = 200 * 1024 * 1024
+SPAN_SCAN_MAX_SECONDS = 5.0
+_SCAN_CLOCK_CHECK_EVERY = 1024
+
+
+class _ScanBudgetExceeded(Exception):
+    """The message scan for per-topic spans ran past its time budget."""
 
 
 def detect_bag_format(path: str) -> str:
@@ -130,7 +153,7 @@ class BagService:
 
         clamped = min(count, MAX_SAMPLE_COUNT)
         try:
-            samples = _peek_with_rosbags(resolved, topic, clamped)
+            samples, note = _peek_with_rosbags(resolved, topic, clamped)
         except AdapterError:
             raise
         except Exception as exc:  # pragma: no cover: defensive
@@ -143,56 +166,183 @@ class BagService:
             count=len(samples),
             samples=samples,
             mode_effective=mode_effective,  # type: ignore[arg-type]
+            note=note,
         )
+
+
+def read_topic_spans(path: Path) -> dict[str, TopicSpan] | None:
+    """Per-topic spans of the bag at `path`, or `None` when it cannot be read here.
+
+    See `scan_topic_spans` for the budget on non-db3 bags. Never raises.
+    """
+    return scan_topic_spans(path)[0]
+
+
+def scan_topic_spans(path: Path) -> tuple[dict[str, TopicSpan] | None, str | None]:
+    """`(spans, note)` for the bag at `path`; `spans` is `None` when not readable here.
+
+    `.db3` bags need only the standard library. Other containers need
+    `rosbags` and a scan of their message timestamps, which is skipped when
+    the bag exceeds `SPAN_SCAN_MAX_BYTES` or the scan runs past
+    `SPAN_SCAN_MAX_SECONDS`; `note` then says why. Never raises.
+    """
+    try:
+        spans = read_db3_spans(path)
+        if spans is not None:
+            return spans, None
+        if not is_rosbags_available() or not path.exists():
+            return None, None
+        size = _bag_size_bytes(path)
+        if size > SPAN_SCAN_MAX_BYTES:
+            return None, (
+                f"Per-topic rates are count / bag duration: the bag is {size // (1024 * 1024)} MiB, "
+                f"over the {SPAN_SCAN_MAX_BYTES // (1024 * 1024)} MiB limit for reading "
+                "per-topic message times."
+            )
+        reader, _ = _open_reader(path)
+        with reader:
+            return _spans_from_messages(reader, time_budget_s=SPAN_SCAN_MAX_SECONDS), None
+    except _ScanBudgetExceeded:
+        return None, (
+            "Per-topic rates are count / bag duration: reading per-topic message times "
+            f"took longer than {SPAN_SCAN_MAX_SECONDS:g} s and was stopped."
+        )
+    except Exception as exc:
+        log.debug("could not read per-topic spans from %s: %s", path, exc)
+        return None, None
+
+
+def _bag_size_bytes(path: Path) -> int:
+    """Total size of the bag file, or of the files under a bag directory."""
+    if path.is_file():
+        return path.stat().st_size
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _typestore_for(resolved: Path) -> tuple[Any, str]:
+    """The typestore for bags without embedded definitions, and a description of it.
+
+    The distro the bag records when `rosbags` has a store for it, else ROS 2 Humble.
+    """
+    from rosbags.typesys import Stores, get_typestore  # type: ignore[import-not-found]
+
+    distro = detect_ros_distro(resolved)
+    store = Stores.__members__.get(f"ROS2_{distro.upper()}") if distro else None
+    if store is not None and distro:
+        return get_typestore(store), f"ROS 2 {distro.capitalize()} (the distro the bag records)"
+    reason = (
+        f"the bag records an unknown distro {distro!r}" if distro else "the bag records no distro"
+    )
+    return get_typestore(Stores.ROS2_HUMBLE), f"ROS 2 Humble (assumed: {reason})"
+
+
+def _open_reader(resolved: Path) -> tuple[Any, str]:
+    """An `AnyReader` over `resolved` with a default typestore, and that typestore's description."""
+    from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
+
+    typestore, description = _typestore_for(resolved)
+    return AnyReader([resolved], default_typestore=typestore), description
+
+
+def _lacks_embedded_definitions(reader: Any) -> bool:
+    """True when some connection carries no message definition (`.db3` recorded before Jazzy)."""
+    for connection in reader.connections:
+        fmt = getattr(getattr(connection, "msgdef", None), "format", None)
+        if getattr(fmt, "name", "") == "NONE":
+            return True
+    return False
+
+
+def _connection_latched(connection: Any) -> bool | None:
+    """Latching of a bag connection: the ROS 1 flag, or a transient_local ROS 2 profile."""
+    ext = getattr(connection, "ext", None)
+    if ext is None:
+        return None
+    if hasattr(ext, "latching"):
+        return None if ext.latching is None else bool(ext.latching)
+    profiles = getattr(ext, "offered_qos_profiles", None)
+    if not profiles:
+        return None
+    if isinstance(profiles, str):
+        return parse_offered_qos_latched(profiles)
+    return any(
+        getattr(getattr(p, "durability", None), "name", "") == "TRANSIENT_LOCAL" for p in profiles
+    )
+
+
+def _spans_from_messages(
+    reader: Any, *, time_budget_s: float | None = None
+) -> dict[str, TopicSpan]:
+    """Per-topic spans from message timestamps, without deserializing (non-db3 bags).
+
+    Raises `_ScanBudgetExceeded` when `time_budget_s` runs out.
+    """
+    first: dict[str, int] = {}
+    last: dict[str, int] = {}
+    count: dict[str, int] = {}
+    deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
+    for seen, (connection, timestamp, _raw) in enumerate(reader.messages(), start=1):
+        if (
+            deadline is not None
+            and seen % _SCAN_CLOCK_CHECK_EVERY == 0
+            and time.monotonic() > deadline
+        ):
+            raise _ScanBudgetExceeded
+        topic = connection.topic
+        ts = int(timestamp)
+        count[topic] = count.get(topic, 0) + 1
+        first[topic] = min(first.get(topic, ts), ts)
+        last[topic] = max(last.get(topic, ts), ts)
+    spans: dict[str, TopicSpan] = {}
+    for connection in reader.connections:
+        topic = connection.topic
+        if topic not in spans:
+            spans[topic] = TopicSpan(
+                name=topic,
+                message_type=connection.msgtype,
+                count=count.get(topic, 0),
+                first_ns=first.get(topic),
+                last_ns=last.get(topic),
+                latched=_connection_latched(connection),
+            )
+    return spans
 
 
 def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
     """Open `resolved` with `rosbags` and compute per-topic stats.
 
     Returns a dict with `duration_seconds`, `message_count`, `topics`,
-    `samples_decoded_count` and `recording_duration_ns`.
+    `samples_decoded_count` and `recording_duration_ns`. `.db3` spans come
+    from `sqlite3`; other containers are scanned through `rosbags`.
     """
-    from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
-
-    with AnyReader([resolved]) as reader:
+    reader, _ = _open_reader(resolved)
+    with reader:
         start = getattr(reader, "start_time", None)
         end = getattr(reader, "end_time", None)
+        duration_ns = 0
         if isinstance(start, int) and isinstance(end, int) and end >= start:
             duration_ns = end - start
-        else:
-            duration_ns = 0
 
-        topics: list[BagTopicStats] = []
-        total_messages = 0
-        for connection in reader.connections:
-            count = getattr(connection, "msgcount", 0) or 0
-            total_messages += count
-            duration_s = duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0
-            frequency = (count / duration_s) if duration_s > 0 and count > 0 else None
-            topics.append(
-                BagTopicStats(
-                    name=getattr(connection, "topic", "<unknown>"),
-                    message_type=getattr(connection, "msgtype", "<unknown>"),
-                    message_count=count,
-                    frequency_hz=frequency,
-                )
-            )
+        spans = read_db3_spans(resolved) or _spans_from_messages(reader)
+        topics: list[BagTopicStats] = [build_topic_stats(span) for span in spans.values()]
 
     return {
         "duration_seconds": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
-        "message_count": total_messages,
+        "message_count": sum(t.message_count for t in topics),
         "topics": topics,
         "samples_decoded_count": 0,  # analysis reads stats only; peek_samples decodes
         "recording_duration_ns": duration_ns if duration_ns > 0 else None,
     }
 
 
-def _peek_with_rosbags(resolved: Path, topic: str, count: int) -> list[MessageSample]:
-    """Up to `count` decoded samples on `topic`; `AdapterError` if the bag has no such topic."""
-    from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
-
+def _peek_with_rosbags(
+    resolved: Path, topic: str, count: int
+) -> tuple[list[MessageSample], str | None]:
+    """Up to `count` decoded samples on `topic` and a note; `AdapterError` if the topic is absent."""
     samples: list[MessageSample] = []
-    with AnyReader([resolved]) as reader:
+    capped: set[str] = set()
+    reader, typestore_desc = _open_reader(resolved)
+    with reader:
         connections = [c for c in reader.connections if getattr(c, "topic", None) == topic]
         if not connections:
             raise AdapterError(
@@ -201,6 +351,7 @@ def _peek_with_rosbags(resolved: Path, topic: str, count: int) -> list[MessageSa
             )
 
         message_type = getattr(connections[0], "msgtype", "<unknown>")
+        assumed = _lacks_embedded_definitions(reader)
         for connection, timestamp, raw in reader.messages(connections=connections):
             if len(samples) >= count:
                 break
@@ -210,10 +361,37 @@ def _peek_with_rosbags(resolved: Path, topic: str, count: int) -> list[MessageSa
                     topic=topic,
                     message_type=message_type,
                     timestamp_ns=int(timestamp),
-                    payload=payload,
+                    payload=_cap_arrays(payload, capped),
                 )
             )
-    return samples
+
+    notes: list[str] = []
+    if assumed:
+        notes.append(
+            "The bag stores no message definitions; samples were decoded with the "
+            f"{typestore_desc} type definitions."
+        )
+    if capped:
+        notes.append(
+            f"Arrays longer than {_MAX_ARRAY_ELEMENTS} elements were cut to their first "
+            f"{_MAX_ARRAY_ELEMENTS} (fields: {', '.join(sorted(capped))})."
+        )
+    return samples, " ".join(notes) or None
+
+
+def _cap_arrays(payload: dict[str, Any], capped: set[str], prefix: str = "") -> dict[str, Any]:
+    """Cut lists over `_MAX_ARRAY_ELEMENTS`, recording the field paths in `capped`."""
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        path = f"{prefix}{key}"
+        if isinstance(value, list) and len(value) > _MAX_ARRAY_ELEMENTS:
+            capped.add(path)
+            out[key] = value[:_MAX_ARRAY_ELEMENTS]
+        elif isinstance(value, dict):
+            out[key] = _cap_arrays(value, capped, f"{path}.")
+        else:
+            out[key] = value
+    return out
 
 
 def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, Any]:
@@ -228,7 +406,7 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
 
     from topicforge.adapters.common.cdr_decoder import decode_dynamic_sample
 
-    decoded = decode_dynamic_sample(deserialized)
+    decoded = decode_dynamic_sample(deserialized, max_array_elements=_MAX_ARRAY_ELEMENTS)
     if isinstance(decoded, dict):
         decoded.setdefault("_msgtype", getattr(connection, "msgtype", "<unknown>"))
     return decoded

@@ -10,7 +10,7 @@ from typing import Any, Literal
 from topicforge import __version__
 from topicforge.adapters.base import MiddlewareAdapter
 from topicforge.config import Settings
-from topicforge.config.settings import _DDS_BACKEND_MODULES, _module_is_importable
+from topicforge.config.settings import DDS_BACKEND_MODULES, module_is_importable
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import HealthReport
 
@@ -51,6 +51,11 @@ class HealthService:
             server_version=__version__,
             max_sample_count=MAX_SAMPLE_COUNT,
             dds_backend=dds_backend,
+            dds_inactive_reason=(
+                getattr(self._adapter, "dds_inactive_reason", None)
+                if dds_backend == "none"
+                else None
+            ),
             dds_domain_id=self._settings.dds_domain_id,
             observed_domain_note=(
                 f"Only DDS domain {self._settings.dds_domain_id} (joined at startup) is "
@@ -103,5 +108,5 @@ def _middleware_available(dds_backend: str, settings: Settings) -> bool:
     """
     if dds_backend != "none":
         return True
-    module = _DDS_BACKEND_MODULES.get(settings.dds_backend)
-    return module is not None and _module_is_importable(module)
+    module = DDS_BACKEND_MODULES.get(settings.dds_backend)
+    return module is not None and module_is_importable(module)

@@ -16,6 +16,7 @@ import logging
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import validate_domain_id
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -64,7 +65,14 @@ class OpenDdsAdapter:
     def get_topic_info(self, topic: str) -> TopicInfo:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(
+        self,
+        topic: str,
+        count: int,
+        *,
+        max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
+        arrays_summary_only: bool = False,
+    ) -> list[MessageSample]:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:

@@ -100,7 +100,7 @@ class _StubDdsAdapter:
     def get_topic_info(self, topic: str) -> TopicInfo:
         raise AdapterError("dds-only")
 
-    def sample_messages(self, topic: str, count: int) -> list[MessageSample]:
+    def sample_messages(self, topic: str, count: int, **_options: object) -> list[MessageSample]:
         raise AdapterError("dds-only")
 
     def analyze_bag(self, path: str) -> BagAnalysis:

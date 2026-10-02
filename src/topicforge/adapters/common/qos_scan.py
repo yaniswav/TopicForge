@@ -14,6 +14,7 @@ from typing import Literal
 
 from topicforge.adapters.common.qos_analyzer import (
     RXO_POLICIES,
+    PairAnalysis,
     analyze_pair,
     effective_partitions,
     partitions_match,
@@ -31,7 +32,12 @@ from topicforge.models import (
     NotMatchedPair,
 )
 
-POLICIES_CHECKED: list[str] = [*RXO_POLICIES, "Partition", "type name", "History (risky only)"]
+POLICIES_CHECKED: list[str] = [
+    *RXO_POLICIES,
+    "Partition",
+    "type name",
+    "History (risky only, where announced)",
+]
 
 POLICIES_UNCHECKED: list[str] = [
     "Presentation: not announced reliably by the discovery data TopicForge reads",
@@ -97,12 +103,12 @@ def _separation(reader: EndpointInfo, writer: EndpointInfo) -> NotMatchedPair | 
 
 def _report(
     reader: EndpointInfo, writer: EndpointInfo, mode: Literal["mock", "live"]
-) -> tuple[MismatchReport | None, list[str]]:
-    """RxO analysis of a pair that DDS would match: the report (if any) and unchecked names."""
+) -> tuple[MismatchReport | None, PairAnalysis]:
+    """RxO analysis of a pair that DDS would match: the report (if any) and the analysis."""
     assert reader.qos and writer.qos
     analysis = analyze_pair(reader.qos, writer.qos)
     if not analysis.details:
-        return None, analysis.unchecked
+        return None, analysis
     return (
         MismatchReport(
             topic=reader.topic,
@@ -120,7 +126,7 @@ def _report(
             unchecked=analysis.unchecked,
             mode_effective=mode,
         ),
-        analysis.unchecked,
+        analysis,
     )
 
 
@@ -180,6 +186,30 @@ def _is_builtin(topic: str) -> bool:
     return topic.startswith("DCPS")
 
 
+# ROS 2 name mangling prefixes other than `rt/` (plain topics): service request
+# and reply, legacy service/parameter/action prefixes.
+_NON_TOPIC_PREFIXES = ("rq/", "rr/", "rs/", "rp/", "ra/")
+_INFRASTRUCTURE_TOPICS = frozenset({"rosout", "parameter_events", "ros_discovery_info"})
+
+
+def _is_typo_candidate(topic: str) -> bool:
+    """True for plain topics (`rt/...` or a bare DDS name) worth comparing for typos.
+
+    Services are request/reply pairs (a server without a client is normal, and
+    `get_` / `set_` parameter services differ by one edit by design), actions
+    carry `_action/` segments, and the logging, parameter-event and discovery
+    topics are shared infrastructure. None of them is a user topic name that a
+    typo could break.
+    """
+    if topic.startswith(_NON_TOPIC_PREFIXES):
+        return False
+    bare = topic[3:] if topic.startswith("rt/") else topic
+    bare = bare.strip("/")
+    if bare in _INFRASTRUCTURE_TOPICS:
+        return False
+    return "_action" not in bare.split("/")
+
+
 def _orphan_side(endpoints: list[EndpointInfo]) -> Literal["writer", "reader"] | None:
     """The only role present on a topic, `None` when it has both (not an orphan)."""
     roles = {e.role for e in endpoints}
@@ -205,9 +235,10 @@ def _orphan_hints(
     whose lengths differ by more than the distance are skipped, the edit
     distance gives up early, and at most `_MAX_COMPARED_ORPHANS` orphans are compared.
     """
-    sides = {t: _orphan_side(e) for t, e in by_topic.items()}
+    candidates = {t: e for t, e in by_topic.items() if _is_typo_candidate(t)}
+    sides = {t: _orphan_side(e) for t, e in candidates.items()}
     orphans = sorted(t for t, side in sides.items() if side)
-    topics = sorted(by_topic)
+    topics = sorted(candidates)
     near: list[str] = []
     explained: set[str] = set()
     seen: set[frozenset[str]] = set()
@@ -230,9 +261,10 @@ def _orphan_hints(
                 over_budget = True
                 distance = _MAX_NEAR_DISTANCE + 1
             if distance <= _MAX_NEAR_DISTANCE:
-                seen.add(key)
-                explained.update(key if both_orphans else (orphan,))
-                near.append(_typo_hint(orphan, other, sides, distance))
+                if both_orphans and sides[other] != sides[orphan]:
+                    seen.add(key)
+                    explained.update(key)
+                    near.append(_typo_hint(orphan, other, sides, distance))
             elif _is_path_suffix(orphan, other) or _is_path_suffix(other, orphan):
                 seen.add(key)
                 explained.update(key if both_orphans else (orphan,))
@@ -262,16 +294,11 @@ def _orphan_hints(
 
 
 def _typo_hint(orphan: str, other: str, sides: dict[str, str | None], distance: int) -> str:
-    other_side = sides[other]
-    if other_side is not None and other_side != sides[orphan]:
-        wt, rt = (orphan, other) if sides[orphan] == "writer" else (other, orphan)
-        return (
-            f"Topic {wt!r} has a writer but no reader, and {rt!r} has a reader but "
-            f"no writer: the names differ by {distance} edit(s). Likely a topic name typo."
-        )
+    """Hint for a writer-only name next to a reader-only name."""
+    wt, rt = (orphan, other) if sides[orphan] == "writer" else (other, orphan)
     return (
-        f"Topic {orphan!r} {_side_text(sides[orphan] or 'writer')}; {other!r} differs by "
-        f"{distance} edit{'s' if distance != 1 else ''}: likely a typo."
+        f"Topic {wt!r} has a writer but no reader, and {rt!r} has a reader but "
+        f"no writer: the names differ by {distance} edit(s). Likely a topic name typo."
     )
 
 
@@ -287,11 +314,18 @@ def _type_id_hints(pairs: list[tuple[EndpointInfo, EndpointInfo]]) -> list[str]:
     return hints
 
 
-def _unchecked_hints(unchecked_counts: dict[str, int], skipped: int) -> list[str]:
+def _unchecked_hints(
+    unchecked_counts: dict[str, int], skipped: int, history_unknown: int
+) -> list[str]:
     hints = [
         f"{count} pair(s) could not be checked on {name}: a side did not announce a value."
         for name, count in sorted(unchecked_counts.items())
     ]
+    if history_unknown:
+        hints.append(
+            f"History was not compared on {history_unknown} pair(s): DDS discovery does not "
+            "carry History, so this is expected and says nothing wrong about these endpoints."
+        )
     if skipped:
         hints.append(
             f"{skipped} endpoint(s) announced no usable QoS profile and were left out of pairing."
@@ -334,6 +368,7 @@ def scan_endpoints(
     pairs_checked = 0
     skipped = 0
     unchecked_counts: dict[str, int] = {}
+    history_unknown = 0
     matched_pairs: list[tuple[EndpointInfo, EndpointInfo]] = []
     matched: list[MatchedPair] = []
     for tname in sorted(scope):
@@ -349,16 +384,19 @@ def scan_endpoints(
                     not_matched.append(apart)
                     continue
                 matched_pairs.append((reader, writer))
-                report, unchecked = _report(reader, writer, mode_effective)
-                for name in unchecked:
+                report, analysis = _report(reader, writer, mode_effective)
+                for name in analysis.unchecked:
                     unchecked_counts[name] = unchecked_counts.get(name, 0) + 1
+                history_unknown += analysis.history_unknown
                 if report is not None:
                     reports.append(report)
                 if report is None or report.severity != "incompatible":
                     matched.append(_matched(reader, writer, hostnames))
 
     near, plain = _orphan_hints(by_topic, scope)
-    hints = scope_hints + near + _unchecked_hints(unchecked_counts, skipped) + plain
+    hints = (
+        scope_hints + near + _unchecked_hints(unchecked_counts, skipped, history_unknown) + plain
+    )
     hints += _type_id_hints(matched_pairs)
     if len(hints) > _MAX_HINTS:
         omitted = len(hints) - _MAX_HINTS

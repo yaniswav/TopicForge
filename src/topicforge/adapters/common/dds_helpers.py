@@ -13,6 +13,7 @@ from itertools import islice
 from typing import Any, Literal
 
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.topic_filter import no_match_note, resolve_topic_filter
 from topicforge.adapters.common.xtypes import annotate_raw
 from topicforge.models import MessageSample, SampleResult
 
@@ -59,11 +60,37 @@ USER_TOPIC_NOTE = (
 """`SampleResult.note` of a user-topic peek."""
 
 
-def user_topic_result(topic: str, mode_effective: Literal["mock", "live"]) -> SampleResult:
-    """Honest result of peeking a user topic: no samples, and a note saying why."""
-    return SampleResult(
-        topic=topic, count=0, samples=[], mode_effective=mode_effective, note=USER_TOPIC_NOTE
-    )
+def user_topic_result(
+    topic: str,
+    mode_effective: Literal["mock", "live"],
+    resolution_note: str | None = None,
+) -> SampleResult:
+    """Honest result of peeking a user topic: no samples, and a note saying why.
+
+    `resolution_note` says which discovered name the requested one matched.
+    """
+    note = USER_TOPIC_NOTE if resolution_note is None else f"{resolution_note}. {USER_TOPIC_NOTE}"
+    return SampleResult(topic=topic, count=0, samples=[], mode_effective=mode_effective, note=note)
+
+
+def resolve_user_topic(
+    topic: str, known: Iterable[str | None], domain_id: int
+) -> tuple[str, str | None]:
+    """The discovered DDS topic a requested name selects, and a note when it was not exact.
+
+    Accepts `/scan`, `scan` and `rt/scan` interchangeably (ROS 2 name
+    mangling). Raises `AdapterError`, listing the closest discovered topics,
+    when no endpoint matches.
+    """
+    names = {name for name in known if name}
+    resolved, note = resolve_topic_filter(topic, names)
+    if resolved is None:
+        raise AdapterError(
+            f"DDS topic {topic!r} not discovered on domain {domain_id}. "
+            f"{no_match_note(topic, names)}. Confirm a publisher is alive and reachable, or "
+            "call list_participants / detect_qos_mismatches first to inspect current bus state."
+        )
+    return resolved, note
 
 
 def metrics_status(
