@@ -22,11 +22,12 @@ maintainer ; the contribution loop is intentionally tight.
   the bus have not been observed yet. What you see there (what worked,
   what raised, what looked wrong) is the most useful input available.
   Include the vendors on your bus and the `health_check` output.
+  `python examples/dds/run_all.py` is a quick way to produce one.
 
 ## What contributions are harder to land
 
-- **New MCP tools.** The tool surface is intentionally capped (11
-  since v0.4.0): any expansion is a strategy decision documented in
+- **New MCP tools.** The tool surface is intentionally capped at 11:
+  any expansion is a strategy decision documented in
   `docs/product-plan.md section 11` "Scope creep within the TopicForge
   umbrella". File an issue describing the use case first ; the
   maintainer will close, defer, or sponsor the work.

@@ -25,5 +25,5 @@ else
   echo "[setup] cargo not found: install Rust (https://rustup.rs) to build the Dust participant"
 fi
 
-"$VENV/bin/python" "$REPO/scripts/integration/driver/demo_client.py" --list
+"$VENV/bin/python" "$REPO/scripts/integration/interop_check.py" --list
 echo "[setup] done. Run: scripts/integration/launch/run_demo.sh"

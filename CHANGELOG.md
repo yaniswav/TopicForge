@@ -15,6 +15,9 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
 
 ### Fixed
 
+- **`list_participants` now reports the participant name and the hostname on
+  Cyclone.** The name comes from the EntityName QoS and the hostname from the
+  `__Hostname` discovery property; both were always null on a real bus.
 - **Participant GUIDs were never read.** cyclonedds 11.0.1 exposes the builtin
   key as a `uuid.UUID`, which the extractor did not handle, so every
   participant collapsed onto a single `unknown` entry.
@@ -41,7 +44,7 @@ module non-functional on Cyclone; all are fixed and pinned by tests.
 
 ### Added
 
-- `scripts/integration/driver/demo_client.py`: one-command multi-vendor demo
+- `scripts/integration/interop_check.py`: one-command multi-vendor demo
   that starts a Rust / Dust and a Python / Cyclone participant, drives
   TopicForge over stdio through the official MCP client, checks participant
   discovery, a deliberate Reliability mismatch between the two vendors, and

@@ -6,7 +6,7 @@ TopicForge is a read-only Model Context Protocol (MCP) server that gives an AI a
 
 **The read-only guarantee, in one sentence.** There is no write path anywhere in TopicForge's architecture: not a locked-down permission you could misconfigure, but code that was never written, so there is nothing to flip and nothing to exploit into a write.
 
-This tutorial covers installing TopicForge, using its eleven tools, and wiring it into a recurring monitoring workflow. For OS-by-OS environment setup (WSL2, native Linux, Docker, native Windows), see [`TESTING.md`](TESTING.md).
+This tutorial covers a first run, recurring monitoring prompts, and the privacy contract. The tool list, modes and environment variables are in the [README](../README.md). For OS-by-OS environment setup (WSL2, native Linux, Docker, native Windows), see [`TESTING.md`](TESTING.md).
 
 ---
 
@@ -37,77 +37,9 @@ Restart Claude Desktop. All eleven tools appear under the hammer icon. Ask somet
 
 The agent calls `list_topics`. In mock mode you'll see the five fixture topics of the demo robot (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw`), deterministic across runs, so you can build a mental model of the tool surface before pointing it at a real graph.
 
-When you're ready for a real ROS2 environment, switch `TOPICFORGE_MODE` to `live` or `auto`: see [Advanced options](#advanced-options) below, and [`TESTING.md`](TESTING.md) for full setup paths per OS.
+When you're ready for a real ROS2 environment, switch `TOPICFORGE_MODE` to `live` or `auto`: see the [README](../README.md) configuration section, and [`TESTING.md`](TESTING.md) for full setup paths per OS.
 
 **Windows note.** File paths in this document are shown in POSIX style (`/tmp/demo.mcap`) because that's the form MCP clients pass internally, but TopicForge itself runs natively on Windows. Path resolution goes through `pathlib`, so both `C:\demos\run.mcap` and `C:/demos/run.mcap` work when you pass a bag path yourself.
-
----
-
-## The eleven tools
-
-| Tool | What it does | When to use it |
-| --- | --- | --- |
-| `health_check` | Reports the mode of the adapter actually serving requests (`mode`: `live`/`mock`, next to `requested_mode`), whether `ros2` is on PATH, the active DDS backend, and other environment state. Always succeeds. | Call first when something looks wrong: every other tool can raise an error, this one won't. |
-| `list_topics` | Lists every topic on the current ROS2 graph. | Discover what's currently being published before drilling into anything specific. |
-| `get_topic_info` | Structured detail for one topic: message type, publisher/subscriber counts, QoS reliability. | Check a topic's shape and who's connected to it before subscribing or debugging. |
-| `sample_messages` | Peeks recent messages on a ROS2 topic. | See real payload content without shelling out to `ros2 topic echo` yourself. |
-| `analyze_bag` | Summarizes a `.mcap` / `.db3` / `.bag` recording: duration, message count, per-topic stats. | Get a quick overview of a recorded run before deciding whether to dig deeper. |
-| `list_participants` | Lists DDS participants observed on a domain, at the raw DDS layer beneath ROS. | Diagnose why a participant isn't visible to the ROS graph, or inspect a non-ROS DDS stack. |
-| `detect_qos_mismatches` | Finds incompatible QoS pairs between DDS readers and writers. | A subscriber isn't receiving despite an apparently healthy publisher: this tells you why. |
-| `peek_dds_samples` | Peeks raw DDS samples. The three DCPS builtin discovery topics come back structured; a user topic is reported as present on the bus, with a placeholder sample and no decoded payload. | Inspect the discovery layer itself, or confirm that a non-ROS DDS topic is announced. |
-| `participant_events` | Timeline of participant discovered/lost events over a lookback window. | Investigate churn: nodes restarting, dropping off, or new ones joining. |
-| `topic_metrics` | Frequency, latency percentiles and sequence-gap fields for a topic over a time window. Data exists only for the builtin discovery topics, and the observed frequency reflects how often `peek_dds_samples` is called. | Watch discovery-layer activity. It does not measure an application topic's publish rate. |
-| `peek_bag_samples` | Peeks recent samples from a recorded bag file (MCAP, `.db3`, or legacy ROS1 `.bag`). Needs `pip install topicforge[bags]`. | Inspect payload content from a past recording without replaying the whole bag. |
-
----
-
-## Advanced options
-
-### Environment variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TOPICFORGE_MODE` | `auto` | Selects `mock`, `live`, or `auto` (see below). |
-| `TOPICFORGE_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
-| `TOPICFORGE_ROS2_BIN` | `ros2` | Overrides the resolved `ros2` executable: useful when it isn't on PATH. |
-| `TOPICFORGE_TELEMETRY` | off | Opt-in anonymous telemetry. On-values: `on`, `1`, `true`, `yes`, `enabled`; off-values: unset, `off`, `0`, `false`, `no`, `disabled`. Anything else aborts startup with a configuration error. See [Privacy](#privacy). |
-| `TOPICFORGE_DDS_BACKEND` | `mock` | Selects the DDS backend: `mock`, `cyclone`, `fast`, or `auto`. `opendds` and `dust` are also accepted but are permanent stubs. `rti`, `opensplice`, `coredx` and `intercom` are rejected (removed in 0.5.3). See [Choosing a DDS backend](#choosing-a-dds-backend). |
-| `TOPICFORGE_DDS_DOMAIN_ID` | `0` | DDS domain id to observe, `0`-`232`. |
-
-Add any of these to the same `env` object shown in the Quickstart config block.
-
-### The three modes
-
-- **`mock`**: deterministic fixtures, no ROS2 or DDS SDK required. Use for development, demos, CI, or evaluating the tool surface before touching a real graph.
-- **`live`**: talks to a real environment: the `ros2` CLI for the ROS2 graph and bag tools (`list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`), and the configured DDS backend for the five DDS tools (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`, `participant_events`, `topic_metrics`). Use once ROS2 and/or a DDS backend are actually reachable from the shell that spawns TopicForge. If neither comes up, the server serves the mock fixtures and `health_check` shows `mode: "mock"` next to `requested_mode: "live"`.
-- **`auto`** (default): resolves to `live` if the `ros2` executable is found on PATH, otherwise falls back to `mock`. An explicit `TOPICFORGE_DDS_BACKEND` (`cyclone`, `fast` or `auto`) overrides that fallback: it is honoured with or without `ros2`, so a host with a DDS binding but no ROS2 gets a DDS-only adapter instead of fixtures. Only `TOPICFORGE_MODE=mock` forces fixtures unconditionally. The DDS backend's own `auto` resolution is described below.
-
-### Extras
-
-Plain `pip install topicforge` gives you the ROS2 CLI tools plus mock fixtures for all eleven. To talk to a real DDS bus or to read bag contents, install one of:
-
-```bash
-pip install topicforge[dds-cyclone]   # Eclipse CycloneDDS
-pip install topicforge[dds]           # the same thing today ([dds] resolves to [dds-cyclone])
-pip install topicforge[all]           # equivalent to [dds]
-pip install topicforge[bags]          # rosbags library: required for peek_bag_samples (no fallback)
-```
-
-`analyze_bag` does not use `rosbags`: in live mode it parses the output of `ros2 bag info`, with or without the `[bags]` extra. Only `peek_bag_samples` reads the bag file itself.
-
-There is no Fast DDS extra. The `fastdds` Python binding is not published on PyPI, so 0.5.3 removed `[dds-fast]` (along with `[dds-opendds]`, `[dds-dust]` and `[dds-all-oss]`, whose packages do not resolve either). The Fast DDS adapter still works if you build eProsima's Python binding from source and install it next to TopicForge; see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md) section 2.b.
-
-### Choosing a DDS backend
-
-Set `TOPICFORGE_DDS_BACKEND` explicitly (`cyclone` or `fast`) if you know which binding you have, or set `auto` and let TopicForge probe: `auto` resolves to Fast DDS if its binding is importable, otherwise CycloneDDS if importable, otherwise `mock`. With only the PyPI extra installed, that is Cyclone. The default, when the variable is unset, is `mock`, which leaves the DDS tools to the mock adapter only.
-
-An explicit backend is honoured with or without `ros2` on PATH. If the binding is missing or the participant cannot start, the server logs a warning that names the cause and falls back to the ROS2 CLI alone, or to mock when that is unavailable too. `opendds` and `dust` are recognized identifiers but permanent stubs that never serve. `rti`, `opensplice`, `coredx` and `intercom` were accepted until 0.5.2 for the retired Pro tier and now stop the server at startup with a configuration error; you do not need them to see an RTI bus, since a Cyclone participant discovers RTI participants through standard RTPS discovery (see [`pro.md`](pro.md)).
-
-Keep in mind that no DDS adapter has been validated against a live multi-vendor bus yet; see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md).
-
-### Domain id
-
-`TOPICFORGE_DDS_DOMAIN_ID` (default `0`, matching the default used by most ROS2 setups and by `cyclonedds` itself) sets the domain a live DDS adapter joins **at startup**: it does not change per call. `list_participants`, `participant_events`, and `topic_metrics` also accept a `domain_id` parameter, but on the real Cyclone/Fast adapters this parameter is accepted for protocol uniformity only; the adapter still reports what it sees on the domain it joined at construction time, not a different domain picked per call. To observe a different domain, restart the server with a different `TOPICFORGE_DDS_DOMAIN_ID`.
 
 ---
 

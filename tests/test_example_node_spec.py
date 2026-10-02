@@ -1,0 +1,118 @@
+"""Unit tests for examples/dds/nodes/spec.py (pure Python, no DDS binding)."""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples" / "dds" / "nodes"))
+
+import spec
+
+
+def test_parse_defaults() -> None:
+    ep = spec.parse_endpoint("scan:LidarScan")
+    assert ep == spec.Endpoint("scan", "LidarScan", spec.QosSpec())
+    assert ep.qos.history_depth == 1
+
+
+def test_parse_all_options() -> None:
+    ep = spec.parse_endpoint("scan:LidarScan:best_effort,transient_local,keep_last=5,deadline=200")
+    assert ep.qos == spec.QosSpec("best_effort", "transient_local", 5, 200)
+
+
+def test_parse_keep_all() -> None:
+    assert spec.parse_endpoint("t:Imu:keep_all").qos.history_depth is None
+
+
+def test_parse_empty_options_segment() -> None:
+    assert spec.parse_endpoint("t:Imu:").qos == spec.QosSpec()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "scan",
+        "a:b:c:d",
+        ":LidarScan",
+        "scan:Nope",
+        "scan:LidarScan:fast",
+        "scan:LidarScan:keep_last=0",
+        "scan:LidarScan:keep_last=x",
+        "scan:LidarScan:keep_last",
+        "scan:LidarScan:deadline=0",
+        "scan:LidarScan:reliable,best_effort",
+        "scan:LidarScan:volatile,transient_local",
+        "scan:LidarScan:keep_all,keep_last=3",
+    ],
+)
+def test_parse_errors(text: str) -> None:
+    with pytest.raises(ValueError):
+        spec.parse_endpoint(text)
+
+
+def test_describe() -> None:
+    ep = spec.parse_endpoint("scan:LidarScan:best_effort")
+    assert spec.describe(ep) == "scan (LidarScan, BEST_EFFORT, VOLATILE, KEEP_LAST 1)"
+    ep = spec.parse_endpoint("odom:Odom:keep_all,deadline=100")
+    assert spec.describe(ep) == "odom (Odom, RELIABLE, VOLATILE, KEEP_ALL), deadline 100 ms"
+
+
+@pytest.mark.parametrize("type_name", list(spec.TYPES))
+def test_sample_values_cover_every_field(type_name: str) -> None:
+    values = spec.sample_values(type_name, 7)
+    assert list(values) == [name for name, _ in spec.TYPES[type_name]]
+    assert values["seq"] == 7
+    for name, kind in spec.TYPES[type_name]:
+        expected = {"uint32": int, "float32": float, "float64": float, "string": str}[kind]
+        assert isinstance(values[name], expected)
+    assert values == spec.sample_values(type_name, 7)
+
+
+def test_types_start_with_seq() -> None:
+    assert all(fields[0] == ("seq", "uint32") for fields in spec.TYPES.values())
+
+
+def test_parser_requires_an_endpoint_and_name() -> None:
+    with pytest.raises(SystemExit):
+        spec.parse_args("X", ["--name", "n"])
+    with pytest.raises(SystemExit):
+        spec.parse_args("X", ["--write", "t:Imu"])
+
+
+@pytest.mark.parametrize("domain", ["-1", "233", "abc"])
+def test_parser_rejects_bad_domain(domain: str) -> None:
+    with pytest.raises(SystemExit):
+        spec.parse_args("X", ["--name", "n", "--write", "t:Imu", "--domain", domain])
+
+
+def test_parser_rejects_bad_endpoint() -> None:
+    with pytest.raises(SystemExit):
+        spec.parse_args("X", ["--name", "n", "--write", "t:Nope"])
+
+
+def test_start_line() -> None:
+    args = spec.parse_args(
+        "X",
+        [
+            "--name",
+            "lidar_driver",
+            "--domain",
+            "3",
+            "--write",
+            "scan:LidarScan:best_effort",
+            "--read",
+            "odom:Odom",
+        ],
+    )
+    assert args.rate_hz == 10.0
+    assert spec.start_line("cyclone", args) == (
+        "[lidar_driver] cyclone domain 3: "
+        "writes scan (LidarScan, BEST_EFFORT, VOLATILE, KEEP_LAST 1); "
+        "reads odom (Odom, RELIABLE, VOLATILE, KEEP_LAST 1)"
+    )
+
+
+def test_start_line_nothing() -> None:
+    args = spec.parse_args("X", ["--name", "n", "--read", "t:Imu"])
+    assert "writes nothing; reads t (Imu" in spec.start_line("dust", args)

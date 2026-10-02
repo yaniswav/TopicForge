@@ -107,20 +107,66 @@ def is_alive_sample(sample: Any) -> bool:
     return int(state) == _INSTANCE_STATE_ALIVE
 
 
-def cyclone_extract_hostname(sample: Any) -> str | None:
-    """Pull a hostname / participant-name hint off a Cyclone sample, if exposed."""
-    for attr in ("hostname", "participant_name", "user_data"):
+def _iter_qos(sample: Any) -> list[Any]:
+    """Return the policies in `sample.qos` as a list; empty on any oddity."""
+    try:
+        return list(getattr(sample, "qos", None) or ())
+    except Exception:
+        return []
+
+
+def _type_leaf(obj: Any) -> str:
+    """Last component of an object's (possibly scoped) class name."""
+    return type(obj).__name__.rsplit(".", 1)[-1]
+
+
+def _text_attr(sample: Any, attrs: tuple[str, ...]) -> str | None:
+    """First non-empty str / bytes attribute among `attrs`, decoded as text."""
+    for attr in attrs:
         v = getattr(sample, attr, None)
         if isinstance(v, (bytes, bytearray)):
-            try:
-                decoded = v.decode("utf-8", errors="replace")
-            except (UnicodeError, AttributeError):
-                continue
+            decoded = bytes(v).decode("utf-8", errors="replace")
             if decoded:
                 return decoded
         if isinstance(v, str) and v:
             return v
     return None
+
+
+def cyclone_extract_participant_name(sample: Any) -> str | None:
+    """Pull the EntityName QoS (the announced participant name) off a sample.
+
+    cyclonedds 11.0.1 exposes it as `Policy.EntityName(name=...)` among the
+    items of `sample.qos`, present only when the remote application set it.
+    Never raises.
+    """
+    try:
+        for policy in _iter_qos(sample):
+            if _type_leaf(policy) == "EntityName":
+                name = getattr(policy, "name", None)
+                if isinstance(name, str) and name:
+                    return name
+        return _text_attr(sample, ("participant_name",))
+    except Exception:
+        return None
+
+
+def cyclone_extract_hostname(sample: Any) -> str | None:
+    """Pull the announced hostname off a Cyclone sample, if exposed.
+
+    Reads the `__Hostname` `Property` of `sample.qos` (observed live with
+    cyclonedds 11.0.1), then falls back to plain sample attributes. Never
+    raises.
+    """
+    try:
+        for policy in _iter_qos(sample):
+            if _type_leaf(policy) == "Property" and getattr(policy, "key", None) == "__Hostname":
+                value = getattr(policy, "value", None)
+                if isinstance(value, str) and value:
+                    return value
+        return _text_attr(sample, ("hostname", "participant_name", "user_data"))
+    except Exception:
+        return None
 
 
 def cyclone_extract_topic_name(sample: Any) -> str | None:
@@ -226,6 +272,7 @@ def fast_extract_topic_name(sample: Any) -> str | None:
 __all__ = [
     "cyclone_extract_guid",
     "cyclone_extract_hostname",
+    "cyclone_extract_participant_name",
     "cyclone_extract_topic_name",
     "cyclone_extract_vendor_id",
     "fast_extract_guid",

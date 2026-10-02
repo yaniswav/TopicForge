@@ -81,6 +81,7 @@ class LifecycleBuffer:
         domain_id: int,
         mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
+        name: str | None = None,
     ) -> None:
         """Mark a participant as observed at `now_ns` (default: time.time_ns()).
 
@@ -98,6 +99,7 @@ class LifecycleBuffer:
                 self._participants[guid] = ParticipantInfo(
                     guid=guid,
                     vendor=vendor,
+                    name=name,
                     hostname=hostname,
                     domain_id=domain_id,
                     mode_effective=mode_effective,
@@ -111,6 +113,7 @@ class LifecycleBuffer:
                     event_type="discovered",
                     vendor=vendor,
                     hostname=hostname,
+                    name=name,
                     domain_id=domain_id,
                     mode_effective=mode_effective,
                     ts=ts,
@@ -124,6 +127,7 @@ class LifecycleBuffer:
                     "seen_count": existing.seen_count + 1,
                     # Hostname may surface only on later discovery samples.
                     "hostname": hostname or existing.hostname,
+                    "name": name or existing.name,
                 }
             )
             if re_joined:
@@ -132,6 +136,7 @@ class LifecycleBuffer:
                     event_type="discovered",
                     vendor=vendor,
                     hostname=hostname or existing.hostname,
+                    name=name or existing.name,
                     domain_id=domain_id,
                     mode_effective=mode_effective,
                     ts=ts,
@@ -163,6 +168,7 @@ class LifecycleBuffer:
                 event_type="lost",
                 vendor=vendor or existing.vendor,
                 hostname=hostname or existing.hostname,
+                name=existing.name,
                 domain_id=domain_id if domain_id is not None else existing.domain_id,
                 mode_effective=mode_effective,
                 ts=ts,
@@ -265,6 +271,7 @@ class LifecycleBuffer:
         domain_id: int,
         mode_effective: EffectiveMode,
         ts: int,
+        name: str | None = None,
     ) -> None:
         # Called under self._lock: do not acquire again.
         self._events.append(
@@ -274,6 +281,7 @@ class LifecycleBuffer:
                 vendor=vendor,
                 timestamp_ns=ts,
                 hostname=hostname,
+                name=name,
                 domain_id=domain_id,
                 mode_effective=mode_effective,
             )

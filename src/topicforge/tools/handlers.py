@@ -200,7 +200,8 @@ def register_tools(
             "`list[ParticipantInfo]`: each entry carries `guid`, `vendor` "
             "(`cyclone`/`fast`/`rti`/`rti_micro`/`opensplice`/`opendds`/"
             "`coredx`/`intercom`/`dust`/`mock`/`unknown`, the vendor observed "
-            "on the bus), optional `hostname`, "
+            "on the bus), optional `name` (announced EntityName QoS, e.g. "
+            "`lidar_driver`), optional `hostname` (announced in discovery), "
             '`domain_id`, and `mode_effective` (`"live"`/`"mock"`). '
             "**Distinct from ROS2 graph nodes**: operates at the raw DDS "
             "layer beneath ROS, useful for non-ROS DDS stacks or for "

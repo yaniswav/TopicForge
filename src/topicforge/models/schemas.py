@@ -115,6 +115,15 @@ class ParticipantInfo(BaseModel):
             "stable across discovery events within a single deployment."
         )
     )
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Participant name the application announced through the standard "
+            "DDS EntityName QoS (PID_ENTITY_NAME in RTPS discovery), for "
+            "example `lidar_driver`. `None` when the application did not set "
+            "one (Dust DDS cannot) or the backend does not expose it."
+        ),
+    )
     vendor: _DdsVendor = Field(
         description=(
             "DDS implementation that announced this participant, decoded "
@@ -134,7 +143,10 @@ class ParticipantInfo(BaseModel):
     )
     hostname: str | None = Field(
         default=None,
-        description="Hostname announced by the participant, if available.",
+        description=(
+            "Hostname announced in discovery (Cyclone `__Hostname` property). "
+            "`None` when the vendor does not announce it."
+        ),
     )
     domain_id: int = Field(
         ge=0,
@@ -226,6 +238,10 @@ class ParticipantEvent(BaseModel):
     hostname: str | None = Field(
         default=None,
         description="Hostname announced by the participant when known, else `None`.",
+    )
+    name: str | None = Field(
+        default=None,
+        description="Participant name (EntityName QoS) when known, else `None`.",
     )
     domain_id: int = Field(
         ge=0,

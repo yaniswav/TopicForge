@@ -17,6 +17,7 @@ import pytest
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
     cyclone_extract_hostname,
+    cyclone_extract_participant_name,
     cyclone_extract_topic_name,
     cyclone_extract_vendor_id,
     fast_extract_guid,
@@ -261,3 +262,64 @@ def test_is_alive_sample(instance_state: int, valid_data: bool, expected: bool):
 
 def test_is_alive_sample_without_sample_info_is_kept():
     assert is_alive_sample(_Obj(key=b"x")) is True
+
+
+# ---------------------------------------------------------------------------
+# Participant name and hostname from the builtin sample's `qos` (cyclonedds 11)
+# ---------------------------------------------------------------------------
+
+
+def _policy(type_name: str, **attrs):
+    return type(type_name, (), attrs)()
+
+
+def _live_qos_sample(*, with_name: bool = True):
+    policies = [_policy("Policy.Liveliness.Automatic", lease_duration=10_000_000_000)]
+    if with_name:
+        policies.insert(0, _policy("Policy.EntityName", name="lidar_driver"))
+    policies.append(_policy("Property", key="__Pid", value="18132"))
+    policies.append(_policy("Property", key="__Hostname", value="DESKTOP-H0N0S7G"))
+    return _Obj(qos=policies)
+
+
+def test_cyclone_extract_participant_name_from_entity_name_policy():
+    assert cyclone_extract_participant_name(_live_qos_sample()) == "lidar_driver"
+
+
+def test_cyclone_extract_participant_name_absent_returns_none():
+    assert cyclone_extract_participant_name(_live_qos_sample(with_name=False)) is None
+
+
+def test_cyclone_extract_participant_name_attribute_fallback():
+    assert cyclone_extract_participant_name(_Obj(participant_name="p1")) == "p1"
+
+
+def test_cyclone_extract_participant_name_unscoped_class_name():
+    sample = _Obj(qos=[_policy("EntityName", name="n1")])
+    assert cyclone_extract_participant_name(sample) == "n1"
+
+
+def test_cyclone_extract_hostname_from_property():
+    assert cyclone_extract_hostname(_live_qos_sample()) == "DESKTOP-H0N0S7G"
+
+
+def test_cyclone_extract_hostname_ignores_other_properties():
+    sample = _Obj(qos=[_policy("Property", key="__Pid", value="1")])
+    assert cyclone_extract_hostname(sample) is None
+
+
+def test_cyclone_extractors_tolerate_odd_qos():
+    for qos in (None, 42, object(), [object(), None]):
+        sample = _Obj(qos=qos)
+        assert cyclone_extract_participant_name(sample) is None
+        assert cyclone_extract_hostname(sample) is None
+
+
+def test_cyclone_extractors_never_raise_on_hostile_qos():
+    class _Boom:
+        def __iter__(self):
+            raise RuntimeError("boom")
+
+    sample = _Obj(qos=_Boom())
+    assert cyclone_extract_participant_name(sample) is None
+    assert cyclone_extract_hostname(sample) is None

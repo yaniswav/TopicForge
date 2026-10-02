@@ -21,6 +21,7 @@ from topicforge.adapters.common.dds_helpers import (
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
     cyclone_extract_hostname,
+    cyclone_extract_participant_name,
     cyclone_extract_topic_name,
     cyclone_extract_vendor_id,
     fast_extract_guid,
@@ -66,6 +67,7 @@ __all__ = [
     "canonicalize_vendor_id",
     "cyclone_extract_guid",
     "cyclone_extract_hostname",
+    "cyclone_extract_participant_name",
     "cyclone_extract_topic_name",
     "cyclone_extract_vendor_id",
     "cyclone_qos_to_profile",

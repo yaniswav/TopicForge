@@ -57,7 +57,7 @@ if ($Firewall) {
     # The venv python.exe is a launcher that starts the base interpreter, so
     # both need a rule. Built demo programs are found by their known names.
     $demoExes = @("dust_publisher", "fast_publisher", "cyclone_c", "cyclone_cpp",
-        "cyclone_rust", "dust_c_publisher", "rti_c", "rti_cpp", "rti_rust", "ospl_publisher")
+        "cyclone_rust", "rti_c", "rti_cpp", "ospl_publisher")
     $built = Get-ChildItem (Join-Path $Repo "scripts\integration\publishers") -Recurse -Filter *.exe `
         -ErrorAction SilentlyContinue |
         Where-Object { $demoExes -contains $_.BaseName } |
@@ -74,5 +74,5 @@ if ($Firewall) {
     }
 }
 
-Invoke-Native "participant listing" { & $Py (Join-Path $Repo "scripts\integration\driver\demo_client.py") --list }
+Invoke-Native "participant listing" { & $Py (Join-Path $Repo "scripts\integration\interop_check.py") --list }
 Write-Host "[setup] done. Run: scripts\integration\launch\run_demo.ps1"
