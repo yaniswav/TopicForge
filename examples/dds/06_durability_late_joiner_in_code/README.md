@@ -1,10 +1,8 @@
 # 06 Durability and the late joiner, in code
 
-Concept: Durability, written as code you can read. Example 04 showed the
-mismatch from the outside; here you see the two programs, what the late
-subscriber prints, and the one variant TopicForge cannot see.
-
-## The story
+Example 04 showed the mismatch from the outside; here you see the two
+programs, what the late subscriber prints, and the one variant TopicForge
+cannot see.
 
 Mission control writes the robot's mission once, then idles. The
 navigation planner boots afterwards. Whether it ever gets the mission depends
@@ -87,7 +85,7 @@ sub_2: matched writers: 1
 - `sub_2` matches, and receives nothing. No error, no status: the writer
   simply had nothing to hand over.
 
-## What TopicForge shows
+## Seen by TopicForge
 
 ```
 detect_qos_mismatches
@@ -107,12 +105,6 @@ and the declarations here are consistent. Only the subscriber, from inside,
 knows it received nothing. TopicForge also cannot tell that a writer already
 wrote and finished.
 
-## Ask your agent
-
-> Three mission topics on DDS domain 0 (mission_tl, mission_volatile_writer,
-> mission_volatile_both): their subscribers joined late. Which ones can never
-> get the mission, and why?
-
 A correct answer names `mission_volatile_writer` and its Durability mismatch,
 and should not claim anything about `mission_volatile_both` from TopicForge
 alone.
@@ -121,3 +113,9 @@ Configuration-like data (missions, maps, parameters) wants TRANSIENT_LOCAL on
 the writer, with a KeepLast depth big enough to hold what a latecomer needs.
 Both sides VOLATILE is legal and silent: a late joiner misses the past, and
 "matched" does not mean "received everything".
+
+Prompt to try:
+
+> Three mission topics on DDS domain 0 (mission_tl, mission_volatile_writer,
+> mission_volatile_both): their subscribers joined late. Which ones can never
+> get the mission, and why?

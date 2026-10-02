@@ -62,8 +62,10 @@ _COUNT_PARAM_DESC = (
 )
 
 _PATH_PARAM_DESC = (
-    "Path to a ROS2 bag: a file ending in `.mcap`, `.db3`, or `.bag`, or a "
-    "`rosbag2_*` directory. Leading/trailing whitespace is stripped. Null "
+    "Path to a bag: a file ending in `.mcap` or `.db3`, or a `rosbag2_*` "
+    "directory. `peek_bag_samples` also reads ROS 1 `.bag` files; "
+    "`analyze_bag` does not (`ros2 bag info` cannot open them). "
+    "Leading/trailing whitespace is stripped. Null "
     "bytes and otherwise malformed filesystem paths are rejected. Existence "
     "and bag format are validated by the live adapter (mock mode accepts "
     "any well-formed path)."
@@ -179,8 +181,9 @@ def register_tools(
             "Summarize a ROS 2 bag at `path`. Returns a `BagAnalysis` with "
             "storage format, duration, message count, per-topic stats, "
             "detected anomalies and `mode_effective` (`live` or `mock`). **Live "
-            "mode** runs `ros2 bag info` and accepts `.mcap`, `.db3` and `.bag` "
-            "files plus `rosbag2_*` directories; **mock mode** returns fixture "
+            "mode** runs `ros2 bag info` and accepts `.mcap` and `.db3` "
+            "files plus `rosbag2_*` directories (ROS 1 `.bag` files are not "
+            "readable by `ros2 bag info`; use `peek_bag_samples` for those); **mock mode** returns fixture "
             "data for any path suffix except clearly non-bag ones. **Raises an "
             "MCP error** if the path"
             " is malformed, missing in live mode, or unparseable, or if no "

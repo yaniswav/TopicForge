@@ -273,14 +273,14 @@ def mock_participant_events_for(domain_id: int, lookback_seconds: int) -> list[P
 
 
 # MOCK_DDS_TOPICS includes two user-topic fixtures for the decode paths of
-# `peek_dds_samples`: `/dds/ddsforge/example` (`_decode_status="full"`) and
-# `/dds/ddsforge/opaque` (`"raw"`). The other two topics have no
+# `peek_dds_samples`: `/dds/topicforge/example` (`_decode_status="full"`) and
+# `/dds/topicforge/opaque` (`"raw"`). The other two topics have no
 # `_decode_status` key.
 MOCK_DDS_TOPICS: tuple[str, ...] = (
     "/dds/well_matched",
     "/dds/qos_mismatch",
-    "/dds/ddsforge/example",
-    "/dds/ddsforge/opaque",
+    "/dds/topicforge/example",
+    "/dds/topicforge/opaque",
 )
 
 
@@ -328,7 +328,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
                 payload={"seq": 0, "vendor": "cyclone", "qos_note": "writer is BEST_EFFORT"},
             )
         ][:count]
-    elif topic == "/dds/ddsforge/example":
+    elif topic == "/dds/topicforge/example":
         # Fully decoded user topic: synthetic struct{ uint32 seq; string status;
         # float32 battery_pct; }.
         from topicforge.adapters.common.xtypes import annotate_full
@@ -336,7 +336,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
         samples = [
             MessageSample(
                 topic=topic,
-                message_type="ddsforge/Example",
+                message_type="topicforge/Example",
                 timestamp_ns=_BASE_TS_NS + i * 200_000_000,
                 payload=annotate_full(
                     {
@@ -348,7 +348,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
             )
             for i in range(min(count, 3))
         ]
-    elif topic == "/dds/ddsforge/opaque":
+    elif topic == "/dds/topicforge/opaque":
         # Undecoded user topic: bytes kept as hex with a diagnostic note.
         from topicforge.adapters.common.xtypes import annotate_raw
 
@@ -356,7 +356,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
         samples = [
             MessageSample(
                 topic=topic,
-                message_type="ddsforge/Opaque",
+                message_type="topicforge/Opaque",
                 timestamp_ns=_BASE_TS_NS,
                 payload=annotate_raw(
                     synthetic_bytes,
@@ -376,7 +376,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
 
 # Endpoint fixtures (`list_endpoints`), same scenario as above: nav_planner writes
 # `/dds/qos_mismatch` BEST_EFFORT while lidar_driver reads it RELIABLE (the
-# `Reliability` mismatch), `/dds/ddsforge/opaque` has a writer and no reader (an
+# `Reliability` mismatch), `/dds/topicforge/opaque` has a writer and no reader (an
 # orphan), and the dust writer carries partition, manual liveliness and
 # exclusive ownership so those fields are exercised.
 MOCK_OBSERVER_GUID = "010f1c2a-3b4c-5d6e-7f80-000000000099"
@@ -427,17 +427,17 @@ _MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
     _mock_endpoint(3, 2, "writer", "/dds/qos_mismatch", "dds/Heartbeat", _qos("BEST_EFFORT"), 7),
     _mock_endpoint(4, 1, "reader", "/dds/qos_mismatch", "dds/Heartbeat", _qos("RELIABLE"), 3),
     _mock_endpoint(
-        5, 3, "writer", "/dds/ddsforge/example", "ddsforge/Example", _qos("RELIABLE"), 11
+        5, 3, "writer", "/dds/topicforge/example", "topicforge/Example", _qos("RELIABLE"), 11
     ),
     _mock_endpoint(
-        6, 2, "reader", "/dds/ddsforge/example", "ddsforge/Example", _qos("RELIABLE"), 8
+        6, 2, "reader", "/dds/topicforge/example", "topicforge/Example", _qos("RELIABLE"), 8
     ),
     _mock_endpoint(
         7,
         4,
         "writer",
-        "/dds/ddsforge/opaque",
-        "ddsforge/Opaque",
+        "/dds/topicforge/opaque",
+        "topicforge/Opaque",
         _qos(
             "RELIABLE",
             partitions=["left"],

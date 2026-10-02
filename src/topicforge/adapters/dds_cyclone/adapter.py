@@ -1,30 +1,15 @@
 """Cyclone DDS adapter.
 
 Joins the bus as a read-only DDS-RTPS participant through the
-`cyclonedds.builtin` readers. Because it reads the standard discovery
-topics it sees every conformant vendor (`docs/dds-interop-matrix.md`).
-The ROS2 graph methods raise `AdapterError(DDS_ONLY_ERROR_MSG)`; pair it
-with `Ros2CliAdapter` through `CompositeAdapter` to serve both. The
-factory imports this module only for `TOPICFORGE_DDS_BACKEND=cyclone`.
-
-A daemon `DiscoveryTracker` thread is the only code that touches the three
-builtin readers (`take()` would hide samples from any other reader). It
-folds what it takes into the caches of `common/discovery_tracker.py`, and
-every tool reads those caches, so no handler reads from DDS and the
-lifecycle does not depend on tool calls.
-
-* `list_participants`, `participant_events`: the `LifecycleBuffer`, timed by
-  DDS source timestamps. A participant that joins and leaves faster than
-  the builtin reader's history depth between two passes can be missed.
-* `detect_qos_mismatches`, `list_endpoints`: cached DCPSPublication and
-  DCPSSubscription samples, run through the pure analyzers in `common/`.
-* `peek_dds_samples`: structured payloads for the three builtin topics,
-  served from the caches (current discovery state, not a stream). A user
-  topic returns one empty placeholder, because dynamic XTypes decoding is
-  disabled (see `_try_dynamic_decode_cyclone`).
-* `topic_metrics`: filled when `peek_dds_samples` surfaces builtin samples
-  (the binding has no per-sample callback). User topics stay at
-  `samples_observed=0`.
+`cyclonedds.builtin` readers and serves the discovery tools from them. A
+daemon `DiscoveryTracker` thread is the only code that takes from the three
+builtin readers and fills the caches of `common/discovery_tracker.py`; tool
+handlers read those caches, so lifecycle does not depend on tool calls. Every
+binding call goes through one process-wide lock, because the Python binding
+is not thread-safe. User-topic payloads are not decoded (`topic_metrics` has
+data only for builtin topics). ROS2 graph methods raise
+`AdapterError(DDS_ONLY_ERROR_MSG)`; `CompositeAdapter` pairs it with
+`Ros2CliAdapter`.
 """
 
 from __future__ import annotations

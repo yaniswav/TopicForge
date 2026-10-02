@@ -9,230 +9,104 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [0.5.5] - 2026-10-02
 
-Driven by a blind evaluation: agents given only TopicForge's tools had to
-diagnose live DDS buses with planted faults. The first rounds (on 0.5.4) found
-wrong blame on QoS, missed Liveliness and Ownership faults, hand-joined GUIDs
-and empty results read as "healthy". After the changes below, 16 of 16
-scenarios were diagnosed correctly, with no false alarm on a healthy bus.
+Tool outputs were reworked after testing them with LLM agents on the author's
+16 test scenarios (live DDS buses with planted faults).
+
+### Breaking
+
+- `detect_qos_mismatches` returns a `MismatchScan` envelope instead of a bare
+  list. Migrate by reading `["reports"]` where you used the list.
 
 ### Added
 
-- `list_endpoints`, the twelfth MCP tool. Returns every announced DDS writer
-  and reader as a typed `EndpointInfo` (role, topic, type, owning participant
-  guid, name and vendor, structured QoS, announcement timestamp) plus a
-  `by_topic` roll-up that flags orphans (`no_reader`, `no_writer`). TopicForge's
-  own endpoints are excluded unless `include_observer`, and counted in
-  `excluded_observer_endpoints`. Endpoints of a participant that left are kept
-  (200 entries, 1 hour) and shown as `departed_writers` / `departed_readers`;
-  `include_departed` lists them. Served by Cyclone and the mock. Fast raises a
-  clear "not supported yet" error.
-- Continuous discovery tracking on Cyclone. A daemon thread (0.5 s period)
-  is the only code that reads the builtin discovery topics and feeds in-memory
-  caches that every discovery tool reads. Lifecycle no longer moves only when a
-  tool is called: a node restarted three times shows as 3 `lost` and 4
-  `discovered`, dated by DDS. The 2 s warm-up sleep is gone.
-- Timestamps on `participant_events` and `list_participants`: `announced_ns`,
-  `lost_ns`, `lost_time_source`, and on events `time_source` and `observed_ns`.
-  A DDS source timestamp and a local observation are never mixed.
-- `health_check` gains `now_ns`, `observer_started_ns`, `observed_domain_note`
-  and the tracker status (`tracker_running`, `tracker_passes`, `tracker_errors`,
-  `tracker_last_pass_ns`).
-- `QosProfile` gains optional `liveliness_kind`, `liveliness_lease_ns`,
-  `ownership_kind`, `ownership_strength`, `partitions`, `latency_budget_ns`,
-  `destination_order` and `data_representation`, read from Cyclone discovery.
-  A missing Partition policy is reported as `[""]` everywhere.
-- `peek_dds_samples` on `DCPSPublication`, `DCPSSubscription` and
-  `DCPSParticipant` carries structured `role`, `participant_guid`,
-  `participant_name`, `type_id`, `qos`, `announced_ns` and `is_observer`, and
-  sets `timestamp_ns` from the announcement. `_raw_text` is kept only for a
-  sample with nothing structured to read, truncated to 300 characters.
-- `peek_dds_samples` on a builtin topic returns the cached discovery state, not
-  a stream.
-- Topic filters accept `rt/x` and `x` interchangeably and report which form
-  matched. A filter that matches nothing returns the list of known topics.
-- Examples: the generic role nodes take partition, liveliness and ownership
-  options.
+- `list_endpoints`, the twelfth tool: every announced DDS writer and reader with
+  owning participant, structured QoS and a per-topic roll-up that flags orphans
+  (`no_reader`, `no_writer`). Cyclone and mock only.
+- Continuous discovery tracking on Cyclone, so a node restarted three times
+  shows as 3 `lost` and 4 `discovered` events dated by DDS, not by poll time.
+- `announced_ns`, `lost_ns`, `time_source` and related timestamp fields on
+  `participant_events` and `list_participants`.
+- `health_check` reports `now_ns`, tracker status and an observed-domain note.
+- `QosProfile` gains Liveliness, Ownership, Partition, LatencyBudget,
+  DestinationOrder and DataRepresentation.
+- `peek_dds_samples` on builtin discovery topics returns structured endpoint
+  and participant fields instead of a raw repr string.
+- Topic filters accept `rt/x` and `x` interchangeably; a filter that matches
+  nothing returns the known topics.
+- `detect_qos_mismatches` also reports `matched` and `not_matched` pairs, hints
+  (near-miss topic names, path suffixes, type id differences), and the policies
+  it did and did not check.
 
 ### Changed
 
-- **Breaking change: `detect_qos_mismatches` returns a `MismatchScan` envelope instead
-  of a bare list.** To migrate, read `["reports"]` where you used the list. The
-  envelope also carries `matched`, `not_matched`, `hints`, `pairs_checked`,
-  `topics_scanned`, `policies_checked`, `policies_unchecked` and
-  `mode_effective`. The reason: an empty list was read as a healthy bus although only
-  four policies were checked, and readers and writers in different partitions
-  were blamed on Reliability.
-- Partition is checked first (`*` and `?` wildcards; a wildcard against a
-  wildcard never matches). A pair it separates is a `not_matched` entry with
-  reason `partition`; differing type names give reason `type_name`. The RxO
-  rules are not run on either. A `not_matched` pair lists the policies that
-  would be incompatible if it matched (`latent_incompatible_policies`).
-- Liveliness (kind and lease), LatencyBudget, Ownership (kind equality),
+- `detect_qos_mismatches` checks Partition first (with `*` and `?` wildcards),
+  then type names, then the RxO rules; Liveliness, LatencyBudget, Ownership,
   DestinationOrder and DataRepresentation join Reliability, Durability and
-  Deadline. History stays a labelled `risky` finding. A policy a side did not
-  announce is skipped, never guessed.
-- `MismatchReport` gains, additively, the reader and writer participant guid and
-  name, type names, `details` (requested and offered value, failed rule) and
-  `unchecked`.
-- Hints cover orphan topics whose names differ by at most 2 edits (compared
-  against all topics), path-suffix matches and XTypes type id differences (a
-  note, never a mismatch). Hints are prioritized and say how many were omitted.
-- A late joiner is not a hint (it is normal on most buses): a `MatchedPair` is
-  flagged `late_joiner` when its writer is VOLATILE and the reader, on the same
-  host, appeared more than 1 s later.
-- `reports`, `matched` and `not_matched` are capped at 200 entries each, with
-  `reports_total`, `matched_total`, `not_matched_total` and `truncated`.
-- `topic_metrics` reports a `status`, and on a user topic says it has no data
-  instead of returning zeros. `peek_dds_samples` on a user topic returns count
-  0 and a note. `ParticipantInfo` and endpoints gain `is_observer`, and
-  `vendor_source` says where a vendor came from.
-- Tool descriptions no longer carry internal history, and state the
-  single-domain and EXCLUSIVE-ownership facts.
-- `EndpointInfo.activity` is reserved (always `None`) with an `activity_note`
-  saying liveness is not observed.
+  Deadline.
+- `topic_metrics` and `peek_dds_samples` on a user topic say they have no data
+  instead of returning zeros or a placeholder.
+- Tool descriptions no longer carry internal history.
 
 ### Fixed
 
-- Infinite durations (cyclonedds reports 9223372036854775807) are normalized
-  to `None`; an infinite Deadline used to surface as a 9.2e18 ns deadline.
-- The Cyclone discovery tracker is stopped at interpreter exit.
-- A race between the tracker and a tool call could mark a live participant as
-  lost for good; a failed read could drop a participant's departure; endpoints
-  of a participant that had just left could stay listed as live. The tracker
-  and every tool now share one lock, and taken samples are never discarded.
-- The cyclonedds Python binding is not thread-safe when it converts QoS: two
-  threads in `take()` at once corrupted the heap on Windows. Every binding call
-  now goes through one process-wide lock, and tool handlers no longer call the
-  binding at all.
-- If every tracker pass fails, tools no longer wait 3 s each: warm-up is bounded
-  once. `health_check` reports failed passes and cache evictions.
-- An unreadable QoS duration is treated as unknown (`QosProfile.unknown_policies`),
-  not as infinite, so it cannot produce a false Deadline incompatibility.
-- Topic-name typo hints are bounded (banded edit distance, orphan cap, call
-  budget), so a bus with a thousand topics does not stall the call.
-- Partition matching was checked against a live Cyclone bus: `*` and `?` are
-  wildcards, `[...]` is literal, and two wildcard expressions never match each
-  other. Pinned by tests.
+- Infinite durations are `None` instead of 9223372036854775807.
+- Races between the tracker and tool calls could mark a live participant lost
+  or keep endpoints of a departed one.
+- Concurrent cyclonedds calls could corrupt the heap on Windows; every binding
+  call now takes one lock.
+- A failing tracker no longer adds 3 s to every tool call.
+- An unreadable QoS duration is treated as unknown, not infinite.
+- Typo hints stay bounded on a bus with a thousand topics.
 
 ### Known limits
 
-- A hung writer (alive, lease renewed, no data) is not observable without a
-  data probe. An opt-in probe is planned for 0.5.6.
-- A crash and a clean leave cannot be told apart, and `lost_ns` is an upper
-  bound of the death (the lease expiry after a crash).
-- A participant that cycles faster than the discovery history depth between two
-  tracker passes can be missed.
-- The Fast DDS backend has never run on a bus, and `list_endpoints` is not
+- A hung writer (alive, no data) cannot be observed without a data probe.
+- A crash and a clean leave look the same; `lost_ns` is an upper bound.
+- A participant that cycles faster than the history depth between two tracker
+  passes can be missed.
+- The Fast DDS backend has never run on a bus; `list_endpoints` is not
   supported there.
-- DDS Security is not supported.
-- User-topic payload decoding is disabled, so `topic_metrics` has no data on
-  user topics.
+- DDS Security is not supported, and user-topic payload decoding is disabled.
 
 ## [0.5.4] - 2026-10-02
 
-First run of the DDS code against a live multi-vendor bus (Windows 11, a
-Python / Cyclone DDS participant and a Rust / Dust DDS participant, TopicForge
-driven by a real MCP client). Until now every DDS adapter had only been
-checked statically. The run exposed four defects that together left the DDS
-module non-functional on Cyclone; all are fixed and pinned by tests.
+First run of the DDS code against a live bus (Windows 11, a Python / Cyclone DDS
+participant and a Rust / Dust DDS participant). It exposed four defects that
+left the DDS module non-functional on Cyclone; all are fixed and tested.
 
 ### Fixed
 
-- Role nodes published below their rate (about 7 Hz for 10 Hz on Windows):
-  they now keep an absolute schedule.
-
-- **`list_participants` now reports the participant name and the hostname on
-  Cyclone.** The name comes from the EntityName QoS and the hostname from the
-  `__Hostname` discovery property; both were always null on a real bus.
-- Participant GUIDs were never read. cyclonedds 11.0.1 exposes the builtin
-  key as a `uuid.UUID`, which the extractor did not handle, so every
-  participant collapsed onto a single `unknown` entry.
-- Vendors were never identified. The builtin participant sample carries no
-  vendor field. The vendor id is now read from the first two bytes of the GUID
-  prefix, as RTPS recommends; implementations that do not follow that
-  convention (Dust DDS, and RTI by default) still report `unknown`, because
-  the Cyclone Python binding does not expose the vendor id from the RTPS
-  header.
-- The OMG vendor-id table was wrong. It mapped `01.05` to Fast DDS and
-  `01.16` to Cyclone; the correct ids are `01.0F` (eProsima) and `01.10`
-  (Eclipse), verified against both vendors' sources. The Cyclone side ran on a
-  live bus; the Fast DDS side (`fast_extract_vendor_id`) is verified
-  statically only, since its tests need a binding that is not on PyPI.
-  The `vendor` field of `ParticipantInfo` and `ParticipantEvent` now also accepts `rti_micro`,
-  `opensplice`, `opendds`, `coredx`, `intercom` and `dust` (soft-breaking for
-  clients validating the previous enum).
-- `detect_qos_mismatches` never reported anything on Cyclone. cyclonedds
-  scopes its policy class names (`Reliability.BestEffort`), and the
-  normalizer matched only the bare name, so no QoS profile was ever built.
-- A stopped participant never disappeared. Discovery readers keep the last
-  sample of a departed participant with a NOT_ALIVE instance state; those are
-  now ignored for participants and endpoints, so a participant is reported as
-  left when its lease expires, and a dead endpoint no longer produces a
-  mismatch.
-
-- Cyclone adapter created a new DDS reader on a builtin discovery topic on
-  every tool call and never deleted it. It now keeps one reader per builtin
-  topic and takes a non-blocking snapshot, so calls no longer wait 2 s each
-  (`detect_qos_mismatches` waited 4 s).
-- `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription` reported the
-  endpoints of participants that had left; disposed entries are now dropped.
-  Its payload also carries the endpoint `type_name`.
-- `test_dds_cross_vendor.py` expected an error message from v0.3; it had
-  never run, since CI has no DDS binding. First run against the real Cyclone
-  binding.
+- `list_participants` reports the participant name and hostname on Cyclone
+  (both were always null).
+- Participant GUIDs were never read, so every participant collapsed onto one
+  `unknown` entry.
+- Vendors were never identified. The vendor id is now read from the GUID prefix;
+  Dust DDS and RTI by default still report `unknown`.
+- The OMG vendor-id table mapped Fast DDS and Cyclone to the wrong ids (now
+  `01.0F` and `01.10`). The Fast DDS side is verified statically only.
+- `ParticipantInfo.vendor` also accepts `rti_micro`, `opensplice`, `opendds`,
+  `coredx`, `intercom` and `dust`.
+- `detect_qos_mismatches` never reported anything on Cyclone because policy
+  class names were not normalized.
+- A stopped participant never disappeared; departed participants and endpoints
+  are now dropped.
+- The Cyclone adapter leaked a reader per tool call and waited 2 s each; it now
+  keeps one reader per builtin topic.
+- `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription` listed endpoints
+  of participants that had left, and now includes the endpoint `type_name`.
+- Example role nodes published below their rate on Windows.
 
 ### Added
 
-- `examples/dds/`: a "write the code" track. Examples 00 (hello publisher
-  and subscriber), 05 (Reliability), 06 (Durability and the late joiner),
-  07 (Deadline declared and kept) and 08 (a crash seen from inside and from
-  outside) each ship a readable `publisher.py` and `subscriber.py` in Cyclone
-  DDS Python; the subscriber prints what it receives and the DDS statuses,
-  and TopicForge explains the same situation from outside. All fourteen
-  examples pass on a live bus.
-- The generic role nodes print one line per second per reader with what
-  they received, and examples 02, 04, 10 and 13 check that the broken
-  subscriber receives nothing while the control one receives data.
-- The harness keeps each program's output in a log file and prints it live
-  under `--hold`.
-
-- `scripts/integration/interop_check.py`: one-command multi-vendor demo
-  that starts a Rust / Dust and a Python / Cyclone participant, drives
-  TopicForge over stdio through the official MCP client, checks participant
-  discovery, a deliberate Reliability mismatch between the two vendors, and
-  the departure of a stopped participant, then stops every process it started.
-- A real Rust / Dust DDS participant (`publishers/dust_publisher`) and a real
-  Python / Cyclone participant replacing the previous scaffold, which never
-  wrote a sample.
-- Twelve interop programs in total, one per vendor and language with an
-  officially released binding (Cyclone C / C++ / Rust / Python, Dust Rust /
-  Python, Fast DDS C++ / Python, RTI Connext C / C++ / Python, OpenSplice C),
-  all following the contract in `scripts/integration/DEMO_CONTRACT.md`. The
-  driver starts whichever ones are built on the host and adapts its checks;
-  `--list` shows what can run. Only Cyclone Python and Dust Rust / Python / C
-  have been run, on Windows; the rest are written but unrun. RTI participants
-  need a local license and are never run in CI.
-- One-command launch scripts, `scripts/integration/launch/setup` and
-  `run_demo` (`.ps1` and `.sh`), which create `.venv-demo`, install the Cyclone
-  binding and build the Rust participant. `setup.ps1 -Firewall` adds inbound
-  UDP 7400-7500 rules on private networks for multi-machine runs.
-- Unicast peer configuration for Cyclone and Fast DDS and a guide for a mixed
-  Linux and Windows bus (`scripts/integration/config/`).
-- `.github/workflows/demo.yml` runs the driver with the Cyclone and Dust
-  participants on Ubuntu and Windows; `demo-fast.yml` builds Fast DDS 3 from
-  pinned tags and starts the C++ participant (weekly and manual).
-- `scripts/integration/README.md` rewritten around the demo: it previously
-  described the removed docker / scenario rig.
-
-- `examples/dds/`: real use cases 10 to 14 (driver swap, wiring, safety
-  monitor dropout, deadline not offered, restart loop) next to the concept
-  examples 01 to 04. All nine pass on a live bus.
+- `examples/dds/`: fourteen runnable examples (concepts and use cases), all
+  passing on a live bus.
+- `scripts/integration/`: a demo driver, twelve interop programs (Cyclone, Dust,
+  Fast DDS, RTI, OpenSplice), one-command setup scripts and CI workflows. Only
+  Cyclone Python and Dust Rust / Python / C have been run, on Windows.
 
 ### Removed
 
-- The docker / scenario integration rig (`scenarios_runner.py`, `run-local.*`,
-  `docker-compose.yml`, per-vendor Dockerfiles, scenario JSON files, schema
-  test and `integration.yml`) is removed in favour of the demo driver.
+- The docker / scenario integration rig, replaced by the demo driver.
 
 ## [0.5.3] - 2026-10-01
 

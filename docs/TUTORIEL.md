@@ -1,10 +1,10 @@
 # TopicForge: Tutorial
 
-TopicForge is a read-only Model Context Protocol (MCP) server that gives an AI agent grounded, structured visibility into a ROS2 robotics stack and the raw DDS layer beneath it (topics, participants, QoS, recorded bags), without ever being able to publish, call a service, or command a robot.
+TopicForge is a read-only Model Context Protocol (MCP) server that gives an AI agent grounded, structured visibility into a ROS2 robotics stack and the raw DDS layer beneath it (topics, participants, QoS, recorded bags). It cannot publish, call a service, or command a robot.
 
 This is for ROS2 developers, robotics ML/CV engineers, and anyone who wants their AI assistant to answer "what's actually happening on my robot's graph right now" instead of guessing from training data.
 
-There is no write path anywhere in TopicForge's architecture. Read-only is not a locked-down permission you could misconfigure; the write code was never written, so there is nothing to flip and nothing to exploit into a write.
+TopicForge has no write path: the write code was never written, so no setting can turn it on.
 
 This tutorial covers a first run, recurring monitoring prompts, and the privacy contract. The tool list, modes and environment variables are in the [README](../README.md). For OS-by-OS environment setup (WSL2, native Linux, Docker, native Windows), see [`TESTING.md`](TESTING.md).
 

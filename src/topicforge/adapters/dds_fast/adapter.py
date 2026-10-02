@@ -2,19 +2,12 @@
 
 Joins the bus as a read-only participant through the Fast DDS Python
 binding. A duck-typed listener collects discovery state under an RLock, and
-the lifecycle events come straight from `on_participant_discovery`, so
-there is no polling as in the Cyclone adapter. The factory imports this
-module only for `TOPICFORGE_DDS_BACKEND=fast` (see
-`docs/dds-interop-matrix.md`).
+lifecycle events come from `on_participant_discovery`, with no polling. The
+factory imports this module only for `TOPICFORGE_DDS_BACKEND=fast`.
 
 This code has never run against a bus: the `fastdds` binding is not on PyPI.
-
-* `list_participants`, `participant_events`: the `LifecycleBuffer`.
-* `detect_qos_mismatches`: subscriptions and publications paired by topic.
-* `peek_dds_samples`: the three builtin DCPS topics; a user topic returns one
-  empty placeholder because `_try_dynamic_decode_fast` is not implemented.
-* `topic_metrics`: filled when `peek_dds_samples` surfaces builtin samples
-  (no per-sample callback in the fastdds 2.6.x Python binding).
+User topics return one empty placeholder because
+`_try_dynamic_decode_fast` is not implemented.
 """
 
 from __future__ import annotations

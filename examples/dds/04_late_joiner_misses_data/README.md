@@ -1,10 +1,8 @@
 # 04 A late joiner misses the data
 
-Concept: QoS compatibility, Durability. Durability says whether a writer
-keeps data for readers that join later. VOLATILE keeps nothing;
-TRANSIENT_LOCAL keeps the last values for late joiners.
-
-## The story
+Durability says whether a writer keeps data for readers that join later.
+VOLATILE keeps nothing; TRANSIENT_LOCAL keeps the last values for late
+joiners.
 
 Mission control publishes the robot's mission when it starts. The navigation
 planner boots later, and asks DDS to give it the last mission on arrival
@@ -40,12 +38,12 @@ The reader requests TRANSIENT_LOCAL, the writer offers VOLATILE. Same
 request/offered rule as in example 02: DDS refuses the match, and the planner
 gets nothing at all, not even the messages sent after it joined.
 
-## Ask your agent
-
-> nav_planner started after mission_control and never got the mission on DDS
-> domain 0. Why?
-
 A Durability mismatch looks like a startup-order bug ("it works if I start
 the planner first"), but it blocks every message, not only the old ones. To
 fix it, publish configuration-like data (missions, maps, parameters) with
 TRANSIENT_LOCAL on the writer.
+
+Prompt to try:
+
+> nav_planner started after mission_control and never got the mission on DDS
+> domain 0. Why?

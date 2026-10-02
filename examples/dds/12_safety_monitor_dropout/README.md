@@ -3,8 +3,6 @@
 A safety function dies silently. What does the robot lose, and how fast can
 anyone know?
 
-## The story
-
 The safety monitor watches the velocity commands and publishes the
 emergency-stop state. It crashes. The motor controller keeps executing
 commands: nothing in it notices that `estop` lost its only writer.
@@ -22,7 +20,7 @@ python run.py            # run and check (about 30 s: it waits for the lease)
 python run.py --hold     # keep the programs running, ask your own MCP client
 ```
 
-## What TopicForge shows
+## What the bus shows
 
 ```
 [2] The safety monitor crashes. When does the bus know?
@@ -55,10 +53,7 @@ that a reader's Liveliness request is compatible with the writer's offer, but
 it cannot observe runtime liveliness: a writer that is silent while its
 process is up looks healthy.
 
-## Ask your agent
+Prompt to try:
 
 > Watch DDS domain 0. If a program disappears, tell me which topics lose
 > their only writer or a reader, and what that means for the robot.
-
-A monitoring tool tells you after the fact. The robot itself must fail safe
-on its own.

@@ -1,10 +1,10 @@
 # 01 Who is on the bus?
 
-Concept: DDS discovery. Every DDS program announces itself on the bus,
-whatever its vendor, through standard discovery messages. TopicForge reads
-those announcements; it does not need to know the programs in advance.
+Every DDS program announces itself on the bus through standard discovery
+messages, whatever its vendor, and TopicForge reads those announcements
+without knowing the programs in advance.
 
-## The story
+## Setup
 
 A small robot runs three programs: a watchdog from one DDS vendor (Dust DDS),
 a navigation planner and a motor controller from another (Cyclone DDS). You
@@ -41,12 +41,7 @@ Dust DDS does not announce them, and it does not put its vendor id where
 TopicForge can read it, so it shows as `unknown`. It is still seen, because
 standard discovery does not depend on the vendor.
 
-## Ask your agent
-
-With `python run.py --hold` running and TopicForge configured in your MCP
-client (see `../README.md`):
+Prompt to try, with `python run.py --hold` running and TopicForge configured in
+your MCP client (see `../README.md`):
 
 > Who is on DDS domain 0? For each participant give its name, vendor and host.
-
-Give your participants names. An unnamed participant is a GUID, and a GUID
-tells a human nothing.

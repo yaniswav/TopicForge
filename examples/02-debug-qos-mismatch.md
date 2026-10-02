@@ -17,7 +17,7 @@ The mock DDS fixture ships four deterministic participants
 `/dds/well_matched` (compatible QoS), `/dds/qos_mismatch`
 (deliberate Reliability incompatibility: RELIABLE reader vs
 BEST_EFFORT writer), and two user-topic payload exemplars,
-`/dds/ddsforge/example` and `/dds/ddsforge/opaque`, covered at the end.
+`/dds/topicforge/example` and `/dds/topicforge/opaque`, covered at the end.
 
 ## Conversation
 
@@ -29,7 +29,7 @@ You:
 Claude calls: `list_participants(domain_id=0)` -> returns 4
 participants with `vendor`, `hostname`, `guid`, lifecycle fields
 (`first_seen_ns`, `status="active"`, `seen_count`). The
-multi-vendor mix stands in for the OMG-DDS-RTPS protocol guarantee. `list_endpoints()` then gives every writer and reader with its
+mixed vendors are mock data; on a live bus the author has observed Cyclone DDS and Dust DDS. `list_endpoints()` then gives every writer and reader with its
 participant, type and structured QoS, and a `by_topic` roll-up that flags
 topics with a writer and no reader. Then `detect_qos_mismatches(topic=None)` -> returns a
 `MismatchScan` whose `reports` hold 1 `MismatchReport` for
@@ -37,7 +37,7 @@ topics with a writer and no reader. Then `detect_qos_mismatches(topic=None)` -> 
 `severity="incompatible"`, the two participant names and
 `details=[{policy: "Reliability", requested: "RELIABLE", offered:
 "BEST_EFFORT", rule: ...}]`. `not_matched` is empty (no partition or type
-split) and `hints` notes that `/dds/ddsforge/opaque` has a writer and no
+split) and `hints` notes that `/dds/topicforge/opaque` has a writer and no
 reader.
 
 You:
@@ -68,8 +68,8 @@ You:
 Claude calls: `peek_dds_samples(topic="/dds/well_matched",
 count=3)` -> returns 3 deterministic samples (`{"seq": i, "vendor":
 "cyclone"}`). The mock fixture also includes two user-topic examples
-that show the payload annotations: `/dds/ddsforge/example`
-returns `_decode_status="full"` with decoded fields, `/dds/ddsforge/opaque`
+that show the payload annotations: `/dds/topicforge/example`
+returns `_decode_status="full"` with decoded fields, `/dds/topicforge/opaque`
 returns `_decode_status="raw"` with a `_raw_bytes_hex` preview.
 
 Mock only. Those samples show the wire shape, not live behaviour. On a

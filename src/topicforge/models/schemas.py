@@ -201,10 +201,9 @@ class ParticipantInfo(BaseModel):
             "not put their vendor id there, while the Cyclone Python binding "
             "does not expose the RTPS header vendor id. The participant is "
             "still reported; see `vendor_source`. "
-            "Vendor-neutral: "
-            "TopicForge observes every conformant DDS-RTPS participant "
-            "on the bus via the OMG protocol guarantee: see "
-            "`docs/dds-interop-matrix.md`."
+            "Any conformant DDS-RTPS participant should appear through "
+            "standard discovery; Cyclone DDS and Dust DDS have been observed "
+            "on a live bus. See `docs/dds-interop-matrix.md`."
         )
     )
     hostname: str | None = Field(
@@ -831,7 +830,8 @@ class BagAnalysis(BaseModel):
     path: str = Field(
         description=(
             "Path to the analyzed bag, as supplied by the caller. May point to a "
-            "file (`.mcap`, `.db3`, `.bag`) or to a `rosbag2_*` directory."
+            "file (`.mcap`, `.db3`, or ROS 1 `.bag` for `peek_bag_samples`) or to a "
+            "`rosbag2_*` directory."
         )
     )
     storage_format: str | None = Field(
