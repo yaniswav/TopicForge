@@ -150,7 +150,7 @@ def test_sample_messages_without_a_publisher_says_so_and_waits_less(
 
     monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
     result = Ros2CliAdapter().sample_messages("/cmd_vel", count=2, timeout_s=30)
-    assert deadlines == [3.0]
+    assert len(deadlines) == 1 and 2.5 < deadlines[0] <= 3.0
     assert result.note is not None and "No publisher" in result.note
     assert "within 3 s" in result.note
 
@@ -190,12 +190,26 @@ def test_sample_messages_streams_yaml_and_extracts_the_header_stamp(
     }
 
 
-def test_sample_messages_count_zero_does_not_start_the_cli(
+def test_sample_messages_count_zero_validates_the_topic_without_starting_the_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _stub_which_resolves(monkeypatch)
+    _stub_run(
+        monkeypatch,
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=_IMU_INFO, stderr=""),
+    )
     seen = _stub_echo(monkeypatch, EchoRun())
     result = Ros2CliAdapter().sample_messages("/imu", count=0)
     assert result.count == 0 and result.note is None and seen == []
+
+
+def test_sample_messages_count_zero_on_an_unknown_topic_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_which_resolves(monkeypatch)
+    _stub_run(monkeypatch, lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="", stderr=""))
+    with pytest.raises(AdapterError, match="not found"):
+        Ros2CliAdapter().sample_messages("/nope", count=0)
 
 
 def test_list_topics_safe_counts_default_to_zero_on_failure(

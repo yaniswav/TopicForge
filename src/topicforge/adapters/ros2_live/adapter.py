@@ -17,17 +17,22 @@ import logging
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
-from topicforge.adapters.ros2_live.echo_stream import stream_echo
+from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
 from topicforge.adapters.ros2_live.parsers import (
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
     summarize_publisher_qos,
 )
-from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
+from topicforge.constants import (
+    DEFAULT_MAX_ARRAY_LENGTH,
+    DEFAULT_MAX_SAMPLE_BYTES,
+    DEFAULT_SAMPLE_TIMEOUT_S,
+)
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
@@ -46,6 +51,10 @@ log = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT_SEC = 8.0
 # Wait for `sample_messages` on a topic with no announced publisher.
 _NO_PUBLISHER_WAIT_SEC = 3.0
+# `sample_messages` returns within about `timeout_s` plus this: stopping the CLI
+# takes up to ~2 s, and decoding may run until 1 s past the deadline.
+_PARSE_GRACE_SEC = 1.0
+_MIN_ECHO_SEC = 0.5
 
 _DEFAULT_DDS_INACTIVE_REASON = (
     "install the Cyclone binding and select it: "
@@ -61,8 +70,16 @@ class Ros2CliAdapter:
 
     name: AdapterName = "ros2_cli"
 
-    def __init__(self, executable: str = "ros2", *, dds_inactive_reason: str | None = None) -> None:
+    def __init__(
+        self,
+        executable: str = "ros2",
+        *,
+        dds_inactive_reason: str | None = None,
+        max_message_chars: int = DEFAULT_MAX_SAMPLE_BYTES,
+    ) -> None:
         self._exe = executable
+        # Longest echo document (printed YAML) kept by `sample_messages`.
+        self._max_message_chars = max_message_chars
         # Why no DDS backend serves next to this adapter; set by the factory.
         self.dds_inactive_reason = dds_inactive_reason
 
@@ -145,7 +162,10 @@ class Ros2CliAdapter:
         return topics
 
     def get_topic_info(self, topic: str) -> TopicInfo:
-        out = self._run([self._exe, "topic", "info", topic, "--verbose"])
+        return self._topic_info(topic, _DEFAULT_TIMEOUT_SEC)
+
+    def _topic_info(self, topic: str, timeout: float) -> TopicInfo:
+        out = self._run([self._exe, "topic", "info", topic, "--verbose"], timeout)
         info = parse_topic_info(out, fallback_name=topic, mode_effective=self.effective_mode)
         if info is None:
             raise AdapterError(f"Topic not found or empty info: {topic!r}")
@@ -162,31 +182,66 @@ class Ros2CliAdapter:
     ) -> SampleResult:
         """Stream `ros2 topic echo` and keep up to `count` messages within `timeout_s`.
 
-        QoS is passed explicitly, derived from the publishers' QoS in
-        `ros2 topic info --verbose`: the CLI's own choice runs once against a
-        possibly cold daemon and can pick a profile that never matches a
-        latched topic. A short result carries a `note` saying why.
+        `timeout_s` bounds the whole call, topic lookup included; the call
+        returns within about `timeout_s` plus two seconds (stopping the CLI,
+        decoding what arrived). QoS is passed explicitly, derived from the
+        publishers' QoS in `ros2 topic info --verbose`: the CLI's own choice
+        runs once against a possibly cold daemon and can pick a profile that
+        never matches a latched topic. A short result carries a `note` saying
+        why. A topic that does not exist raises, also for `count` 0.
         TODO(roadmap): rclpy-backed adapter: time-range windows and rmw
         receive timestamps.
         """
+        started = time.monotonic()
+        info = self._topic_info(topic, min(_DEFAULT_TIMEOUT_SEC, timeout_s))
         if count <= 0:
             return self._sample_result(topic, [], None)
 
-        info = self.get_topic_info(topic)
+        has_publisher = info.publisher_count > 0
+        budget = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
+        remaining = max(budget - (time.monotonic() - started), _MIN_ECHO_SEC)
         cmd = self._echo_command(
             topic, info, max_array_length=max_array_length, arrays_summary_only=arrays_summary_only
         )
-        has_publisher = info.publisher_count > 0
-        deadline = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
-        run = stream_echo(cmd, count=count, deadline_s=deadline)
+        run = stream_echo(
+            cmd,
+            count=count,
+            deadline_s=remaining,
+            max_document_chars=self._max_message_chars,
+        )
         if not run.documents and run.exit_code not in (None, 0):
             raise AdapterError(
                 f"`ros2 topic echo {topic}` failed (exit {run.exit_code}): "
                 f"{run.stderr_tail or 'no stderr'}"
             )
 
-        samples = []
-        for doc in run.documents:
+        parse_until = started + budget + _PARSE_GRACE_SEC
+        samples, skipped = self._decode(run, topic, info, max_array_length, parse_until)
+        note = " ".join(
+            part
+            for part in (
+                _short_result_note(
+                    run, len(samples) + skipped, count, budget, has_publisher, info.qos_durability
+                ),
+                _dropped_note(run.oversized, skipped, self._max_message_chars),
+            )
+            if part
+        )
+        return self._sample_result(topic, samples, note or None)
+
+    def _decode(
+        self,
+        run: EchoRun,
+        topic: str,
+        info: TopicInfo,
+        max_array_length: int | None,
+        parse_until: float,
+    ) -> tuple[list[MessageSample], int]:
+        """Decode the run's documents until `parse_until` (monotonic); returns the rest as a count."""
+        samples: list[MessageSample] = []
+        for index, doc in enumerate(run.documents):
+            if time.monotonic() > parse_until:
+                return samples, len(run.documents) - index
             message = parse_echo_document(doc.text, truncate_length=max_array_length)
             samples.append(
                 MessageSample(
@@ -198,8 +253,7 @@ class Ros2CliAdapter:
                     payload=message.payload,
                 )
             )
-        note = _short_result_note(len(samples), count, deadline, has_publisher)
-        return self._sample_result(topic, samples, note)
+        return samples, 0
 
     def _sample_result(
         self, topic: str, samples: list[MessageSample], note: str | None
@@ -336,22 +390,56 @@ def _echo_qos_args(info: TopicInfo) -> list[str]:
     return ["--qos-reliability", reliability, "--qos-durability", durability]
 
 
-def _short_result_note(got: int, wanted: int, deadline_s: float, has_publisher: bool) -> str | None:
+def _short_result_note(
+    run: EchoRun,
+    got: int,
+    wanted: int,
+    budget_s: float,
+    has_publisher: bool,
+    durability: str | None,
+) -> str | None:
     """Why fewer than `wanted` messages arrived; `None` when all did."""
     if got >= wanted:
         return None
-    head = f"{got} of {wanted} messages within {deadline_s:g} s."
+    if run.exit_code is not None:
+        tail = f": {run.stderr_tail}" if run.stderr_tail else ""
+        return (
+            f"{got} of {wanted} messages: the `ros2` CLI exited early (exit {run.exit_code}){tail}."
+        )
+    head = f"{got} of {wanted} messages within {budget_s:g} s"
+    if got > 0:
+        head += " (fewer than requested)"
     if not has_publisher:
         return (
-            f"{head} No publisher is announced on this topic, so nothing was "
+            f"{head}. No publisher is announced on this topic, so nothing was "
             "waited for beyond a short grace period."
         )
+    if durability == "transient_local":
+        return (
+            f"{head}. The topic is transient_local (latched): it usually holds "
+            "only its last message(s), so request `count` 1."
+        )
     return (
-        f"{head} A publisher exists but sent nothing in time: it may publish "
+        f"{head}. A publisher exists but sent no more in time: it may publish "
         "less often than the deadline, be idle, or the message may be too "
         "large to print (retry with a lower `max_array_length` or "
         "`arrays_summary_only` true). A larger `timeout_s` waits longer."
     )
+
+
+def _dropped_note(oversized: int, skipped: int, max_chars: int) -> str | None:
+    """Messages dropped for size, or left undecoded because the time budget ran out."""
+    parts: list[str] = []
+    if oversized:
+        parts.append(
+            f"{oversized} message(s) over {max_chars / (1024 * 1024):.1f} MiB were dropped; "
+            "use `max_array_length` or `arrays_summary_only`."
+        )
+    if skipped:
+        parts.append(
+            f"{skipped} message(s) were received but not decoded: the time budget ran out."
+        )
+    return " ".join(parts) or None
 
 
 # Parsers

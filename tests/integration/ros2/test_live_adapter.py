@@ -263,3 +263,23 @@ def test_peek_bag_samples_decodes_string(adapter: Ros2CliAdapter, bag: Path) -> 
     result = adapter.peek_bag_samples(str(bag), "/robot_description_lite", 1)
     assert result.count == 1
     assert "bench_robot" in str(result.samples[0].payload)
+
+
+def test_the_whole_call_stays_within_timeout_plus_two_seconds(adapter: Ros2CliAdapter) -> None:
+    started = time.monotonic()
+    adapter.sample_messages("/camera/image_raw", 50, arrays_summary_only=True, timeout_s=3)
+    assert time.monotonic() - started < 3 + 2.5
+
+
+def test_a_message_over_the_cap_is_dropped_with_a_note() -> None:
+    small_cap = Ros2CliAdapter(max_message_chars=100_000)
+    result = small_cap.sample_messages("/camera/image_raw", 1, max_array_length=65536, timeout_s=8)
+    assert result.count == 0
+    assert result.note is not None and "were dropped" in result.note
+
+
+def test_a_short_latched_result_hints_count_one(adapter: Ros2CliAdapter) -> None:
+    result = adapter.sample_messages("/robot_description_lite", 3, timeout_s=3)
+    assert result.count == 1
+    assert result.note is not None and "fewer than requested" in result.note
+    assert "latched" in result.note

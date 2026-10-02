@@ -36,8 +36,12 @@ class EchoMessage:
     stamp_source: StampSource
 
 
-class _EchoLoader(yaml.SafeLoader):
-    """`SafeLoader` that leaves timestamp-looking scalars (`2024-01-01`) as strings."""
+# libyaml parses a 1 MiB document about 10 times faster than the pure-Python loader.
+_BaseLoader = yaml.CSafeLoader if yaml.__with_libyaml__ else yaml.SafeLoader
+
+
+class _EchoLoader(_BaseLoader):  # type: ignore[misc, valid-type]
+    """Safe loader that leaves timestamp-looking scalars (`2024-01-01`) as strings."""
 
 
 _EchoLoader.yaml_implicit_resolvers = {
@@ -74,7 +78,9 @@ def parse_echo_document(document: str, *, truncate_length: int | None = None) ->
     `truncate_length` is the `--truncate-length` the CLI ran with (`None` for
     `--full-length`). Arrays cut there lose the CLI's trailing `'...'`
     element, and strings cut there keep their `...`; the dotted path of every
-    cut field is listed under `_truncated_fields`. Non-finite floats become
+    cut field is listed under `_truncated_fields`. A string that really is
+    `truncate_length` characters followed by `...` is indistinguishable from a
+    cut one and is reported as cut (a rare false positive). Non-finite floats become
     the strings `nan`, `inf` and `-inf` (JSON has no such numbers).
 
     A document that is not a YAML mapping keeps its text under `_raw_text`,

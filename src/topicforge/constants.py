@@ -24,11 +24,13 @@ MAX_ARRAY_LENGTH = 65536
 DEFAULT_MAX_SAMPLE_BYTES = 1024 * 1024
 MAX_SAMPLE_CALL_FACTOR = 4
 
-# `sample_messages` wall deadline in seconds, from the start of the `ros2 topic
-# echo` process (CLI start-up included). `timeout_s` accepts MIN..MAX.
+# `sample_messages` wall deadline in seconds, from the start of the call (topic
+# lookup and CLI start-up included). `timeout_s` accepts MIN..MAX. The maximum
+# stays under the 60 s request timeout some MCP clients apply, which must also
+# cover stopping the CLI and decoding (about 2 s more).
 DEFAULT_SAMPLE_TIMEOUT_S = 10.0
 MIN_SAMPLE_TIMEOUT_S = 1.0
-MAX_SAMPLE_TIMEOUT_S = 60.0
+MAX_SAMPLE_TIMEOUT_S = 45.0
 
 # Reserved payload key listing the dotted paths of fields `sample_messages`
 # cut at `max_array_length` (arrays, strings, bytes).
