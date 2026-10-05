@@ -1,0 +1,12 @@
+{
+  "name": "topicforge",
+  "owner": { "name": "Yanis Ethvignot", "url": "https://topicforge.horizonvista.xyz" },
+  "metadata": { "description": "TopicForge: read-only ROS 2 and DDS inspection for Claude." },
+  "plugins": [
+    {
+      "name": "topicforge",
+      "source": "./plugin",
+      "description": "Read-only ROS 2 and DDS inspection: topics, samples, bags, QoS mismatches, DDS participants."
+    }
+  ]
+}
