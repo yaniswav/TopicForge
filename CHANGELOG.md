@@ -5,7 +5,7 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] - Unreleased
+## [0.6.0] - 2026-10-05
 
 `sample_messages` (live) rewritten after the OmniSim team's report (count
 ignored, empty results on latched topics, wrong timestamps and shifted columns
@@ -1263,7 +1263,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...v0.5.4
