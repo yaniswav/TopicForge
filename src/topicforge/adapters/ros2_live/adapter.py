@@ -309,6 +309,16 @@ class Ros2CliAdapter:
             analysis = analysis.model_copy(update={"note": note})
         return analysis
 
+    def sim_clock_published(self) -> bool | None:
+        """Whether `/clock` has a publisher on the graph; `None` when the CLI cannot tell."""
+        try:
+            text = self._run([self._exe, "topic", "info", "/clock"])
+        except AdapterError as exc:
+            return False if "unknown topic" in str(exc).lower() else None
+        if "unknown topic" in text.lower():
+            return False
+        return parse_pub_sub_counts(text)[0] > 0
+
     def _graph_counts(self) -> dict[str, tuple[int, int]] | None:
         """`{topic: (pubs, subs)}` from `ros2 topic list -v`, or `None` when unavailable."""
         try:

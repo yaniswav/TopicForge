@@ -602,13 +602,13 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/cmd_vel",
             message_type="geometry_msgs/msg/Twist",
-            timestamp_ns=0,
-            stamp_source="none",
+            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            stamp_source="recorded",
+            recorded_ns=_BASE_TS_NS + i * 100_000_000,
             payload={
                 "_decode_status": "full",
                 "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},
                 "angular": {"x": 0.0, "y": 0.0, "z": 0.05 * i},
-                "_msgtype": "geometry_msgs/msg/Twist",
             },
         )
         for i in range(5)
@@ -618,11 +618,18 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/odom",
             message_type="nav_msgs/msg/Odometry",
             timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            stamp_source="header",
+            recorded_ns=_BASE_TS_NS + i * 100_000_000 + 2_000_000,
             payload={
                 "_decode_status": "full",
-                "header": {"frame_id": "odom"},
+                "header": {
+                    "stamp": {
+                        "sec": (_BASE_TS_NS + i * 100_000_000) // 1_000_000_000,
+                        "nanosec": (_BASE_TS_NS + i * 100_000_000) % 1_000_000_000,
+                    },
+                    "frame_id": "odom",
+                },
                 "pose": {"position": {"x": 0.1 * i, "y": 0.0, "z": 0.0}},
-                "_msgtype": "nav_msgs/msg/Odometry",
             },
         )
         for i in range(3)

@@ -59,8 +59,18 @@ def iter_field_names(sample: Any) -> list[str]:
     """List field names on a dynamic-type sample.
 
     Tries `__dataclass_fields__`, `__fields__`, `__slots__`, then public
-    `__dict__` keys. Returns an empty list when none apply.
+    `__dict__` keys. Returns an empty list when none apply. Dunder names
+    such as the `__msgtype__` marker that `rosbags` messages carry are
+    not data and are left out.
     """
+    return [name for name in _raw_field_names(sample) if not _is_dunder(name)]
+
+
+def _is_dunder(name: str) -> bool:
+    return name.startswith("__") and name.endswith("__")
+
+
+def _raw_field_names(sample: Any) -> list[str]:
     fields = getattr(sample, "__dataclass_fields__", None)
     if fields:
         return list(fields)

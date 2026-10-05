@@ -801,16 +801,30 @@ class MessageSample(BaseModel):
             "`geometry_msgs/Twist`). It is the publisher's clock, not the "
             "arrival time: on simulated time it is sim time since the "
             "simulation started (a few seconds, not a date) and 0 is a valid "
-            "value. Use `received_ns` for when the CLI printed the message. "
-            "Mock samples with a header carry synthetic increasing values."
+            "value. From `peek_bag_samples` a message without a header gets "
+            "the bag record time instead (`stamp_source` `recorded`), also "
+            "given in `recorded_ns`. Use `received_ns` for when the CLI "
+            "printed the message. Mock samples with a header carry synthetic "
+            "increasing values."
         )
     )
-    stamp_source: Literal["header", "none"] | None = Field(
+    stamp_source: Literal["header", "none", "recorded"] | None = Field(
         default=None,
         description=(
             "Where `timestamp_ns` comes from: `header` (the message's "
-            "`header.stamp`) or `none` (headerless message, `timestamp_ns` is "
-            "0). `None` when the backend does not say."
+            "`header.stamp`), `none` (headerless live message, `timestamp_ns` "
+            "is 0) or `recorded` (headerless message from a bag, "
+            "`timestamp_ns` is the bag record time). `None` when the backend "
+            "does not say."
+        ),
+    )
+    recorded_ns: int | None = Field(
+        default=None,
+        description=(
+            "Nanoseconds at which the recorder wrote this message into the "
+            "bag (the bag's own record time, wall clock unless the recorder "
+            "ran on simulated time). `peek_bag_samples` only; `None` for live "
+            "samples, where `received_ns` plays that role."
         ),
     )
     received_ns: int | None = Field(
@@ -1171,6 +1185,17 @@ class HealthReport(BaseModel):
             "`sample_messages`, `analyze_bag`, `peek_bag_samples`) can run, "
             "i.e. `ros_backend` is not `none`. False on a DDS-only setup: "
             "use `list_endpoints` for topics and wiring there."
+        ),
+    )
+    sim_clock_published: bool | None = Field(
+        default=None,
+        description=(
+            "Whether `/clock` has at least one publisher on the ROS 2 graph. "
+            "True suggests nodes may run on simulated time (`use_sim_time`), "
+            "so `header.stamp` values are sim time, not wall time (compare "
+            "with `received_ns`). It is a hint: a publisher on `/clock` does "
+            "not prove a given node follows it. `None` in mock mode or when "
+            "the `ros2` CLI could not answer."
         ),
     )
     payload_decoding: Literal["disabled", "enabled"] = Field(
