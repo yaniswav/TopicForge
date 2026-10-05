@@ -1,0 +1,46 @@
+header:
+  stamp:
+    sec: 17
+    nanosec: 13239341
+  frame_id: bas...
+angle_min: -2.356194496154785
+angle_max: 2.356194496154785
+angle_increment: 0.008726646192371845
+time_increment: 0.0
+scan_time: 0.10000000149011612
+range_min: 0.05000000074505806
+range_max: 30.0
+ranges:
+- 1.0
+- 1.0010000467300415
+- 1.0019999742507935
+- '...'
+intensities:
+- 0.0
+- 1.0
+- 2.0
+- '...'
+---
+header:
+  stamp:
+    sec: 17
+    nanosec: 113319317
+  frame_id: bas...
+angle_min: -2.356194496154785
+angle_max: 2.356194496154785
+angle_increment: 0.008726646192371845
+time_increment: 0.0
+scan_time: 0.10000000149011612
+range_min: 0.05000000074505806
+range_max: 30.0
+ranges:
+- 1.0
+- 1.0010000467300415
+- 1.0019999742507935
+- '...'
+intensities:
+- 0.0
+- 1.0
+- 2.0
+- '...'
+---

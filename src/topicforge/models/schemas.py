@@ -795,30 +795,48 @@ class MessageSample(BaseModel):
     )
     timestamp_ns: int = Field(
         description=(
-            "Timestamp in nanoseconds since epoch. In live mode this is the "
-            "`header.stamp` of the sampled message when present: the live "
-            "adapter invokes `ros2 topic echo --csv --once`, whose flattened "
-            "CSV exposes `header.stamp.sec`/`nanosec` as the first two "
-            "columns for any `Header`-stamped message. **Headerless message "
-            "types** (e.g. `std_msgs/String`, `geometry_msgs/Twist`) carry "
-            "no embedded timestamp, and `timestamp_ns` falls back to 0; an "
-            "rclpy-backed adapter will eventually expose rmw receive times "
-            "for those. Mock mode emits monotonically increasing values for "
-            "deterministic ordering."
+            "Nanoseconds from the message's own top-level `header.stamp` "
+            "(`stamp_source` `header`), or 0 when the message has no header "
+            "(`stamp_source` `none`, e.g. `std_msgs/String`, "
+            "`geometry_msgs/Twist`). It is the publisher's clock, not the "
+            "arrival time: on simulated time it is sim time since the "
+            "simulation started (a few seconds, not a date) and 0 is a valid "
+            "value. Use `received_ns` for when the CLI printed the message. "
+            "Mock samples with a header carry synthetic increasing values."
         )
+    )
+    stamp_source: Literal["header", "none"] | None = Field(
+        default=None,
+        description=(
+            "Where `timestamp_ns` comes from: `header` (the message's "
+            "`header.stamp`) or `none` (headerless message, `timestamp_ns` is "
+            "0). `None` when the backend does not say."
+        ),
+    )
+    received_ns: int | None = Field(
+        default=None,
+        description=(
+            "Wall-clock nanoseconds since epoch at which the `ros2` CLI "
+            "printed this message, after it deserialized and formatted it: not "
+            "the network receive time, and it lags more for large messages. "
+            "Accurate to a fraction of a second. Live `sample_messages` only; "
+            "`None` otherwise."
+        ),
     )
     payload: dict[str, object] = Field(
         default_factory=dict,
         description=(
-            "Structured message payload. **In live mode the parser "
-            "exposes the message fields as positional CSV columns** keyed "
-            "as `col_0`, `col_1`, ... (`header.stamp.sec`/`nanosec` are "
-            "stripped out into `timestamp_ns` when detected). The raw CSV "
-            "row is preserved verbatim under the reserved `_raw_text` key "
-            "so clients can re-parse against the message's IDL when needed. "
-            "In mock mode the payload is fully structured and `_raw_text` "
-            "is absent. Large messages (e.g. images) may be summarized to "
-            "keep tool output bounded."
+            'Message fields as nested named values, e.g. `{"header": '
+            '{"stamp": {"sec": 12, "nanosec": 5}, "frame_id": '
+            '"base_laser"}, "ranges": [1.0, 1.001]}`. Non-finite floats '
+            "are the strings `nan`, `inf`, `-inf`. Live `sample_messages` "
+            "adds `_truncated_fields` (dotted paths of arrays, strings or "
+            "bytes cut at `max_array_length`; a string of exactly that length plus "
+            "`...` that was not cut is listed too) when something was cut, and "
+            "`_raw_text` (the unparsed output) only when a message could not "
+            "be parsed. With `arrays_summary_only` an array is a string like "
+            "`<sequence type: float, length: 541>`. Large messages may be "
+            "dropped to keep tool output bounded."
         ),
     )
 

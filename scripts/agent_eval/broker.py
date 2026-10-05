@@ -19,6 +19,7 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--domain", type=int, required=True)
     ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--host", default="127.0.0.1", help="0.0.0.0 inside a container")
     a = ap.parse_args()
     env = {
         **os.environ,
@@ -59,7 +60,7 @@ async def main() -> None:
             await writer.drain()
             writer.close()
 
-        server = await asyncio.start_server(handle, "127.0.0.1", a.port)
+        server = await asyncio.start_server(handle, a.host, a.port)
         print(f"broker ready domain={a.domain} port={a.port}", flush=True)
         async with server:
             await server.serve_forever()

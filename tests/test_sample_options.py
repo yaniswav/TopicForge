@@ -11,8 +11,13 @@ import pytest
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings, load_settings
-from topicforge.constants import DEFAULT_MAX_SAMPLE_BYTES, MAX_SAMPLE_CALL_FACTOR
-from topicforge.models import MessageSample
+from topicforge.constants import (
+    DEFAULT_MAX_SAMPLE_BYTES,
+    DEFAULT_SAMPLE_TIMEOUT_S,
+    MAX_SAMPLE_CALL_FACTOR,
+    MAX_SAMPLE_COUNT,
+)
+from topicforge.models import MessageSample, SampleResult
 from topicforge.server import build_app
 from topicforge.services import Inspector
 from topicforge.services.sample_budget import apply_sample_budget, sample_size_bytes
@@ -28,10 +33,17 @@ class _Recorder(MockAdapter):
     def __init__(self, samples: list[MessageSample]) -> None:
         self.seen: dict[str, Any] = {}
         self._samples = samples
+        self.note: str | None = None
 
-    def sample_messages(self, topic: str, count: int, **options: Any) -> list[MessageSample]:
+    def sample_messages(self, topic: str, count: int, **options: Any) -> SampleResult:
         self.seen = options
-        return self._samples
+        return SampleResult(
+            topic=topic,
+            count=len(self._samples),
+            samples=self._samples,
+            mode_effective=self.effective_mode,
+            note=self.note,
+        )
 
 
 # ---- Inspector -------------------------------------------------------------
@@ -40,13 +52,21 @@ class _Recorder(MockAdapter):
 def test_options_are_forwarded_to_the_adapter() -> None:
     adapter = _Recorder([])
     Inspector(adapter).sample_messages("/scan", 1, max_array_length=1024, arrays_summary_only=True)
-    assert adapter.seen == {"max_array_length": 1024, "arrays_summary_only": True}
+    assert adapter.seen == {
+        "max_array_length": 1024,
+        "arrays_summary_only": True,
+        "timeout_s": DEFAULT_SAMPLE_TIMEOUT_S,
+    }
 
 
 def test_defaults_match_the_cli_default() -> None:
     adapter = _Recorder([])
     Inspector(adapter).sample_messages("/scan", 1)
-    assert adapter.seen == {"max_array_length": 128, "arrays_summary_only": False}
+    assert adapter.seen == {
+        "max_array_length": 128,
+        "arrays_summary_only": False,
+        "timeout_s": DEFAULT_SAMPLE_TIMEOUT_S,
+    }
 
 
 def test_none_means_no_truncation_and_is_forwarded() -> None:
@@ -67,14 +87,14 @@ def test_max_array_length_bounds_are_accepted(ok: int) -> None:
 
 
 def test_truncation_is_reported_in_the_note() -> None:
-    cut = _sample({"col_0": "1", "_truncated_after_columns": [127]})
+    cut = _sample({"ranges": [1.0], "_truncated_fields": ["ranges"]})
     result = Inspector(_Recorder([cut])).sample_messages("/scan", 1)
     assert result.note is not None
     assert "cut" in result.note and "max_array_length" in result.note
 
 
 def test_no_note_when_nothing_was_cut() -> None:
-    result = Inspector(_Recorder([_sample({"col_0": "1"})])).sample_messages("/scan", 1)
+    result = Inspector(_Recorder([_sample({"data": "1"})])).sample_messages("/scan", 1)
     assert result.note is None
 
 
@@ -168,7 +188,14 @@ def test_tool_schema_exposes_the_options() -> None:
     props = tools["sample_messages"].inputSchema["properties"]
     assert props["max_array_length"]["default"] == 128
     assert props["arrays_summary_only"]["default"] is False
-    assert "count" in props
+    assert props["count"]["maximum"] == MAX_SAMPLE_COUNT
+    assert props["timeout_s"]["default"] == DEFAULT_SAMPLE_TIMEOUT_S
+    assert props["timeout_s"]["minimum"] == 1 and props["timeout_s"]["maximum"] == 45
+
+
+def test_tool_call_over_the_cap_is_capped_not_rejected() -> None:
+    out = asyncio.run(_app().call_tool("sample_messages", {"topic": "/cmd_vel", "count": 60}))
+    assert "capped to 50" in json.dumps(out, default=str)
 
 
 def test_tool_call_with_options_succeeds_in_mock_mode() -> None:
@@ -197,16 +224,49 @@ class _LiveRecorder(_Recorder):
         return "live"
 
 
-def test_cut_strings_are_reported_in_the_note() -> None:
-    cut = _sample({"col_0": "abcd...", "_truncated_columns": [0]})
+def test_cut_fields_are_named_in_the_note() -> None:
+    cut = _sample({"data": "abcd...", "_truncated_fields": ["data"]})
     result = Inspector(_Recorder([cut])).sample_messages("/chat", 1)
-    assert result.note is not None and "_truncated_columns" in result.note
+    assert result.note is not None and "_truncated_fields" in result.note
 
 
-def test_live_empty_result_explains_the_echo_timeout() -> None:
-    result = Inspector(_LiveRecorder([])).sample_messages("/scan", 1, max_array_length=None)
-    assert result.count == 0
-    assert result.note is not None and "echo timeout" in result.note
+def test_the_adapter_note_comes_first_and_is_kept() -> None:
+    adapter = _Recorder([])
+    adapter.note = "0 of 3 messages within 10 s."
+    result = Inspector(adapter).sample_messages("/scan", 3)
+    assert result.note == "0 of 3 messages within 10 s."
+
+
+def test_a_count_over_the_cap_is_capped_with_a_note() -> None:
+    adapter = _Recorder([])
+    seen: list[int] = []
+    original = adapter.sample_messages
+
+    def spy(topic: str, count: int, **options: Any) -> SampleResult:
+        seen.append(count)
+        return original(topic, count, **options)
+
+    adapter.sample_messages = spy  # type: ignore[method-assign]
+    result = Inspector(adapter).sample_messages("/scan", 60)
+    assert seen == [MAX_SAMPLE_COUNT]
+    assert result.note is not None and "capped to 50 (requested 60)" in result.note
+
+
+def test_a_count_at_the_cap_has_no_cap_note() -> None:
+    assert Inspector(_Recorder([])).sample_messages("/scan", MAX_SAMPLE_COUNT).note is None
+
+
+@pytest.mark.parametrize("bad", [0.5, 45.5, 60, -1, True, "10"])
+def test_invalid_timeout_is_rejected(bad: Any) -> None:
+    with pytest.raises(AdapterError, match="timeout_s"):
+        Inspector(_Recorder([])).sample_messages("/scan", 1, timeout_s=bad)
+
+
+@pytest.mark.parametrize("ok", [1, 10, 45.0])
+def test_timeout_bounds_are_accepted_and_forwarded(ok: float) -> None:
+    adapter = _Recorder([])
+    Inspector(adapter).sample_messages("/scan", 1, timeout_s=ok)
+    assert adapter.seen["timeout_s"] == ok
 
 
 def test_empty_result_has_no_timeout_note_when_nothing_was_requested() -> None:

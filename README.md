@@ -49,8 +49,8 @@ Every response except `health_check` carries `mode_effective` (`"live"` or `"moc
 | `health_check`          | Environment and mode introspection. Always succeeds; reports `mode` next to `requested_mode`      |
 | `list_topics`           | Discover the ROS2 graph                                                                          |
 | `get_topic_info`        | Message type, publisher/subscriber counts and QoS for one topic                                  |
-| `sample_messages`       | Peek recent messages on a ROS2 topic (count clamped to 50)                                       |
-| `analyze_bag`           | Summarize a `.mcap` / `.db3` recording or `rosbag2_*` directory (via `ros2 bag info`)      |
+| `sample_messages`       | Peek recent messages on a ROS2 topic (count capped at 50)                                        |
+| `analyze_bag`           | Summarize a `.mcap` / `.db3` recording or `rosbag2_*` directory (via `ros2 bag info`)            |
 | `list_participants`     | DDS participants on the domain: vendor, `name` (EntityName QoS, Cyclone) and `hostname`          |
 | `detect_qos_mismatches` | Incompatible QoS pairs between DDS readers and writers                                           |
 | `peek_dds_samples`      | Raw DDS samples; structured on the three builtin discovery topics, presence-only on user topics   |
@@ -100,12 +100,12 @@ Samples with comments are in [`.env.example`](.env.example). Any invalid value s
 
 - DDS validation is partial. The Cyclone adapter has run against a real bus, with Cyclone and Dust DDS participants, on Windows and in CI on Ubuntu and Windows (`.github/workflows/demo.yml`). The Fast DDS adapter has never run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed by this project. The multi-vendor claim rests on the RTPS protocol guarantee, not on a recorded cross-vendor run.
 - User-topic payloads are not decoded. `peek_dds_samples` on a user topic returns count 0 and a note that the topic is announced on the bus; no traffic is read. `topic_metrics` therefore has data only for the builtin discovery topics and says so in its `status`. It is a discovery-layer probe, not a publish-rate monitor.
-- Liveliness at runtime is not observed. A writer that is alive but silent (a hung process whose lease is still renewed) looks healthy, because TopicForge reads discovery, not data. An opt-in data probe is planned for 0.5.6. A crash and a clean leave cannot be told apart, and `lost_ns` is an upper bound of the death.
+- Liveliness at runtime is not observed. A writer that is alive but silent (a hung process whose lease is still renewed) looks healthy, because TopicForge reads discovery, not data. An opt-in data probe is planned. A crash and a clean leave cannot be told apart, and `lost_ns` is an upper bound of the death.
 - Cyclone vendor ids: participants that do not follow the RTPS vendor-id convention in their GUID prefix (Dust DDS, and RTI by default) are reported with vendor `unknown`.
 - Single domain: the server observes the domain it joined at startup; changing it needs a restart.
 - DDS Security is not handled. A participant without credentials sees an empty secure bus. `detect_qos_mismatches` checks Partition, type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership (kind), DestinationOrder and DataRepresentation (History as a risk); Presentation, XTypes assignability and runtime behavior are not checked, and the result lists them in `policies_unchecked`. It returns a `MismatchScan` envelope: read `reports` for the mismatches.
 - Fast DDS serves no `list_endpoints`.
-- `sample_messages` (live) runs `ros2 topic echo --csv --once` with a short timeout, so it returns at most one message, and a topic with no current publisher returns an empty sample. `timestamp_ns` is the message `header.stamp` for `Header`-stamped types and `0` for headerless ones. Arrays are cut at 128 elements by default; `max_array_length` (1..65536, or null for no cut) and `arrays_summary_only` change that, and a cut is listed under `_truncated_after_columns`.
+- `sample_messages` (live) streams `ros2 topic echo` until `count` messages arrive or `timeout_s` (1..45, default 10, for the whole call) runs out, and returns what arrived with a `note` (`N of M messages within T s`, saying whether a publisher exists). QoS is matched to the publishers, so latched topics work. The payload has nested named fields (`payload.header.stamp.sec`); `timestamp_ns` is `header.stamp` (the publisher's clock, sim time on a simulation) or 0 for headerless types, with `stamp_source` and `received_ns` (wall clock when the CLI printed it). Arrays are cut at 128 elements by default; `max_array_length` (1..65536, or null for no cut) and `arrays_summary_only` change that, and a cut is listed under `_truncated_fields`. `nan` and `inf` come back as strings. `count` above 50 is capped with a note.
 - `analyze_bag` (live) parses `ros2 bag info` text for the totals and counts; anomaly detection is mock-only. Per-topic times, rates (`(n - 1) / span`) and `latched` are added when the bag can be read locally (`.db3` with the standard library, `.mcap` with `rosbags`), else rates fall back to count / bag duration (`frequency_basis`). `peek_bag_samples` reads the file itself, through `rosbags`, and is served only by the ROS2 CLI adapter or the mock; bags that embed no message definitions (Humble `.db3`) are decoded with the Humble definitions, or the distro the bag records, and `note` says so. Without `ros2`, bag tools return fixtures: check `health_check` for `mode: "mock"` before trusting bag output.
 - Synchronous handlers: the tools run on the MCP event loop; on Windows a hung `ros2` launcher can block the server.
 - No streaming or push subscriptions: tools are strictly request/response.
@@ -129,7 +129,7 @@ When on, each tool call emits one event with exactly six fields:
 | `tool_name`  | `"list_topics"` | One of the twelve tools, never argument values              |
 | `latency_ms` | `12.34`         | Handler wall-clock duration, 2 decimals                     |
 | `mode`       | `"mock"`        | Mode of the adapter actually serving: `mock` or `live`      |
-| `version`    | `"0.5.6"`       | TopicForge server version                                   |
+| `version`    | `"0.6.0"`       | TopicForge server version                                   |
 | `session_id` | `"a1b2c3..."`   | Random UUID per process, never persisted                    |
 | `success`    | `true`          | Whether the handler returned or raised                      |
 

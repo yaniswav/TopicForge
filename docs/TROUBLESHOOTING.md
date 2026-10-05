@@ -63,12 +63,12 @@ The adapter was written against the 2.6.x binding and has never run against a bu
 - `lookback_seconds must be in 1..86400` (`participant_events`): default 300. The lifecycle buffer keeps at most 200 events, newest first, regardless of window.
 - `window_seconds must be in 1..3600` (`topic_metrics`): default 60. The buffer holds 1000 samples per topic, drop-oldest, so frequency is computed from buffered samples, not a true rolling window.
 - `DDS topic name is malformed`: DDS names match `^[A-Za-z_/][A-Za-z0-9_/:]*$` (builtin names like `DCPSParticipant` and `::` separators are allowed; whitespace and dashes are not). ROS2 names start with `/` and use `_`, so `my-topic` becomes `/my_topic`.
-- `sample_messages` and `peek_*` silently clamp `count` to 50; the `count` field of the result is what was actually returned.
+- `sample_messages` caps `count` at 50 and says so in `note`; `peek_*` clamp silently. The `count` field of the result is what was actually returned.
 
 ## Other
 
 - `topicforge: command not found`: the entry point is not on PATH. Re-activate the venv, or use `python -m topicforge`.
-- `sample_messages` returns no samples: live mode runs `ros2 topic echo --once` with a 3 second timeout; a topic with no active publisher returns nothing. Check `ros2 topic info -v <topic>`.
+- `sample_messages` returns fewer samples than asked: live mode waits `timeout_s` seconds (default 10, max 60, counted from the start of the `ros2` CLI, which can take a few seconds on a slow machine) and `note` says `N of M messages` and whether a publisher exists. Raise `timeout_s` for a topic slower than 1 Hz; check `ros2 topic info -v <topic>`.
 - `analyze_bag` says the path does not exist: the path is resolved in the shell where TopicForge runs. Under WSL use `/mnt/c/demos/run.mcap`, not `C:\demos\run.mcap`. In mock mode only `.mcap`, `.db3`, `.bag` or extensionless paths are accepted.
 - Claude Desktop shows no tools: check Help -> View Logs -> MCP, confirm `topicforge --version` runs from the same environment (or use the absolute path of the binary in the config), and validate the config with `python -m json.tool claude_desktop_config.json`, since a JSON error silently drops the whole file.
 - First live call is slow: `ros2 topic list -t` initializes the DDS middleware, a 1-2 second warm-up.

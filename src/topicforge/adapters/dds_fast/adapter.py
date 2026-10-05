@@ -52,7 +52,7 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     is_removal as _is_removal,
 )
-from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
+from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
@@ -241,7 +241,8 @@ class FastDdsAdapter:
         *,
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
-    ) -> list[MessageSample]:
+        timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+    ) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:

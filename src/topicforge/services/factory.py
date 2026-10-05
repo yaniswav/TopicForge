@@ -71,7 +71,9 @@ def _try_build_ros2_cli(
     tool while no DDS backend serves.
     """
     cli_adapter = Ros2CliAdapter(
-        executable=settings.ros2_executable, dds_inactive_reason=dds_inactive_reason
+        executable=settings.ros2_executable,
+        dds_inactive_reason=dds_inactive_reason,
+        max_message_chars=settings.max_sample_bytes,
     )
     if not cli_adapter.is_available():
         return None

@@ -5,6 +5,67 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-05
+
+`sample_messages` (live) rewritten after the OmniSim team's report (count
+ignored, empty results on latched topics, wrong timestamps and shifted columns
+on simulated time).
+
+### Breaking
+
+- `sample_messages` payloads are nested named fields (`payload.header.stamp.sec`,
+  `payload.ranges`) instead of positional `col_0`, `col_1`, ... columns. The
+  verbatim row under `_raw_text` is gone: it is present only when a message could
+  not be parsed.
+- `_truncated_after_columns` and `_truncated_columns` are replaced by
+  `_truncated_fields`, a list of dotted field paths (`["ranges", "intensities"]`)
+  for arrays, strings or bytes cut at `max_array_length`. A cut array no longer
+  carries the CLI's `'...'` element.
+- `nan`, `inf` and `-inf` floats are returned as the strings `"nan"`, `"inf"`,
+  `"-inf"`.
+- `MiddlewareAdapter.sample_messages` returns a `SampleResult` instead of a list
+  of `MessageSample` and takes `timeout_s`. `parse_csv_echo` and `parse_echo_yaml`
+  are removed.
+- `pyyaml>=6` is a runtime dependency.
+- A failing `ros2 topic echo` (non-zero exit with no message, or a CLI that cannot
+  be started) raises an MCP error instead of returning an empty list. `count` 0 now
+  validates the topic in live mode too, as it already did in the mock.
+
+### Added
+
+- `sample_messages` parameter `timeout_s` (1..45, default 10): a wall deadline for
+  the whole call, topic lookup included. The call returns within about `timeout_s`
+  plus 2 s (stopping the CLI, decoding what arrived).
+- `MessageSample.stamp_source` (`header` or `none`) and `received_ns` (wall clock
+  when TopicForge read the message).
+- A short result carries a `note` (`N of M messages within T s`) that tells "no
+  publisher is announced" from "a publisher exists but nothing arrived in time",
+  hints `count` 1 for a latched topic, and gives the exit code and stderr when the
+  CLI exited early.
+- A message over the per-message size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`, 1 MiB) is
+  dropped while it streams and counted in the `note`, so a large `Image` no longer
+  costs tens of seconds of YAML decoding. Decoding uses libyaml when available and
+  stops at the call deadline.
+- `count` above 50 is capped with a note, and the tool schema declares the
+  maximum.
+
+### Fixed
+
+- `sample_messages` honours `count`: it streams `ros2 topic echo` and stops at
+  `count` messages or the deadline, then stops the process tree (SIGINT then
+  SIGKILL on POSIX, `taskkill /F /T` on Windows) (OmniSim D3). The echo is
+  started with explicit `--qos-reliability` and `--qos-durability` taken from the
+  publishers, so a latched (`transient_local`) topic is no longer returned empty
+  because the CLI picked its QoS against a cold daemon.
+- Stopping the CLI kills the whole process tree even when the launcher already
+  exited (POSIX: always signals the process group; Windows: a Job Object), so no
+  orphan `ros2` process keeps running. The CLI is started with UTF-8 output.
+- The mock `sample_messages` matches the live shape: headerless messages have
+  `timestamp_ns` 0 and `stamp_source` `none`.
+- `timestamp_ns` is the top-level `header.stamp` whatever its value, so a
+  simulated clock (seconds since the simulation start) no longer falls back to 0
+  and shifts every following column by two (OmniSim D4).
+
 ## [0.5.6] - 2026-10-02
 
 Fixes from a live run of 0.5.3 and 0.5.5 against OmniSim's simulated
@@ -1202,7 +1263,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/yaniswav/TopicForge/compare/v0.5.3...v0.5.4

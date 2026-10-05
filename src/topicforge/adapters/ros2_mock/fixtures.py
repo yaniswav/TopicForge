@@ -72,12 +72,18 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
 _BASE_TS_NS = 1_700_000_000_000_000_000
 
 
+def _stamp(ts_ns: int) -> dict[str, int]:
+    """A `builtin_interfaces/Time` payload, as `ros2 topic echo` prints it."""
+    return {"sec": ts_ns // 1_000_000_000, "nanosec": ts_ns % 1_000_000_000}
+
+
 _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
     "/cmd_vel": [
         MessageSample(
             topic="/cmd_vel",
             message_type="geometry_msgs/msg/Twist",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=0,
+            stamp_source="none",
             payload={
                 "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},
                 "angular": {"x": 0.0, "y": 0.0, "z": 0.05 * i},
@@ -90,8 +96,9 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/odom",
             message_type="nav_msgs/msg/Odometry",
             timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            stamp_source="header",
             payload={
-                "header": {"frame_id": "odom", "stamp_sec": 1_700_000_000 + i},
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * 100_000_000), "frame_id": "odom"},
                 "pose": {"position": {"x": 0.1 * i, "y": 0.0, "z": 0.0}},
                 "twist": {"linear": {"x": 0.2}, "angular": {"z": 0.0}},
             },
@@ -103,13 +110,14 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/scan",
             message_type="sensor_msgs/msg/LaserScan",
             timestamp_ns=_BASE_TS_NS + i * 50_000_000,
+            stamp_source="header",
             payload={
-                "header": {"frame_id": "laser", "stamp_sec": 1_700_000_000 + i},
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * 50_000_000), "frame_id": "laser"},
                 "angle_min": -3.14,
                 "angle_max": 3.14,
                 "range_min": 0.05,
                 "range_max": 12.0,
-                "ranges_summary": {"min": 0.32, "max": 11.5, "n": 720},
+                "ranges": "<sequence type: float, length: 720>",
             },
         )
         for i in range(3)
@@ -118,7 +126,8 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/tf",
             message_type="tf2_msgs/msg/TFMessage",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=0,
+            stamp_source="none",
             payload={
                 "transforms": [
                     {"frame_id": "odom", "child_frame_id": "base_link"},
@@ -133,12 +142,13 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             topic="/camera/image_raw",
             message_type="sensor_msgs/msg/Image",
             timestamp_ns=_BASE_TS_NS,
+            stamp_source="header",
             payload={
-                "header": {"frame_id": "camera", "stamp_sec": 1_700_000_000},
+                "header": {"stamp": _stamp(_BASE_TS_NS), "frame_id": "camera"},
                 "width": 640,
                 "height": 480,
                 "encoding": "rgb8",
-                "data_summary": "<binary 921600 bytes elided>",
+                "data": "<sequence type: uint8, length: 921600>",
             },
         )
     ],
@@ -592,7 +602,8 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/cmd_vel",
             message_type="geometry_msgs/msg/Twist",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=0,
+            stamp_source="none",
             payload={
                 "_decode_status": "full",
                 "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},

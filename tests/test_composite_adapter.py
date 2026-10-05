@@ -16,7 +16,6 @@ from topicforge.adapters.common import scan_endpoints
 from topicforge.adapters.composite import CompositeAdapter
 from topicforge.models import (
     BagAnalysis,
-    MessageSample,
     MismatchScan,
     ParticipantEvent,
     ParticipantInfo,
@@ -70,9 +69,9 @@ class _StubRosAdapter:
             mode_effective=self._mode,
         )
 
-    def sample_messages(self, topic: str, count: int, **_options: object) -> list[MessageSample]:
+    def sample_messages(self, topic: str, count: int, **_options: object) -> SampleResult:
         self.calls.append(("sample_messages", (topic, count, tuple(sorted(_options.items())))))
-        return []
+        return SampleResult(topic=topic, count=0, samples=[], mode_effective=self._mode)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         self.calls.append(("analyze_bag", (path,)))
@@ -147,7 +146,7 @@ class _StubDdsAdapter:
         self.calls.append(("get_topic_info", (topic,)))
         raise AdapterError("DDS adapter should not receive ROS calls")
 
-    def sample_messages(self, topic: str, count: int, **_options: object) -> list[MessageSample]:
+    def sample_messages(self, topic: str, count: int, **_options: object) -> SampleResult:
         self.calls.append(("sample_messages", (topic, count)))
         raise AdapterError("DDS adapter should not receive ROS calls")
 
@@ -262,7 +261,11 @@ def test_method_arguments_propagate_unchanged() -> None:
 
     assert ros.calls[-1] == (
         "sample_messages",
-        ("/cmd_vel", 7, (("arrays_summary_only", False), ("max_array_length", 128))),
+        (
+            "/cmd_vel",
+            7,
+            (("arrays_summary_only", False), ("max_array_length", 128), ("timeout_s", 10.0)),
+        ),
     )
     assert dds.calls[0] == ("peek_dds_samples", ("/dds/topic", 12))
     assert dds.calls[1] == ("list_participants", (99,))

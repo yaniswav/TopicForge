@@ -37,14 +37,16 @@ def test_get_topic_info_unknown_raises(mock_adapter: MockAdapter) -> None:
 
 
 def test_sample_messages_returns_up_to_count(mock_adapter: MockAdapter) -> None:
-    samples = mock_adapter.sample_messages("/cmd_vel", 3)
+    result = mock_adapter.sample_messages("/cmd_vel", 3)
+    samples = result.samples
+    assert result.count == 3 and result.mode_effective == "mock"
     assert len(samples) == 3
     assert all(s.topic == "/cmd_vel" for s in samples)
     assert all(s.message_type == "geometry_msgs/msg/Twist" for s in samples)
 
 
 def test_sample_messages_count_zero(mock_adapter: MockAdapter) -> None:
-    assert mock_adapter.sample_messages("/cmd_vel", 0) == []
+    assert mock_adapter.sample_messages("/cmd_vel", 0).samples == []
 
 
 def test_sample_messages_negative_count_raises(mock_adapter: MockAdapter) -> None:
@@ -94,6 +96,22 @@ def test_analyze_bag_accepts_known_bag_paths(mock_adapter: MockAdapter, good_pat
 def test_analyze_bag_rejects_non_bag_extension(mock_adapter: MockAdapter, bad_path: str) -> None:
     with pytest.raises(AdapterError, match="does not look like a ROS2 bag"):
         mock_adapter.analyze_bag(bad_path)
+
+
+def test_headerless_mock_samples_match_the_live_shape(mock_adapter: MockAdapter) -> None:
+    for topic in ("/cmd_vel", "/tf"):
+        for sample in mock_adapter.sample_messages(topic, 5).samples:
+            assert sample.timestamp_ns == 0 and sample.stamp_source == "none"
+    for sample in mock_adapter.sample_messages("/odom", 5).samples:
+        assert sample.stamp_source == "header" and sample.timestamp_ns > 0
+
+
+def test_mock_summaries_use_the_live_summary_format(mock_adapter: MockAdapter) -> None:
+    scan = mock_adapter.sample_messages("/scan", 1).samples[0].payload
+    image = mock_adapter.sample_messages("/camera/image_raw", 1).samples[0].payload
+    assert scan["ranges"] == "<sequence type: float, length: 720>"
+    assert image["data"] == "<sequence type: uint8, length: 921600>"
+    assert "ranges_summary" not in scan and "data_summary" not in image
 
 
 # ---------------------- fixture-coherence regression -----------------------
@@ -250,3 +268,11 @@ def test_mock_mismatch_scan_envelope(mock_adapter) -> None:
 
 def test_mock_mismatch_scan_topic_scope(mock_adapter) -> None:
     assert mock_adapter.detect_qos_mismatches("/dds/well_matched").reports == []
+
+
+def test_mock_header_messages_use_the_nested_stamp_shape(mock_adapter: MockAdapter) -> None:
+    sample = mock_adapter.sample_messages("/scan", 1).samples[0]
+    stamp = sample.payload["header"]["stamp"]  # type: ignore[index]
+    assert stamp["sec"] * 1_000_000_000 + stamp["nanosec"] == sample.timestamp_ns
+    assert sample.stamp_source == "header"
+    assert not any(key.startswith("col_") for key in sample.payload)

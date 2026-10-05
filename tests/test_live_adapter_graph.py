@@ -1,4 +1,4 @@
-"""QoS parsing, `ros2 topic list -v`, echo flags and CSV truncation in the live adapter.
+"""QoS parsing, `ros2 topic list -v` and `sample_messages` echo flags in the live adapter.
 
 The `ros2 topic info --verbose` fixtures are captures from a ROS 2 Humble /
 Fast DDS system (OmniSim). They print `History (Depth): UNKNOWN`, which is what
@@ -15,9 +15,9 @@ import pytest
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_live.adapter import (
     Ros2CliAdapter,
-    parse_csv_echo,
     parse_topic_info,
 )
+from topicforge.adapters.ros2_live.echo_stream import EchoRun
 from topicforge.adapters.ros2_live.parsers import (
     EndpointQos,
     parse_topic_endpoint_qos,
@@ -247,26 +247,85 @@ def test_subprocess_output_is_decoded_as_utf8_with_replacement(
 # ---- sample_messages flags -------------------------------------------------
 
 
-def _echo_command(monkeypatch: pytest.MonkeyPatch, **options: object) -> list[str]:
+def _echo_command(
+    monkeypatch: pytest.MonkeyPatch, info: str | None = None, **options: object
+) -> list[str]:
     cli = _Cli(
         {
-            "topic info": "Type: sensor_msgs/msg/LaserScan\nPublisher count: 1\n",
-            "topic echo": "1,2,3,4\n",
+            "topic info": info
+            or "Type: sensor_msgs/msg/LaserScan\nPublisher count: 1\nSubscription count: 0\n"
         }
     )
     _install(monkeypatch, cli)
+    seen: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_kw: object) -> EchoRun:
+        seen.append(cmd)
+        return EchoRun()
+
+    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
     Ros2CliAdapter().sample_messages("/scan", 1, **options)  # type: ignore[arg-type]
-    return next(c for c in cli.commands if "echo" in c)
+    return seen[0]
+
+
+def _info(reliability: str, durability: str, count: int = 1) -> str:
+    block = (
+        "Type: sensor_msgs/msg/LaserScan\nPublisher count: {n}\nSubscription count: 0\n\n"
+        "Node name: talker\nEndpoint type: PUBLISHER\n"
+        "Reliability: {r}\nDurability: {d}\n"
+    )
+    return block.format(n=count, r=reliability, d=durability)
+
+
+def test_echo_command_streams_yaml_with_explicit_qos(monkeypatch: pytest.MonkeyPatch) -> None:
+    cmd = _echo_command(monkeypatch, _info("RELIABLE", "VOLATILE"))
+    assert cmd[1:] == [
+        "topic",
+        "echo",
+        "--no-lost-messages",
+        "--qos-reliability",
+        "reliable",
+        "--qos-durability",
+        "volatile",
+        "/scan",
+    ]
+    assert "--once" not in cmd and "--csv" not in cmd
+
+
+def test_echo_command_matches_a_latched_publisher(monkeypatch: pytest.MonkeyPatch) -> None:
+    cmd = _echo_command(monkeypatch, _info("RELIABLE", "TRANSIENT_LOCAL"))
+    assert cmd[cmd.index("--qos-durability") + 1] == "transient_local"
+
+
+def test_echo_command_is_permissive_for_best_effort_publishers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cmd = _echo_command(monkeypatch, _info("BEST_EFFORT", "VOLATILE"))
+    assert cmd[cmd.index("--qos-reliability") + 1] == "best_effort"
+
+
+def test_echo_command_is_permissive_for_mixed_or_unknown_publishers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mixed = _info("RELIABLE", "TRANSIENT_LOCAL") + (
+        "\nNode name: other\nEndpoint type: PUBLISHER\n"
+        "Reliability: BEST_EFFORT\nDurability: VOLATILE\n"
+    )
+    cmd = _echo_command(monkeypatch, mixed)
+    assert cmd[cmd.index("--qos-reliability") + 1] == "best_effort"
+    assert cmd[cmd.index("--qos-durability") + 1] == "volatile"
+    cmd = _echo_command(monkeypatch)  # no QoS block at all
+    assert cmd[cmd.index("--qos-reliability") + 1] == "best_effort"
 
 
 def test_echo_default_keeps_the_cli_default_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
     cmd = _echo_command(monkeypatch)
-    assert cmd[1:] == ["topic", "echo", "--csv", "--once", "/scan"]
+    assert "--truncate-length" not in cmd and "--full-length" not in cmd
 
 
 def test_echo_custom_truncate_length(monkeypatch: pytest.MonkeyPatch) -> None:
     cmd = _echo_command(monkeypatch, max_array_length=1024)
-    assert cmd[1:] == ["topic", "echo", "--csv", "--once", "--truncate-length", "1024", "/scan"]
+    assert cmd[cmd.index("--truncate-length") + 1] == "1024"
 
 
 def test_echo_none_means_full_length(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,33 +336,6 @@ def test_echo_none_means_full_length(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_echo_arrays_summary_only(monkeypatch: pytest.MonkeyPatch) -> None:
     cmd = _echo_command(monkeypatch, arrays_summary_only=True)
     assert "--no-arr" in cmd
-
-
-# ---- CSV truncation mark ---------------------------------------------------
-
-
-def test_csv_truncation_cell_is_not_a_data_column() -> None:
-    row = "10,500,frame,1.0,2.0,...,9.0"
-    [(ts, payload)] = parse_csv_echo(row)
-    assert ts == 0  # 10 is not a plausible epoch second
-    assert [payload[f"col_{i}"] for i in range(5)] == ["10", "500", "frame", "1.0", "2.0"]
-    assert payload["col_5"] == "9.0"
-    assert "col_6" not in payload
-    assert payload["_truncated_after_columns"] == [4]
-    assert payload["_raw_text"] == row
-
-
-def test_csv_truncation_with_header_stamp_reindexes_after_the_stamp() -> None:
-    [(ts, payload)] = parse_csv_echo("1715600000,5,base_laser,1.5,2.5,...,0.1")
-    assert ts == 1_715_600_000_000_000_005
-    assert payload["col_0"] == "base_laser"
-    assert payload["_truncated_after_columns"] == [2]
-    assert payload["col_3"] == "0.1"
-
-
-def test_csv_without_truncation_has_no_marker_key() -> None:
-    [(_, payload)] = parse_csv_echo("1,2,3")
-    assert "_truncated_after_columns" not in payload
 
 
 # ---- DDS tools without a DDS backend ---------------------------------------
@@ -354,51 +386,3 @@ def test_live_analyze_bag_keeps_duration_basis_when_the_bag_is_not_readable_here
 def test_live_analyze_bag_missing_path_raises() -> None:
     with pytest.raises(AdapterError, match="does not exist"):
         Ros2CliAdapter().analyze_bag(str(_BAG_DIR / "absent"))
-
-
-# ---- CSV: --no-arr summaries and cut strings ---------------------------------
-
-
-def test_csv_sequence_summaries_stay_one_cell_each() -> None:
-    row = (
-        "1715600000,5,laser,<sequence type: float, length: 541>,"
-        "<sequence type: float[8], length: 3>,<array type: float[9]>,7.5"
-    )
-    [(ts, payload)] = parse_csv_echo(row)
-    assert ts == 1_715_600_000_000_000_005
-    assert payload["col_0"] == "laser"
-    assert payload["col_1"] == "<sequence type: float, length: 541>"
-    assert payload["col_2"] == "<sequence type: float[8], length: 3>"
-    assert payload["col_3"] == "<array type: float[9]>"
-    assert payload["col_4"] == "7.5"
-    assert "col_5" not in payload
-
-
-def test_csv_lists_strings_cut_at_the_truncate_length() -> None:
-    row = "1715600000,5,abcd...,short,xy,1.0"
-    [(_, payload)] = parse_csv_echo(row, truncate_length=4)
-    assert payload["_truncated_columns"] == [0]
-    assert "_truncated_after_columns" not in payload
-    [(_, uncut)] = parse_csv_echo(row)
-    assert "_truncated_columns" not in uncut
-
-
-def test_csv_cut_string_detection_needs_an_active_truncate_length() -> None:
-    [(_, payload)] = parse_csv_echo("1715600000,5,abcd...", truncate_length=None)
-    assert "_truncated_columns" not in payload
-    [(_, payload)] = parse_csv_echo("1715600000,5,abc...", truncate_length=4)
-    assert "_truncated_columns" not in payload
-
-
-def test_sample_messages_passes_the_effective_truncate_length(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cli = _Cli(
-        {
-            "topic info": "Type: std_msgs/msg/String\nPublisher count: 1\n",
-            "topic echo": "1715600000,5,hell...\n",
-        }
-    )
-    _install(monkeypatch, cli)
-    [sample] = Ros2CliAdapter().sample_messages("/chat", 1, max_array_length=4)
-    assert sample.payload["_truncated_columns"] == [0]

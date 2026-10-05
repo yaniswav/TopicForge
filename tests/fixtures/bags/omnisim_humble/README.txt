@@ -1,7 +1,8 @@
 OmniSim Husky bag (rosbag2, sqlite3 storage)
 
-Source:    OmniSim simulator, commit 79aadbe38, simulated Clearpath Husky with a
-           541-beam LaserScan, IMU and GPS, bridged to ROS 2.
+Source:    OmniSim simulator v9.1.3 (https://github.com/omnilink-tech/omnisim/releases/tag/v9.1.3),
+           simulated Clearpath Husky with a 541-beam LaserScan, IMU and GPS,
+           bridged to ROS 2.
 Stack:     ROS 2 Humble, Fast DDS (rmw_fastrtps_cpp), rosbag2 0.15.16.
 Recorded:  2026-10-02, 35.36 s, `ros2 bag record -a`, by the OmniSim team, who
            allowed its use as a test fixture.
