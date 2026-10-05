@@ -23,12 +23,12 @@ env:
 jobs:
   build-and-run:
     name: Build fast_publisher and run it for 10 s
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -38,7 +38,7 @@ jobs:
 
       - name: Restore Fast DDS prefix
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.PREFIX }}
           key: fastdds-${{ env.FAST_DDS_TAG }}-cdr-${{ env.FAST_CDR_TAG }}-mem-${{ env.FOONATHAN_MEMORY_VENDOR_TAG }}-${{ runner.os }}-${{ runner.arch }}
