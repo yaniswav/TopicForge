@@ -5,6 +5,33 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - Unreleased
+
+### Added
+
+- [docs/VALIDATION.md](docs/VALIDATION.md): the OmniSim team's external validation
+  against a simulated robot's ground truth, published as approved by them.
+- `MessageSample.recorded_ns`: the bag record time of a `peek_bag_samples` sample.
+- `MessageSample.stamp_source` value `recorded`: `timestamp_ns` is the bag record
+  time because the message has no top-level header.
+- `HealthReport.sim_clock_published` (live ROS 2 only, else null): whether `/clock`
+  has a publisher, a hint that nodes may run on simulated time.
+
+### Changed
+
+- `peek_bag_samples` `timestamp_ns` is now `header.stamp` when the message has a
+  top-level header (`stamp_source` `header`), else the bag record time (`stamp_source`
+  `recorded`). It used to be the bag record time for every message, with
+  `stamp_source` null. The tool description says it returns the first `count`
+  messages, not the last.
+- CI: `actions/checkout` v7, `actions/setup-python` v7, `actions/cache` v6. Jobs
+  that run tests or the demos use `ubuntu-24.04` instead of `ubuntu-latest`.
+
+### Fixed
+
+- `peek_bag_samples` payloads no longer carry `__msgtype__` in every nested object
+  nor a top-level `_msgtype`; the message type stays at the sample level.
+
 ## [0.6.0] - 2026-10-05
 
 `sample_messages` (live) rewritten after the OmniSim team's report (count
