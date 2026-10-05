@@ -1,7 +1,7 @@
 {
   "name": "topicforge",
   "displayName": "TopicForge",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Read-only ROS 2 and DDS inspection for Claude: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
   "author": {
     "name": "Yanis Ethvignot",

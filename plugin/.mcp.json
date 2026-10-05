@@ -6,7 +6,7 @@
         "--python",
         "3.12",
         "--from",
-        "topicforge[dds]==0.6.0",
+        "topicforge[dds]==0.6.1",
         "topicforge"
       ],
       "env": {

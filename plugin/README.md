@@ -4,7 +4,7 @@ TopicForge is a read-only MCP server for ROS 2 and DDS. This plugin bundles the 
 
 ## What is included
 
-- MCP server `topicforge`, started with `uvx` from the `topicforge` package on PyPI (version pinned to 0.6.0). It exposes twelve read-only tools: `health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`, `list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, `peek_dds_samples`, `topic_metrics`.
+- MCP server `topicforge`, started with `uvx` from the `topicforge` package on PyPI (version pinned to 0.6.1). It exposes twelve read-only tools: `health_check`, `list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`, `list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, `peek_dds_samples`, `topic_metrics`.
 - Skill `diagnose-dds-bus`: what to call, and in which order, when nodes do not talk, a topic gets no data, or a node crashed or restarts.
 - Skill `inspect-ros2-robot`: listing topics, sampling messages and reading bags, including large arrays and simulation time.
 

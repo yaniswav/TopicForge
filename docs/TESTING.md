@@ -15,7 +15,7 @@ How to get a working ROS2 environment to point TopicForge at, and how to wire it
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install topicforge
-python -m topicforge --version                      # -> topicforge 0.6.0
+python -m topicforge --version                      # -> topicforge 0.6.1
 TOPICFORGE_MODE=mock python -m topicforge           # blocks on stdio; MCP clients spawn it
 ```
 
@@ -41,7 +41,7 @@ python3 -m venv ~/topicforge-venv && source ~/topicforge-venv/bin/activate
 pip install topicforge          # Ubuntu 22.04 ships Python 3.10, which is enough
 ```
 
-Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.6.0 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
+Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.6.1 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
 
 ## Linux native
 

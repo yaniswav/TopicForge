@@ -5,10 +5,14 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.1] - Unreleased
+## [0.6.1] - 2026-10-05
 
 ### Added
 
+- A Claude plugin bundle in `plugin/`: the TopicForge MCP server (started with
+  `uvx`, version pinned) and two skills, `diagnose-dds-bus` and
+  `inspect-ros2-robot`. Install with `claude plugin marketplace add
+  yaniswav/TopicForge`.
 - [docs/VALIDATION.md](docs/VALIDATION.md): the OmniSim team's external validation
   against a simulated robot's ground truth, published as approved by them.
 - `MessageSample.recorded_ns`: the bag record time of a `peek_bag_samples` sample.
@@ -1290,7 +1294,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/yaniswav/TopicForge/compare/v0.5.4...v0.5.5
