@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-06
+
 ### Added
 
 - [docs/CLIENTS.md](docs/CLIENTS.md): ready-to-paste local stdio configs for Claude
@@ -1314,7 +1316,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/yaniswav/TopicForge/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/yaniswav/TopicForge/compare/v0.5.5...v0.5.6
