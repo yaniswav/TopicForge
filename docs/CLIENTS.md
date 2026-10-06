@@ -1,5 +1,7 @@
 # Using TopicForge from your MCP client
 
+Last checked 2026-10-06.
+
 TopicForge (ROS 2 / DDS) is a local, read-only MCP server that speaks stdio.
 Every client below launches it as a child process with the same command:
 
@@ -34,7 +36,7 @@ version strings; a test keeps them in sync.
 - **First start is slow.** `uvx` downloads the package and the Cyclone DDS binding
   the first time. Clients with a short startup timeout may need a retry or a
   larger timeout (noted per client below).
-- **If resolution fails on a very new Python**, add `"--python", "3.12"` before
+- **If resolution fails on a very new Python** (the Cyclone binding ships wheels for Python 3.10 to 3.13 only), add `"--python", "3.12"` before
   `"--from"` in the args.
 - **pip alternative.** `pip install "topicforge[dds]==0.6.1"`, then use
   `"command": "topicforge"` (or `"command": "python", "args": ["-m", "topicforge"]`)
@@ -92,7 +94,9 @@ claude mcp add topicforge --env TOPICFORGE_MODE=auto --env TOPICFORGE_DDS_BACKEN
 
 ## Claude Desktop
 
-Edit `claude_desktop_config.json` (Settings > Developer > Edit Config):
+From 0.6.2: download `topicforge-<version>.mcpb` from the latest GitHub release and double-click it. Claude Desktop asks for the DDS backend and domain id and manages Python and dependencies itself through uv.
+
+Or edit the config file by hand: `claude_desktop_config.json` (Settings > Developer > Edit Config):
 `%APPDATA%\Claude\claude_desktop_config.json` on Windows,
 `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS. Paste
 the common JSON shape above and restart the app completely. On Windows, if
@@ -100,14 +104,20 @@ the common JSON shape above and restart the app completely. On Windows, if
 
 ## Cursor
 
-One click: [Add TopicForge to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlW2Rkc109PTAuNi4xIiwidG9waWNmb3JnZSJdLCJlbnYiOnsiVE9QSUNGT1JHRV9NT0RFIjoiYXV0byIsIlRPUElDRk9SR0VfRERTX0JBQ0tFTkQiOiJjeWNsb25lIiwiVE9QSUNGT1JHRV9ERFNfRE9NQUlOX0lEIjoiMCJ9fQ==)
+The one-click links in this page and in the README are https redirects, because GitHub and PyPI strip `cursor://` and `vscode:` links. Only the raw schemes are documented by Cursor and VS Code; the https forms (`cursor.com/install-mcp`, `vscode.dev/redirect/mcp/install`) were observed to redirect correctly on 2026-10-06 but are not in the vendors' docs (unverified, last checked 2026-10-06). The raw links are given as a fallback.
+
+One click: [Add TopicForge to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlW2Rkc109PTAuNi4xIiwidG9waWNmb3JnZSJdLCJlbnYiOnsiVE9QSUNGT1JHRV9NT0RFIjoiYXV0byIsIlRPUElDRk9SR0VfRERTX0JBQ0tFTkQiOiJjeWNsb25lIiwiVE9QSUNGT1JHRV9ERFNfRE9NQUlOX0lEIjoiMCJ9fQ%3D%3D)
+
+If that page does not open Cursor, use the raw deeplink: `cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlW2Rkc109PTAuNi4xIiwidG9waWNmb3JnZSJdLCJlbnYiOnsiVE9QSUNGT1JHRV9NT0RFIjoiYXV0byIsIlRPUElDRk9SR0VfRERTX0JBQ0tFTkQiOiJjeWNsb25lIiwiVE9QSUNGT1JHRV9ERFNfRE9NQUlOX0lEIjoiMCJ9fQ==`
 
 Or paste the common JSON shape into `~/.cursor/mcp.json` (all projects) or
 `.cursor/mcp.json` (one project).
 
 ## VS Code / GitHub Copilot
 
-One click: [Install in VS Code](vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%5Bdds%5D%3D%3D0.6.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)
+One click: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%5Bdds%5D%3D%3D0.6.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)
+
+Fallback, the raw URL handler: `vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%5Bdds%5D%3D%3D0.6.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D`
 
 Or put this in `.vscode/mcp.json` (the key is `servers`, not `mcpServers`), or run
 "MCP: Add Server" from the Command Palette:
@@ -131,15 +141,15 @@ Or put this in `.vscode/mcp.json` (the key is `servers`, not `mcpServers`), or r
 
 ## Windsurf / Devin (Cascade)
 
-Windsurf's docs now live under Devin. Edit `%APPDATA%\devin\mcp_config.json`
+Windsurf's docs now redirect to Devin's (unverified, last checked 2026-10-06). Edit `%APPDATA%\devin\mcp_config.json`
 (Windows) or `~/.config/devin/mcp_config.json` (macOS, Linux) and paste the common
-JSON shape. Older installs may still use `~/.codeium/windsurf/mcp_config.json`.
+JSON shape. Older installs may still use `~/.codeium/windsurf/mcp_config.json` (unverified, last checked 2026-10-06).
 
 ## Cline
 
 Open the MCP Servers icon in the Cline panel, then Configure, then "Configure MCP
 Servers", and paste the common JSON shape (the file is
-`~/.cline/data/settings/cline_mcp_settings.json`). Optional fields such as
+`~/.cline/data/settings/cline_mcp_settings.json` per docs.cline.bot on 2026-10-06; older VS Code installs kept it elsewhere, unverified). Optional fields such as
 `"disabled": false` and `"autoApprove": []` are accepted.
 
 ## Roo Code
@@ -230,8 +240,7 @@ the slow first start, and do not set `"trust": true`.
 
 ## Goose
 
-In `~/.config/goose/config.yaml` (macOS, Linux; check the Goose docs for the
-Windows location), or via the extensions screen:
+In `~/.config/goose/config.yaml` (macOS, Linux; the Windows location is unverified, last checked 2026-10-06), or via the extensions screen:
 
 ```yaml
 extensions:
@@ -256,11 +265,11 @@ local models may struggle with twelve tools.
 
 Kiro: `~/.kiro/settings/mcp.json` (user) or `.kiro/settings/mcp.json` (workspace,
 takes precedence); paste the common JSON shape. Amazon Q Developer CLI uses the
-same shape in `~/.aws/amazonq/mcp.json` (the product is moving to Kiro CLI).
+same shape in `~/.aws/amazonq/mcp.json` (the Amazon Q path and the move to Kiro CLI are unverified, last checked 2026-10-06).
 
 ## Warp
 
-Settings > MCP > "+ Add", then paste the common JSON shape.
+Settings > MCP > "+ Add", then paste the common JSON shape (unverified, last checked 2026-10-06: the Warp docs page could not be fetched).
 
 ## Troubleshooting
 
