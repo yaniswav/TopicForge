@@ -38,7 +38,11 @@ The server speaks MCP over stdio and waits for a client, so wire it into one. Fo
 }
 ```
 
-Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: `claude mcp add topicforge -- topicforge`. Setup for a real ROS2 environment (WSL2, Linux, Docker, native Windows) is in [`docs/TESTING.md`](docs/TESTING.md); recurring monitoring prompts and the privacy contract are in [`docs/TUTORIEL.md`](docs/TUTORIEL.md).
+Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: `claude mcp add topicforge -- topicforge`.
+
+**Other MCP clients.** Ready-to-paste configs for Claude Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code, Continue, Zed, JetBrains, Codex, Gemini CLI, Goose and more are in [`docs/CLIENTS.md`](docs/CLIENTS.md). One-click: [Add to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlW2Rkc109PTAuNi4xIiwidG9waWNmb3JnZSJdLCJlbnYiOnsiVE9QSUNGT1JHRV9NT0RFIjoiYXV0byIsIlRPUElDRk9SR0VfRERTX0JBQ0tFTkQiOiJjeWNsb25lIiwiVE9QSUNGT1JHRV9ERFNfRE9NQUlOX0lEIjoiMCJ9fQ==) | [Install in VS Code](vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%5Bdds%5D%3D%3D0.6.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D).
+
+Setup for a real ROS2 environment (WSL2, Linux, Docker, native Windows) is in [`docs/TESTING.md`](docs/TESTING.md); recurring monitoring prompts and the privacy contract are in [`docs/TUTORIEL.md`](docs/TUTORIEL.md).
 
 ## Tools
 
