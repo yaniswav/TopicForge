@@ -54,7 +54,9 @@ def test_timeout_bounds_the_topic_lookup_too(monkeypatch: pytest.MonkeyPatch) ->
     _stub_info(monkeypatch, delay_s=0.4)
     seen = _stub_echo(monkeypatch, EchoRun())
     Ros2CliAdapter().sample_messages("/imu", count=1, timeout_s=5)
-    assert 4.0 < seen[0]["deadline_s"] <= 4.6
+    # Upper bound leaves room for the ~16 ms Windows clock tick: a 0.4 s sleep can
+    # measure as 0.39 s there.
+    assert 4.0 < seen[0]["deadline_s"] <= 4.65
 
 
 def test_the_topic_lookup_never_waits_longer_than_timeout_s(
