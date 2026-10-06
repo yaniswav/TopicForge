@@ -1,0 +1,70 @@
+{
+  "manifest_version": "0.4",
+  "name": "topicforge",
+  "display_name": "TopicForge (ROS 2 / DDS)",
+  "version": "0.6.1",
+  "description": "Read-only ROS 2 and DDS inspection: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
+  "author": {
+    "name": "Yanis Ethvignot",
+    "url": "https://topicforge.horizonvista.xyz"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yaniswav/TopicForge"
+  },
+  "homepage": "https://topicforge.horizonvista.xyz",
+  "documentation": "https://github.com/yaniswav/TopicForge#readme",
+  "support": "https://github.com/yaniswav/TopicForge/issues",
+  "icon": "icon.png",
+  "license": "MIT",
+  "keywords": ["ros2", "dds", "robotics", "mcp", "qos", "rosbag", "observability", "read-only"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "TOPICFORGE_MODE": "auto",
+        "TOPICFORGE_DDS_BACKEND": "${user_config.dds_backend}",
+        "TOPICFORGE_DDS_DOMAIN_ID": "${user_config.dds_domain_id}"
+      }
+    }
+  },
+  "user_config": {
+    "dds_backend": {
+      "type": "string",
+      "title": "DDS backend",
+      "description": "cyclone joins the DDS bus as a read-only participant (needs no ROS 2). mock serves fixed demo data instead. auto picks the best available.",
+      "default": "cyclone"
+    },
+    "dds_domain_id": {
+      "type": "number",
+      "title": "DDS domain id",
+      "description": "The one DDS domain to observe, 0 to 232. It is fixed at startup; restart to change it.",
+      "default": 0,
+      "min": 0,
+      "max": 232
+    }
+  },
+  "tools": [
+    { "name": "health_check", "description": "Environment and mode introspection." },
+    { "name": "list_topics", "description": "Discover the ROS 2 graph." },
+    { "name": "get_topic_info", "description": "Structured info for one topic." },
+    { "name": "sample_messages", "description": "Peek recent messages on a ROS 2 topic." },
+    { "name": "analyze_bag", "description": "Summarize a recorded bag." },
+    { "name": "list_participants", "description": "DDS participants observed on a domain." },
+    { "name": "detect_qos_mismatches", "description": "Incompatible QoS pairs between DDS readers and writers." },
+    { "name": "peek_dds_samples", "description": "Peek raw DDS samples." },
+    { "name": "participant_events", "description": "Timeline of participant discovered and lost events." },
+    { "name": "topic_metrics", "description": "Observed frequency, sequence gaps, latency percentiles." },
+    { "name": "peek_bag_samples", "description": "Peek decoded samples out of a recorded bag." },
+    { "name": "list_endpoints", "description": "Normalized DDS writers and readers with QoS." }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

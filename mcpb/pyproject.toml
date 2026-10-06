@@ -1,0 +1,8 @@
+[project]
+name = "topicforge-mcpb"
+version = "0.6.1"
+description = "MCP Bundle launcher for TopicForge: installs the published topicforge package from PyPI."
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "topicforge[dds]==0.6.1",
+]
