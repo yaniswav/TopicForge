@@ -1,0 +1,18 @@
+{
+  "name": "topicforge",
+  "version": "0.6.2",
+  "description": "Read-only ROS 2 and DDS inspection: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
+  "mcpServers": {
+    "topicforge": {
+      "command": "uvx",
+      "args": ["--from", "topicforge[dds]==0.6.2", "topicforge"],
+      "env": {
+        "TOPICFORGE_MODE": "auto",
+        "TOPICFORGE_DDS_BACKEND": "cyclone",
+        "TOPICFORGE_DDS_DOMAIN_ID": "0"
+      },
+      "timeout": 60000
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}

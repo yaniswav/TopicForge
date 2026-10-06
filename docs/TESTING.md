@@ -15,7 +15,7 @@ How to get a working ROS2 environment to point TopicForge at, and how to wire it
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install topicforge
-python -m topicforge --version                      # -> topicforge 0.6.1
+python -m topicforge --version                      # -> topicforge 0.6.2
 TOPICFORGE_MODE=mock python -m topicforge           # blocks on stdio; MCP clients spawn it
 ```
 
@@ -41,7 +41,7 @@ python3 -m venv ~/topicforge-venv && source ~/topicforge-venv/bin/activate
 pip install topicforge          # Ubuntu 22.04 ships Python 3.10, which is enough
 ```
 
-Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.6.1 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
+Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.6.2 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
 
 ## Linux native
 
@@ -102,4 +102,4 @@ TopicForge speaks MCP over stdio; any compliant client can spawn it with a comma
 }
 ```
 
-That is the Claude Desktop shape (`claude_desktop_config.json`); restart the app and the twelve tools appear under the hammer icon. For Claude Code run `claude mcp add topicforge -- topicforge`. Cursor, Continue and Cline accept the same stdio config. If the `topicforge` script is not on PATH, use `"command": "python", "args": ["-m", "topicforge"]`, or the absolute path of the binary inside your venv: desktop clients do not inherit your shell's PATH or venv activation.
+That is the Claude Desktop shape (`claude_desktop_config.json`); restart the app and the twelve tools appear under the hammer icon. For Claude Code run `claude mcp add topicforge -- topicforge`. Cursor, Continue and Cline accept the same stdio config; ready-to-paste configs for every major client are in [`CLIENTS.md`](CLIENTS.md). If the `topicforge` script is not on PATH, use `"command": "python", "args": ["-m", "topicforge"]`, or the absolute path of the binary inside your venv: desktop clients do not inherit your shell's PATH or venv activation.
