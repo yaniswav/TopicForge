@@ -14,15 +14,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -45,7 +45,7 @@ jobs:
 
   extras-resolve:
     name: Every declared extra resolves on PyPI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # `fastdds` sat in the recommended `[dds]` extra for five releases although
     # no such package exists on PyPI: the install failed, and the unclaimed name
@@ -53,10 +53,10 @@ jobs:
     # live index on each change, so an orphan name cannot ship again.
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "topicforge": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "--from",
+        "topicforge[dds]==0.6.1",
+        "topicforge"
+      ],
+      "env": {
+        "TOPICFORGE_MODE": "auto",
+        "TOPICFORGE_DDS_BACKEND": "${user_config.dds_backend}",
+        "TOPICFORGE_DDS_DOMAIN_ID": "${user_config.dds_domain_id}"
+      }
+    }
+  }
+}

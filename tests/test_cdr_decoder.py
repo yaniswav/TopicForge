@@ -267,3 +267,10 @@ def test_cap_reaches_arrays_inside_nested_samples() -> None:
 
     decoded = decode_dynamic_sample(Outer(Inner(np.zeros(9000))), max_array_elements=100)
     assert len(decoded["inner"]["ranges"]) == 101  # type: ignore[index]
+
+
+def test_iter_field_names_skips_dunder_markers() -> None:
+    from dataclasses import make_dataclass
+
+    msg = make_dataclass("Msg", [("x", int), ("__msgtype__", str)])(x=1, __msgtype__="a/msg/B")
+    assert iter_field_names(msg) == ["x"]

@@ -67,6 +67,7 @@ class HealthService:
             middleware_available=_middleware_available(dds_backend, self._settings),
             ros_backend=ros_backend,
             ros_tools_available=ros_backend != "none",
+            sim_clock_published=_sim_clock_published(self._adapter),
         )
 
 
@@ -82,6 +83,21 @@ def _observer_status(adapter: MiddlewareAdapter) -> dict[str, Any]:
         return dict(status() or {})
     except Exception:
         return {}
+
+
+def _sim_clock_published(adapter: MiddlewareAdapter) -> bool | None:
+    """`/clock` publisher hint if the adapter can probe it (live ROS 2), else `None`.
+
+    Not part of the protocol, and a failure must not break `health_check`.
+    """
+    probe = getattr(adapter, "sim_clock_published", None)
+    if not callable(probe):
+        return None
+    try:
+        result = probe()
+    except Exception:
+        return None
+    return result if isinstance(result, bool) else None
 
 
 def _backends_from_adapter_name(name: str) -> tuple[RosBackendTag, DdsBackendTag]:

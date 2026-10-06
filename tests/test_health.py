@@ -215,3 +215,59 @@ def test_report_leaves_tracker_fields_empty_without_an_observer() -> None:
     report = HealthService(_settings(), _adapter("mock")).report()
 
     assert report.observer_started_ns is None and report.tracker_errors is None
+
+
+def test_sim_clock_is_unknown_in_mock_mode() -> None:
+    assert HealthService(_settings(), MockAdapter()).report().sim_clock_published is None
+
+
+class _ClockAdapter(_NamedAdapter):
+    def __init__(self, outcome: object) -> None:
+        super().__init__("ros2_cli")
+        self._outcome = outcome
+
+    def sim_clock_published(self) -> bool | None:
+        if isinstance(self._outcome, Exception):
+            raise self._outcome
+        return self._outcome  # type: ignore[return-value]
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected"), [(True, True), (False, False), (None, None), (RuntimeError(), None)]
+)
+def test_sim_clock_hint_comes_from_the_adapter_and_never_breaks_health(
+    outcome: object, expected: bool | None
+) -> None:
+    adapter: Any = _ClockAdapter(outcome)
+    assert HealthService(_settings(), adapter).report().sim_clock_published is expected
+
+
+def test_cli_adapter_reads_publisher_count_of_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.adapters.ros2_live import Ros2CliAdapter
+
+    adapter = Ros2CliAdapter()
+    outputs = {
+        "Type: rosgraph_msgs/msg/Clock\nPublisher count: 1\nSubscription count: 0\n": True,
+        "Type: rosgraph_msgs/msg/Clock\nPublisher count: 0\nSubscription count: 2\n": False,
+    }
+    for text, expected in outputs.items():
+        monkeypatch.setattr(adapter, "_run", lambda cmd, timeout=8.0, t=text: t)
+        assert adapter.sim_clock_published() is expected
+
+
+def test_cli_adapter_clock_probe_failure_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.adapters.base import AdapterError
+    from topicforge.adapters.ros2_live import Ros2CliAdapter
+
+    adapter = Ros2CliAdapter()
+
+    def unknown(cmd: list[str], timeout: float = 8.0) -> str:
+        raise AdapterError("failed (exit 1): Unknown topic '/clock'")
+
+    def timed_out(cmd: list[str], timeout: float = 8.0) -> str:
+        raise AdapterError("timed out after 8.0s")
+
+    monkeypatch.setattr(adapter, "_run", unknown)
+    assert adapter.sim_clock_published() is False
+    monkeypatch.setattr(adapter, "_run", timed_out)
+    assert adapter.sim_clock_published() is None

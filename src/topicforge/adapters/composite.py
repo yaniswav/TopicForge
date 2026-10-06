@@ -81,6 +81,11 @@ class CompositeAdapter:
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._ros.analyze_bag(path)
 
+    def sim_clock_published(self) -> bool | None:
+        """The ROS 2 half's `/clock` probe, `None` when it has none."""
+        probe = getattr(self._ros, "sim_clock_published", None)
+        return probe() if callable(probe) else None
+
     # ----- DDS surface -> DDS adapter -----
 
     def observer_status(self) -> dict[str, Any] | None:

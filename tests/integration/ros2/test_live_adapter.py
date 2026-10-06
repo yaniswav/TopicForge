@@ -283,3 +283,27 @@ def test_a_short_latched_result_hints_count_one(adapter: Ros2CliAdapter) -> None
     assert result.count == 1
     assert result.note is not None and "fewer than requested" in result.note
     assert "latched" in result.note
+
+
+def test_peek_bag_samples_names_the_clock_of_each_timestamp(
+    adapter: Ros2CliAdapter, bag: Path
+) -> None:
+    scan = adapter.peek_bag_samples(str(bag), "/scan", 1).samples[0]
+    assert scan.stamp_source == "header"
+    assert scan.recorded_ns is not None
+    assert "__msgtype__" not in str(scan.payload) and "_msgtype" not in str(scan.payload)
+
+    text = adapter.peek_bag_samples(str(bag), "/robot_description_lite", 1).samples[0]
+    assert text.stamp_source == "recorded"
+    assert text.timestamp_ns == text.recorded_ns
+
+
+def test_health_reports_the_sim_clock_publisher(adapter: Ros2CliAdapter) -> None:
+    from topicforge.config import Settings
+    from topicforge.services import HealthService
+
+    assert adapter.sim_clock_published() is True
+    settings = Settings(
+        mode="live", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
+    )
+    assert HealthService(settings, adapter).report().sim_clock_published is True

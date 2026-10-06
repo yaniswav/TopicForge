@@ -148,3 +148,19 @@ def test_peek_without_embedded_definitions_note_is_absent_for_self_describing_ba
     bag = _write_mcap_bag(tmp_path)
     result = BagService().peek_samples(str(bag), "/fast", 1)
     assert result.note is None or "no message definitions" not in result.note
+
+
+def test_peek_labels_the_clock_of_each_timestamp(bag_path: str) -> None:
+    scan = BagService().peek_samples(bag_path, "/scan", 1).samples[0]
+    header = scan.payload["header"]["stamp"]
+    assert scan.stamp_source == "header"
+    assert scan.timestamp_ns == header["sec"] * 1_000_000_000 + header["nanosec"]
+    assert scan.recorded_ns is not None
+
+    log = BagService().peek_samples(bag_path, "/rosout", 1).samples[0]
+    assert log.stamp_source == "header" or log.timestamp_ns == log.recorded_ns
+
+
+def test_peek_payload_has_no_message_type_markers(bag_path: str) -> None:
+    payload = BagService().peek_samples(bag_path, "/scan", 1).samples[0].payload
+    assert "msgtype" not in str(payload)

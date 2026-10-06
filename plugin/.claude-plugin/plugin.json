@@ -1,0 +1,34 @@
+{
+  "name": "topicforge",
+  "displayName": "TopicForge",
+  "version": "0.6.1",
+  "description": "Read-only ROS 2 and DDS inspection for Claude: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
+  "author": {
+    "name": "Yanis Ethvignot",
+    "url": "https://topicforge.horizonvista.xyz"
+  },
+  "homepage": "https://topicforge.horizonvista.xyz",
+  "repository": "https://github.com/yaniswav/TopicForge",
+  "license": "MIT",
+  "keywords": ["ros2", "dds", "robotics", "mcp", "qos", "rosbag", "observability", "read-only"],
+  "icon": "./icon.png",
+  "documentationUrl": "https://github.com/yaniswav/TopicForge#readme",
+  "supportUrl": "https://github.com/yaniswav/TopicForge/issues",
+  "userConfig": {
+    "dds_backend": {
+      "type": "string",
+      "title": "DDS backend",
+      "description": "cyclone joins the DDS bus as a read-only participant (needs no ROS 2). mock serves fixed demo data instead. auto picks the best available.",
+      "options": ["cyclone", "mock", "auto"],
+      "default": "cyclone"
+    },
+    "dds_domain_id": {
+      "type": "number",
+      "title": "DDS domain id",
+      "description": "The one DDS domain to observe, 0 to 232. It is fixed at startup; restart to change it.",
+      "default": 0,
+      "min": 0,
+      "max": 232
+    }
+  }
+}

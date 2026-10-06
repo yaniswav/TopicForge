@@ -276,3 +276,13 @@ def test_mock_header_messages_use_the_nested_stamp_shape(mock_adapter: MockAdapt
     assert stamp["sec"] * 1_000_000_000 + stamp["nanosec"] == sample.timestamp_ns
     assert sample.stamp_source == "header"
     assert not any(key.startswith("col_") for key in sample.payload)
+
+
+def test_mock_bag_samples_follow_the_stamp_contract() -> None:
+    from topicforge.adapters.ros2_mock.fixtures import MOCK_BAG_SAMPLES
+
+    for samples in MOCK_BAG_SAMPLES.values():
+        for sample in samples:
+            assert sample.stamp_source in ("header", "recorded")
+            assert sample.recorded_ns is not None
+            assert "_msgtype" not in sample.payload

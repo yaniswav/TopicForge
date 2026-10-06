@@ -356,11 +356,14 @@ def _peek_with_rosbags(
             if len(samples) >= count:
                 break
             payload = _decode_bag_message(reader, connection, raw)
+            header_ns = _header_stamp_ns(payload)
             samples.append(
                 MessageSample(
                     topic=topic,
                     message_type=message_type,
-                    timestamp_ns=int(timestamp),
+                    timestamp_ns=int(timestamp) if header_ns is None else header_ns,
+                    stamp_source="recorded" if header_ns is None else "header",
+                    recorded_ns=int(timestamp),
                     payload=_cap_arrays(payload, capped),
                 )
             )
@@ -377,6 +380,18 @@ def _peek_with_rosbags(
             f"{_MAX_ARRAY_ELEMENTS} (fields: {', '.join(sorted(capped))})."
         )
     return samples, " ".join(notes) or None
+
+
+def _header_stamp_ns(payload: dict[str, Any]) -> int | None:
+    """`header.stamp` of a decoded message in nanoseconds, or `None` without a top-level header."""
+    header = payload.get("header")
+    stamp = header.get("stamp") if isinstance(header, dict) else None
+    if not isinstance(stamp, dict):
+        return None
+    sec, nanosec = stamp.get("sec"), stamp.get("nanosec")
+    if isinstance(sec, int) and isinstance(nanosec, int):
+        return sec * 1_000_000_000 + nanosec
+    return None
 
 
 def _cap_arrays(payload: dict[str, Any], capped: set[str], prefix: str = "") -> dict[str, Any]:
@@ -406,7 +421,4 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
 
     from topicforge.adapters.common.cdr_decoder import decode_dynamic_sample
 
-    decoded = decode_dynamic_sample(deserialized, max_array_elements=_MAX_ARRAY_ELEMENTS)
-    if isinstance(decoded, dict):
-        decoded.setdefault("_msgtype", getattr(connection, "msgtype", "<unknown>"))
-    return decoded
+    return decode_dynamic_sample(deserialized, max_array_elements=_MAX_ARRAY_ELEMENTS)
