@@ -21,3 +21,77 @@ jobs:
       - run: python -m build
       - run: python -m twine check dist/*
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  mcp-registry:
+    # Publishes server.json to the official MCP Registry. Runs only after the
+    # PyPI publish job succeeded, because the registry validates that the
+    # pinned package version exists on PyPI.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # GitHub OIDC login to the registry
+      contents: read
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.1
+      MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check server.json matches the tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          SERVER_VERSION="$(jq -r .version server.json)"
+          PACKAGE_VERSION="$(jq -r '.packages[0].version' server.json)"
+          echo "tag=$TAG_VERSION server.json=$SERVER_VERSION package=$PACKAGE_VERSION"
+          test "$TAG_VERSION" = "$SERVER_VERSION"
+          test "$TAG_VERSION" = "$PACKAGE_VERSION"
+      - name: Wait for the version to be visible on PyPI
+        run: |
+          VERSION="$(jq -r '.packages[0].version' server.json)"
+          for i in $(seq 1 30); do
+            if curl -fsS "https://pypi.org/pypi/topicforge/${VERSION}/json" > /dev/null; then
+              echo "topicforge ${VERSION} is on PyPI"
+              exit 0
+            fi
+            echo "waiting for PyPI (${i}/30)"
+            sleep 10
+          done
+          echo "topicforge ${VERSION} not found on PyPI" >&2
+          exit 1
+      - name: Install mcp-publisher (pinned, checksum verified)
+        run: |
+          ARCHIVE="mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL -o "$ARCHIVE" "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${ARCHIVE}"
+          echo "${MCP_PUBLISHER_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar xzf "$ARCHIVE" mcp-publisher
+      - name: Authenticate to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        run: ./mcp-publisher publish
+
+  mcpb:
+    # Packs the MCP Bundle (one-click Claude Desktop install) and attaches it
+    # to the GitHub release of the tag.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release / upload the asset
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+      - name: Pack the bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test "$VERSION" = "$(jq -r .version mcpb/manifest.json)"
+          npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb "topicforge-${VERSION}.mcpb"
+      - name: Attach to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILE="topicforge-${GITHUB_REF_NAME#v}.mcpb"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$FILE" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$FILE" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+          fi
