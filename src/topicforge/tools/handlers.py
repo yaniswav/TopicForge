@@ -35,6 +35,7 @@ from topicforge.models import (
 )
 from topicforge.services import HealthService, Inspector
 from topicforge.telemetry import TelemetryClient, instrument
+from topicforge.tools.annotations import read_only_annotations
 
 _TOPIC_PARAM_DESC = (
     "Fully qualified ROS2 topic name starting with `/`, e.g. `/cmd_vel` or "
@@ -124,6 +125,7 @@ def register_tools(
     """
 
     @mcp.tool(
+        annotations=read_only_annotations("Health check", open_world=False),
         description=(
             "Report TopicForge environment state as a `HealthReport`: "
             "effective runtime `mode` (`live` or `mock`), `ros_backend` and "
@@ -148,13 +150,14 @@ def register_tools(
             "(errors or evictions above 0, or a stale last pass, mean the "
             "discovery data has gaps). **Always succeeds**: call it first when "
             "something looks wrong. Read-only; no side effects."
-        )
+        ),
     )
     @instrument(telemetry, "health_check")
     def health_check() -> HealthReport:
         return health.report()
 
     @mcp.tool(
+        annotations=read_only_annotations("List ROS 2 topics", open_world=True),
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List "
             "every ROS 2 topic on the current graph (or the mock graph in mock "
@@ -166,13 +169,14 @@ def register_tools(
             "when the graph has no topics or when live discovery times out. "
             "**Raises an MCP error** when no `ros2` CLI is available (DDS-only "
             "setup). Read-only; no side effects."
-        )
+        ),
     )
     @instrument(telemetry, "list_topics")
     def list_topics() -> list[TopicInfo]:
         return inspector.list_topics()
 
     @mcp.tool(
+        annotations=read_only_annotations("Get topic info", open_world=True),
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Return"
             " info for a single ROS 2 topic. `topic` must be a fully qualified "
@@ -184,7 +188,7 @@ def register_tools(
             "**Raises an MCP error** if the topic name is "
             "malformed, the topic is unknown to the active graph, or no `ros2` "
             "CLI is available. Read-only; no side effects."
-        )
+        ),
     )
     @instrument(telemetry, "get_topic_info")
     def get_topic_info(
@@ -193,6 +197,7 @@ def register_tools(
         return inspector.get_topic_info(topic)
 
     @mcp.tool(
+        annotations=read_only_annotations("Sample topic messages", open_world=True),
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints` (topics"
             " and wiring) or `peek_dds_samples` on `DCPSPublication` / "
@@ -225,7 +230,7 @@ def register_tools(
             "`ros2` CLI is available, the topic is unknown, or the CLI fails. "
             "Read-only; never publishes. Distinct from `peek_dds_samples`, "
             "which reads the raw DDS layer."
-        )
+        ),
     )
     @instrument(telemetry, "sample_messages")
     def sample_messages(
@@ -260,6 +265,7 @@ def register_tools(
         )
 
     @mcp.tool(
+        annotations=read_only_annotations("Analyze bag", open_world=False),
         description=(
             "Summarize a ROS 2 bag at `path`. Returns a `BagAnalysis` with "
             "storage format, duration, message count, per-topic stats, "
@@ -281,7 +287,7 @@ def register_tools(
             " is malformed, missing in live mode, or unparseable, or if no "
             "`ros2` CLI is available. Anomaly detection is available in mock "
             "mode only. Read-only; no side effects."
-        )
+        ),
     )
     @instrument(telemetry, "analyze_bag")
     def analyze_bag(
@@ -293,6 +299,7 @@ def register_tools(
     # `mock`; with the `ros2_cli` adapter alone they raise AdapterError.
 
     @mcp.tool(
+        annotations=read_only_annotations("List DDS participants", open_world=True),
         description=(
             "List DDS participants observed on the bus. Returns "
             "`list[ParticipantInfo]`: each entry carries `guid`, `vendor` "
@@ -328,7 +335,7 @@ def register_tools(
             "active (install `pip install topicforge[dds]` and set "
             "`TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend returns "
             "fixtures."
-        )
+        ),
     )
     @instrument(telemetry, "list_participants")
     def list_participants(
@@ -344,6 +351,7 @@ def register_tools(
         return inspector.list_participants(domain_id)
 
     @mcp.tool(
+        annotations=read_only_annotations("Detect QoS mismatches", open_world=True),
         description=(
             "Explain why DDS readers and writers on the same topic do not "
             "talk, and who will. Pairs every reader with every writer per "
@@ -378,7 +386,7 @@ def register_tools(
             "the same host: normal, not a fault. "
             "**Read-only by architecture**. **Raises an MCP error** when no "
             "DDS module is active; the mock backend returns fixtures."
-        )
+        ),
     )
     @instrument(telemetry, "detect_qos_mismatches")
     def detect_qos_mismatches(
@@ -397,6 +405,7 @@ def register_tools(
         return inspector.detect_qos_mismatches(topic)
 
     @mcp.tool(
+        annotations=read_only_annotations("Peek DDS samples", open_world=True),
         description=(
             "Peek recent samples on a raw DDS topic. Unlike `sample_messages` "
             "(which uses the `ros2` CLI), this reads the DDS layer directly and "
@@ -420,7 +429,7 @@ def register_tools(
             "up to 3 s for discovery to warm up. **Read-only by architecture**:"
             " it cannot publish. **Raises an MCP error** when no DDS module is "
             "active or the topic is not announced on the bus."
-        )
+        ),
     )
     @instrument(telemetry, "peek_dds_samples")
     def peek_dds_samples(
@@ -430,6 +439,7 @@ def register_tools(
         return inspector.peek_dds_samples(topic, count)
 
     @mcp.tool(
+        annotations=read_only_annotations("DDS participant events", open_world=True),
         description=(
             "Return DDS participant lifecycle events (`discovered` / `lost`) "
             "from a recent window, e.g. 'who was on the bus 5 minutes ago and "
@@ -463,7 +473,7 @@ def register_tools(
             "up. **Read-only by architecture**. **Raises an MCP error** when no"
             " DDS module is active (install `pip install topicforge[dds]` and "
             "set `TOPICFORGE_DDS_BACKEND=cyclone|fast`)."
-        )
+        ),
     )
     @instrument(telemetry, "participant_events")
     def participant_events(
@@ -493,6 +503,7 @@ def register_tools(
         return inspector.participant_events(domain_id, lookback_seconds)
 
     @mcp.tool(
+        annotations=read_only_annotations("Topic metrics", open_world=True),
         description=(
             "Return temporal metrics (frequency, sequence gaps, latency "
             "percentiles) for a DDS topic over a recent time window. Returns a "
@@ -514,7 +525,7 @@ def register_tools(
             " error** when no DDS module is active or `window_seconds` is out "
             "of range (1..3600). Right after server start the call waits up to "
             "3 s for discovery to warm up."
-        )
+        ),
     )
     @instrument(telemetry, "topic_metrics")
     def topic_metrics(
@@ -544,6 +555,7 @@ def register_tools(
         return inspector.topic_metrics(topic, window_seconds, domain_id)
 
     @mcp.tool(
+        annotations=read_only_annotations("Peek bag samples", open_world=False),
         description=(
             "Peek up to `count` samples from a recorded bag file. Unlike "
             "`peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 "
@@ -570,7 +582,7 @@ def register_tools(
             "architecture**: nothing writes to the bag file. **Raises an MCP "
             "error** when the bag path does not exist, the topic is not present"
             " in the bag, or `rosbags` is not installed."
-        )
+        ),
     )
     @instrument(telemetry, "peek_bag_samples")
     def peek_bag_samples(
@@ -581,6 +593,7 @@ def register_tools(
         return inspector.peek_bag_samples(path, topic, count)
 
     @mcp.tool(
+        annotations=read_only_annotations("List DDS endpoints", open_world=True),
         description=(
             "List every DDS endpoint (writer and reader) announced on the bus, "
             "one `EndpointInfo` per endpoint with `role`, "
@@ -622,7 +635,7 @@ def register_tools(
             "matches. Read-only. **Raises an MCP error** when no DDS module "
             "is active. Mock mode returns a fixture matching the other mock "
             "DDS tools."
-        )
+        ),
     )
     @instrument(telemetry, "list_endpoints")
     def list_endpoints(
