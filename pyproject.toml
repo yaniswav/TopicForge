@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "topicforge"
-version = "0.6.2"
+version = "0.6.3"
 description = "ROS Topic Inspector & Bag Analyzer MCP server for AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,13 @@ dependencies = [
     "mcp>=1.0.0,<2",
     "pydantic>=2.6",
     "pyyaml>=6",
+    # Cyclone DDS binding, core since 0.6.3 so that `uvx topicforge` (no extra) can join a
+    # DDS bus. The marker lists exactly the platforms where cyclonedds 11.0.1 ships wheels
+    # (checked on PyPI 2026-10-07): CPython 3.10-3.13 on Linux x86_64, Windows AMD64 and
+    # macOS (x86_64 and arm64). Anywhere else (Linux aarch64, Python 3.14, Windows ARM64)
+    # pip would try to build the sdist, which needs the Cyclone C library and fails, so the
+    # dependency is skipped there and the server reports why in `dds_inactive_reason`.
+    'cyclonedds>=0.10; python_version < "3.14" and ((platform_system == "Linux" and platform_machine == "x86_64") or (platform_system == "Windows" and platform_machine == "AMD64") or platform_system == "Darwin")',
 ]
 
 [project.optional-dependencies]
@@ -50,6 +57,12 @@ dev = [
 # Fast DDS still works if its Python binding is built from eProsima's sources;
 # see docs/DDS_QUICKSTART.md. Do not add a name here without checking it
 # resolves on PyPI and belongs to the upstream project.
+#
+# `[dds]` and `[dds-cyclone]` are kept as aliases since 0.6.3 (cyclonedds became a core
+# dependency on supported platforms) so existing `topicforge[dds]` commands keep working.
+# They deliberately list cyclonedds WITHOUT the platform marker: a user on an unsupported
+# platform (Linux aarch64, Python 3.14) who has the Cyclone C library installed can still opt
+# in with `pip install "topicforge[dds]"` and build the binding from source.
 dds-cyclone = [
     "cyclonedds>=0.10",
 ]

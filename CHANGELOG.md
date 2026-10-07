@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-07
+
 ### Added
+
+- Platform-aware DDS message: when the Cyclone backend is requested but the binding is
+  missing, `dds_inactive_reason` (and the server log) now says why in plain words, for
+  example "`cyclonedds` has no prebuilt wheel for linux-aarch64 / Python 3.14", and what
+  to do (build it against the Cyclone C library, or use mock). A server that falls back
+  to the mock fixtures because of this reports the reason in `health_check` too. Field
+  names are unchanged.
+- CI: a `ubuntu-24.04-arm` job that installs the package without a Cyclone wheel and
+  checks that the server starts and `health_check` explains, and Python 3.14 in the test
+  matrix (the suite runs there with the binding absent).
 
 - MCP `ToolAnnotations` on all twelve tools (`title`, `readOnlyHint=true`,
   `destructiveHint=false`, `idempotentHint=true`, per-tool `openWorldHint`),
@@ -16,6 +28,18 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- `cyclonedds` is now a core dependency, restricted by an environment marker to the
+  platforms where it ships prebuilt wheels (Python 3.10-3.13 on Linux x86_64, Windows
+  AMD64 and macOS), so `uvx topicforge` and `pip install topicforge` bring the DDS
+  binding with no extra. Other platforms (Linux aarch64, Python 3.14, Windows ARM64)
+  install cleanly without it. `topicforge[dds]` and `topicforge[dds-cyclone]` stay as
+  aliases. The default `TOPICFORGE_DDS_BACKEND` is still `mock`.
+- The Claude plugin launches `uvx --python 3.12 --from topicforge==0.6.3 topicforge`
+  without an extra; its dependencies are declared in the new `plugin/pyproject.toml`
+  (a lock, `plugin/uv.lock`, is generated once the release is on PyPI). The version
+  consistency test covers both files.
+- Documented launch commands, the Cursor and VS Code install links and the MCP Bundle
+  now use `topicforge==X` instead of `topicforge[dds]==X`.
 - `SECURITY.md`: new section "Read-only guarantee: architecture, declaration,
   proof" (including the limits of passivity on a DDS domain and the ros2 CLI),
   Popen streaming with process-tree kill documented, any MCP client named, and
@@ -1330,7 +1354,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/yaniswav/TopicForge/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/yaniswav/TopicForge/compare/v0.5.6...v0.6.0
