@@ -23,6 +23,7 @@
   "icon": "./icon.png",
   "documentationUrl": "https://github.com/yaniswav/TopicForge#readme",
   "supportUrl": "https://github.com/yaniswav/TopicForge/issues",
+  "privacyPolicyUrl": "https://topicforge.horizonvista.xyz/privacy",
   "userConfig": {
     "dds_backend": {
       "type": "string",
