@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- MCP `ToolAnnotations` on all twelve tools (`title`, `readOnlyHint=true`,
+  `destructiveHint=false`, `idempotentHint=true`, per-tool `openWorldHint`),
+  built by one shared helper in `tools/annotations.py`, and
+  `tests/test_tool_annotations.py`, which fails if any tool lacks them.
+
+### Changed
+
+- `SECURITY.md`: new section "Read-only guarantee: architecture, declaration,
+  proof" (including the limits of passivity on a DDS domain and the ros2 CLI),
+  Popen streaming with process-tree kill documented, any MCP client named, and
+  a remote-access paragraph.
+
 ## [0.6.2] - 2026-10-06
 
 ### Added

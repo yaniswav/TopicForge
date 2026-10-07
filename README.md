@@ -10,6 +10,8 @@
 
 A read-only MCP (Model Context Protocol) server that lets an AI agent inspect a ROS2 graph, recorded bag files and the DDS layer underneath ROS. The code has no write path: it cannot publish to the bus or command a robot, and there is no permission system to configure.
 
+Every tool also declares itself read-only in the MCP protocol (`readOnlyHint`, `destructiveHint=false`, `idempotentHint`, with an honest `openWorldHint`), and a test fails if any tool lacks it. See [`SECURITY.md`](SECURITY.md#read-only-guarantee-architecture-declaration-proof) for the guarantee and its limits.
+
 It gives the agent twelve typed tools that return frozen Pydantic schemas, identical whether the server talks to a real robot or to its built-in mock fixtures. Ask why `nav_planner` gets no scan, and the agent reads the bus, finds the BEST_EFFORT writer facing a RELIABLE reader and names the incompatible policy (see [`examples/02-debug-qos-mismatch.md`](examples/02-debug-qos-mismatch.md)). It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
 
 For DDS, TopicForge joins a domain as a read-only participant through one open-source binding (Eclipse CycloneDDS from PyPI) and reads the builtin discovery topics that the OMG DDS-RTPS protocol standardizes. So far the author has observed Cyclone DDS and Dust DDS participants on a live bus. RTI Connext, OpenDDS, CoreDX and Fast DDS announce themselves through the same standard discovery, but none of them has been observed yet. This covers discovery only: participants, readers, writers and their QoS. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md).
