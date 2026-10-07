@@ -58,8 +58,9 @@ live ROS 2 graph or DDS bus, false for `health_check`, `analyze_bag` and
 `peek_bag_samples`, which read only the local environment or local
 files). They are built in one helper, `read_only_annotations` in
 `src/topicforge/tools/annotations.py`, so no tool can be registered
-without the read-only base. Clients can use these hints to skip
-confirmation prompts. They are hints; the guarantee is the architecture.
+without the read-only base. Clients may use these hints, for example
+to skip confirmation prompts. They are hints; the guarantee is the
+architecture.
 
 **Proof.** `tests/test_tool_annotations.py` builds the app in mock mode,
 lists the tools through the MCP layer as a client would, and fails if the
@@ -84,7 +85,9 @@ three above. Adding a thirteenth tool without annotations fails the suite.
 
 **Environment read.** Only `TOPICFORGE_*` variables (mode, log level,
 `TOPICFORGE_ROS2_BIN`, DDS backend and domain, telemetry) and `ROS_DISTRO`
-for reporting. Telemetry is off by default and a verified no-op when off
+for reporting. The `ros2` child processes inherit the environment
+(`ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` and the like), as any ROS 2 tool
+would. Telemetry is off by default and a verified no-op when off
 (pinned by `tests/test_telemetry.py::test_build_app_off_makes_no_transport_calls`).
 
 **Remote access.** TopicForge has no rosbridge client and no ssh targets,
