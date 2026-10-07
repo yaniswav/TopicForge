@@ -1,0 +1,16 @@
+# Dependency manifest for the Claude plugin directory. It is not a package: it only declares
+# what `plugin/.mcp.json` launches, so that `uv.lock` next to it pins every dependency with
+# hashes. Keep the topicforge pin equal to the version in `.mcp.json`; a test checks it.
+# After a release reaches PyPI, regenerate the lock: `cd plugin && uv lock`.
+[project]
+name = "topicforge-claude-plugin"
+version = "0.6.3"
+description = "Locked launch manifest for the TopicForge Claude plugin."
+# cyclonedds ships wheels for CPython 3.10 to 3.13 only (checked on PyPI 2026-10-07).
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "topicforge==0.6.3",
+]
+
+[tool.uv]
+package = false

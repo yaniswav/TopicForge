@@ -1,10 +1,10 @@
 [project]
 name = "topicforge-mcpb"
-version = "0.6.2"
+version = "0.6.3"
 description = "MCP Bundle launcher for TopicForge: installs the published topicforge package from PyPI."
-# cyclonedds (the [dds] extra) publishes wheels for CPython 3.10 to 3.13 only (checked on
+# cyclonedds (a core dependency of topicforge since 0.6.3) publishes wheels for CPython 3.10 to 3.13 only (checked on
 # PyPI, cyclonedds 11.0.1, 2026-10-06). Without the bound uv could pick 3.14 and fail to build it.
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "topicforge[dds]==0.6.2",
+    "topicforge==0.6.3",
 ]

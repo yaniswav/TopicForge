@@ -10,6 +10,8 @@ and the DDS adapter are each built best-effort. Both up gives a
 from __future__ import annotations
 
 import logging
+import platform
+import sys
 from collections.abc import Callable
 
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
@@ -59,7 +61,10 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
         settings.ros2_executable,
         settings.effective_dds_backend,
     )
-    return MockAdapter()
+    fallback = MockAdapter()
+    if settings.dds_backend != "mock":
+        fallback.dds_inactive_reason = _dds_inactive_reason(settings)
+    return fallback
 
 
 def _try_build_ros2_cli(
@@ -80,10 +85,49 @@ def _try_build_ros2_cli(
     return cli_adapter
 
 
-_CYCLONE_HINT = (
+_CYCLONE_INSTALL_HINT = (
     'Install it with `pip install "topicforge[dds-cyclone]"` and set '
     "`TOPICFORGE_DDS_BACKEND=cyclone`."
 )
+
+# Platforms where the `cyclonedds` project publishes prebuilt wheels (CPython 3.10-3.13).
+# Keep in sync with the environment marker on the `cyclonedds` dependency in pyproject.toml.
+_CYCLONE_WHEEL_SYSTEMS: dict[str, frozenset[str] | None] = {
+    "linux": frozenset({"x86_64"}),
+    "windows": frozenset({"amd64"}),
+    "darwin": None,  # any machine: x86_64 and arm64 both ship wheels
+}
+_CYCLONE_MAX_PYTHON = (3, 13)
+
+
+def cyclone_wheel_gap() -> str | None:
+    """Describe why `cyclonedds` has no prebuilt wheel here, or `None` when it has one.
+
+    The answer is a short platform label such as `linux-aarch64` or
+    `linux-aarch64 / Python 3.14`, naming only the parts that are unsupported.
+    """
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    machines = _CYCLONE_WHEEL_SYSTEMS.get(system, frozenset())
+    parts = []
+    if machines is not None and machine not in machines:
+        parts.append(f"{system or 'unknown'}-{machine or 'unknown'}")
+    if sys.version_info[:2] > _CYCLONE_MAX_PYTHON:
+        parts.append(f"Python {sys.version_info[0]}.{sys.version_info[1]}")
+    return " / ".join(parts) or None
+
+
+def _cyclone_hint() -> str:
+    """What to do to get the Cyclone binding, adapted to the platform."""
+    gap = cyclone_wheel_gap()
+    if gap is None:
+        return _CYCLONE_INSTALL_HINT
+    return (
+        f"`cyclonedds` has no prebuilt wheel for {gap}, so it was not installed with "
+        "TopicForge. Install the Cyclone C library, then build the binding with "
+        '`pip install "topicforge[dds-cyclone]"` and set `TOPICFORGE_DDS_BACKEND=cyclone`; '
+        "or use `TOPICFORGE_DDS_BACKEND=mock`."
+    )
 
 
 def _dds_inactive_reason(settings: Settings) -> str:
@@ -98,7 +142,7 @@ def _dds_inactive_reason(settings: Settings) -> str:
         if settings.dds_backend == "auto":
             return (
                 "`TOPICFORGE_DDS_BACKEND=auto` found no DDS binding (`fastdds` or "
-                f"`cyclonedds`) installed. {_CYCLONE_HINT}"
+                f"`cyclonedds`) installed. {_cyclone_hint()}"
             )
         if module_is_importable(DDS_BACKEND_MODULES["cyclone"]):
             return (
@@ -106,14 +150,14 @@ def _dds_inactive_reason(settings: Settings) -> str:
                 "The `cyclonedds` binding is installed; set `TOPICFORGE_DDS_BACKEND=cyclone` "
                 "and restart to enable the DDS tools."
             )
-        return f"no DDS backend is selected and no DDS binding is installed. {_CYCLONE_HINT}"
+        return f"no DDS backend is selected and no DDS binding is installed. {_cyclone_hint()}"
     module = DDS_BACKEND_MODULES.get(backend)
     if backend in ("opendds", "dust"):
         return f"`TOPICFORGE_DDS_BACKEND={backend}` is a stub that never serves; use `cyclone`."
     if module is not None and not module_is_importable(module):
         return (
             f"`TOPICFORGE_DDS_BACKEND={backend}` is set but its `{module}` Python binding is "
-            f"not installed. {_CYCLONE_HINT if backend == 'cyclone' else ''}".rstrip()
+            f"not installed. {_cyclone_hint() if backend == 'cyclone' else ''}".rstrip()
         )
     return (
         f"`TOPICFORGE_DDS_BACKEND={backend}` is set and its binding is installed, but the "
@@ -150,9 +194,8 @@ def _try_build_cyclone(settings: Settings) -> MiddlewareAdapter | None:
     except ImportError:
         log.warning(
             "TOPICFORGE_DDS_BACKEND=cyclone but the `cyclonedds` Python "
-            "bindings are not installed. Install with "
-            '`pip install "topicforge[dds-cyclone]"`. The DDS module is '
-            "unavailable."
+            "bindings are not installed. %s The DDS module is unavailable.",
+            _cyclone_hint(),
         )
         return None
     except Exception as exc:  # a native library can fail to load (OSError)

@@ -374,13 +374,40 @@ def test_auto_mode_with_explicit_fast_and_missing_binding_explains_the_build(
 
 @pytest.mark.parametrize("dds_backend", ["mock", "auto"])
 def test_auto_mode_without_ros2_and_no_explicit_dds_backend_is_silent_mock(
-    caplog: pytest.LogCaptureFixture, dds_backend: str
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, dds_backend: str
 ) -> None:
+    # The binding is absent by simulation, whatever the real environment has.
+    monkeypatch.setattr("topicforge.config.settings.module_is_importable", lambda module: False)
     with caplog.at_level(logging.WARNING, logger=factory.__name__):
         adapter = factory.build_adapter(_auto_settings(dds_backend=dds_backend))
 
     assert isinstance(adapter, MockAdapter)
     assert not caplog.records
+
+
+def test_auto_dds_backend_with_the_binding_importable_builds_cyclone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "topicforge.config.settings.module_is_importable", lambda module: module == "cyclonedds"
+    )
+    _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", _FakeCyclone)
+    assert isinstance(factory.build_adapter(_auto_settings(dds_backend="auto")), _FakeCyclone)
+
+
+def test_default_dds_backend_never_builds_a_dds_adapter_even_with_the_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default settings plus an importable binding must not create a DDS participant."""
+    monkeypatch.setattr("topicforge.config.settings.module_is_importable", lambda module: True)
+    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: False)
+    _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", _FakeCyclone)
+    built: list[object] = []
+    monkeypatch.setattr(factory, "_try_build_cyclone", lambda settings: built.append(settings))
+
+    adapter = factory.build_adapter(_auto_settings(dds_backend="mock"))
+
+    assert isinstance(adapter, MockAdapter) and not built
 
 
 # ---------------------------------------------------------------------------

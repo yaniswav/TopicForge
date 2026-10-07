@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
     not (ROOT / "server.json").exists(), reason="repo-only test (not in the sdist)"
 )
 
-PIN_RE = re.compile(r"topicforge\[dds\]==([0-9][^\s\"'\\)&%]*)")
+PIN_RE = re.compile(r"topicforge(?:\[[a-z-]+\])?==([0-9][^\s\"'\\)&%]*)")
 BARE_PIN_RE = re.compile(r"==(\d+\.\d+\.\d+)")
 VERSION_LINE_RE = re.compile(r'^version\s*=\s*"([^"]+)"', re.MULTILINE)
 LINK_RES = {
@@ -52,7 +52,13 @@ def _toml_version(rel: str) -> str:
 
 def _pin_in_args(args: list[str]) -> str:
     match = PIN_RE.fullmatch(args[args.index("--from") + 1])
-    assert match, f"no topicforge[dds]==X pin in {args}"
+    assert match, f"no topicforge==X pin in {args}"
+    return match.group(1)
+
+
+def _pin_in_text(rel: str) -> str:
+    match = PIN_RE.search(_text(rel))
+    assert match, f"no topicforge==X pin in {rel}"
     return match.group(1)
 
 
@@ -75,6 +81,8 @@ SOURCES: dict[str, Callable[[], str]] = {
     "gemini-extension.json": lambda: _json("gemini-extension.json")["version"],
     "gemini-extension.json pin": lambda: _pin_in_args(_server_args("gemini-extension.json")),
     "mcpb manifest": lambda: _json("mcpb/manifest.json")["version"],
+    "plugin pyproject version": lambda: _toml_version("plugin/pyproject.toml"),
+    "plugin pyproject pin": lambda: _pin_in_text("plugin/pyproject.toml"),
     "mcpb pyproject version": lambda: _toml_version("mcpb/pyproject.toml"),
     "mcpb pyproject pin": _mcpb_pin,
 }
@@ -148,3 +156,20 @@ def test_other_docs_links_identical_to_clients_doc(rel: str) -> None:
             assert found == {expected[name]}, f"{rel}: {name} link differs from CLIENTS.md"
         else:
             assert found <= {expected[name]}, f"{rel}: {name} link differs from CLIENTS.md"
+
+
+def test_plugin_launches_without_an_extra() -> None:
+    """The plugin directory refuses extras: dependencies live in plugin/pyproject.toml."""
+    spec = _server_args("plugin/.mcp.json")[_server_args("plugin/.mcp.json").index("--from") + 1]
+    assert spec == f"topicforge=={topicforge.__version__}"
+
+
+def test_plugin_lock_matches_package_when_present() -> None:
+    """plugin/uv.lock is generated after the release reaches PyPI, so it may be absent."""
+    lock = ROOT / "plugin" / "uv.lock"
+    if not lock.exists():
+        pytest.skip("plugin/uv.lock not generated yet (run `uv lock` in plugin/ after PyPI)")
+    text = lock.read_text(encoding="utf-8")
+    match = re.search(r'^name = "topicforge"\s+version = "([^"]+)"', text, re.MULTILINE)
+    assert match, "topicforge is not locked in plugin/uv.lock"
+    assert match.group(1) == topicforge.__version__, "plugin/uv.lock is stale: rerun `uv lock`"

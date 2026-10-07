@@ -241,16 +241,46 @@ def test_auto_mode_without_ros2_keeps_explicit_dds_backend(backend: str) -> None
     assert s.effective_dds_backend == backend
 
 
-@pytest.mark.parametrize("backend", ["mock", "auto"])
-def test_auto_mode_without_ros2_and_no_explicit_backend_stays_mock(backend: str) -> None:
-    s = load_settings(
-        env={
-            "TOPICFORGE_MODE": "auto",
-            "TOPICFORGE_ROS2_BIN": _NO_ROS2,
-            "TOPICFORGE_DDS_BACKEND": backend,
-        }
+def _binding_importable(monkeypatch: pytest.MonkeyPatch, present: bool) -> None:
+    """Simulate the cyclonedds binding being importable or not, whatever the real env has."""
+    monkeypatch.setattr(
+        "topicforge.config.settings.module_is_importable",
+        lambda module: present and module == "cyclonedds",
     )
-    assert s.effective_dds_backend == "mock"
+
+
+def _no_ros2_env(backend: str | None) -> dict[str, str]:
+    env = {"TOPICFORGE_MODE": "auto", "TOPICFORGE_ROS2_BIN": _NO_ROS2}
+    if backend is not None:
+        env["TOPICFORGE_DDS_BACKEND"] = backend
+    return env
+
+
+@pytest.mark.parametrize("backend", ["mock", "auto"])
+def test_auto_mode_without_ros2_and_no_binding_stays_mock(
+    monkeypatch: pytest.MonkeyPatch, backend: str
+) -> None:
+    _binding_importable(monkeypatch, present=False)
+    assert load_settings(env=_no_ros2_env(backend)).effective_dds_backend == "mock"
+
+
+def test_auto_backend_resolves_to_cyclone_when_the_binding_is_importable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`auto` is an explicit DDS request: it picks the binding when there is one."""
+    _binding_importable(monkeypatch, present=True)
+    assert load_settings(env=_no_ros2_env("auto")).effective_dds_backend == "cyclone"
+
+
+@pytest.mark.parametrize("backend", [None, "mock"])
+def test_default_backend_stays_mock_even_with_the_binding_importable(
+    monkeypatch: pytest.MonkeyPatch, backend: str | None
+) -> None:
+    """A default install never joins a DDS domain: the binding alone selects nothing."""
+    _binding_importable(monkeypatch, present=True)
+    settings = load_settings(env=_no_ros2_env(backend))
+    assert settings.dds_backend == "mock"
+    assert settings.effective_dds_backend == "mock"
 
 
 def test_dds_domain_id_parsing() -> None:
