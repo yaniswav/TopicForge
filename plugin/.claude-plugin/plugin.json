@@ -10,7 +10,16 @@
   "homepage": "https://topicforge.horizonvista.xyz",
   "repository": "https://github.com/yaniswav/TopicForge",
   "license": "MIT",
-  "keywords": ["ros2", "dds", "robotics", "mcp", "qos", "rosbag", "observability", "read-only"],
+  "keywords": [
+    "ros2",
+    "dds",
+    "robotics",
+    "mcp",
+    "qos",
+    "rosbag",
+    "observability",
+    "read-only"
+  ],
   "icon": "./icon.png",
   "documentationUrl": "https://github.com/yaniswav/TopicForge#readme",
   "supportUrl": "https://github.com/yaniswav/TopicForge/issues",
@@ -18,8 +27,7 @@
     "dds_backend": {
       "type": "string",
       "title": "DDS backend",
-      "description": "cyclone joins the DDS bus as a read-only participant (needs no ROS 2). mock serves fixed demo data instead. auto picks the best available.",
-      "options": ["cyclone", "mock", "auto"],
+      "description": "One of cyclone, mock or auto. cyclone joins the DDS bus as a read-only participant (needs no ROS 2). mock serves fixed demo data instead. auto picks the best available.",
       "default": "cyclone"
     },
     "dds_domain_id": {
