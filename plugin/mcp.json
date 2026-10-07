@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "topicforge": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "--from",
+        "topicforge==0.6.3",
+        "topicforge"
+      ],
+      "env": {
+        "TOPICFORGE_MODE": "auto",
+        "TOPICFORGE_DDS_BACKEND": "cyclone",
+        "TOPICFORGE_DDS_DOMAIN_ID": "0"
+      }
+    }
+  }
+}

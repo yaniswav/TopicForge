@@ -44,6 +44,12 @@ The server runs with `TOPICFORGE_MODE=auto`: live ROS 2 when `ros2` is on PATH, 
 
 Without DDS, set `dds_backend` to `mock`, or use the standalone install `uvx topicforge`.
 
+## Other clients (Agent Plugins)
+
+This folder is also an [Agent Plugins](https://agent-plugins.org) 1.0.0 package, so Cursor and other compatible clients can load it: `plugin.json` is the manifest, `mcp.json` declares the server and `skills/` holds the two skills (shared with the Claude format above). The Claude files (`.claude-plugin/plugin.json`, `.mcp.json`) are left alone.
+
+The Agent Plugins format has no user-configuration prompt, so `mcp.json` uses fixed defaults: `TOPICFORGE_MODE=auto`, `TOPICFORGE_DDS_BACKEND=cyclone`, `TOPICFORGE_DDS_DOMAIN_ID=0`. To change them, edit the `env` block of `mcp.json` in the installed copy (backend `mock` serves fixtures, `auto` picks the best available; domain 0 to 232, fixed at startup) and restart the server.
+
 ## Privacy
 
 The server reads the local ROS 2 graph and the DDS discovery traffic on the machine and network it runs on, and returns the result to the Claude session. It makes no outbound network calls. Anonymous telemetry exists but is off by default and is not enabled by this plugin. See the main [README](https://github.com/yaniswav/TopicForge#telemetry) for the telemetry contract and [SECURITY.md](https://github.com/yaniswav/TopicForge/blob/main/SECURITY.md).

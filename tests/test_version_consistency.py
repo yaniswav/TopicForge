@@ -164,6 +164,21 @@ def test_plugin_launches_without_an_extra() -> None:
     assert spec == f"topicforge=={topicforge.__version__}"
 
 
+def test_agent_plugin_manifests_match_claude_plugin() -> None:
+    """plugin/plugin.json and plugin/mcp.json (Agent Plugins) mirror the Claude files."""
+    manifest = ROOT / "plugin" / "plugin.json"
+    mcp = ROOT / "plugin" / "mcp.json"
+    if not (manifest.exists() and mcp.exists()):
+        pytest.skip("Agent Plugins files absent")
+    portable = json.loads(manifest.read_text(encoding="utf-8"))
+    claude = _json("plugin/.claude-plugin/plugin.json")
+    assert portable["name"] == claude["name"]
+    assert portable["version"] == topicforge.__version__
+    args = json.loads(mcp.read_text(encoding="utf-8"))["mcpServers"]["topicforge"]["args"]
+    assert _pin_in_args(args) == topicforge.__version__
+    assert "${user_config" not in mcp.read_text(encoding="utf-8")
+
+
 def test_plugin_lock_matches_package_when_present() -> None:
     """plugin/uv.lock is generated after the release reaches PyPI, so it may be absent."""
     lock = ROOT / "plugin" / "uv.lock"
