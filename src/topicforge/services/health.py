@@ -53,7 +53,7 @@ class HealthService:
             dds_backend=dds_backend,
             dds_inactive_reason=(
                 getattr(self._adapter, "dds_inactive_reason", None)
-                if dds_backend == "none"
+                if dds_backend in ("none", "mock")
                 else None
             ),
             dds_domain_id=self._settings.dds_domain_id,

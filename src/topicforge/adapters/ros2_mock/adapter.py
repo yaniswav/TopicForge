@@ -29,6 +29,9 @@ _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
 
 class MockAdapter:
     name: AdapterName = "mock"
+    # Set by the factory when a DDS backend was requested but the server fell back to
+    # these fixtures, so `health_check` can say why. `None` for a deliberate mock.
+    dds_inactive_reason: str | None = None
 
     @property
     def effective_mode(self) -> EffectiveMode:
