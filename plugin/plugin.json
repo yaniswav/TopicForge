@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "topicforge",
+  "version": "0.6.3",
+  "description": "Read-only ROS 2 and DDS inspection: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
+  "author": {
+    "name": "Yanis Ethvignot",
+    "url": "https://topicforge.horizonvista.xyz"
+  },
+  "homepage": "https://topicforge.horizonvista.xyz",
+  "repository": "https://github.com/yaniswav/TopicForge",
+  "license": "MIT",
+  "keywords": [
+    "ros2",
+    "dds",
+    "robotics",
+    "mcp",
+    "qos",
+    "rosbag",
+    "observability",
+    "read-only"
+  ]
+}

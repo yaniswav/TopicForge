@@ -119,6 +119,10 @@ If that page does not open Cursor, use the raw deeplink: `cursor://anysphere.cur
 Or paste the common JSON shape into `~/.cursor/mcp.json` (all projects) or
 `.cursor/mcp.json` (one project).
 
+## Agent Plugins (Cursor and other compatible clients)
+
+The `plugin/` folder of this repository is also an [Agent Plugins](https://agent-plugins.org) 1.0.0 package: `plugin.json` (manifest), `mcp.json` (the same pinned `uvx` launch) and `skills/` (two skills). Clients that load that format, such as Cursor, can install it as a plugin and get the server and the skills in one step; the plain JSON config above remains the simplest route for everything else. The format has no user-configuration prompt, so the backend is fixed to `cyclone` and the domain to `0`; edit the `env` block of `mcp.json` to change them (see `plugin/README.md`). Cursor Directory (cursor.directory/plugins/new) and the Cursor marketplace take a repository URL; a repo-root `.cursor-plugin/marketplace.json` points Cursor at the `plugin/` subfolder. Whether each directory scanner accepts a subfolder is unverified.
+
 ## VS Code / GitHub Copilot
 
 One click: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.6.3%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)

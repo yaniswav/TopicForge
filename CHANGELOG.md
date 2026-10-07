@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `plugin/` is now also an Agent Plugins 1.0.0 package (open standard used by Cursor and
+  other clients): `plugin/plugin.json` and `plugin/mcp.json` next to the Claude files,
+  with the same pinned `uvx` launch and fixed env defaults (no per-user configuration in
+  that format). A repo-root `.cursor-plugin/marketplace.json` points Cursor at `plugin/`.
+  The version-consistency test covers the new files.
+
 ## [0.6.3] - 2026-10-07
 
 ### Added
