@@ -2,13 +2,42 @@
 
 from __future__ import annotations
 
+import importlib.util
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
 from topicforge.services import HealthService, Inspector
+
+
+@pytest.fixture(autouse=True)
+def _close_cyclone_adapters(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Stop every real Cyclone adapter a test builds, so its tracker thread cannot leak.
+
+    A real `CycloneDdsAdapter` starts a `topicforge-discovery` thread and registers
+    `close` with `atexit`, which is right for a server (one adapter per process) but
+    leaves a thread behind for each adapter a test builds. A no-op without the binding.
+    """
+    if importlib.util.find_spec("cyclonedds") is None:
+        yield
+        return
+    from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
+
+    built: list[CycloneDdsAdapter] = []
+    original = CycloneDdsAdapter.__init__
+
+    def tracking_init(self: CycloneDdsAdapter, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        built.append(self)
+
+    monkeypatch.setattr(CycloneDdsAdapter, "__init__", tracking_init)
+    yield
+    for adapter in built:
+        adapter.close()
 
 
 @pytest.fixture

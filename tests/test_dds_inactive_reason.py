@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from topicforge.adapters.base import AdapterError
@@ -97,6 +99,15 @@ def test_health_check_has_no_reason_when_dds_serves(monkeypatch: pytest.MonkeyPa
 def _platform(
     monkeypatch: pytest.MonkeyPatch, system: str, machine: str, python: tuple[int, int]
 ) -> None:
+    """Pretend to run on `system`/`machine`/`python`, where no wheel means no binding.
+
+    The real binding may be importable in the test environment, so its absence is
+    simulated too: a `None` entry in `sys.modules` makes `import cyclonedds` fail.
+    """
+    for name in {"cyclonedds", *(m for m in sys.modules if m.startswith("cyclonedds."))}:
+        monkeypatch.setitem(sys.modules, name, None)
+    for name in [m for m in sys.modules if m.startswith("topicforge.adapters.dds_cyclone")]:
+        monkeypatch.delitem(sys.modules, name)  # force a re-import, which now fails
     monkeypatch.setattr(f"{_FACTORY_MODULE}.platform.system", lambda: system)
     monkeypatch.setattr(f"{_FACTORY_MODULE}.platform.machine", lambda: machine)
     monkeypatch.setattr(f"{_FACTORY_MODULE}.sys.version_info", (*python, 0, "final", 0))

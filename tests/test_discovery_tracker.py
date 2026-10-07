@@ -252,11 +252,15 @@ def test_thread_runs_until_stopped_and_does_not_leak() -> None:
         ticked.set()
         return _empty()
 
+    def discovery_threads() -> set[threading.Thread]:
+        return {t for t in threading.enumerate() if t.name == "topicforge-discovery"}
+
+    before = discovery_threads()  # other adapters may own threads; count only ours
     tracker = DiscoveryTracker(take, DiscoveryCaches(), domain_id=0, period_s=0.01)
     tracker.start()
     tracker.start()  # idempotent: still one thread
     assert ticked.wait(2)
-    assert sum(t.name == "topicforge-discovery" for t in threading.enumerate()) == 1
+    assert len(discovery_threads() - before) == 1
     assert tracker.status()["running"] is True
 
     tracker.stop()
@@ -264,7 +268,7 @@ def test_thread_runs_until_stopped_and_does_not_leak() -> None:
     while tracker.status()["running"] and time.monotonic() < deadline:
         time.sleep(0.01)
     assert tracker.status()["running"] is False
-    assert not any(t.name == "topicforge-discovery" for t in threading.enumerate())
+    assert not discovery_threads() - before
 
 
 def test_participant_dispose_moves_its_endpoints_to_departed() -> None:
