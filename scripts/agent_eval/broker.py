@@ -11,8 +11,7 @@ import json
 import os
 import sys
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 
 
 async def main() -> None:
@@ -29,8 +28,7 @@ async def main() -> None:
         "TOPICFORGE_LOG_LEVEL": "WARNING",
     }
     params = StdioServerParameters(command=sys.executable, args=["-m", "topicforge"], env=env)
-    async with stdio_client(params) as (r, w), ClientSession(r, w) as session:
-        await session.initialize()
+    async with Client(params) as session:
         lock = asyncio.Lock()
 
         async def handle(reader, writer):
@@ -40,20 +38,24 @@ async def main() -> None:
                 if req.get("list"):
                     tools = await session.list_tools()
                     out = [
-                        {"name": t.name, "description": t.description, "inputSchema": t.inputSchema}
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "inputSchema": t.input_schema,
+                        }
                         for t in tools.tools
                     ]
                 else:
                     res = await session.call_tool(req["tool"], req.get("args") or {})
-                    if res.isError:
+                    if res.is_error:
                         out = {
                             "isError": True,
                             "content": [getattr(c, "text", "") for c in res.content],
                         }
                     else:
                         out = (
-                            res.structuredContent
-                            if res.structuredContent is not None
+                            res.structured_content
+                            if res.structured_content is not None
                             else [getattr(c, "text", "") for c in res.content]
                         )
             writer.write((json.dumps(out, default=str) + "\n").encode())

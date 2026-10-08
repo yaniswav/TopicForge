@@ -57,7 +57,7 @@ def test_no_tool_or_parameter_description_carries_internal_history() -> None:
     tools = asyncio.run(_app().list_tools())
     assert len(tools) == 12
     for tool in tools:
-        texts = [tool.description or "", *_strings(tool.inputSchema)]
+        texts = [tool.description or "", *_strings(tool.input_schema)]
         for text in texts:
             assert not _HISTORY.search(text), (tool.name, _HISTORY.search(text).group(0))
 
@@ -72,9 +72,9 @@ def test_ros_tools_say_ros2_only_and_point_to_list_endpoints() -> None:
 def test_domain_and_topic_params_are_explained_plainly() -> None:
     tools = {t.name: t for t in asyncio.run(_app().list_tools())}
     for name in ("list_participants", "participant_events", "topic_metrics", "list_endpoints"):
-        desc = tools[name].inputSchema["properties"]["domain_id"]["description"]
+        desc = tools[name].input_schema["properties"]["domain_id"]["description"]
         assert "does not switch domains" in desc
-    topic = tools["peek_dds_samples"].inputSchema["properties"]["topic"]["description"]
+    topic = tools["peek_dds_samples"].input_schema["properties"]["topic"]["description"]
     assert "`scan`" in topic and "`rt/scan`" in topic and "DCPSParticipant" in topic
 
 
@@ -183,8 +183,7 @@ def test_health_reports_ros_tools_decoding_and_security() -> None:
 
 def test_health_check_tool_exposes_the_new_fields() -> None:
     result = asyncio.run(_app().call_tool("health_check", {}))
-    blocks = result[0] if isinstance(result, tuple) else result
-    payload = json.loads(blocks[0].text)
+    payload = json.loads(result.content[0].text)
     assert payload["ros_tools_available"] is True
     assert payload["dds_security"] == "not_supported"
 

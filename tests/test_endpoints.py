@@ -300,8 +300,7 @@ def test_tool_call_returns_json_serializable_listing() -> None:
         Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
     )
     result = asyncio.run(app.call_tool("list_endpoints", {"topic": "/dds/qos_mismatch"}))
-    blocks = result[0] if isinstance(result, tuple) else result
-    payload = json.loads(blocks[0].text)
+    payload = json.loads(result.content[0].text)
     assert payload["returned"] == 2
     assert payload["endpoints"][0]["qos"]["reliability"] in {"RELIABLE", "BEST_EFFORT"}
 

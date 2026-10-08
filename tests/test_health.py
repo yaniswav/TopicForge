@@ -174,14 +174,10 @@ def test_middleware_unavailable_without_dds_module() -> None:
 
 def _call_health_check(app: Any) -> dict[str, Any]:
     result = asyncio.run(app.call_tool("health_check", {}))
-    # FastMCP returns either (content, structured) or a content list
-    # depending on the SDK version.
-    if isinstance(result, tuple):
-        structured = result[1]
-        if isinstance(structured, dict):
-            return structured
-        result = result[0]
-    return json.loads(result[0].text)
+    # mcp 2.x returns a `CallToolResult`: structured output, with the JSON text as fallback.
+    if isinstance(result.structured_content, dict):
+        return result.structured_content
+    return json.loads(result.content[0].text)
 
 
 def test_live_without_ros2_reports_the_mock_that_was_built() -> None:

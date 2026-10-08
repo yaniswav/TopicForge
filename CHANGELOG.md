@@ -18,6 +18,28 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `scripts/contract/snapshot_tools.py`, and `tests/test_contract_snapshots.py`, which fails
   with a diff on any change to a description, schema or annotation and when `TOOLS.md` is
   stale.
+### Changed
+
+- Moved to the MCP Python SDK 2.x: the dependency is now `mcp>=2.3,<3` (it was `mcp>=1.0.0,<2`).
+  `FastMCP` became `MCPServer`; the server reports `name` and `version` through the
+  constructor, which replaces the private-attribute workaround of 0.6.4. Handlers, tool
+  names, parameters and the stdio transport are unchanged. The SDK brings new dependencies
+  (`mcp-types`, `httpx2`, `opentelemetry-api`, `anyio`, `pydantic>=2.12`). The served schemas
+  differ only where the SDK serializes differently (see the golden snapshot commit).
+- Tool calls are serialized behind one process-wide lock (`topicforge.tools.guard`): the 2.x
+  SDK runs synchronous handlers in worker threads, and neither the Cyclone binding nor the
+  `ros2` CLI adapter can take overlapping calls. Fine-grained locks are planned.
+- CI builds the wheel and installs it into a fresh venv on Ubuntu and Windows.
+
+### Fixed
+
+- The server no longer blocks the asyncio event loop during a long tool call (a 45 s
+  `sample_messages`, a hung `ros2` CLI): handlers run in worker threads, so the transport
+  keeps answering pings and cancellations.
+- `AdapterError` messages still reach the client as `isError` text. The 2.x SDK keeps the
+  text of any exception other than `ToolError` on the server, so every handler now
+  re-raises `AdapterError` as `ToolError` with the same message. Unexpected exceptions
+  stay redacted ("Error executing tool X") and leak no traceback.
 
 ## [0.6.4] - 2026-10-08
 
