@@ -23,6 +23,7 @@ from typing import Any
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import annotate_raw
+from topicforge.adapters.common.stamps import payload_stamp
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
@@ -46,8 +47,9 @@ _BAG_FORMAT_BY_EXTENSION: dict[str, str] = {
     ".bag": "bag",
 }
 _ROSBAGS_REQUIRED_MSG = (
-    "Reading bag samples requires the `rosbags` library: "
-    "pip install topicforge[bags]. `analyze_bag` can still summarize a bag "
+    "Reading bag samples requires the `rosbags` library, which topicforge installs "
+    "by default but could not import here: reinstall it with "
+    "`pip install --force-reinstall rosbags`. `analyze_bag` can still summarize a bag "
     "through `ros2 bag info` when ROS 2 is installed; `peek_bag_samples` cannot."
 )
 _MAX_ARRAY_ELEMENTS = 4096
@@ -356,13 +358,13 @@ def _peek_with_rosbags(
             if len(samples) >= count:
                 break
             payload = _decode_bag_message(reader, connection, raw)
-            header_ns = _header_stamp_ns(payload)
+            found = payload_stamp(payload)
             samples.append(
                 MessageSample(
                     topic=topic,
                     message_type=message_type,
-                    timestamp_ns=int(timestamp) if header_ns is None else header_ns,
-                    stamp_source="recorded" if header_ns is None else "header",
+                    timestamp_ns=int(timestamp) if found is None else found[0],
+                    stamp_source="recorded" if found is None else found[1],
                     recorded_ns=int(timestamp),
                     payload=_cap_arrays(payload, capped),
                 )
@@ -380,18 +382,6 @@ def _peek_with_rosbags(
             f"{_MAX_ARRAY_ELEMENTS} (fields: {', '.join(sorted(capped))})."
         )
     return samples, " ".join(notes) or None
-
-
-def _header_stamp_ns(payload: dict[str, Any]) -> int | None:
-    """`header.stamp` of a decoded message in nanoseconds, or `None` without a top-level header."""
-    header = payload.get("header")
-    stamp = header.get("stamp") if isinstance(header, dict) else None
-    if not isinstance(stamp, dict):
-        return None
-    sec, nanosec = stamp.get("sec"), stamp.get("nanosec")
-    if isinstance(sec, int) and isinstance(nanosec, int):
-        return sec * 1_000_000_000 + nanosec
-    return None
 
 
 def _cap_arrays(payload: dict[str, Any], capped: set[str], prefix: str = "") -> dict[str, Any]:

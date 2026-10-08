@@ -158,9 +158,34 @@ def test_peek_labels_the_clock_of_each_timestamp(bag_path: str) -> None:
     assert scan.recorded_ns is not None
 
     log = BagService().peek_samples(bag_path, "/rosout", 1).samples[0]
-    assert log.stamp_source == "header" or log.timestamp_ns == log.recorded_ns
+    assert log.stamp_source == "payload"
+    assert (
+        log.timestamp_ns
+        == log.payload["stamp"]["sec"] * 1_000_000_000 + log.payload["stamp"]["nanosec"]
+    )
 
 
 def test_peek_payload_has_no_message_type_markers(bag_path: str) -> None:
     payload = BagService().peek_samples(bag_path, "/scan", 1).samples[0].payload
     assert "msgtype" not in str(payload)
+
+
+@pytest.mark.parametrize("topic", ["/clock", "/tf", "/tf_static", "/rosout"])
+def test_peek_reads_the_time_from_the_body_of_clock_tf_and_log(bag_path: str, topic: str) -> None:
+    samples = BagService().peek_samples(bag_path, topic, 3).samples
+    assert samples
+    for sample in samples:
+        assert sample.stamp_source == "payload"
+        assert sample.timestamp_ns != sample.recorded_ns
+        if topic in ("/clock", "/tf"):
+            # Sim time since the simulation started: seconds, not an epoch date.
+            assert 0 < sample.timestamp_ns < 600 * 1_000_000_000
+        else:
+            # /tf_static and /rosout are stamped with the wall clock by their publishers.
+            assert sample.timestamp_ns > 1_000_000_000_000_000_000
+
+
+def test_peek_clock_stamp_equals_the_clock_field(bag_path: str) -> None:
+    sample = BagService().peek_samples(bag_path, "/clock", 1).samples[0]
+    clock = sample.payload["clock"]
+    assert sample.timestamp_ns == clock["sec"] * 1_000_000_000 + clock["nanosec"]

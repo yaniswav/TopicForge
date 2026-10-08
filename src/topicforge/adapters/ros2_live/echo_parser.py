@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 import yaml
 
+from topicforge.adapters.common.stamps import payload_stamp
 from topicforge.constants import TRUNCATED_FIELDS_KEY
 
 ECHO_DOCUMENT_SEPARATOR = "---"
@@ -20,7 +21,7 @@ ECHO_DOCUMENT_SEPARATOR = "---"
 TRUNCATION_MARK = "..."
 RAW_TEXT_KEY = "_raw_text"
 
-StampSource = Literal["header", "none"]
+StampSource = Literal["header", "payload", "none"]
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,8 @@ class EchoMessage:
     """One decoded echo document.
 
     `timestamp_ns` is the top-level `header.stamp` (`stamp_source` `header`),
-    or 0 for a message without one (`none`).
+    the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), or 0
+    for a message without one (`none`).
     """
 
     payload: dict[str, object]
@@ -97,20 +99,10 @@ def parse_echo_document(document: str, *, truncate_length: int | None = None) ->
     payload = _normalize_mapping(data, "", truncate_length, cut)
     if cut:
         payload[TRUNCATED_FIELDS_KEY] = cut
-    timestamp_ns = _header_stamp_ns(payload)
-    return EchoMessage(payload, timestamp_ns or 0, "none" if timestamp_ns is None else "header")
-
-
-def _header_stamp_ns(payload: dict[str, object]) -> int | None:
-    """Nanoseconds of a top-level `header.stamp`, whatever its value; `None` when absent."""
-    header = payload.get("header")
-    stamp = header.get("stamp") if isinstance(header, dict) else None
-    if not isinstance(stamp, dict):
-        return None
-    sec, nanosec = stamp.get("sec"), stamp.get("nanosec")
-    if not _is_int(sec) or not _is_int(nanosec):
-        return None
-    return int(sec) * 1_000_000_000 + int(nanosec)
+    found = payload_stamp(payload)
+    if found is None:
+        return EchoMessage(payload, 0, "none")
+    return EchoMessage(payload, found[0], found[1])
 
 
 def _is_int(value: object) -> bool:
