@@ -32,13 +32,13 @@ def test_every_tool_is_declared_read_only() -> None:
     for tool in _tools():
         a = tool.annotations
         assert a is not None, f"{tool.name} has no annotations"
-        assert a.readOnlyHint is True, tool.name
-        assert a.destructiveHint is False, tool.name
-        assert a.idempotentHint is True, tool.name
-        assert isinstance(a.openWorldHint, bool), tool.name
+        assert a.read_only_hint is True, tool.name
+        assert a.destructive_hint is False, tool.name
+        assert a.idempotent_hint is True, tool.name
+        assert isinstance(a.open_world_hint, bool), tool.name
         assert a.title and a.title.strip(), tool.name
 
 
 def test_open_world_hint_split_is_exact() -> None:
-    closed = {t.name for t in _tools() if t.annotations and t.annotations.openWorldHint is False}
+    closed = {t.name for t in _tools() if t.annotations and t.annotations.open_world_hint is False}
     assert closed == CLOSED_WORLD_TOOLS

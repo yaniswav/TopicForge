@@ -47,14 +47,17 @@ def collect_tools() -> list[JsonDict]:
     tools = asyncio.run(app.list_tools())
     out: list[JsonDict] = []
     for tool in tools:
-        annotations = tool.annotations.model_dump(exclude_none=True) if tool.annotations else None
+        # Wire form (camelCase keys), as a client receives it. mcp 2.x models use
+        # snake_case attributes, so read the aliased dump rather than attributes.
+        wire = tool.model_dump(by_alias=True, exclude_none=True)
+        annotations = wire.get("annotations")
         out.append(
             {
                 "name": tool.name,
-                "title": tool.title or (annotations or {}).get("title"),
-                "description": tool.description,
-                "inputSchema": tool.inputSchema,
-                "outputSchema": tool.outputSchema,
+                "title": wire.get("title") or (annotations or {}).get("title"),
+                "description": wire.get("description"),
+                "inputSchema": wire.get("inputSchema"),
+                "outputSchema": wire.get("outputSchema"),
                 "annotations": annotations,
             }
         )

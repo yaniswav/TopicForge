@@ -1,9 +1,9 @@
 """MCP tool handlers.
 
-Handlers delegate to services and return Pydantic models for FastMCP to
-serialize. `AdapterError` and other exceptions propagate, and FastMCP turns
-them into `isError: true` results. A custom error envelope would report a
-failure as a successful call.
+Handlers delegate to services and return Pydantic models for the SDK to
+serialize. Exceptions propagate and become `isError: true` results (`guarded`
+re-raises `AdapterError` as the SDK's `ToolError` so its text reaches the
+client). A custom error envelope would report a failure as a successful call.
 
 The `description` strings are read by LLM clients, so they state caveats,
 limits and mock/live differences.
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from topicforge.constants import (
@@ -36,6 +36,7 @@ from topicforge.models import (
 from topicforge.services import HealthService, Inspector
 from topicforge.telemetry import TelemetryClient, instrument
 from topicforge.tools.annotations import read_only_annotations
+from topicforge.tools.guard import guarded
 
 _TOPIC_PARAM_DESC = (
     "Fully qualified ROS2 topic name starting with `/`, e.g. `/cmd_vel` or "
@@ -113,7 +114,7 @@ _PATH_PARAM_DESC = (
 
 
 def register_tools(
-    mcp: FastMCP,
+    mcp: MCPServer,
     inspector: Inspector,
     health: HealthService,
     telemetry: TelemetryClient,
@@ -152,6 +153,7 @@ def register_tools(
             "something looks wrong. Read-only; no side effects."
         ),
     )
+    @guarded
     @instrument(telemetry, "health_check")
     def health_check() -> HealthReport:
         return health.report()
@@ -171,6 +173,7 @@ def register_tools(
             "setup). Read-only; no side effects."
         ),
     )
+    @guarded
     @instrument(telemetry, "list_topics")
     def list_topics() -> list[TopicInfo]:
         return inspector.list_topics()
@@ -190,6 +193,7 @@ def register_tools(
             "CLI is available. Read-only; no side effects."
         ),
     )
+    @guarded
     @instrument(telemetry, "get_topic_info")
     def get_topic_info(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
@@ -233,6 +237,7 @@ def register_tools(
             "which reads the raw DDS layer."
         ),
     )
+    @guarded
     @instrument(telemetry, "sample_messages")
     def sample_messages(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
@@ -290,6 +295,7 @@ def register_tools(
             "mode only. Read-only; no side effects."
         ),
     )
+    @guarded
     @instrument(telemetry, "analyze_bag")
     def analyze_bag(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
@@ -338,6 +344,7 @@ def register_tools(
             "fixtures."
         ),
     )
+    @guarded
     @instrument(telemetry, "list_participants")
     def list_participants(
         domain_id: Annotated[
@@ -389,6 +396,7 @@ def register_tools(
             "DDS module is active; the mock backend returns fixtures."
         ),
     )
+    @guarded
     @instrument(telemetry, "detect_qos_mismatches")
     def detect_qos_mismatches(
         topic: Annotated[
@@ -432,6 +440,7 @@ def register_tools(
             "active or the topic is not announced on the bus."
         ),
     )
+    @guarded
     @instrument(telemetry, "peek_dds_samples")
     def peek_dds_samples(
         topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
@@ -476,6 +485,7 @@ def register_tools(
             "set `TOPICFORGE_DDS_BACKEND=cyclone|fast`)."
         ),
     )
+    @guarded
     @instrument(telemetry, "participant_events")
     def participant_events(
         domain_id: Annotated[
@@ -528,6 +538,7 @@ def register_tools(
             "3 s for discovery to warm up."
         ),
     )
+    @guarded
     @instrument(telemetry, "topic_metrics")
     def topic_metrics(
         topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
@@ -587,6 +598,7 @@ def register_tools(
             " in the bag, or `rosbags` is not installed."
         ),
     )
+    @guarded
     @instrument(telemetry, "peek_bag_samples")
     def peek_bag_samples(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
@@ -640,6 +652,7 @@ def register_tools(
             "DDS tools."
         ),
     )
+    @guarded
     @instrument(telemetry, "list_endpoints")
     def list_endpoints(
         topic: Annotated[

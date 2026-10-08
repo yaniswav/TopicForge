@@ -185,7 +185,7 @@ def _app() -> Any:
 
 def test_tool_schema_exposes_the_options() -> None:
     tools = {t.name: t for t in asyncio.run(_app().list_tools())}
-    props = tools["sample_messages"].inputSchema["properties"]
+    props = tools["sample_messages"].input_schema["properties"]
     assert props["max_array_length"]["default"] == 128
     assert props["arrays_summary_only"]["default"] is False
     assert props["count"]["maximum"] == MAX_SAMPLE_COUNT
@@ -210,7 +210,7 @@ def test_tool_call_with_options_succeeds_in_mock_mode() -> None:
 
 
 def test_tool_call_rejects_an_out_of_range_length() -> None:
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError):
         asyncio.run(

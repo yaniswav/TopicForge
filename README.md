@@ -177,7 +177,7 @@ TopicForge is pre-1.0; [`CHANGELOG.md`](CHANGELOG.md) lists every change, includ
 ```
 src/topicforge/
   server/      MCP bootstrap, build_app(settings)
-  tools/       thin FastMCP handlers, no backend logic
+  tools/       thin MCPServer handlers, no backend logic
   services/    input validation, orchestration, adapter factory
   adapters/    ros2_live, ros2_mock, dds_cyclone, dds_fast, common/ (binding-free logic)
   models/      frozen Pydantic schemas, the contract with MCP clients

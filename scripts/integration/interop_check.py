@@ -41,8 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 
 REPO = Path(__file__).resolve().parents[2]
 PUB = REPO / "scripts" / "integration" / "publishers"
@@ -317,13 +316,13 @@ def _stop_tree(proc: subprocess.Popen[bytes]) -> None:
 # ---------------------------------------------------------------- MCP calls
 
 
-async def _call(session: ClientSession, tool: str, **args: Any) -> Any:
+async def _call(session: Client, tool: str, **args: Any) -> Any:
     result = await session.call_tool(tool, args)
-    if result.isError:
+    if result.is_error:
         text = " ".join(getattr(c, "text", "") for c in result.content)
         raise RuntimeError(f"{tool} failed: {text}")
-    if result.structuredContent is not None:
-        data = result.structuredContent
+    if result.structured_content is not None:
+        data = result.structured_content
         return data.get("result", data) if isinstance(data, dict) else data
     return [json.loads(c.text) for c in result.content if getattr(c, "text", None)]
 
@@ -345,9 +344,7 @@ async def _scenario(domain: str, running: list[Running]) -> int:
     names = {r.spec.name for r in running}
     failures: list[str] = []
 
-    async with stdio_client(server) as (read, write), ClientSession(read, write) as session:
-        await session.initialize()
-
+    async with Client(server) as session:
         health = await _call(session, "health_check")
         print(
             f"\n[health_check] mode={health.get('mode')} "

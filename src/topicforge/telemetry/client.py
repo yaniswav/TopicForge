@@ -109,7 +109,7 @@ def instrument(client: TelemetryClient, tool_name: str) -> Callable[[F], F]:
 
     When telemetry is disabled the handler is returned unchanged, so no
     network call is possible (`test_off_mode_no_network`). `functools.wraps`
-    keeps the signature that FastMCP introspects.
+    keeps the signature that the MCP SDK introspects.
     """
     if not client.enabled:
         return lambda fn: fn

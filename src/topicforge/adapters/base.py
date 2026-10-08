@@ -53,8 +53,8 @@ keeping its own `name`. Adding a value here breaks the wire contract.
 class AdapterError(RuntimeError):
     """Raised when an adapter cannot fulfill a request.
 
-    Carries a user-safe message. Handlers do not catch it: FastMCP turns it
-    into an `isError: true` tool result.
+    Carries a user-safe message. `guarded` re-raises it as the SDK `ToolError`, which becomes
+    an `isError: true` tool result with this message.
     """
 
 

@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "mcp>=1.0.0,<2",
+    "mcp>=2.3,<3",
     "pydantic>=2.6",
     "pyyaml>=6",
     # Bag reader behind `peek_bag_samples`, core since 0.6.4 (it used to be the `[bags]`

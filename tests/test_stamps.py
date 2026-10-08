@@ -102,6 +102,6 @@ def test_initialize_advertises_topicforge_version() -> None:
     app = build_app(
         Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
     )
-    options = app._mcp_server.create_initialization_options()
+    options = app._lowlevel_server.create_initialization_options()
     assert options.server_name == "topicforge"
     assert options.server_version == topicforge.__version__
