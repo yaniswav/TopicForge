@@ -242,10 +242,12 @@ class TopicForge:
     async def ask(self, tool: str, **arguments: Any) -> Any:
         """Call one TopicForge tool and return its structured result."""
         result = await self._session.call_tool(tool, arguments)
-        if result.isError:
+        # mcp 2.x exposes snake_case attributes; 1.x used camelCase.
+        is_error = getattr(result, "is_error", getattr(result, "isError", False))
+        if is_error:
             text = " ".join(getattr(c, "text", "") for c in result.content)
             raise RuntimeError(f"{tool} failed: {text}")
-        data = result.structuredContent
+        data = getattr(result, "structured_content", getattr(result, "structuredContent", None))
         if data is not None:
             return data.get("result", data) if isinstance(data, dict) else data
         return [json.loads(c.text) for c in result.content if getattr(c, "text", None)]
