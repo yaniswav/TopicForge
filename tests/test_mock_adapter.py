@@ -99,9 +99,10 @@ def test_analyze_bag_rejects_non_bag_extension(mock_adapter: MockAdapter, bad_pa
 
 
 def test_headerless_mock_samples_match_the_live_shape(mock_adapter: MockAdapter) -> None:
-    for topic in ("/cmd_vel", "/tf"):
-        for sample in mock_adapter.sample_messages(topic, 5).samples:
-            assert sample.timestamp_ns == 0 and sample.stamp_source == "none"
+    for sample in mock_adapter.sample_messages("/cmd_vel", 5).samples:
+        assert sample.timestamp_ns == 0 and sample.stamp_source == "none"
+    for sample in mock_adapter.sample_messages("/tf", 5).samples:
+        assert sample.stamp_source == "payload" and sample.timestamp_ns > 0
     for sample in mock_adapter.sample_messages("/odom", 5).samples:
         assert sample.stamp_source == "header" and sample.timestamp_ns > 0
 

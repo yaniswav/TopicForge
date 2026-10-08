@@ -15,8 +15,8 @@ TOPICFORGE_MODE=mock python -m topicforge
 In mock mode no `rosbags` install is needed and no file is opened: the
 mock adapter accepts any path ending in `.mcap`, `.db3` or `.bag` (or
 with no extension) and returns fixtures. `/tmp/demo.mcap` does not have
-to exist. The live run at the end of this page does need
-`pip install topicforge[bags]` for `peek_bag_samples`.
+to exist. `peek_bag_samples` uses `rosbags` in live
+mode, which ships with topicforge.
 
 The fixture models a 42.5-second recording of the differential robot
 from [`01-discover-ros2-stack.md`](01-discover-ros2-stack.md), with four
@@ -100,7 +100,7 @@ can later share the `ParticipantInfo` schema of `list_participants`.
 ## Going live
 
 ```bash
-pip install topicforge[bags]
+pip install topicforge
 source /opt/ros/humble/setup.bash
 TOPICFORGE_MODE=live python -m topicforge
 ```
@@ -114,9 +114,9 @@ The two bag tools behave differently in live mode, and both need the
   `samples_decoded_count` stays `0`, `anomalies` is empty. The path
   must exist.
 - `peek_bag_samples` reads the file with `rosbags` and decodes
-  messages, which is why it needs the `[bags]` extra. There is no
+  messages (`rosbags` is a core dependency since 0.6.4). There is no
   fallback: without the library it raises an error carrying the
-  install command.
+  reinstall command.
 
 With a DDS backend selected but no `ros2` on PATH, both tools raise the
 "DDS observability only" error. With neither, the server serves the

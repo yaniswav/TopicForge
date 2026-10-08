@@ -187,4 +187,12 @@ def test_plugin_lock_matches_package_when_present() -> None:
     text = lock.read_text(encoding="utf-8")
     match = re.search(r'^name = "topicforge"\s+version = "([^"]+)"', text, re.MULTILINE)
     assert match, "topicforge is not locked in plugin/uv.lock"
-    assert match.group(1) == topicforge.__version__, "plugin/uv.lock is stale: rerun `uv lock`"
+    # The lock can only be regenerated once the release is on PyPI, so it may lag the package
+    # by a release (never lead it). After publishing: `cd plugin && uv lock --refresh`.
+    assert _version_key(match.group(1)) <= _version_key(topicforge.__version__), (
+        "plugin/uv.lock is newer than the package"
+    )
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))

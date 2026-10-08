@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-08
+
 ### Added
 
 - `plugin/` is now also an Agent Plugins 1.0.0 package (open standard used by Cursor and
@@ -14,6 +16,30 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   with the same pinned `uvx` launch and fixed env defaults (no per-user configuration in
   that format). A repo-root `.cursor-plugin/marketplace.json` points Cursor at `plugin/`.
   The version-consistency test covers the new files.
+
+### Fixed
+
+- `peek_bag_samples` no longer fails with "requires the `rosbags` library" for a plain
+  `pip install topicforge`, `uvx topicforge` or the Claude / Agent plugin: `rosbags` was
+  only in the `[bags]` extra, which none of those select.
+- `sample_messages` on `/clock` (`rosgraph_msgs/Clock`), `/tf` and `/tf_static`
+  (`tf2_msgs/TFMessage`) and `/rosout` (`rcl_interfaces/Log`) returned `timestamp_ns` 0 and
+  `stamp_source` `none` although the time is in the body. It now reads `clock`,
+  `transforms[0].header.stamp` (only when the list is not empty) and `stamp`. Messages
+  with a top-level `header.stamp` are unchanged. `peek_bag_samples` applies the same rule,
+  so these topics no longer fall back to the bag record time. The mock `/tf` samples follow it.
+
+- The MCP `initialize` handshake reported the `mcp` library version (for example 1.30.0) as
+  `serverInfo.version`; it now reports TopicForge's own version.
+
+### Changed
+
+- `rosbags` (pure Python, wheels for linux-aarch64 and CPython 3.14 for all of its
+  dependencies) is now a core dependency, `>=0.11.3` as before. `topicforge[bags]` stays
+  as an empty alias so existing install commands keep working.
+- `stamp_source` accepts one additive value, `payload`: the time comes from the message
+  body (`Clock`, `TFMessage`, `Log`) rather than a `header`. Existing values are unchanged.
+- The error raised when `rosbags` cannot be imported now gives the reinstall command.
 
 ## [0.6.3] - 2026-10-07
 
@@ -1362,7 +1388,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/yaniswav/TopicForge/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/yaniswav/TopicForge/compare/v0.6.0...v0.6.1

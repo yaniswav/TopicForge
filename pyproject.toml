@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "topicforge"
-version = "0.6.3"
+version = "0.6.4"
 description = "ROS Topic Inspector & Bag Analyzer MCP server for AI agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,12 @@ dependencies = [
     "mcp>=1.0.0,<2",
     "pydantic>=2.6",
     "pyyaml>=6",
+    # Bag reader behind `peek_bag_samples`, core since 0.6.4 (it used to be the `[bags]`
+    # extra, which `uvx topicforge` and the plugin never selected). Pure Python
+    # (py3-none-any wheel); its dependencies apsw, lz4, numpy, zstandard and ruamel.yaml
+    # all ship wheels for linux-aarch64 and CPython 3.14 (checked on PyPI 2026-10-08), so
+    # no platform marker is needed.
+    "rosbags>=0.11.3",
     # Cyclone DDS binding, core since 0.6.3 so that `uvx topicforge` (no extra) can join a
     # DDS bus. The marker lists exactly the platforms where cyclonedds 11.0.1 ships wheels
     # (checked on PyPI 2026-10-07): CPython 3.10-3.13 on Linux x86_64, Windows AMD64 and
@@ -40,11 +46,6 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.4",
-    # rosbags (Apache-2.0, pure-Python) is a *dev* dependency so the
-    # bag-analysis I/O tests actually run in CI instead of self-skipping on
-    # `requires_rosbags`. It is NOT a runtime dependency: end users opt in
-    # via `topicforge[bags]`.
-    "rosbags>=0.11.3",
 ]
 # DDS extras. Only bindings that are actually published on PyPI and used by
 # a working adapter are declared here.
@@ -69,13 +70,9 @@ dds-cyclone = [
 dds = [
     "topicforge[dds-cyclone]",
 ]
-# v0.4.0 Phase 3: bag analysis via `rosbags` (Apache 2.0, pure-Python,
-# covers MCAP + ROS2 .db3 + ROS1 .bag legacy through a single API).
-# Optional because rosbags pulls in SQLite / msgpack / zstd-side deps
-# users without bag analysis don't need.
-bags = [
-    "rosbags>=0.11.3",
-]
+# `[bags]` is kept as an alias since 0.6.4 (rosbags became a core dependency, so a plain
+# install can run `peek_bag_samples`) so existing `topicforge[bags]` commands keep working.
+bags = []
 all = [
     "topicforge[dds]",
 ]

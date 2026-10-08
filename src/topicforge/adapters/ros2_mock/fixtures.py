@@ -126,12 +126,15 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/tf",
             message_type="tf2_msgs/msg/TFMessage",
-            timestamp_ns=0,
-            stamp_source="none",
+            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            stamp_source="payload",
             payload={
                 "transforms": [
-                    {"frame_id": "odom", "child_frame_id": "base_link"},
-                    {"frame_id": "base_link", "child_frame_id": "laser"},
+                    {
+                        "header": {"stamp": _stamp(_BASE_TS_NS + i * 100_000_000), "frame_id": a},
+                        "child_frame_id": b,
+                    }
+                    for a, b in (("odom", "base_link"), ("base_link", "laser"))
                 ]
             },
         )

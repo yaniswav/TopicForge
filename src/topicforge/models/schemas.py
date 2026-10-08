@@ -796,7 +796,10 @@ class MessageSample(BaseModel):
     timestamp_ns: int = Field(
         description=(
             "Nanoseconds from the message's own top-level `header.stamp` "
-            "(`stamp_source` `header`), or 0 when the message has no header "
+            "(`stamp_source` `header`); else the time kept in the body of "
+            "`rosgraph_msgs/Clock` (`clock`), `tf2_msgs/TFMessage` "
+            "(`transforms[0].header.stamp`, when not empty) or "
+            "`rcl_interfaces/Log` (`stamp`) (`stamp_source` `payload`); else 0 "
             "(`stamp_source` `none`, e.g. `std_msgs/String`, "
             "`geometry_msgs/Twist`). It is the publisher's clock, not the "
             "arrival time: on simulated time it is sim time since the "
@@ -808,13 +811,14 @@ class MessageSample(BaseModel):
             "increasing values."
         )
     )
-    stamp_source: Literal["header", "none", "recorded"] | None = Field(
+    stamp_source: Literal["header", "payload", "none", "recorded"] | None = Field(
         default=None,
         description=(
             "Where `timestamp_ns` comes from: `header` (the message's "
-            "`header.stamp`), `none` (headerless live message, `timestamp_ns` "
-            "is 0) or `recorded` (headerless message from a bag, "
-            "`timestamp_ns` is the bag record time). `None` when the backend "
+            "`header.stamp`), `payload` (no header, but the time is in the body of a "
+            "`Clock`, `TFMessage` or `Log` message), `none` (no time in the live "
+            "message, `timestamp_ns` is 0) or `recorded` (no time in a message "
+            "from a bag, `timestamp_ns` is the bag record time). `None` when the backend "
             "does not say."
         ),
     )

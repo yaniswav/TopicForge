@@ -4,12 +4,12 @@
 # After a release reaches PyPI, regenerate the lock: `cd plugin && uv lock`.
 [project]
 name = "topicforge-claude-plugin"
-version = "0.6.3"
+version = "0.6.4"
 description = "Locked launch manifest for the TopicForge Claude plugin."
 # cyclonedds ships wheels for CPython 3.10 to 3.13 only (checked on PyPI 2026-10-07).
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "topicforge==0.6.3",
+    "topicforge==0.6.4",
 ]
 
 [tool.uv]

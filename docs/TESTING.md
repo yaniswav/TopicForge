@@ -15,7 +15,7 @@ How to get a working ROS2 environment to point TopicForge at, and how to wire it
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install topicforge
-python -m topicforge --version                      # -> topicforge 0.6.3
+python -m topicforge --version                      # -> topicforge 0.6.4
 TOPICFORGE_MODE=mock python -m topicforge           # blocks on stdio; MCP clients spawn it
 ```
 
@@ -41,7 +41,7 @@ python3 -m venv ~/topicforge-venv && source ~/topicforge-venv/bin/activate
 pip install topicforge          # Ubuntu 22.04 ships Python 3.10, which is enough
 ```
 
-Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.6.3 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
+Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.6.4 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
 
 ## Linux native
 
@@ -77,7 +77,7 @@ TopicForge resolves the `ros2` launcher with `shutil.which` (normally `ros2.exe`
 
 Discover the graph. Ask "What topics are currently being published, and what message types do they carry?" TopicForge calls `list_topics`. Live mode shows `/chatter` plus `/rosout` and `/parameter_events`; mock mode shows `/cmd_vel`, `/odom`, `/scan`, `/tf` and `/camera/image_raw`.
 
-Inspect and sample. Ask "Show me the latest message on /chatter." TopicForge calls `get_topic_info` then `sample_messages`. The payload has the message fields as nested named values. `timestamp_ns` is the `header.stamp` and `0` for headerless types such as `std_msgs/String` (`stamp_source` says which).
+Inspect and sample. Ask "Show me the latest message on /chatter." TopicForge calls `get_topic_info` then `sample_messages`. The payload has the message fields as nested named values. `timestamp_ns` is the `header.stamp` and the body time of `/clock`, `/tf` and `/rosout`, and `0` for other headerless types such as `std_msgs/String` (`stamp_source` says which).
 
 Record and analyze a bag.
 
@@ -85,7 +85,7 @@ Record and analyze a bag.
 ros2 bag record /chatter --output ~/demo_run --max-bag-duration 30
 ```
 
-Then ask "Analyze the bag at /home/<you>/demo_run." `analyze_bag` returns duration, message count and per-topic stats; anomalies are mock-only. To read actual messages, install `topicforge[bags]` and ask for samples, which calls `peek_bag_samples`. A fourth scenario, DDS discovery and QoS diagnosis against a real bus, is in [`examples/dds/README.md`](../examples/dds/README.md).
+Then ask "Analyze the bag at /home/<you>/demo_run." `analyze_bag` returns duration, message count and per-topic stats; anomalies are mock-only. To read actual messages, ask for samples, which calls `peek_bag_samples`. A fourth scenario, DDS discovery and QoS diagnosis against a real bus, is in [`examples/dds/README.md`](../examples/dds/README.md).
 
 ## Connect an MCP client
 
