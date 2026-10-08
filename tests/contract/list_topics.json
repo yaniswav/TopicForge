@@ -1,0 +1,378 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "List ROS 2 topics"
+  },
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List every ROS 2 topic on the current graph (or the mock graph in mock mode). Returns `list[TopicInfo]`: each entry carries `name`, `message_type`, `publisher_count`, `subscriber_count`, and `mode_effective` (`live` or `mock`) to tell a real graph from fixtures. Live mode leaves `qos_reliability` and `qos_durability` null here: call `get_topic_info` for a topic's QoS. **Empty list** when the graph has no topics or when live discovery times out. **Raises an MCP error** when no `ros2` CLI is available (DDS-only setup). Read-only; no side effects.",
+  "inputSchema": {
+    "properties": {},
+    "title": "list_topicsArguments",
+    "type": "object"
+  },
+  "name": "list_topics",
+  "outputSchema": {
+    "$defs": {
+      "QosProfile": {
+        "additionalProperties": false,
+        "description": "QoS profile of one DDS endpoint (reader or writer).\n\nCovers the policies behind most \"subscriber receives nothing\" cases.\nVendor-specific extensions are ignored.",
+        "properties": {
+          "data_representation": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Data representations the endpoint accepts or offers, from `XCDR1` and `XCDR2`. `None` when not announced.",
+            "title": "Data Representation"
+          },
+          "deadline_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Deadline QoS in nanoseconds. `None` means no deadline (infinite, the DDS default). A reader deadline tighter (smaller) than a writer deadline is incompatible: the writer cannot guarantee the reader's promise.",
+            "title": "Deadline Ns"
+          },
+          "destination_order": {
+            "anyOf": [
+              {
+                "enum": [
+                  "BY_RECEPTION_TIMESTAMP",
+                  "BY_SOURCE_TIMESTAMP"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DestinationOrder QoS. `None` when not announced.",
+            "title": "Destination Order"
+          },
+          "durability": {
+            "description": "DDS Durability QoS. `VOLATILE` writers do not retain samples for late joiners; `TRANSIENT_LOCAL` writers do. A `TRANSIENT_LOCAL` reader cannot match a `VOLATILE` writer.",
+            "enum": [
+              "VOLATILE",
+              "TRANSIENT_LOCAL",
+              "TRANSIENT",
+              "PERSISTENT"
+            ],
+            "title": "Durability",
+            "type": "string"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "enum": [
+                  "KEEP_LAST",
+                  "KEEP_ALL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DDS History QoS. `KEEP_LAST` keeps a bounded ring buffer of size `history_depth`; `KEEP_ALL` keeps every sample (memory permitting). Mixed `KEEP_ALL` reader with `KEEP_LAST` writer is risky but not strictly incompatible. `None` when it is not known: DDS discovery does not carry History, so it is reported only for TopicForge's own endpoints and for Cyclone DDS peers that set something other than the default (see `history_note`).",
+            "title": "History"
+          },
+          "history_depth": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Depth for `KEEP_LAST`. `None` for `KEEP_ALL` or when `history` is `None`.",
+            "title": "History Depth"
+          },
+          "history_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set when `history` was left out because discovery did not announce it.",
+            "title": "History Note"
+          },
+          "latency_budget_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "LatencyBudget QoS in nanoseconds (a delivery-delay hint). `0` is the DDS default. `None` means infinite or not announced.",
+            "title": "Latency Budget Ns"
+          },
+          "liveliness_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AUTOMATIC",
+                  "MANUAL_BY_PARTICIPANT",
+                  "MANUAL_BY_TOPIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Liveliness QoS kind. `AUTOMATIC` is asserted by the middleware; the two `MANUAL_*` kinds need the application to write or assert liveliness, and the endpoint is declared not alive when it does not within `liveliness_lease_ns`. `None` when not announced.",
+            "title": "Liveliness Kind"
+          },
+          "liveliness_lease_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Liveliness lease duration in nanoseconds. `None` means infinite (the DDS default) or not announced.",
+            "title": "Liveliness Lease Ns"
+          },
+          "ownership_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "SHARED",
+                  "EXCLUSIVE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ownership QoS kind. With `EXCLUSIVE`, only the writer with the highest `ownership_strength` delivers samples to a reader. `None` when not announced.",
+            "title": "Ownership Kind"
+          },
+          "ownership_strength": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ownership strength of a writer (`EXCLUSIVE` ownership). `None` when not announced.",
+            "title": "Ownership Strength"
+          },
+          "partitions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Partition names the endpoint's Publisher or Subscriber belongs to. No Partition policy is the default partition, reported as `[\"\"]` (never an empty list). Endpoints only match when their partitions intersect. `None` only when the backend cannot read partitions at all (unknown, not the default).",
+            "title": "Partitions"
+          },
+          "reliability": {
+            "description": "DDS Reliability QoS. `RELIABLE` retries lost samples; `BEST_EFFORT` does not. A `RELIABLE` reader cannot match a `BEST_EFFORT` writer.",
+            "enum": [
+              "RELIABLE",
+              "BEST_EFFORT"
+            ],
+            "title": "Reliability",
+            "type": "string"
+          },
+          "unknown_policies": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Policies the endpoint announced but whose value could not be read (for example `Deadline`). Their duration fields are `None` here, which does NOT mean infinite for these: the scan does not compare them.",
+            "title": "Unknown Policies"
+          }
+        },
+        "required": [
+          "reliability",
+          "durability"
+        ],
+        "title": "QosProfile",
+        "type": "object"
+      },
+      "TopicInfo": {
+        "additionalProperties": false,
+        "description": "Description of a single ROS2 topic.\n\nCarries optional DDS-side enrichment fields when the active middleware\nbackend can resolve them (CycloneDDS / Fast DDS). The ROS2 CLI adapter and\nthe mock ROS2 path leave them `None`.",
+        "properties": {
+          "message_type": {
+            "description": "ROS2 message type, e.g. `geometry_msgs/msg/Twist`.",
+            "title": "Message Type",
+            "type": "string"
+          },
+          "mode_effective": {
+            "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Mode Effective",
+            "type": "string"
+          },
+          "name": {
+            "description": "Fully qualified topic name, e.g. `/cmd_vel`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "publisher_count": {
+            "description": "Publishers known to the graph.",
+            "minimum": 0,
+            "title": "Publisher Count",
+            "type": "integer"
+          },
+          "qos_durability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Durability announced by the topic's publishers: `volatile`, `transient_local` (late subscribers receive the last samples; typical of latched topics such as `/tf_static`), or `mixed` when publishers disagree. `null` when unknown, with the same rules as `qos_reliability`.",
+            "title": "Qos Durability"
+          },
+          "qos_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/QosProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Effective DDS QoS profile for this topic when resolvable. `None` from the ROS2 CLI adapter or when the DDS module is inactive. The DDS module populates this on a best-effort basis (picks one representative endpoint if reader/writer QoS differ)."
+          },
+          "qos_reliability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Reliability announced by the topic's publishers: `reliable`, `best_effort`, or `mixed` when publishers disagree. `null` when unknown: the topic has no publisher, or the value was not read (`list_topics` does not read QoS; `get_topic_info` does).",
+            "title": "Qos Reliability"
+          },
+          "reader_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DDS reader-endpoint count when the active backend can resolve endpoint-level info (Cyclone / Fast DDS). `None` from the ROS2 CLI adapter or when the DDS module is inactive.",
+            "title": "Reader Count"
+          },
+          "subscriber_count": {
+            "description": "Subscribers known to the graph.",
+            "minimum": 0,
+            "title": "Subscriber Count",
+            "type": "integer"
+          },
+          "writer_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DDS writer-endpoint count when the active backend can resolve endpoint-level info. `None` from the ROS2 CLI adapter or when the DDS module is inactive.",
+            "title": "Writer Count"
+          }
+        },
+        "required": [
+          "name",
+          "message_type",
+          "publisher_count",
+          "subscriber_count",
+          "mode_effective"
+        ],
+        "title": "TopicInfo",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "result": {
+        "items": {
+          "$ref": "#/$defs/TopicInfo"
+        },
+        "title": "Result",
+        "type": "array"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "list_topicsOutput",
+    "type": "object"
+  },
+  "title": "List ROS 2 topics"
+}

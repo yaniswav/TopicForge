@@ -1,0 +1,176 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Peek bag samples"
+  },
+  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed.",
+  "inputSchema": {
+    "properties": {
+      "count": {
+        "default": 5,
+        "description": "Maximum number of recent messages to return. Defaults to 5; silently clamped to 50 (the hard cap that keeps tool output bounded; read it from `health_check.max_sample_count`). Negative values raise an error. The returned `SampleResult.count` reflects the actual number of samples produced: it can be lower than the request (empty topic, timeout, mock fixture shorter than requested).",
+        "minimum": 0,
+        "title": "Count",
+        "type": "integer"
+      },
+      "path": {
+        "description": "Path to a bag: a file ending in `.mcap` or `.db3`, or a `rosbag2_*` directory. `peek_bag_samples` also reads ROS 1 `.bag` files; `analyze_bag` does not (`ros2 bag info` cannot open them). Leading/trailing whitespace is stripped. Null bytes and otherwise malformed filesystem paths are rejected. Existence and bag format are validated by the live adapter (mock mode accepts any well-formed path).",
+        "minLength": 1,
+        "title": "Path",
+        "type": "string"
+      },
+      "topic": {
+        "description": "Fully qualified ROS2 topic name starting with `/`, e.g. `/cmd_vel` or `/camera/image_raw`. Each `/`-separated segment must start with a letter or underscore and contain only letters, digits, and underscores; everything else (whitespace, quotes, shell metacharacters, `//`, trailing `/`) is rejected before reaching the `ros2` CLI.",
+        "title": "Topic",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path",
+      "topic"
+    ],
+    "title": "peek_bag_samplesArguments",
+    "type": "object"
+  },
+  "name": "peek_bag_samples",
+  "outputSchema": {
+    "$defs": {
+      "MessageSample": {
+        "additionalProperties": false,
+        "description": "A single sampled message on a topic.",
+        "properties": {
+          "message_type": {
+            "description": "ROS2 message type of this sample, e.g. `geometry_msgs/msg/Twist`.",
+            "title": "Message Type",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "description": "Message fields as nested named values, e.g. `{\"header\": {\"stamp\": {\"sec\": 12, \"nanosec\": 5}, \"frame_id\": \"base_laser\"}, \"ranges\": [1.0, 1.001]}`. Non-finite floats are the strings `nan`, `inf`, `-inf`. Live `sample_messages` adds `_truncated_fields` (dotted paths of arrays, strings or bytes cut at `max_array_length`; a string of exactly that length plus `...` that was not cut is listed too) when something was cut, and `_raw_text` (the unparsed output) only when a message could not be parsed. With `arrays_summary_only` an array is a string like `<sequence type: float, length: 541>`. Large messages may be dropped to keep tool output bounded.",
+            "title": "Payload",
+            "type": "object"
+          },
+          "received_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Wall-clock nanoseconds since epoch at which the `ros2` CLI printed this message, after it deserialized and formatted it: not the network receive time, and it lags more for large messages. Accurate to a fraction of a second. Live `sample_messages` only; `None` otherwise.",
+            "title": "Received Ns"
+          },
+          "recorded_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Nanoseconds at which the recorder wrote this message into the bag (the bag's own record time, wall clock unless the recorder ran on simulated time). `peek_bag_samples` only; `None` for live samples, where `received_ns` plays that role.",
+            "title": "Recorded Ns"
+          },
+          "stamp_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "header",
+                  "payload",
+                  "none",
+                  "recorded"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where `timestamp_ns` comes from: `header` (the message's `header.stamp`), `payload` (no header, but the time is in the body of a `Clock`, `TFMessage` or `Log` message), `none` (no time in the live message, `timestamp_ns` is 0) or `recorded` (no time in a message from a bag, `timestamp_ns` is the bag record time). `None` when the backend does not say.",
+            "title": "Stamp Source"
+          },
+          "timestamp_ns": {
+            "description": "Nanoseconds from the message's own top-level `header.stamp` (`stamp_source` `header`); else the time kept in the body of `rosgraph_msgs/Clock` (`clock`), `tf2_msgs/TFMessage` (`transforms[0].header.stamp`, when not empty) or `rcl_interfaces/Log` (`stamp`) (`stamp_source` `payload`); else 0 (`stamp_source` `none`, e.g. `std_msgs/String`, `geometry_msgs/Twist`). It is the publisher's clock, not the arrival time: on simulated time it is sim time since the simulation started (a few seconds, not a date) and 0 is a valid value. From `peek_bag_samples` a message without a header gets the bag record time instead (`stamp_source` `recorded`), also given in `recorded_ns`. Use `received_ns` for when the CLI printed the message. Mock samples with a header carry synthetic increasing values.",
+            "title": "Timestamp Ns",
+            "type": "integer"
+          },
+          "topic": {
+            "description": "Fully qualified topic name the sample was taken from, e.g. `/cmd_vel`.",
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "message_type",
+          "timestamp_ns"
+        ],
+        "title": "MessageSample",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Envelope returned by the `sample_messages` tool.",
+    "properties": {
+      "count": {
+        "description": "Number of samples actually returned. May be 0 (no publisher active in live mode, or empty mock fixture), less than the requested count (topic yielded fewer messages within the timeout), or capped by the the silent maximum of 50: request `count > 50` and you will receive at most 50 without warning.",
+        "minimum": 0,
+        "title": "Count",
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why `samples` is empty or limited, when the cause is not obvious (for example payload decoding is disabled for DDS user topics). `None` when there is nothing to add.",
+        "title": "Note"
+      },
+      "samples": {
+        "description": "The sampled messages, ordered as received from the backend.",
+        "items": {
+          "$ref": "#/$defs/MessageSample"
+        },
+        "title": "Samples",
+        "type": "array"
+      },
+      "topic": {
+        "description": "Topic the samples were taken from, echoed from the request.",
+        "title": "Topic",
+        "type": "string"
+      }
+    },
+    "required": [
+      "topic",
+      "count",
+      "samples",
+      "mode_effective"
+    ],
+    "title": "SampleResult",
+    "type": "object"
+  },
+  "title": "Peek bag samples"
+}

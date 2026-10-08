@@ -1,0 +1,708 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "List DDS endpoints"
+  },
+  "description": "List every DDS endpoint (writer and reader) announced on the bus, one `EndpointInfo` per endpoint with `role`, `topic`, `type_name`, `type_id`, the owning `participant_guid` joined with its `participant_name`, and a structured `qos` (reliability, durability, history, deadline, liveliness kind and lease, ownership kind and strength, partitions, latency budget, destination order, data representation). Use it instead of parsing `peek_dds_samples` output and joining GUID prefixes. **Spotting orphans**: `by_topic` rolls the endpoints up per topic with `writer_count`, `reader_count` and `orphan` (`\"no_reader\"` = a writer nobody subscribes to, `\"no_writer\"` = a reader nobody publishes to), plus the union of partitions. **Reading `qos`**: a duration of `None` (`deadline_ns`, `liveliness_lease_ns`, `latency_budget_ns`) means infinite or not set; a policy field of `None` means the endpoint did not announce it. **Ownership**: among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers to a reader; which writer currently owns an instance is reader-side runtime state TopicForge cannot observe. **Departed endpoints**: when a participant leaves, its endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (participant name and `gone_ns`), so a topic that lost its only writer is explained in one call; they are listed in `endpoints` only with `include_departed`. **Topic filter**: `rt/scan` and `scan` match each other (exact name first; `note` says which form matched), and a filter that matches nothing returns a `note` with the closest known topics. `announced_ns` is the discovery announcement's source timestamp on the announcing side's clock, which can differ from this host's clock. **This lists discovery facts, not data flow**: it shows which endpoints exist and how they are configured, not whether samples move. `activity` is always `None` (see `activity_note`): TopicForge holds no reader on user topics and cannot tell a silent or hung writer from a healthy one. Pair it with `detect_qos_mismatches` to see which pairs cannot match. TopicForge's own observer participant is excluded unless `include_observer` is true. Output is capped at 500 endpoints (`truncated`, `total_discovered`); `by_topic` still covers all matches. Read-only. **Raises an MCP error** when no DDS module is active. Mock mode returns a fixture matching the other mock DDS tools.",
+  "inputSchema": {
+    "properties": {
+      "domain_id": {
+        "default": 0,
+        "description": "Accepted for compatibility (0..232). TopicForge observes the domain it joined at startup (TOPICFORGE_DDS_DOMAIN_ID); this argument does not switch domains, and the response `domain_id` says which one was observed.",
+        "maximum": 232,
+        "minimum": 0,
+        "title": "Domain Id",
+        "type": "integer"
+      },
+      "include_departed": {
+        "default": false,
+        "description": "Also list endpoints whose participant left the bus (flagged with `gone_ns`). Defaults to false; `by_topic` reports them as `departed_writers` / `departed_readers` either way.",
+        "title": "Include Departed",
+        "type": "boolean"
+      },
+      "include_observer": {
+        "default": false,
+        "description": "Include TopicForge's own observer participant's endpoints. Defaults to false.",
+        "title": "Include Observer",
+        "type": "boolean"
+      },
+      "participant_guid": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only endpoints owned by this participant, as the guid reported by `list_participants` or by an earlier `list_endpoints`. Omit for all participants.",
+        "title": "Participant Guid"
+      },
+      "topic": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only endpoints on this DDS topic name: a bare name such as `scan` or a ROS 2 mangled name such as `rt/scan` (exact name first, then the alternate form). Omit to list every topic.",
+        "title": "Topic"
+      }
+    },
+    "title": "list_endpointsArguments",
+    "type": "object"
+  },
+  "name": "list_endpoints",
+  "outputSchema": {
+    "$defs": {
+      "DepartedEndpoint": {
+        "additionalProperties": false,
+        "description": "An endpoint whose participant left the bus (crash, clean exit or lease expiry).",
+        "properties": {
+          "gone_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When the participant was lost, ns since epoch (upper bound).",
+            "title": "Gone Ns"
+          },
+          "guid": {
+            "description": "GUID of the departed endpoint.",
+            "title": "Guid",
+            "type": "string"
+          },
+          "participant_guid": {
+            "description": "GUID of the participant that owned it.",
+            "title": "Participant Guid",
+            "type": "string"
+          },
+          "participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of that participant, `None` when it set none.",
+            "title": "Participant Name"
+          }
+        },
+        "required": [
+          "guid",
+          "participant_guid"
+        ],
+        "title": "DepartedEndpoint",
+        "type": "object"
+      },
+      "EndpointInfo": {
+        "additionalProperties": false,
+        "description": "One DDS endpoint (writer or reader) announced through discovery.",
+        "properties": {
+          "activity": {
+            "default": null,
+            "description": "Reserved for a future liveness signal. Always `None` today.",
+            "title": "Activity",
+            "type": "null"
+          },
+          "activity_note": {
+            "default": "not observed: TopicForge holds no reader on user topics, so it cannot tell a silent or hung writer from a healthy one",
+            "description": "Why `activity` is not populated.",
+            "title": "Activity Note",
+            "type": "string"
+          },
+          "announced_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Source timestamp of the discovery announcement, ns since epoch, read on the announcing side's clock (it can differ from this host's clock). `None` when not available.",
+            "title": "Announced Ns"
+          },
+          "domain_id": {
+            "description": "DDS domain the endpoint was observed on.",
+            "maximum": 232,
+            "minimum": 0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "gone_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "`None` for a live endpoint. For a departed endpoint (only listed with `include_departed`): when its participant was lost (the participant's `lost_ns`, an upper bound of the death).",
+            "title": "Gone Ns"
+          },
+          "guid": {
+            "description": "GUID of the endpoint, `xxxxxxxx.xxxxxxxx.xxxxxxxx.xxxxxxxx`.",
+            "title": "Guid",
+            "type": "string"
+          },
+          "is_observer": {
+            "description": "True when the endpoint belongs to TopicForge's own observer participant.",
+            "title": "Is Observer",
+            "type": "boolean"
+          },
+          "mode_effective": {
+            "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Mode Effective",
+            "type": "string"
+          },
+          "participant_guid": {
+            "description": "GUID of the owning participant, same format as `list_participants`.",
+            "title": "Participant Guid",
+            "type": "string"
+          },
+          "participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the owning participant, `None` when it set none.",
+            "title": "Participant Name"
+          },
+          "participant_vendor": {
+            "default": "unknown",
+            "description": "Vendor of the owning participant, same value as `list_participants` (`unknown` when it cannot be determined).",
+            "enum": [
+              "cyclone",
+              "fast",
+              "rti",
+              "rti_micro",
+              "opensplice",
+              "opendds",
+              "coredx",
+              "intercom",
+              "dust",
+              "mock",
+              "unknown"
+            ],
+            "title": "Participant Vendor",
+            "type": "string"
+          },
+          "qos": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/QosProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "QoS the endpoint announced. Durations (`deadline_ns`, `liveliness_lease_ns`, `latency_budget_ns`) of `None` mean infinite or not set. `None` when reliability or durability could not be resolved."
+          },
+          "role": {
+            "description": "`writer` publishes the topic; `reader` subscribes to it.",
+            "enum": [
+              "writer",
+              "reader"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "topic": {
+            "description": "DDS topic name.",
+            "title": "Topic",
+            "type": "string"
+          },
+          "type_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Compact XTypes type identifier (`COMPLETE:<hex>`), `None` when not announced.",
+            "title": "Type Id"
+          },
+          "type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced data type name.",
+            "title": "Type Name"
+          }
+        },
+        "required": [
+          "guid",
+          "role",
+          "participant_guid",
+          "topic",
+          "is_observer",
+          "domain_id",
+          "mode_effective"
+        ],
+        "title": "EndpointInfo",
+        "type": "object"
+      },
+      "QosProfile": {
+        "additionalProperties": false,
+        "description": "QoS profile of one DDS endpoint (reader or writer).\n\nCovers the policies behind most \"subscriber receives nothing\" cases.\nVendor-specific extensions are ignored.",
+        "properties": {
+          "data_representation": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Data representations the endpoint accepts or offers, from `XCDR1` and `XCDR2`. `None` when not announced.",
+            "title": "Data Representation"
+          },
+          "deadline_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Deadline QoS in nanoseconds. `None` means no deadline (infinite, the DDS default). A reader deadline tighter (smaller) than a writer deadline is incompatible: the writer cannot guarantee the reader's promise.",
+            "title": "Deadline Ns"
+          },
+          "destination_order": {
+            "anyOf": [
+              {
+                "enum": [
+                  "BY_RECEPTION_TIMESTAMP",
+                  "BY_SOURCE_TIMESTAMP"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DestinationOrder QoS. `None` when not announced.",
+            "title": "Destination Order"
+          },
+          "durability": {
+            "description": "DDS Durability QoS. `VOLATILE` writers do not retain samples for late joiners; `TRANSIENT_LOCAL` writers do. A `TRANSIENT_LOCAL` reader cannot match a `VOLATILE` writer.",
+            "enum": [
+              "VOLATILE",
+              "TRANSIENT_LOCAL",
+              "TRANSIENT",
+              "PERSISTENT"
+            ],
+            "title": "Durability",
+            "type": "string"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "enum": [
+                  "KEEP_LAST",
+                  "KEEP_ALL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DDS History QoS. `KEEP_LAST` keeps a bounded ring buffer of size `history_depth`; `KEEP_ALL` keeps every sample (memory permitting). Mixed `KEEP_ALL` reader with `KEEP_LAST` writer is risky but not strictly incompatible. `None` when it is not known: DDS discovery does not carry History, so it is reported only for TopicForge's own endpoints and for Cyclone DDS peers that set something other than the default (see `history_note`).",
+            "title": "History"
+          },
+          "history_depth": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Depth for `KEEP_LAST`. `None` for `KEEP_ALL` or when `history` is `None`.",
+            "title": "History Depth"
+          },
+          "history_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set when `history` was left out because discovery did not announce it.",
+            "title": "History Note"
+          },
+          "latency_budget_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "LatencyBudget QoS in nanoseconds (a delivery-delay hint). `0` is the DDS default. `None` means infinite or not announced.",
+            "title": "Latency Budget Ns"
+          },
+          "liveliness_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "AUTOMATIC",
+                  "MANUAL_BY_PARTICIPANT",
+                  "MANUAL_BY_TOPIC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Liveliness QoS kind. `AUTOMATIC` is asserted by the middleware; the two `MANUAL_*` kinds need the application to write or assert liveliness, and the endpoint is declared not alive when it does not within `liveliness_lease_ns`. `None` when not announced.",
+            "title": "Liveliness Kind"
+          },
+          "liveliness_lease_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Liveliness lease duration in nanoseconds. `None` means infinite (the DDS default) or not announced.",
+            "title": "Liveliness Lease Ns"
+          },
+          "ownership_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "SHARED",
+                  "EXCLUSIVE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ownership QoS kind. With `EXCLUSIVE`, only the writer with the highest `ownership_strength` delivers samples to a reader. `None` when not announced.",
+            "title": "Ownership Kind"
+          },
+          "ownership_strength": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Ownership strength of a writer (`EXCLUSIVE` ownership). `None` when not announced.",
+            "title": "Ownership Strength"
+          },
+          "partitions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Partition names the endpoint's Publisher or Subscriber belongs to. No Partition policy is the default partition, reported as `[\"\"]` (never an empty list). Endpoints only match when their partitions intersect. `None` only when the backend cannot read partitions at all (unknown, not the default).",
+            "title": "Partitions"
+          },
+          "reliability": {
+            "description": "DDS Reliability QoS. `RELIABLE` retries lost samples; `BEST_EFFORT` does not. A `RELIABLE` reader cannot match a `BEST_EFFORT` writer.",
+            "enum": [
+              "RELIABLE",
+              "BEST_EFFORT"
+            ],
+            "title": "Reliability",
+            "type": "string"
+          },
+          "unknown_policies": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Policies the endpoint announced but whose value could not be read (for example `Deadline`). Their duration fields are `None` here, which does NOT mean infinite for these: the scan does not compare them.",
+            "title": "Unknown Policies"
+          }
+        },
+        "required": [
+          "reliability",
+          "durability"
+        ],
+        "title": "QosProfile",
+        "type": "object"
+      },
+      "TopicSummary": {
+        "additionalProperties": false,
+        "description": "Per-topic roll-up of the listed endpoints, for spotting orphans.",
+        "properties": {
+          "departed_readers": {
+            "description": "Readers on this topic whose participant left, newest first.",
+            "items": {
+              "$ref": "#/$defs/DepartedEndpoint"
+            },
+            "title": "Departed Readers",
+            "type": "array"
+          },
+          "departed_writers": {
+            "description": "Writers on this topic whose participant left, newest first (bounded memory: last 200 departed endpoints, 1 h). Explains a topic that lost its only writer.",
+            "items": {
+              "$ref": "#/$defs/DepartedEndpoint"
+            },
+            "title": "Departed Writers",
+            "type": "array"
+          },
+          "orphan": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_reader",
+                  "no_writer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "`no_reader`: writers but no reader. `no_writer`: readers but no writer. `None` when both sides exist.",
+            "title": "Orphan"
+          },
+          "partitions": {
+            "description": "Union of the endpoints' partitions, sorted. `\"\"` is the default partition.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Partitions",
+            "type": "array"
+          },
+          "reader_count": {
+            "description": "Number of listed readers.",
+            "minimum": 0,
+            "title": "Reader Count",
+            "type": "integer"
+          },
+          "topic": {
+            "description": "DDS topic name.",
+            "title": "Topic",
+            "type": "string"
+          },
+          "type_names": {
+            "description": "Distinct type names announced on this topic.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Type Names",
+            "type": "array"
+          },
+          "writer_count": {
+            "description": "Number of listed writers.",
+            "minimum": 0,
+            "title": "Writer Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "topic",
+          "type_names",
+          "writer_count",
+          "reader_count",
+          "partitions"
+        ],
+        "title": "TopicSummary",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Envelope returned by `list_endpoints`.",
+    "properties": {
+      "by_topic": {
+        "description": "Roll-up over every matching endpoint.",
+        "items": {
+          "$ref": "#/$defs/TopicSummary"
+        },
+        "title": "By Topic",
+        "type": "array"
+      },
+      "departed_endpoints": {
+        "default": 0,
+        "description": "Departed endpoints (their participant left) matching the filters. They are in `endpoints` only with `include_departed`; `by_topic` always carries them as `departed_writers` / `departed_readers`.",
+        "minimum": 0,
+        "title": "Departed Endpoints",
+        "type": "integer"
+      },
+      "domain_id": {
+        "description": "DDS domain observed.",
+        "maximum": 232,
+        "minimum": 0,
+        "title": "Domain Id",
+        "type": "integer"
+      },
+      "endpoints": {
+        "description": "Matching endpoints, capped (see `truncated`).",
+        "items": {
+          "$ref": "#/$defs/EndpointInfo"
+        },
+        "title": "Endpoints",
+        "type": "array"
+      },
+      "excluded_observer_endpoints": {
+        "default": 0,
+        "description": "Endpoints of TopicForge's own observer participant left out of `endpoints` (they are counted in `total_discovered`). Explains `total_discovered` vs `returned` together with the filters.",
+        "minimum": 0,
+        "title": "Excluded Observer Endpoints",
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Hint when a `topic` filter matched nothing: names the closest known topics.",
+        "title": "Note"
+      },
+      "observer_guid": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "GUID of TopicForge's own participant, `None` in mock.",
+        "title": "Observer Guid"
+      },
+      "returned": {
+        "description": "Length of `endpoints`.",
+        "minimum": 0,
+        "title": "Returned",
+        "type": "integer"
+      },
+      "snapshot_ns": {
+        "description": "Wall-clock time of the snapshot, ns since epoch.",
+        "title": "Snapshot Ns",
+        "type": "integer"
+      },
+      "total_discovered": {
+        "description": "Endpoints in the discovery cache before any filter.",
+        "minimum": 0,
+        "title": "Total Discovered",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "True when matching endpoints exceeded the cap.",
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "domain_id",
+      "snapshot_ns",
+      "endpoints",
+      "by_topic",
+      "total_discovered",
+      "returned",
+      "truncated",
+      "mode_effective"
+    ],
+    "title": "EndpointListing",
+    "type": "object"
+  },
+  "title": "List DDS endpoints"
+}

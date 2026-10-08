@@ -1,0 +1,169 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Peek DDS samples"
+  },
+  "description": "Peek recent samples on a raw DDS topic. Unlike `sample_messages` (which uses the `ros2` CLI), this reads the DDS layer directly and works without ROS 2. Returns a `SampleResult` `{topic, count, samples, mode_effective, note}`, the same shape as `sample_messages`. `count` defaults to 5 and is silently clamped to 50. **Topic categories**: (a) The 3 builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) return structured discovery payloads: on Cyclone the CURRENT discovery state (one record per live participant or endpoint), not a stream of recent events (use `participant_events` for history). `DCPSPublication` and `DCPSSubscription` are the raw writers and readers behind `list_endpoints`. The topic may be given as `/scan`, `scan` or `rt/scan`: all three resolve to the same topic. (b) User-defined topics: payload decoding is DISABLED on every backend. The call returns `count` 0, `samples` empty and a `note` saying so; that does NOT mean the topic is silent. Use `list_endpoints` for the topic's presence, writers, readers and QoS. A user topic that is not announced on the bus raises an error. Right after server start the call waits up to 3 s for discovery to warm up. **Read-only by architecture**: it cannot publish. **Raises an MCP error** when no DDS module is active or the topic is not announced on the bus.",
+  "inputSchema": {
+    "properties": {
+      "count": {
+        "default": 5,
+        "description": "Maximum number of recent messages to return. Defaults to 5; silently clamped to 50 (the hard cap that keeps tool output bounded; read it from `health_check.max_sample_count`). Negative values raise an error. The returned `SampleResult.count` reflects the actual number of samples produced: it can be lower than the request (empty topic, timeout, mock fixture shorter than requested).",
+        "minimum": 0,
+        "title": "Count",
+        "type": "integer"
+      },
+      "topic": {
+        "description": "DDS topic name. Bare DDS names such as `scan` are valid, as are ROS 2 mangled names such as `rt/scan` and the builtin discovery topics `DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`. Letters, digits, `_`, `/` and `::` are allowed; anything else is rejected.",
+        "title": "Topic",
+        "type": "string"
+      }
+    },
+    "required": [
+      "topic"
+    ],
+    "title": "peek_dds_samplesArguments",
+    "type": "object"
+  },
+  "name": "peek_dds_samples",
+  "outputSchema": {
+    "$defs": {
+      "MessageSample": {
+        "additionalProperties": false,
+        "description": "A single sampled message on a topic.",
+        "properties": {
+          "message_type": {
+            "description": "ROS2 message type of this sample, e.g. `geometry_msgs/msg/Twist`.",
+            "title": "Message Type",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "description": "Message fields as nested named values, e.g. `{\"header\": {\"stamp\": {\"sec\": 12, \"nanosec\": 5}, \"frame_id\": \"base_laser\"}, \"ranges\": [1.0, 1.001]}`. Non-finite floats are the strings `nan`, `inf`, `-inf`. Live `sample_messages` adds `_truncated_fields` (dotted paths of arrays, strings or bytes cut at `max_array_length`; a string of exactly that length plus `...` that was not cut is listed too) when something was cut, and `_raw_text` (the unparsed output) only when a message could not be parsed. With `arrays_summary_only` an array is a string like `<sequence type: float, length: 541>`. Large messages may be dropped to keep tool output bounded.",
+            "title": "Payload",
+            "type": "object"
+          },
+          "received_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Wall-clock nanoseconds since epoch at which the `ros2` CLI printed this message, after it deserialized and formatted it: not the network receive time, and it lags more for large messages. Accurate to a fraction of a second. Live `sample_messages` only; `None` otherwise.",
+            "title": "Received Ns"
+          },
+          "recorded_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Nanoseconds at which the recorder wrote this message into the bag (the bag's own record time, wall clock unless the recorder ran on simulated time). `peek_bag_samples` only; `None` for live samples, where `received_ns` plays that role.",
+            "title": "Recorded Ns"
+          },
+          "stamp_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "header",
+                  "payload",
+                  "none",
+                  "recorded"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where `timestamp_ns` comes from: `header` (the message's `header.stamp`), `payload` (no header, but the time is in the body of a `Clock`, `TFMessage` or `Log` message), `none` (no time in the live message, `timestamp_ns` is 0) or `recorded` (no time in a message from a bag, `timestamp_ns` is the bag record time). `None` when the backend does not say.",
+            "title": "Stamp Source"
+          },
+          "timestamp_ns": {
+            "description": "Nanoseconds from the message's own top-level `header.stamp` (`stamp_source` `header`); else the time kept in the body of `rosgraph_msgs/Clock` (`clock`), `tf2_msgs/TFMessage` (`transforms[0].header.stamp`, when not empty) or `rcl_interfaces/Log` (`stamp`) (`stamp_source` `payload`); else 0 (`stamp_source` `none`, e.g. `std_msgs/String`, `geometry_msgs/Twist`). It is the publisher's clock, not the arrival time: on simulated time it is sim time since the simulation started (a few seconds, not a date) and 0 is a valid value. From `peek_bag_samples` a message without a header gets the bag record time instead (`stamp_source` `recorded`), also given in `recorded_ns`. Use `received_ns` for when the CLI printed the message. Mock samples with a header carry synthetic increasing values.",
+            "title": "Timestamp Ns",
+            "type": "integer"
+          },
+          "topic": {
+            "description": "Fully qualified topic name the sample was taken from, e.g. `/cmd_vel`.",
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "message_type",
+          "timestamp_ns"
+        ],
+        "title": "MessageSample",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Envelope returned by the `sample_messages` tool.",
+    "properties": {
+      "count": {
+        "description": "Number of samples actually returned. May be 0 (no publisher active in live mode, or empty mock fixture), less than the requested count (topic yielded fewer messages within the timeout), or capped by the the silent maximum of 50: request `count > 50` and you will receive at most 50 without warning.",
+        "minimum": 0,
+        "title": "Count",
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why `samples` is empty or limited, when the cause is not obvious (for example payload decoding is disabled for DDS user topics). `None` when there is nothing to add.",
+        "title": "Note"
+      },
+      "samples": {
+        "description": "The sampled messages, ordered as received from the backend.",
+        "items": {
+          "$ref": "#/$defs/MessageSample"
+        },
+        "title": "Samples",
+        "type": "array"
+      },
+      "topic": {
+        "description": "Topic the samples were taken from, echoed from the request.",
+        "title": "Topic",
+        "type": "string"
+      }
+    },
+    "required": [
+      "topic",
+      "count",
+      "samples",
+      "mode_effective"
+    ],
+    "title": "SampleResult",
+    "type": "object"
+  },
+  "title": "Peek DDS samples"
+}
