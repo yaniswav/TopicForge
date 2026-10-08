@@ -126,7 +126,7 @@ Regardless of the telemetry setting, TopicForge never transmits topic names, mes
 
 ### Bags are read locally
 
-`analyze_bag` and `peek_bag_samples` read bag files on the filesystem where TopicForge runs. `analyze_bag` runs `ros2 bag info` on the path in live mode; `peek_bag_samples` parses the file in-process with the `rosbags` library (`pip install topicforge[bags]`). Nothing about a bag's content or path is uploaded anywhere.
+`analyze_bag` and `peek_bag_samples` read bag files on the filesystem where TopicForge runs. `analyze_bag` runs `ros2 bag info` on the path in live mode; `peek_bag_samples` parses the file in-process with the `rosbags` library (installed with topicforge). Nothing about a bag's content or path is uploaded anywhere.
 
 ---
 
