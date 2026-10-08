@@ -15,6 +15,20 @@ from topicforge.tools import register_tools
 log = logging.getLogger(__name__)
 
 
+def _advertise_version(mcp: FastMCP) -> None:
+    """Make the initialize handshake report TopicForge's version, not the SDK's.
+
+    mcp 1.x `FastMCP` has no `version` argument, so `serverInfo.version` falls back to the
+    installed `mcp` package version. The low-level server reads `version` when it builds the
+    initialization options, so set it there. The attribute is private to FastMCP
+    (`_mcp_server`); a missing one only means the SDK changed, so skip quietly.
+    TODO(roadmap): on the 2.x `MCPServer` pass the version to the constructor instead.
+    """
+    server = getattr(mcp, "_mcp_server", None)
+    if server is not None:
+        server.version = __version__
+
+
 def build_app(
     settings: Settings | None = None,
     *,
@@ -40,6 +54,7 @@ def build_app(
     )
 
     mcp = FastMCP("topicforge")
+    _advertise_version(mcp)
     register_tools(mcp, inspector, health, telemetry)
 
     log.info(
