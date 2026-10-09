@@ -29,10 +29,13 @@ Tolerances (the constants below; each row names the one it used):
     wall / sector minima    0.005 m against the geometry; beam index exact unless the wall has
                             `beam_index_tolerance`
     stamps                  header/payload stamp in (0, 1e7) s (sim time, not epoch); "none" is 0
-    rates                   relative error <= 15 % PASS, <= 50 % WARN, above FAIL; only with
-                            message_count >= 10; the verdict is WARN-only
+    rates                   relative error <= 15 % PASS, <= 50 % WARN, above FAIL; FAIL only
+                            with message_count >= 10 and kept messages spanning >= 0.9 s, WARN at
+                            most below; the verdict is WARN-only; startup_burst_count > 0 is an
+                            INFO row
     STABLE_CV               a fixed-rate topic (rates.fixed_rate_topics) with interval_cv >= 0.2
-                            is a WARN (CONTRACT.md section 4); every cv is listed at the end
+                            over >= 0.9 s is a WARN when the cv of its own stamps is < 0.2, an
+                            INFO otherwise (CONTRACT.md section 4); every cv is listed at the end
     bag                     counts, duration (1e-6 s), first/last ns exact; rate 0.1 % (>= 1e-3 Hz)
     pose (stationary robot) 1e-4 m
 """
@@ -41,9 +44,11 @@ from __future__ import annotations
 
 import argparse
 import collections
+import itertools
 import json
 import math
 import re
+import statistics
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -63,6 +68,7 @@ WALL_TOL = 0.005
 POSE_TOL = 1e-4
 RATE_PASS, RATE_WARN = 0.15, 0.5
 RATE_MIN_MESSAGES = 10
+RATE_GATE_SPAN_S = 0.9
 STABLE_CV = 0.2
 BAG_DURATION_TOL_S = 1e-6
 INFRA_TOPICS = ("/parameter_events", "/rosout")
@@ -871,46 +877,113 @@ def _check_pose(gt: dict, res: Results, rep: Report) -> None:
 
 
 # ---------------------------------------------------------------------------- rates
+def _kept_span_s(rate: dict) -> float | None:
+    """Time covered by the messages kept after the start-up burst, from the mean interval."""
+    kept = (rate.get("message_count") or 0) - (rate.get("startup_burst_count") or 0)
+    mean = rate.get("mean_interval_s")
+    if mean is None or kept < 2:
+        return None
+    return round((kept - 1) * mean, 3)
+
+
+def _stamp_cv(samples: list[dict]) -> float | None:
+    """Coefficient of variation of the publisher stamps' steps; None without usable stamps."""
+    if any(s.get("stamp_source") not in ("header", "payload") for s in samples):
+        return None
+    stamps = sorted(s["timestamp_ns"] for s in samples if s.get("timestamp_ns") is not None)
+    steps = [b - a for a, b in itertools.pairwise(stamps)]
+    if len(steps) < 2 or not any(steps):
+        return None
+    return round(statistics.pstdev(steps) / statistics.fmean(steps), 3)
+
+
+def _leading_intervals_ms(samples: list[dict], n: int = 6) -> list[float]:
+    """First `n` intervals between received_ns, in milliseconds."""
+    times = [s["received_ns"] for s in samples if s.get("received_ns") is not None]
+    return [round((b - a) / 1e6, 1) for a, b in itertools.pairwise(times)][:n]
+
+
+def _rate_blocks(res: Results) -> list[tuple[str, dict, float | None]]:
+    """(topic, sample result, wall time) for every call that carries a rate block."""
+    blocks: list[tuple[str, dict, float | None]] = []
+    for name in ("08c_sample_scan_rate", "08d_sample_clock_rate"):
+        data = res.load(name)
+        if data and not tool_err(data):
+            result = objs(data)[0]
+            args = (data.get("_call") or {}).get("args") or {}
+            blocks.append(
+                (result.get("topic") or args.get("topic") or name, result, res.times.get(name))
+            )
+    for name, data, topic in _sample_files(res):
+        if not tool_err(data):
+            blocks.append((topic, objs(data)[0], res.times.get(name)))
+    return blocks
+
+
 @guard("rates")
 def check_rates(gt: dict, res: Results, rep: Report) -> None:
     truth = gt.get("rates") or {}
     per_topic = truth.get("per_topic") or {}
     fixed = set(truth.get("fixed_rate_topics") or [])
     verdicts_ok = tuple(truth.get("expected_verdicts") or ("stable", "jittery"))
-    blocks: list[tuple[str, dict, float | None]] = []
-    scan_rate = res.load("08c_sample_scan_rate")
-    if scan_rate and not tool_err(scan_rate):
-        blocks.append(
-            ("/scan", objs(scan_rate)[0].get("rate"), res.times.get("08c_sample_scan_rate"))
-        )
-    for name, data, topic in _sample_files(res):
-        if not tool_err(data):
-            blocks.append((topic, objs(data)[0].get("rate"), res.times.get(name)))
-    if not any(b[1] for b in blocks):
+    blocks = _rate_blocks(res)
+    if not any(b[1].get("rate") for b in blocks):
         rep.add(
             "rates", "rate block", "present (0.7)", "absent", "WARN", "0.6.x output has no rate"
         )
         return
-    for topic, rate, wall in blocks:
+    for topic, result, wall in blocks:
+        rate = result.get("rate")
         if not rate:
             continue
+        samples = result.get("samples") or []
         count, cv = rate.get("message_count"), rate.get("interval_cv")
-        verdict = rate.get("verdict")
+        verdict, burst = rate.get("verdict"), rate.get("startup_burst_count") or 0
+        span = _kept_span_s(rate)
+        gated = (count or 0) >= RATE_MIN_MESSAGES and span is not None and span >= RATE_GATE_SPAN_S
+        stamp_cv = _stamp_cv(samples)
         if cv is not None:
-            rep.rate_cv[topic] = {
-                "interval_cv": cv,
-                "message_count": count,
-                "verdict": verdict,
-                "basis": rate.get("basis"),
-            }
-        if topic in fixed and cv is not None and verdict != "insufficient" and cv >= STABLE_CV:
+            known = rep.rate_cv.get(topic)
+            if known is None or (count or 0) >= (known["message_count"] or 0):
+                rep.rate_cv[topic] = {
+                    "interval_cv": cv,
+                    "message_count": count,
+                    "verdict": verdict,
+                    "basis": rate.get("basis"),
+                    "span_s": span,
+                    "stamp_cv": stamp_cv,
+                    "startup_burst_count": burst,
+                }
+        if burst > 0:
             rep.add(
                 "rates",
-                f"{topic} STABLE_CV",
+                f"{topic} start-up burst (n={count})",
+                "none",
+                f"{burst} leading message(s) set aside",
+                "INFO",
+                f"first received intervals (ms): {_leading_intervals_ms(samples)}",
+                wall,
+            )
+        if topic in fixed and cv is not None and verdict != "insufficient" and cv >= STABLE_CV:
+            warn = gated and stamp_cv is not None and stamp_cv < STABLE_CV
+            if warn:
+                note = (
+                    "CONTRACT.md section 4: the measuring path would be that noisy, "
+                    "review the threshold"
+                )
+            elif not gated:
+                note = f"span {span} s or n={count} too short to gate (>= {RATE_GATE_SPAN_S} s)"
+            elif stamp_cv is None:
+                note = "no usable publisher stamps to cross-check"
+            else:
+                note = f"the publisher's own stamps are irregular too (cv {stamp_cv})"
+            rep.add(
+                "rates",
+                f"{topic} STABLE_CV (n={count})",
                 f"cv < {STABLE_CV} on a fixed-rate publisher",
-                f"cv {cv} (n={count})",
-                "WARN",
-                "CONTRACT.md section 4: the measuring path would be that noisy, review the threshold",
+                f"cv {cv} (n={count}, span {span} s, stamp cv {stamp_cv})",
+                "WARN" if warn else "INFO",
+                note,
                 wall,
             )
         if verdict == "insufficient" or (count or 0) < RATE_MIN_MESSAGES:
@@ -933,12 +1006,19 @@ def check_rates(gt: dict, res: Results, rep: Report) -> None:
             "machine dependent: never FAIL",
             wall,
         )
-        _compare_frequencies(per_topic.get(topic) or {}, topic, rate, rep, wall)
+        _compare_frequencies(per_topic.get(topic) or {}, topic, rate, rep, wall, gated, span)
 
 
 def _compare_frequencies(
-    truth: dict, topic: str, rate: dict, rep: Report, wall: float | None
+    truth: dict,
+    topic: str,
+    rate: dict,
+    rep: Report,
+    wall: float | None,
+    gated: bool,
+    span: float | None,
 ) -> None:
+    n = rate.get("message_count")
     for field, key, label in (
         ("observed_frequency_hz", "rate_wall_hz", "wall"),
         ("sim_frequency_hz", "rate_sim_hz", "sim"),
@@ -950,14 +1030,22 @@ def _compare_frequencies(
             )
             continue
         err = abs(got - want) / want
-        verdict = "PASS" if err <= RATE_PASS else ("WARN" if err <= RATE_WARN else "FAIL")
+        if err <= RATE_PASS:
+            verdict = "PASS"
+        elif err <= RATE_WARN or not gated:
+            verdict = "WARN"
+        else:
+            verdict = "FAIL"
+        note = f"relative error {err:.3f}; pass <= {RATE_PASS}, fail > {RATE_WARN}"
+        if not gated:
+            note += f"; span {span} s under {RATE_GATE_SPAN_S}: WARN at most"
         rep.add(
             "rates",
-            f"{topic} {label} frequency (Hz)",
+            f"{topic} {label} frequency (Hz, n={n})",
             fmt(want),
             fmt(got),
             verdict,
-            f"relative error {err:.3f}; pass <= {RATE_PASS}, fail > {RATE_WARN}",
+            note,
             wall,
         )
 
@@ -1371,7 +1459,8 @@ def render(
     if rep.rate_cv:
         lines += ["", "Rate interval_cv (received_ns; STABLE_CV threshold 0.2):"]
         lines += [
-            f"- {t}: cv {v['interval_cv']} n={v['message_count']} verdict {v['verdict']}"
+            f"- {t}: cv {v['interval_cv']} n={v['message_count']} verdict {v['verdict']} "
+            f"span_s {v['span_s']} stamp_cv {v['stamp_cv']} burst {v['startup_burst_count']}"
             for t, v in sorted(rep.rate_cv.items())
         ]
     lines += [
@@ -1424,7 +1513,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     print(text)
     for topic, v in sorted(rep.rate_cv.items()):
-        print(f"RATE_CV {topic} {v['interval_cv']} n={v['message_count']} {v['verdict']}")
+        print(
+            f"RATE_CV {topic} {v['interval_cv']} n={v['message_count']} {v['verdict']} "
+            f"span_s={v['span_s']} stamp_cv={v['stamp_cv']} burst={v['startup_burst_count']}"
+        )
     return 1 if verdict == "FAIL" else 0
 
 

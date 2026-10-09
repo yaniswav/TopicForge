@@ -149,10 +149,12 @@ def _call(tool: str, args: dict, payload: Any, wall: float = 0.1) -> dict:
     }
 
 
-def _rate(hz: float, cv: float = 0.04) -> dict:
+def _rate(hz: float, cv: float = 0.04, count: int = 12) -> dict:
     return {
         "basis": "received_ns",
-        "message_count": 12,
+        "message_count": count,
+        "startup_burst_count": 0,
+        "mean_interval_s": 1 / hz,
         "interval_cv": cv,
         "verdict": "stable",
         "observed_frequency_hz": hz,
@@ -160,16 +162,30 @@ def _rate(hz: float, cv: float = 0.04) -> dict:
     }
 
 
-def _samples(topic: str, source: str, payload: dict, hz: float, cv: float = 0.04) -> dict:
-    stamps = [0] * 12 if source == "none" else [(1 + i) * 10**8 for i in range(12)]
+def _samples(
+    topic: str,
+    source: str,
+    payload: dict,
+    hz: float,
+    cv: float = 0.04,
+    count: int = 12,
+    steps_ns: list[int] | None = None,
+) -> dict:
+    """Sample result; stamps step by 100 ms unless `steps_ns` (cycled) says otherwise."""
+    stamps = [0] * count
+    if source != "none":
+        steps = steps_ns or [10**8]
+        stamps = [10**8]
+        for i in range(count - 1):
+            stamps.append(stamps[-1] + steps[i % len(steps)])
     samples = [
         {"topic": topic, "timestamp_ns": t, "stamp_source": source, "payload": payload}
         for t in stamps
     ]
     return _call(
         "sample_messages",
-        {"topic": topic, "count": 12},
-        {"topic": topic, "count": 12, "samples": samples, "rate": _rate(hz, cv)},
+        {"topic": topic, "count": count},
+        {"topic": topic, "count": count, "samples": samples, "rate": _rate(hz, cv, count)},
     )
 
 
@@ -529,14 +545,73 @@ def test_synthetic_run_with_one_wrong_answer_fails(
     assert any(failing in m for m in _metrics(report, "FAIL")), _metrics(report, "FAIL")
 
 
-def test_a_noisy_fixed_rate_publisher_warns_stable_cv(tmp_path: Path, bench_truth: dict) -> None:
+def _clock_run(tmp_path: Path, truth: dict, **kw: Any) -> tuple[int, dict]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    results["20_sample_clock"] = _samples("/clock", "payload", {"clock": {}}, 50.0, **kw)
+    return _run(tmp_path, truth, results)
+
+
+def test_a_noisy_short_sample_is_only_an_info(tmp_path: Path, bench_truth: dict) -> None:
+    code, report = _clock_run(tmp_path, bench_truth, cv=0.31)
+    assert code == 0
+    assert "/clock STABLE_CV (n=12)" in _metrics(report, "INFO")
+    assert "/clock STABLE_CV (n=12)" not in _metrics(report, "WARN")
+    assert report["rate_cv"]["/clock"]["interval_cv"] == 0.31
+
+
+def test_a_noisy_gated_sample_with_regular_stamps_warns_stable_cv(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    code, report = _clock_run(tmp_path, bench_truth, cv=0.31, count=50)
+    assert code == 0
+    assert "/clock STABLE_CV (n=50)" in _metrics(report, "WARN")
+    assert report["rate_cv"]["/clock"]["stamp_cv"] == 0.0
+
+
+def test_a_noisy_gated_sample_with_irregular_stamps_is_only_an_info(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    steps = [15 * 10**6, 25 * 10**6]
+    code, report = _clock_run(tmp_path, bench_truth, cv=0.31, count=50, steps_ns=steps)
+    assert code == 0
+    assert "/clock STABLE_CV (n=50)" in _metrics(report, "INFO")
+    assert "/clock STABLE_CV (n=50)" not in _metrics(report, "WARN")
+    assert report["rate_cv"]["/clock"]["stamp_cv"] >= 0.2
+
+
+def test_the_clock_rate_call_fails_only_when_gated(tmp_path: Path, bench_truth: dict) -> None:
+    for count, verdict in ((50, "FAIL"), (12, "WARN")):
+        results = _bench_results(bench_truth)
+        _bag_results(bench_truth, results)
+        results["08d_sample_clock_rate"] = _samples(
+            "/clock", "payload", {"clock": {}}, 91.0, count=count
+        )
+        # 50 messages at 91 Hz span 0.54 s: ungated too; widen the span to gate the row.
+        if count == 50:
+            rate = results["08d_sample_clock_rate"]["parsed"][0]["rate"]
+            rate["mean_interval_s"] = 0.02
+        code, report = _run(tmp_path / str(count), bench_truth, results)
+        label = f"/clock wall frequency (Hz, n={count})"
+        assert label in _metrics(report, verdict)
+        assert (code == 1) == (verdict == "FAIL")
+
+
+def test_a_start_up_burst_is_listed_as_an_info(tmp_path: Path, bench_truth: dict) -> None:
     results = _bench_results(bench_truth)
     _bag_results(bench_truth, results)
-    results["20_sample_clock"] = _samples("/clock", "payload", {"clock": {}}, 50.0, cv=0.31)
-    code, report = _run(tmp_path, bench_truth, results)
-    assert code == 0
-    assert "/clock STABLE_CV" in _metrics(report, "WARN")
-    assert report["rate_cv"]["/clock"]["interval_cv"] == 0.31
+    sample = _samples("/clock", "payload", {"clock": {}}, 50.0, count=12)
+    result = sample["parsed"][0]
+    result["rate"]["startup_burst_count"] = 5
+    for i, item in enumerate(result["samples"]):
+        item["received_ns"] = i * 10**6 if i < 6 else 5 * 10**6 + (i - 5) * 20 * 10**6
+    results.pop("20_sample_clock", None)
+    results["08d_sample_clock_rate"] = sample
+    _, report = _run(tmp_path, bench_truth, results)
+    assert "/clock start-up burst (n=12)" in _metrics(report, "INFO")
+    row = next(r for r in report["rows"] if r["metric"] == "/clock start-up burst (n=12)")
+    assert "1.0, 1.0, 1.0, 1.0, 1.0, 20.0" in row["note"]
+    assert report["rate_cv"]["/clock"]["startup_burst_count"] == 5
 
 
 def test_a_rate_far_from_the_configured_one_fails(tmp_path: Path, bench_truth: dict) -> None:
@@ -545,7 +620,7 @@ def test_a_rate_far_from_the_configured_one_fails(tmp_path: Path, bench_truth: d
     results["20_sample_cmd_vel_out"] = _samples("/cmd_vel_out", "none", {}, 1.0)
     code, report = _run(tmp_path, bench_truth, results)
     assert code == 1
-    assert "/cmd_vel_out wall frequency (Hz)" in _metrics(report, "FAIL")
+    assert "/cmd_vel_out wall frequency (Hz, n=12)" in _metrics(report, "FAIL")
 
 
 # ---------------------------------------------------------------------- bag truth with rosbags

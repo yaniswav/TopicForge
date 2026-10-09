@@ -16,6 +16,8 @@
    "args": {"topic": "/scan", "count": 1}},
   {"name": "08c_sample_scan_rate", "tool": "sample_messages", "timeout": 60,
    "args": {"topic": "/scan", "count": 12, "timeout_s": 20}},
+  {"name": "08d_sample_clock_rate", "tool": "sample_messages", "timeout": 60,
+   "args": {"topic": "/clock", "count": 50, "timeout_s": 20}},
   {"name": "20_sample_{slug}", "tool": "sample_messages", "for_each": "topics", "timeout": 60,
    "min_publishers": 1,
    "exclude": ["/scan", "/rosout", "/parameter_events", "/tf_static", "/robot_description_lite"],
