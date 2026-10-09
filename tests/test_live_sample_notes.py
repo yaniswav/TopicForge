@@ -34,9 +34,9 @@ def _stub_info(monkeypatch: pytest.MonkeyPatch, info: str = _INFO, delay_s: floa
 
     def run(*_a: object, **_k: object) -> SimpleNamespace:
         time.sleep(delay_s)
-        return SimpleNamespace(returncode=0, stdout=info, stderr="")
+        return SimpleNamespace(timed_out=False, returncode=0, stdout=info, stderr="")
 
-    monkeypatch.setattr(f"{_MODULE}.subprocess.run", run)
+    monkeypatch.setattr(f"{_MODULE}.run_process", run)
 
 
 def _stub_echo(monkeypatch: pytest.MonkeyPatch, run: EchoRun) -> list[dict[str, Any]]:
@@ -66,10 +66,10 @@ def test_the_topic_lookup_never_waits_longer_than_timeout_s(
     timeouts: list[float] = []
 
     def run(*_a: object, **kw: Any) -> SimpleNamespace:
-        timeouts.append(float(kw["timeout"]))
-        return SimpleNamespace(returncode=0, stdout=_INFO, stderr="")
+        timeouts.append(float(kw["deadline_s"]))
+        return SimpleNamespace(timed_out=False, returncode=0, stdout=_INFO, stderr="")
 
-    monkeypatch.setattr(f"{_MODULE}.subprocess.run", run)
+    monkeypatch.setattr(f"{_MODULE}.run_process", run)
     _stub_echo(monkeypatch, EchoRun(documents=[_doc()]))
     Ros2CliAdapter().sample_messages("/imu", count=1, timeout_s=2)
     assert timeouts == [2.0]
