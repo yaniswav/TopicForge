@@ -303,6 +303,26 @@ rejects any request whose `Host` or `Origin` is not a loopback name with the ser
 stops a web page in your browser from reaching it through DNS rebinding. Do not forward the
 port to a network interface; use an SSH tunnel instead.
 
+## Prompts and instructions
+
+The server offers two MCP prompts, `diagnose-dds-bus` (nodes do not talk, a topic gets no data,
+a node crashed) and `inspect-ros2-robot` (what topics exist, what a bag contains), plus short
+server `instructions` sent in the `initialize` result (the read-only guarantee, which tool to
+call first, `contract_version`). Both prompts take optional arguments (`topic`, `symptom` or
+`bag_path`) that only focus the text; they run no tool by themselves.
+
+| Client | Prompts | Instructions |
+| --- | --- | --- |
+| Claude Code, Claude Desktop | yes (slash commands / prompt picker) | yes |
+| Cursor | yes | yes |
+| VS Code / GitHub Copilot | yes (`/mcp.topicforge.<prompt>` in chat) | yes |
+| Gemini CLI | yes (each prompt becomes a slash command) | yes |
+| OpenAI Codex CLI | no | yes: this is how Codex learns the call order |
+| Other clients | depends on the client; check its MCP page | most read them |
+
+The Claude plugin in `plugin/` ships the same procedures as skills, which load by themselves
+when the question matches.
+
 ## Troubleshooting
 
 - Run the command by hand first: `uvx --from "topicforge==0.6.4" topicforge --version`.

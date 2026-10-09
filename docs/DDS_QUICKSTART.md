@@ -34,7 +34,7 @@ TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 
 Fast DDS has no PyPI install path. The `fastdds` binding is not published, so TopicForge declares no extra for it. Build eProsima's [Fast-DDS-python](https://github.com/eProsima/Fast-DDS-python) from source (it needs the Fast DDS C++ libraries and SWIG), install it into the same environment, then `TOPICFORGE_DDS_BACKEND=fast`. The adapter was written against the 2.6.x API and has never run against a bus.
 
-Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes importable bindings in the order `fast`, `cyclone`, `mock`. With only the PyPI extra installed it resolves to Cyclone. `opendds` and `dust` are permanent stubs that always report unavailable and are not in the chain.
+Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes importable bindings in the order `fast`, `cyclone`, `mock`. With only the PyPI extra installed it resolves to Cyclone. Any other value (`opendds`, `dust`, `rti`, ...) is rejected at startup with an error that lists the valid ones.
 
 Domain. `TOPICFORGE_DDS_DOMAIN_ID` (`0..232`, default `0`) is joined at startup; the `domain_id` tool parameter exists for protocol uniformity only. Changing domains needs a restart.
 

@@ -12,7 +12,7 @@ A read-only MCP (Model Context Protocol) server that lets an AI agent inspect a 
 
 Every tool also declares itself read-only in the MCP protocol (`readOnlyHint`, `destructiveHint=false`, `idempotentHint`, with an honest `openWorldHint`), and a test fails if any tool lacks it. See [`SECURITY.md`](SECURITY.md#read-only-guarantee-architecture-declaration-proof) for the guarantee and its limits.
 
-It gives the agent twelve typed tools that return frozen Pydantic schemas, identical whether the server talks to a real robot or to its built-in mock fixtures. Ask why `nav_planner` gets no scan, and the agent reads the bus, finds the BEST_EFFORT writer facing a RELIABLE reader and names the incompatible policy (see [`examples/02-debug-qos-mismatch.md`](examples/02-debug-qos-mismatch.md)). It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
+It gives the agent twelve typed tools that return frozen Pydantic schemas (output contract 2: one object per tool, one `note`, units in the field names; see [`docs/CONTRACT.md`](docs/CONTRACT.md)), identical whether the server talks to a real robot or to its built-in mock fixtures. Ask why `nav_planner` gets no scan, and the agent reads the bus, finds the BEST_EFFORT writer facing a RELIABLE reader and names the incompatible policy (see [`examples/02-debug-qos-mismatch.md`](examples/02-debug-qos-mismatch.md)). It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
 
 For DDS, TopicForge joins a domain as a read-only participant through one open-source binding (Eclipse CycloneDDS from PyPI) and reads the builtin discovery topics that the OMG DDS-RTPS protocol standardizes. So far the author has observed Cyclone DDS and Dust DDS participants on a live bus. RTI Connext, OpenDDS, CoreDX and Fast DDS announce themselves through the same standard discovery, but none of them has been observed yet. This covers discovery only: participants, readers, writers and their QoS. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md).
 
@@ -40,7 +40,7 @@ The server speaks MCP over stdio and waits for a client, so wire it into one. Fo
 }
 ```
 
-Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: `claude mcp add topicforge -- topicforge`.
+Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: `claude mcp add topicforge -- topicforge`. If the client cannot launch the server (WSL2 to Windows, a robot over an SSH tunnel), `topicforge --transport streamable-http --port 8765` serves `http://127.0.0.1:8765/mcp` on loopback only; see [`docs/CLIENTS.md`](docs/CLIENTS.md#local-http-transport).
 
 **Other MCP clients.** Ready-to-paste configs for Claude Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code, Continue, Zed, JetBrains, Codex, Gemini CLI, Goose and more are in [`docs/CLIENTS.md`](docs/CLIENTS.md). One-click: [Add to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjYuNCIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D) | [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.6.4%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D).
 
@@ -48,7 +48,7 @@ Setup for a real ROS2 environment (WSL2, Linux, Docker, native Windows) is in [`
 
 ## Tools
 
-Every response except `health_check` carries `mode_effective` (`"live"` or `"mock"`), so a caller can tell a real graph from fixtures.
+Every response except `health_check` carries `mode_effective` (`"live"` or `"mock"`), so a caller can tell a real graph from fixtures, and a single `note` that explains anything unusual. `health_check.contract_version` is `2`. The full reference, with every field, is generated in [`docs/TOOLS.md`](docs/TOOLS.md); upgrading from 0.6.x: [`docs/MIGRATION-0.7.md`](docs/MIGRATION-0.7.md).
 
 | Tool                    | Purpose                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------ |
@@ -64,6 +64,8 @@ Every response except `health_check` carries `mode_effective` (`"live"` or `"moc
 | `topic_metrics`         | Frequency, sequence-gap and latency schema; data only for builtin discovery topics               |
 | `peek_bag_samples`      | Decoded samples from a recorded bag, including ROS 1 `.bag` (`rosbags` ships with the package) |
 | `list_endpoints`        | DDS writers and readers with structured QoS, per-topic roll-up that flags orphans (writer with no reader, reader with no writer) |
+
+The server also offers two MCP prompts, `diagnose-dds-bus` and `inspect-ros2-robot`, that give a client the read-only call order, and short server `instructions` for clients that do not show prompts (see [`docs/CLIENTS.md`](docs/CLIENTS.md#prompts-and-instructions)).
 
 Walkthroughs against the mock, each with the exact tool calls and payloads, are in [`examples/`](examples/README.md). To run the DDS tools against a real bus with several programs and vendors, see [`examples/dds/README.md`](examples/dds/README.md) (`python examples/dds/run_all.py`).
 
@@ -87,7 +89,7 @@ TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 
 `TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone`, `fast` and `auto` (`fast`, then `cyclone`, then `mock`, whichever binding imports). The default `mock` selects no DDS backend: installing the Cyclone binding is not enough, you must also set `TOPICFORGE_DDS_BACKEND=cyclone`. With `TOPICFORGE_MODE=live` and no backend selected, the DDS tools raise `DDS module is not active: ...` with the actual cause (backend not selected, binding not installed, or binding installed but the adapter failed to start), and `health_check` reports `dds_backend: "none"` plus `dds_inactive_note`. An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the five ROS2 graph and bag tools to the CLI and the seven DDS tools to the DDS backend.
 
-A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Python binding is not on PyPI: build it from eProsima's sources and install it next to TopicForge. There is no `[dds-fast]` extra. `opendds` and `dust` are permanent stubs that never serve. `rti`, `opensplice`, `coredx` and `intercom` are rejected with a configuration error,; Cyclone already sees those vendors' participants through standard discovery. Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Python binding is not on PyPI: build it from eProsima's sources and install it next to TopicForge. There is no `[dds-fast]` extra. Any other value (`rti`, `opensplice`, `coredx`, `intercom`, `opendds`, `dust`) is rejected at startup with an error that lists the valid ones; Cyclone already sees those vendors' participants through standard discovery. Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 ## Configuration reference
 
@@ -97,7 +99,7 @@ A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Pyt
 | `TOPICFORGE_LOG_LEVEL`     | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                                                               |
 | `TOPICFORGE_ROS2_BIN`      | `ros2`  | Name or path of the ROS2 CLI binary                                                               |
 | `TOPICFORGE_TELEMETRY`     | `off`   | Opt-in anonymous telemetry; an unrecognized value aborts startup. See [Telemetry](#telemetry)     |
-| `TOPICFORGE_DDS_BACKEND`   | `mock`  | `mock` (no DDS backend), `cyclone`, `fast`, `auto` (`opendds` and `dust` are stubs)                |
+| `TOPICFORGE_DDS_BACKEND`   | `mock`  | `mock` (no DDS backend), `cyclone`, `fast`, `auto`; anything else is rejected                      |
 | `TOPICFORGE_DDS_DOMAIN_ID` | `0`     | DDS domain observed (0..232). Joined at startup; changing it needs a restart                      |
 | `TOPICFORGE_MAX_SAMPLE_BYTES` | `1048576` | Size cap for one sampled message (1 KiB..64 MiB); a call returns at most 4 times that. Over-cap messages are dropped with a note |
 
@@ -107,7 +109,7 @@ Samples with comments are in [`.env.example`](.env.example). Any invalid value s
 
 ## Limitations
 
-External validation against a simulated robot's ground truth: [docs/VALIDATION.md](docs/VALIDATION.md).
+External validation against a simulated robot's ground truth (OmniSim): [docs/VALIDATION.md](docs/VALIDATION.md).
 
 - DDS validation is partial. The Cyclone adapter has run against a real bus, with Cyclone and Dust DDS participants, on Windows and in CI on Ubuntu and Windows (`.github/workflows/demo.yml`). The Fast DDS adapter has never run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed by this project. The multi-vendor claim rests on the RTPS protocol guarantee, not on a recorded cross-vendor run.
 - User-topic payloads are not decoded. `peek_dds_samples` on a user topic returns count 0 and a note that the topic is announced on the bus; no traffic is read. `topic_metrics` therefore has data only for the builtin discovery topics and says so in its `status`. It is a discovery-layer probe, not a publish-rate monitor.
@@ -118,7 +120,7 @@ External validation against a simulated robot's ground truth: [docs/VALIDATION.m
 - Fast DDS serves no `list_endpoints`.
 - `sample_messages` (live) streams `ros2 topic echo` until `count` messages arrive or `timeout_s` (1..40, default 10, for the whole call) runs out, and returns what arrived with a `note` (`N of M messages within T s`, saying whether a publisher exists). QoS is matched to the publishers, so latched topics work. The payload has nested named fields (`payload.header.stamp.sec`); `timestamp_ns` is `header.stamp` (the publisher's clock, sim time on a simulation), the time in the body of `/clock`, `/tf` and `/rosout` messages (`stamp_source` `payload`), or 0 for other headerless types, with `stamp_source` and `received_ns` (wall clock when the CLI printed it). Arrays are cut at 128 elements by default; `max_array_length` (1..65536, or null for no cut) and `arrays_summary_only` change that, and a cut is listed under `_truncated_fields`. `nan` and `inf` come back as strings. `count` above 50 is capped with a note.
 - `analyze_bag` (live) parses `ros2 bag info` text for the totals and counts; anomaly detection is mock-only. Per-topic times, rates (`(n - 1) / span`) and `latched` are added when the bag can be read locally (`.db3` with the standard library, `.mcap` with `rosbags`), else rates fall back to count / bag duration (`frequency_basis`). `peek_bag_samples` reads the file itself, through `rosbags`, returns the first `count` messages in recording order (not the last), and is served only by the ROS2 CLI adapter or the mock; its `timestamp_ns` is the message's `header.stamp` (`stamp_source` `header`), the body time of `Clock`, `TFMessage` and `Log` messages (`payload`) or, without either, the bag record time (`stamp_source` `recorded`), and `recorded_ns` is always the bag record time; bags that embed no message definitions (Humble `.db3`) are decoded with the Humble definitions, or the distro the bag records, and `note` says so. Without `ros2`, bag tools return fixtures: check `health_check` for `mode: "mock"` before trusting bag output. `health_check` also reports `sim_clock_published` (live only): true when `/clock` has a publisher, a hint that header stamps may be simulation time.
-- Synchronous handlers: the tools run on the MCP event loop; on Windows a hung `ros2` launcher can block the server.
+- Calls are serialized per backend (one `ros2` call at a time, one DDS call at a time) and each call has a 45 s wall budget, lock wait included; a call that cannot get its lane fails at once with `busy`. `health_check` and `peek_bag_samples` take no lock.
 - No streaming or push subscriptions: tools are strictly request/response.
 
 Next: an opt-in probe to tell a hung writer from a healthy one, wider real-bus validation (Fast DDS, RTI, OpenDDS), and DDS Security. Open work is tracked in [issues](https://github.com/yaniswav/TopicForge/issues).
@@ -172,13 +174,13 @@ Tests run against the mock adapter, the live adapter's pure parsers and the bind
 
 ## Upgrading
 
-TopicForge is pre-1.0; [`CHANGELOG.md`](CHANGELOG.md) lists every change, including the yanked releases and removed extras.
+TopicForge is pre-1.0; [`CHANGELOG.md`](CHANGELOG.md) lists every change, including the yanked releases and removed extras. 0.7.0 changes the shape of tool results (`contract_version` 2): [`docs/MIGRATION-0.7.md`](docs/MIGRATION-0.7.md) maps every old field to its new one.
 
 ## Layout
 
 ```
 src/topicforge/
-  server/      MCP bootstrap, build_app(settings)
+  server/      MCP bootstrap, build_app(settings), prompts and instructions
   tools/       thin MCPServer handlers, no backend logic
   services/    input validation, orchestration, adapter factory
   adapters/    ros2_live, ros2_mock, dds_cyclone, dds_fast, common/ (binding-free logic)

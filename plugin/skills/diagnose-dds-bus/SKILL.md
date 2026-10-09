@@ -5,7 +5,7 @@ description: Diagnose a DDS or ROS 2 bus with TopicForge when nodes do not talk,
 
 # Diagnose a DDS bus
 
-Use the TopicForge tools. They only observe discovery; nothing here publishes, commands or changes QoS. Never suggest doing that through TopicForge.
+Use the TopicForge tools (output contract 2: check `health_check.contract_version` is 2). The same procedure is available as the MCP prompt `diagnose-dds-bus`. They only observe discovery; nothing here publishes, commands or changes QoS. Never suggest doing that through TopicForge.
 
 ## Call order
 

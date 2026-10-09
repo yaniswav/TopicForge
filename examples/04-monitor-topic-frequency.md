@@ -45,7 +45,8 @@ window_s=60, domain_id=0)` -> returns a `TopicMetrics`:
   "window_actual_s": 10.0,
   "samples_observed": 100,
   "observed_frequency_hz": 10.0,
-  "declared_frequency_hz": null,
+  "declared_frequency_hz": 10.0,
+  "status": "ok",
   "sequence_gaps_count": 0,
   "sequence_numbers_available": true,
   "latency_ns_p50": 50000000,
@@ -59,8 +60,9 @@ window_s=60, domain_id=0)` -> returns a `TopicMetrics`:
 
 `observed_frequency_hz` is 99 intervals over the 9.9 s span of the
 samples, so 10.0 up to floating-point rounding. `declared_frequency_hz`
-is `null` here, as it is in every response: no adapter populates it, so
-there is nothing to compare the observed rate against.
+is 10.0 here: it is `1 / deadline` of the shortest QoS Deadline a writer on the
+topic announced in discovery (100 ms in the fixture), and `null` when no writer
+announced a deadline. It is declared, not measured.
 
 You:
 
@@ -81,9 +83,9 @@ Claude answers:
 
 > The mock buffer holds 100 samples on `/dds/heartbeat_10hz` at about
 > 10 Hz, with contiguous sequence numbers (0 gaps) and a uniform 50 ms
-> publish-to-receive latency, so there is no jitter in this data. I
-> can't check the rate against a declared one, because
-> `declared_frequency_hz` is null. No participant was lost in the
+> publish-to-receive latency, so there is no jitter in this data. The
+> rate matches the 10 Hz that the writer's deadline declares
+> (`declared_frequency_hz`). No participant was lost in the
 > window. This is fixture data: it says nothing about a real robot.
 
 ## What happens on a live bus
