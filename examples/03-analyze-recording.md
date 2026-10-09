@@ -37,22 +37,20 @@ Claude calls: `analyze_bag(path="/tmp/demo.mcap")` -> returns a
   "path": "/tmp/demo.mcap",
   "storage_format": "mcap",
   "duration_s": 42.5,
-  "message_count": 1287,
+  "message_count": 1288,
   "topics": [
     {"name": "/cmd_vel", "message_type": "geometry_msgs/msg/Twist", "message_count": 425, "frequency_hz": 10.0},
     {"name": "/odom", "message_type": "nav_msgs/msg/Odometry", "message_count": 425, "frequency_hz": 10.0},
     {"name": "/scan", "message_type": "sensor_msgs/msg/LaserScan", "message_count": 425, "frequency_hz": 10.0},
-    {"name": "/tf", "message_type": "tf2_msgs/msg/TFMessage", "message_count": 12, "frequency_hz": 0.28}
+    {"name": "/tf", "message_type": "tf2_msgs/msg/TFMessage", "message_count": 12, "frequency_hz": 0.28},
+    {"name": "/events/write_split", "message_type": "rosbag2_interfaces/msg/WriteSplitEvent", "message_count": 1, "kind": "rosbag2_internal"}
   ],
   "anomalies": [
     "/scan: 3 frames dropped between t=10.1s and t=10.4s",
     "/tf: static transforms only; no dynamic updates during recording"
   ],
   "mode_effective": "mock",
-  "bag_format": "mcap",
-  "samples_decoded_count": 0,
-  "recording_duration_ns": 42500000000,
-  "participants_recorded": []
+  "bag_format": "mcap"
 }
 ```
 
@@ -92,10 +90,9 @@ You:
 
 > Were there any non-ROS DDS participants recorded in the bag?
 
-Claude responds referencing `BagAnalysis.participants_recorded`. It
-is an empty list here, and it is empty on every real bag today: the
-reader never populates it. The field exists so that bag participants
-can later share the `ParticipantInfo` schema of `list_participants`.
+Claude answers that `analyze_bag` does not report participants: a bag
+records topics and messages, and the `participants_recorded` field that
+never held anything was removed. `list_participants` shows the live bus.
 
 ## Going live
 
@@ -110,8 +107,7 @@ The two bag tools behave differently in live mode, and both need the
 
 - `analyze_bag` runs `ros2 bag info <path>` and parses its text output.
   It never uses `rosbags`. `storage_format` comes from the CLI output;
-  `bag_format` and `recording_duration_ns` stay `null`,
-  `samples_decoded_count` stays `0`, `anomalies` is empty. The path
+  `bag_format` stays `null`, `anomalies` is empty. The path
   must exist.
 - `peek_bag_samples` reads the file with `rosbags` and decodes
   messages (`rosbags` is a core dependency since 0.6.4). There is no

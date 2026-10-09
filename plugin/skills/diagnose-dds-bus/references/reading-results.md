@@ -15,7 +15,7 @@ Checked policies: Partition (`*` and `?` wildcards), type name, Reliability, Dur
 
 - One entry per writer or reader with `role`, `topic`, `type_name`, owning participant and structured `qos`.
 - In `qos`, a duration of `None` means infinite or not set; a field of `None` means the endpoint did not announce it.
-- `activity` is always `None`: TopicForge cannot tell a silent writer from a healthy one.
+- Liveness is not observed (the listing's `hints` say so once): TopicForge cannot tell a silent writer from a healthy one.
 - Ownership: among EXCLUSIVE writers the live one with the highest strength delivers. Which one currently owns an instance is runtime state TopicForge cannot see.
 - Departed endpoints are remembered (last 200, 1 hour). Pass `include_departed` to list them in `endpoints`.
 - A topic filter that matches nothing returns a `note` with the closest known topics.

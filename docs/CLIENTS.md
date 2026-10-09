@@ -40,7 +40,7 @@ version strings; a test keeps them in sync.
   of `topicforge`, installed only where it ships prebuilt wheels: Python 3.10 to 3.13 on
   Linux x86_64, Windows x64 and macOS. On Linux ARM (Jetson, Raspberry Pi), Windows ARM64
   or Python 3.14 the server still starts and `health_check` says why the DDS backend is
-  off (`dds_inactive_reason`); with a pinned Python, add `"--python", "3.12"` before
+  off (`dds_inactive_note`); with a pinned Python, add `"--python", "3.12"` before
   `"--from"` in the args. To build the binding yourself, install the Cyclone C library and
   run `pip install "topicforge[dds]"`. The `[dds]` and `[dds-cyclone]` extras still work
   as aliases, so older commands keep installing.

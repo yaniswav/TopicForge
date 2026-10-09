@@ -322,8 +322,7 @@ async def _call(session: Client, tool: str, **args: Any) -> Any:
         text = " ".join(getattr(c, "text", "") for c in result.content)
         raise RuntimeError(f"{tool} failed: {text}")
     if result.structured_content is not None:
-        data = result.structured_content
-        return data.get("result", data) if isinstance(data, dict) else data
+        return result.structured_content
     return [json.loads(c.text) for c in result.content if getattr(c, "text", None)]
 
 
@@ -352,7 +351,7 @@ async def _scenario(domain: str, running: list[Running]) -> int:
         )
 
         print("\n[1] list_participants: who is on the bus?")
-        parts = await _call(session, "list_participants", domain_id=int(domain))
+        parts = (await _call(session, "list_participants", domain_id=int(domain)))["participants"]
         _print_participants(parts)
         expected = len(running) + 1  # every started program plus TopicForge itself
         if len(parts) < expected:
@@ -393,7 +392,8 @@ async def _scenario(domain: str, running: list[Running]) -> int:
             left = False
             while time.monotonic() - started < LEASE_WAIT_S:
                 await asyncio.sleep(3)
-                parts = await _call(session, "list_participants", domain_id=int(domain))
+                listing = await _call(session, "list_participants", domain_id=int(domain))
+                parts = listing["participants"]
                 if any(p.get("status") == "left" for p in parts):
                     left = True
                     print(f"    detected after {time.monotonic() - started:.0f} s:")
@@ -402,9 +402,8 @@ async def _scenario(domain: str, running: list[Running]) -> int:
             if not left:
                 failures.append(f"no participant reported as left within {LEASE_WAIT_S} s")
 
-        events = await _call(
-            session, "participant_events", domain_id=int(domain), lookback_s=600
-        )
+        listing = await _call(session, "participant_events", domain_id=int(domain), lookback_s=600)
+        events = listing["events"]
         print("\n[4] participant_events: the timeline an agent would read")
         for e in events:
             print(f"    {e['event_type']:<10} {e.get('vendor', '?'):<11} {e['guid']}")

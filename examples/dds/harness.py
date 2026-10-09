@@ -249,11 +249,12 @@ class TopicForge:
             raise RuntimeError(f"{tool} failed: {text}")
         data = getattr(result, "structured_content", getattr(result, "structuredContent", None))
         if data is not None:
-            return data.get("result", data) if isinstance(data, dict) else data
+            return data
         return [json.loads(c.text) for c in result.content if getattr(c, "text", None)]
 
     async def participants(self) -> list[dict[str, Any]]:
-        return await self.ask("list_participants", domain_id=self.domain)
+        listing = await self.ask("list_participants", domain_id=self.domain)
+        return listing["participants"]
 
     async def mismatches(self) -> dict[str, Any]:
         """The full `MismatchScan`: `reports`, `not_matched`, `hints`, and what was checked."""
@@ -283,9 +284,8 @@ class TopicForge:
         return table
 
     async def events(self, lookback_s: int = 600) -> list[dict[str, Any]]:
-        return await self.ask(
-            "participant_events", domain_id=self.domain, lookback_s=lookback_s
-        )
+        listing = await self.ask("participant_events", domain_id=self.domain, lookback_s=lookback_s)
+        return listing["events"]
 
 
 def server_env(domain: int) -> dict[str, str]:

@@ -52,7 +52,8 @@ window_s=60, domain_id=0)` -> returns a `TopicMetrics`:
   "latency_ns_p95": 50000000,
   "latency_ns_p99": 50000000,
   "latency_available": true,
-  "mode_effective": "mock"
+  "mode_effective": "mock",
+  "note": null
 }
 ```
 
@@ -66,12 +67,13 @@ You:
 > Did any participants come or go on the bus?
 
 Claude calls: `participant_events(domain_id=0,
-lookback_s=300)` -> returns 4 `ParticipantEvent` entries, newest
+lookback_s=300)` -> returns a `ParticipantEventListing` of 4 `ParticipantEvent` entries, newest
 first, all `event_type="discovered"` and none `"lost"`: the Dust DDS
 participant `mock-rust-node`, the Fast DDS participant
 `mock-aerospace-node`, then the Cyclone participants `mock-laptop` and
 `mock-robot`. Each carries `guid`, `event_type`,
-`vendor`, `timestamp_ns`, `hostname`, `domain_id` and `mode_effective`.
+`vendor`, `timestamp_ns`, `hostname` and `domain_id`; the listing's
+`mode_effective` and `domain_id` say where they were observed.
 (The mock clock sits two minutes after the first event, so
 `lookback_s=60` returns an empty list and `300` returns all four.)
 
