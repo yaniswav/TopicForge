@@ -281,6 +281,28 @@ same shape in `~/.aws/amazonq/mcp.json` (the Amazon Q path and the move to Kiro 
 
 Settings > MCP > "+ Add", then paste the common JSON shape (unverified, last checked 2026-10-06: the Warp docs page could not be fetched).
 
+## Local HTTP transport
+
+stdio is the default and the right choice almost everywhere. When the client cannot launch
+the server itself, TopicForge can serve Streamable HTTP on the local machine:
+
+```
+topicforge --transport streamable-http --port 8765
+```
+
+The endpoint is `http://127.0.0.1:8765/mcp`. Two cases it is meant for:
+
+- WSL2 to Windows: run TopicForge inside WSL2 next to ROS 2, point a Windows client at
+  `http://127.0.0.1:8765/mcp` (WSL2 forwards localhost to Windows).
+- A robot: run it on the robot, then `ssh -L 8765:127.0.0.1:8765 robot` and use the same URL
+  on your laptop.
+
+Threat model: the server has no authentication, so anything that can reach the port can read
+your robot graph. It therefore binds `127.0.0.1` only (there is no flag to change that) and
+rejects any request whose `Host` or `Origin` is not a loopback name with the served port, which
+stops a web page in your browser from reaching it through DNS rebinding. Do not forward the
+port to a network interface; use an SSH tunnel instead.
+
 ## Troubleshooting
 
 - Run the command by hand first: `uvx --from "topicforge==0.6.4" topicforge --version`.

@@ -1199,7 +1199,9 @@ class HealthReport(BaseModel):
             "so `header.stamp` values are sim time, not wall time (compare "
             "with `received_ns`). It is a hint: a publisher on `/clock` does "
             "not prove a given node follows it. `None` in mock mode or when "
-            "the `ros2` CLI could not answer."
+            "no `list_topics` call (or `get_topic_info` on `/clock`) has read the "
+            "graph in the last two minutes: `health_check` never runs the `ros2` "
+            "CLI itself, it reports what the last graph read saw."
         ),
     )
     payload_decoding: Literal["disabled", "enabled"] = Field(

@@ -16,10 +16,10 @@ from __future__ import annotations
 import logging
 import re
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
+from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
@@ -28,6 +28,7 @@ from topicforge.adapters.ros2_live.parsers import (
     parse_topic_list_verbose,
     summarize_publisher_qos,
 )
+from topicforge.adapters.ros2_live.process_runner import run_process
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
@@ -55,6 +56,11 @@ _NO_PUBLISHER_WAIT_SEC = 3.0
 # takes up to ~2 s, and decoding may run until 1 s past the deadline.
 _PARSE_GRACE_SEC = 1.0
 _MIN_ECHO_SEC = 0.5
+# Time `sample_messages` keeps back from the call budget for stopping the CLI
+# (about 2 s) and decoding (until 1 s past the deadline).
+_STOP_RESERVE_SEC = 3.0
+# A `/clock` publisher hint older than this is reported as unknown.
+_CLOCK_HINT_TTL_SEC = 120.0
 
 _DEFAULT_DDS_INACTIVE_REASON = (
     "install the Cyclone binding and select it: "
@@ -82,6 +88,9 @@ class Ros2CliAdapter:
         self._max_message_chars = max_message_chars
         # Why no DDS backend serves next to this adapter; set by the factory.
         self.dds_inactive_reason = dds_inactive_reason
+        # `/clock` has a publisher: (value, monotonic time), refreshed by the
+        # calls that already read the graph so `health_check` never runs the CLI.
+        self._clock_hint: tuple[bool, float] | None = None
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -146,8 +155,11 @@ class Ros2CliAdapter:
         """
         out = self._run([self._exe, "topic", "list", "-t"])
         graph_counts = self._graph_counts()
+        listed = parse_topic_list(out)
+        if graph_counts is not None:
+            self._clock_hint = (graph_counts.get("/clock", (0, 0))[0] > 0, time.monotonic())
         topics: list[TopicInfo] = []
-        for name, msg_type in parse_topic_list(out):
+        for name, msg_type in listed:
             counts = graph_counts.get(name) if graph_counts is not None else None
             pub_count, sub_count = counts if counts is not None else self._safe_counts(name)
             topics.append(
@@ -167,6 +179,8 @@ class Ros2CliAdapter:
     def _topic_info(self, topic: str, timeout: float) -> TopicInfo:
         out = self._run([self._exe, "topic", "info", topic, "--verbose"], timeout)
         info = parse_topic_info(out, fallback_name=topic, mode_effective=self.effective_mode)
+        if info is not None and topic == "/clock":
+            self._clock_hint = (info.publisher_count > 0, time.monotonic())
         if info is None:
             raise AdapterError(f"Topic not found or empty info: {topic!r}")
         return info
@@ -193,6 +207,10 @@ class Ros2CliAdapter:
         receive timestamps.
         """
         started = time.monotonic()
+        # Whatever the call waited for the lock is already gone from the budget.
+        timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
+        if timeout_s <= 0:
+            raise AdapterError("busy: no time left in this call's budget for sampling, retry")
         info = self._topic_info(topic, min(_DEFAULT_TIMEOUT_SEC, timeout_s))
         if count <= 0:
             return self._sample_result(topic, [], None)
@@ -310,14 +328,17 @@ class Ros2CliAdapter:
         return analysis
 
     def sim_clock_published(self) -> bool | None:
-        """Whether `/clock` has a publisher on the graph; `None` when the CLI cannot tell."""
-        try:
-            text = self._run([self._exe, "topic", "info", "/clock"])
-        except AdapterError as exc:
-            return False if "unknown topic" in str(exc).lower() else None
-        if "unknown topic" in text.lower():
-            return False
-        return parse_pub_sub_counts(text)[0] > 0
+        """Whether `/clock` had a publisher at the last graph read; `None` when unknown.
+
+        Never runs the CLI: `health_check` calls it and must answer at once
+        while a slow `ros2` call holds the ROS lock. The value is refreshed by
+        `list_topics` and by `get_topic_info` on `/clock`, and expires after
+        two minutes.
+        """
+        hint = self._clock_hint
+        if hint is None or time.monotonic() - hint[1] > _CLOCK_HINT_TTL_SEC:
+            return None
+        return hint[0]
 
     def _graph_counts(self) -> dict[str, tuple[int, int]] | None:
         """`{topic: (pubs, subs)}` from `ros2 topic list -v`, or `None` when unavailable."""
@@ -336,29 +357,31 @@ class Ros2CliAdapter:
         return parse_pub_sub_counts(text)
 
     def _run(self, cmd: list[str], timeout: float = _DEFAULT_TIMEOUT_SEC) -> str:
+        """Run a `ros2` command and return its stdout, within `timeout` or the call budget."""
         # Resolve to a full path so Windows .cmd/.bat shims work without shell=True.
         resolved = shutil.which(cmd[0]) if cmd[0] == self._exe else cmd[0]
         if resolved is None:
             raise AdapterError(f"`{self._exe}` not found on PATH. Source your ROS2 setup file.")
         full_cmd = [resolved, *cmd[1:]]
 
+        # A call that waited for the lock has less time left: shrink to the budget.
+        effective = max(call_budget.clamp(timeout), 0.0)
         log.debug("ros2 cmd: %s", " ".join(full_cmd))
+        shown = timeout if effective >= timeout else round(effective, 1)
+        if effective <= 0:
+            raise AdapterError(f"`{' '.join(cmd)}` timed out after {shown}s")
         try:
-            result = subprocess.run(
-                full_cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout,
-                check=False,
-            )
+            result = run_process(full_cmd, deadline_s=effective)
         except FileNotFoundError as exc:
             raise AdapterError(
                 f"`{self._exe}` not found on PATH. Source your ROS2 setup file."
             ) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise AdapterError(f"`{' '.join(cmd)}` timed out after {timeout}s") from exc
+        except OSError as exc:
+            raise AdapterError(
+                f"could not start `{self._exe}`: {exc.strerror or type(exc).__name__}"
+            ) from exc
+        if result.timed_out:
+            raise AdapterError(f"`{' '.join(cmd)}` timed out after {shown}s")
 
         if result.returncode != 0:
             stderr_tail = ""

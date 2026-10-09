@@ -153,7 +153,7 @@ def test_parse_topic_list_verbose_unrecognized_format_is_none(text: str) -> None
 
 
 class _Cli:
-    """Stubs `subprocess.run`: answers by CLI subcommand and records the commands."""
+    """Stubs `run_process`: answers by CLI subcommand and records the commands."""
 
     def __init__(self, answers: dict[str, str | int]) -> None:
         self.answers = answers
@@ -166,13 +166,13 @@ class _Cli:
         key = " ".join(cmd[1:3]) + (" -v" if "-v" in cmd else "")
         answer = self.answers.get(key, "")
         if isinstance(answer, int):
-            return SimpleNamespace(returncode=answer, stdout="", stderr="boom")
-        return SimpleNamespace(returncode=0, stdout=answer, stderr="")
+            return SimpleNamespace(timed_out=False, returncode=answer, stdout="", stderr="boom")
+        return SimpleNamespace(timed_out=False, returncode=0, stdout=answer, stderr="")
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, cli: _Cli) -> None:
     monkeypatch.setattr(f"{_MODULE}.shutil.which", lambda name: f"/fake/bin/{name}")
-    monkeypatch.setattr(f"{_MODULE}.subprocess.run", cli)
+    monkeypatch.setattr(f"{_MODULE}.run_process", cli)
 
 
 _LIST_T = (
@@ -233,15 +233,6 @@ def test_get_topic_info_reports_qos(monkeypatch: pytest.MonkeyPatch) -> None:
     _install(monkeypatch, cli)
     info = Ros2CliAdapter().get_topic_info("/tf_static")
     assert (info.qos_reliability, info.qos_durability) == ("reliable", "transient_local")
-
-
-def test_subprocess_output_is_decoded_as_utf8_with_replacement(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cli = _Cli({"topic list": _LIST_T, "topic list -v": _LIST_V})
-    _install(monkeypatch, cli)
-    Ros2CliAdapter().list_topics()
-    assert all(k["encoding"] == "utf-8" and k["errors"] == "replace" for k in cli.kwargs)
 
 
 # ---- sample_messages flags -------------------------------------------------

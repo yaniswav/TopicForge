@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- Optional local HTTP transport: `topicforge --transport streamable-http --port N` serves the
+  tools on `http://127.0.0.1:N/mcp`. stdio stays the default. The bind address is fixed to
+  127.0.0.1 (no flag changes it) and DNS-rebinding protection is on (loopback `Host` and
+  `Origin` only). There is no authentication: use an SSH tunnel to reach a robot. See
+  `docs/CLIENTS.md`.
 - `docs/CONTRACT.md`: the output contract planned for 0.7.0 (one object per tool, a single
   `note`, no silent null, suffix vocabulary, enum casing by layer, non-finite floats,
   reserved optional fields, rate verdicts) and the complete list of renames and splits.
@@ -26,13 +31,32 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   names, parameters and the stdio transport are unchanged. The SDK brings new dependencies
   (`mcp-types`, `httpx2`, `opentelemetry-api`, `anyio`, `pydantic>=2.12`). The served schemas
   differ only where the SDK serializes differently (see the golden snapshot commit).
-- Tool calls are serialized behind one process-wide lock (`topicforge.tools.guard`): the 2.x
-  SDK runs synchronous handlers in worker threads, and neither the Cyclone binding nor the
-  `ros2` CLI adapter can take overlapping calls. Fine-grained locks are planned.
+- Tool calls are serialized per backend (`topicforge.tools.guard`): the 2.x SDK runs
+  synchronous handlers in worker threads, and neither the Cyclone binding nor the `ros2` CLI
+  adapter can take overlapping calls. There are two locks: a ROS lane (`list_topics`,
+  `get_topic_info`, `sample_messages`, `analyze_bag`) and a DDS lane (the six DDS and
+  observability tools), so a slow `sample_messages` no longer delays a DDS call.
+  `health_check` and `peek_bag_samples` take no lock.
+- A tool call has a wall budget of 45 s, lock wait included. A call that waited for its lane
+  runs with the time that is left (the `ros2` timeouts shrink accordingly), and one that cannot
+  start with at least 5 s left fails at once with `busy: another ros call is running, retry`
+  (or `dds`) instead of waiting. At most 16 calls queue per lane.
+- `sample_messages` `timeout_s` now accepts 1..40 (it was 1..45), so that the timeout plus
+  stopping the CLI and decoding stays under the 45 s budget. The default is unchanged (10).
+- `health_check` `sim_clock_published` no longer runs `ros2 topic info /clock`: it reports
+  what the last `list_topics` (or `get_topic_info` on `/clock`) saw, `null` before the first
+  graph read and two minutes after it. This is what lets `health_check` always answer.
 - CI builds the wheel and installs it into a fresh venv on Ubuntu and Windows.
 
 ### Fixed
 
+- The server can no longer freeze on a hung `ros2` CLI. Every `ros2` call now goes through one
+  process runner (`adapters/ros2_live/process_runner.py`) instead of `subprocess.run`: the
+  process starts in its own kill unit (Windows Job Object with a `taskkill /T` fallback, POSIX
+  process group with SIGINT then SIGKILL), runs under a hard deadline, and its whole tree is
+  killed at the deadline, so the stock `ros2` launcher can no longer leave an orphan holding
+  the output pipes. Output is capped at 8 MiB per stream. Error messages are unchanged.
+- `health_check` always answers, also while a `sample_messages` call is running.
 - The server no longer blocks the asyncio event loop during a long tool call (a 45 s
   `sample_messages`, a hung `ros2` CLI): handlers run in worker threads, so the transport
   keeps answering pings and cancellations.

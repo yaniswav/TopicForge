@@ -40,8 +40,8 @@
       },
       "timeout_s": {
         "default": 10.0,
-        "description": "Seconds to wait for the messages, 1..45, default 10. Bounds the whole call, topic lookup and the `ros2` CLI start-up (a few seconds on a slow machine) included: the call returns within about `timeout_s` + 2 s. Whatever arrived by then is returned with a `note`. Raise it for a topic that publishes slower than 1 Hz. The server handles one call at a time, so a long wait delays other tool calls.",
-        "maximum": 45.0,
+        "description": "Seconds to wait for the messages, 1..40, default 10. Bounds the whole call, topic lookup and the `ros2` CLI start-up (a few seconds on a slow machine) included: the call returns within `timeout_s` plus a few seconds (stopping the CLI, decoding). Whatever arrived by then is returned with a `note`. Raise it for a topic that publishes slower than 1 Hz. Calls that use the `ros2` CLI run one at a time: a long wait delays other `ros2`-backed calls, which fail with a `busy` error if they cannot start in time.",
+        "maximum": 40.0,
         "minimum": 1.0,
         "title": "Timeout S",
         "type": "number"

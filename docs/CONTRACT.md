@@ -164,6 +164,19 @@ to the response, lock wait included. A regex test fails on history words from 0.
 Requirement for M5: `health_check` never takes the lock, and a handler that waited for the
 lock shortens its own deadline by the time it waited.
 
+The 45 s are wall time from the request to the response, lock wait included. The server
+enforces it (`topicforge.tools.guard`, with `topicforge.budget` passing the deadline down):
+
+- Calls run in two lanes with one lock each: ROS (`list_topics`, `get_topic_info`,
+  `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
+  `participant_events`, `topic_metrics`, `list_endpoints`).
+  `health_check` never takes a lock and never runs the `ros2` CLI; `peek_bag_samples` reads
+  a file in pure Python and takes none either.
+- A handler that waited for its lane has that much less time: the `ros2` timeouts and the
+  `sample_messages` `timeout_s` are clamped to what is left of the 45 s.
+- A call that cannot get its lane while at least 5 s remain fails at once with
+  `busy: another <ros|dds> call is running, retry`.
+
 ### 1.8 Golden snapshots
 
 The tools exactly as served by `list_tools` in mock mode (name, title, description,

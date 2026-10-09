@@ -77,12 +77,14 @@ _SAMPLE_COUNT_PARAM_DESC = (
 )
 
 _SAMPLE_TIMEOUT_PARAM_DESC = (
-    "Seconds to wait for the messages, 1..45, default 10. Bounds the whole "
+    "Seconds to wait for the messages, 1..40, default 10. Bounds the whole "
     "call, topic lookup and the `ros2` CLI start-up (a few seconds on a slow "
-    "machine) included: the call returns within about `timeout_s` + 2 s. "
-    "Whatever arrived by then is returned with a `note`. Raise it for a topic "
-    "that publishes slower than 1 Hz. The server handles one call at a time, "
-    "so a long wait delays other tool calls."
+    "machine) included: the call returns within `timeout_s` plus a few "
+    "seconds (stopping the CLI, decoding). Whatever arrived by then is "
+    "returned with a `note`. Raise it for a topic that publishes slower than "
+    "1 Hz. Calls that use the `ros2` CLI run one at a time: a long wait "
+    "delays other `ros2`-backed calls, which fail with a `busy` error if "
+    "they cannot start in time."
 )
 
 _MAX_ARRAY_LENGTH_PARAM_DESC = (
@@ -153,7 +155,7 @@ def register_tools(
             "something looks wrong. Read-only; no side effects."
         ),
     )
-    @guarded
+    @guarded(None)
     @instrument(telemetry, "health_check")
     def health_check() -> HealthReport:
         return health.report()
@@ -173,7 +175,7 @@ def register_tools(
             "setup). Read-only; no side effects."
         ),
     )
-    @guarded
+    @guarded("ros")
     @instrument(telemetry, "list_topics")
     def list_topics() -> list[TopicInfo]:
         return inspector.list_topics()
@@ -193,7 +195,7 @@ def register_tools(
             "CLI is available. Read-only; no side effects."
         ),
     )
-    @guarded
+    @guarded("ros")
     @instrument(telemetry, "get_topic_info")
     def get_topic_info(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
@@ -237,7 +239,7 @@ def register_tools(
             "which reads the raw DDS layer."
         ),
     )
-    @guarded
+    @guarded("ros")
     @instrument(telemetry, "sample_messages")
     def sample_messages(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
@@ -295,7 +297,7 @@ def register_tools(
             "mode only. Read-only; no side effects."
         ),
     )
-    @guarded
+    @guarded("ros")
     @instrument(telemetry, "analyze_bag")
     def analyze_bag(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
@@ -344,7 +346,7 @@ def register_tools(
             "fixtures."
         ),
     )
-    @guarded
+    @guarded("dds")
     @instrument(telemetry, "list_participants")
     def list_participants(
         domain_id: Annotated[
@@ -396,7 +398,7 @@ def register_tools(
             "DDS module is active; the mock backend returns fixtures."
         ),
     )
-    @guarded
+    @guarded("dds")
     @instrument(telemetry, "detect_qos_mismatches")
     def detect_qos_mismatches(
         topic: Annotated[
@@ -440,7 +442,7 @@ def register_tools(
             "active or the topic is not announced on the bus."
         ),
     )
-    @guarded
+    @guarded("dds")
     @instrument(telemetry, "peek_dds_samples")
     def peek_dds_samples(
         topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
@@ -485,7 +487,7 @@ def register_tools(
             "set `TOPICFORGE_DDS_BACKEND=cyclone|fast`)."
         ),
     )
-    @guarded
+    @guarded("dds")
     @instrument(telemetry, "participant_events")
     def participant_events(
         domain_id: Annotated[
@@ -538,7 +540,7 @@ def register_tools(
             "3 s for discovery to warm up."
         ),
     )
-    @guarded
+    @guarded("dds")
     @instrument(telemetry, "topic_metrics")
     def topic_metrics(
         topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
@@ -598,7 +600,7 @@ def register_tools(
             " in the bag, or `rosbags` is not installed."
         ),
     )
-    @guarded
+    @guarded(None)
     @instrument(telemetry, "peek_bag_samples")
     def peek_bag_samples(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
@@ -652,7 +654,7 @@ def register_tools(
             "DDS tools."
         ),
     )
-    @guarded
+    @guarded("dds")
     @instrument(telemetry, "list_endpoints")
     def list_endpoints(
         topic: Annotated[
