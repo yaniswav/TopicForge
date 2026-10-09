@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from topicforge.models.summaries import MessageSummary, TopicRate
+
 _CONFIG = ConfigDict(extra="forbid", frozen=True)
 
 _MODE_EFFECTIVE_DESC = (
@@ -969,6 +971,18 @@ class MessageSample(BaseModel):
             "dropped to keep tool output bounded."
         ),
     )
+    summary: MessageSummary | None = Field(
+        default=None,
+        description=(
+            "Condensed reading of this message, computed on the whole message even when "
+            "`payload` is cut at `max_array_length`: `laser_scan` (closest obstacle, sector "
+            "minima, finite/inf/nan counts), `odometry` (speed, position, yaw), `imu` "
+            "(roll, pitch, yaw, norms), `image` (size and encoding, never pixels) or "
+            "`point_cloud2` (point count and layout), told apart by `summary_type`. `null` "
+            "for any other message type, for DDS peeks, and for a scan whose arrays were "
+            "replaced by `arrays_summary_only`."
+        ),
+    )
 
 
 class BagTopicStats(BaseModel):
@@ -1118,6 +1132,16 @@ class SampleResult(BaseModel):
     )
     samples: list[MessageSample] = Field(
         description="The sampled messages, ordered as received from the backend."
+    )
+    rate: TopicRate | None = Field(
+        default=None,
+        description=(
+            "How the topic delivered these messages (frequency, interval spread, trailing gap) "
+            "and a verdict, computed from all messages collected, also those dropped for size. "
+            "`sample_messages` and `peek_bag_samples` only; `null` for `peek_dds_samples` and "
+            "for a result that holds no timing (a mock sample set without arrival times). "
+            "Collect at least 10 messages (`count` >= 10) for a meaningful verdict."
+        ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     note: str | None = Field(

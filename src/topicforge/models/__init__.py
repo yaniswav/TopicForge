@@ -27,6 +27,15 @@ from topicforge.models.schemas import (
     TopicMetrics,
     TopicSummary,
 )
+from topicforge.models.summaries import (
+    ImageSummary,
+    ImuSummary,
+    LaserScanSummary,
+    MessageSummary,
+    OdometrySummary,
+    PointCloud2Summary,
+    TopicRate,
+)
 
 __all__ = [
     "BagAnalysis",
@@ -35,15 +44,21 @@ __all__ = [
     "EndpointInfo",
     "EndpointListing",
     "HealthReport",
+    "ImageSummary",
+    "ImuSummary",
+    "LaserScanSummary",
     "MatchedPair",
     "MessageSample",
+    "MessageSummary",
     "MismatchReport",
     "MismatchScan",
     "NotMatchedPair",
+    "OdometrySummary",
     "ParticipantEvent",
     "ParticipantEventListing",
     "ParticipantInfo",
     "ParticipantListing",
+    "PointCloud2Summary",
     "PolicyMismatch",
     "QosProfile",
     "SampleResult",
@@ -53,5 +68,6 @@ __all__ = [
     "TopicListItem",
     "TopicListing",
     "TopicMetrics",
+    "TopicRate",
     "TopicSummary",
 ]
