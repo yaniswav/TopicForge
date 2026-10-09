@@ -222,8 +222,8 @@ def format_guid(raw: bytes | tuple[int, ...] | str | None) -> str:
 
 DDS_ONLY_ERROR_MSG = (
     "This adapter serves DDS observability only: it cannot run the ROS2 "
-    "graph tools (list_topics, get_topic_info, sample_messages, analyze_bag, "
-    "peek_bag_samples). To get both surfaces in one process: install ROS2 "
+    "graph tools (list_topics, get_topic_info, list_nodes, get_node_info, "
+    "sample_messages, analyze_bag, peek_bag_samples). To get both surfaces in one process: install ROS2 "
     "and source the workspace so `ros2` is on PATH, then re-run with "
     "TOPICFORGE_MODE=live: the composite adapter routes ROS2 tools to "
     "the CLI and DDS tools to your TOPICFORGE_DDS_BACKEND automatically. "

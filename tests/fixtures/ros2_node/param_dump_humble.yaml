@@ -1,0 +1,12 @@
+/nav_planner:
+  ros__parameters:
+    goal_tolerance: 0.25
+    planner_plugins:
+    - GridBased
+    qos_overrides:
+      /scan:
+        subscription:
+          depth: 5
+          reliability: best_effort
+    start_type_description_service: true
+    use_sim_time: false

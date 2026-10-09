@@ -10,7 +10,10 @@ rm -rf "$BAG"
 echo "bench: ROS_DISTRO=${ROS_DISTRO} RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-default}"
 python3 "$HERE/publisher.py" > /bench/publisher.log 2>&1 &
 PUB_PID=$!
-trap 'kill $PUB_PID 2>/dev/null' EXIT
+# A node with a stuck executor, for the `get_node_info` timeout test.
+python3 "$HERE/blocked_node.py" > /bench/blocked.log 2>&1 &
+BLOCKED_PID=$!
+trap 'kill $PUB_PID $BLOCKED_PID 2>/dev/null' EXIT
 
 for _ in $(seq 1 60); do
     ros2 topic list 2>/dev/null | grep -qx /scan && break
@@ -21,6 +24,11 @@ if ! ros2 topic list 2>/dev/null | grep -qx /scan; then
     cat /bench/publisher.log
     exit 2
 fi
+
+for _ in $(seq 1 30); do
+    ros2 node list 2>/dev/null | grep -qx /bench_blocked && break
+    sleep 0.5
+done
 
 echo "bench: recording bag (8 s)"
 # `ros2 bag record` has no --duration on Humble: stop it with SIGINT.

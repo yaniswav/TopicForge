@@ -51,9 +51,9 @@ Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
 the DDS adapters or in `adapters/common`.
 
-**The single exception (from 0.7.0, with `get_node_info`; planned, not available yet).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no service call, no parameter set, no lifecycle transition, no action goal.
+**The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no service call, no parameter set, no lifecycle transition, no action goal.
 
-**Declaration.** All twelve tools carry MCP `ToolAnnotations`:
+**Declaration.** All fourteen tools carry MCP `ToolAnnotations`:
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, a
 `title`, and an honest `openWorldHint` (true for tools that observe a
 live ROS 2 graph or DDS bus, false for `health_check`, `analyze_bag` and
@@ -66,10 +66,10 @@ architecture.
 
 **Proof.** `tests/test_tool_annotations.py` builds the app in mock mode,
 lists the tools through the MCP layer as a client would, and fails if the
-tool count is not twelve, if any tool lacks annotations, is not read-only,
+tool count is not fourteen, if any tool lacks annotations, is not read-only,
 non-destructive and idempotent, has no title or a non-boolean
 `openWorldHint`, or if the set of closed-world tools differs from the
-three above. Adding a thirteenth tool without annotations fails the suite.
+three above. Adding a fifteenth tool without annotations fails the suite.
 
 **What read-only does not mean: not perfectly passive.**
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
-from topicforge.adapters.ros2_mock import fixtures
+from topicforge.adapters.ros2_mock import fixtures, node_fixtures
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_SAMPLE_TIMEOUT_S,
@@ -15,6 +15,8 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -49,6 +51,13 @@ class MockAdapter:
             if t.name == topic:
                 return t
         raise AdapterError(f"Unknown topic: {topic!r}")
+
+    def list_nodes(self) -> NodeListing:
+        return node_fixtures.mock_node_listing()
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
+        # Mock parameters are read instantly, so `timeout_s` does not apply.
+        return node_fixtures.mock_node_info(node)
 
     def sample_messages(
         self,

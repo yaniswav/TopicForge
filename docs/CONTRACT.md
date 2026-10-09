@@ -21,6 +21,7 @@ Sections:
 5. Reserved multimodal exception
 6. Change policy and tests
 7. 0.7.0 migration list
+8. Node tools
 
 ## 1. Principles
 
@@ -171,7 +172,7 @@ The 45 s are wall time from the request to the response, lock wait included. The
 enforces it (`topicforge.tools.guard`, with `topicforge.budget` passing the deadline down):
 
 - Calls run in two lanes with one lock each: ROS (`list_topics`, `get_topic_info`,
-  `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
+  `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
   `participant_events`, `topic_metrics`, `list_endpoints`).
   `health_check` never takes a lock and never runs the `ros2` CLI; `peek_bag_samples` reads
   a file in pure Python and takes none either.
@@ -466,7 +467,7 @@ audit found, and section 7.8 collects what G0 added.
 
 ### 7.1 Tools that return a bare list today
 
-Exactly three of the twelve tools (the others already return an object):
+Exactly three of the twelve tools of 0.6.4 (the others already return an object):
 
 | Tool | Today | From 0.7.0 |
 | --- | --- | --- |
@@ -587,9 +588,45 @@ Everything below goes into the migration list and into `docs/MIGRATION.md`.
   (section 4).
 - `TopicInfo` gains `publisher_nodes` and `subscriber_nodes` (3.3).
 - `list_nodes` (tool 13) is limited to one `ros2 node list` call: names, namespaces and
-  duplicates. Per-node interfaces stay in `get_node_info`. Parameter reads (list/get) are
-  the only request TopicForge ever sends.
+  duplicates. Per-node interfaces stay in `get_node_info` (tool 14). Parameter reads
+  (list/get) are the only request TopicForge ever sends. Both are implemented (M9), in the
+  ROS lane, and are additive: see section 8.
 - External callers to update with the renames: `examples/dds/harness.py`,
   `scripts/integration/interop_check.py` (and the kit's `compare.py`).
 - Pending description fix (E13, for M7): the description of `SampleResult.count` has a
   duplicated "the" and contradicts itself on the maximum of 50.
+
+## 8. Node tools
+
+Tools 13 and 14, implemented in M9. Both are additive, run in the ROS lane and are open-world.
+
+`list_nodes` returns `NodeListing {nodes, returned, total, truncated, duplicates,
+mode_effective, note}` from one `ros2 node list` call. A node is `{name, namespace,
+full_name, duplicate_count}`; `nodes` holds one entry per distinct full name and `duplicates`
+the full names with `duplicate_count` above 1. Nodes whose name starts with an underscore
+are hidden by the CLI and are not listed.
+
+`get_node_info(node, timeout_s)` returns `NodeInfo {full_name, publishers, subscribers,
+service_servers, service_clients, action_servers, action_clients, parameters, parameters_note,
+use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. An interface is
+`{name, type}`. It makes up to three CLI calls: `ros2 node list` (the node must exist,
+duplicates are counted), `ros2 node info` (a graph query that never waits for the node) and
+`ros2 param dump` bounded by `timeout_s` (1..20, default 8) and by what is left of the 45 s.
+
+Rules:
+
+- `parameters` is `null` only with a `parameters_note` (1.3): the node did not answer in time
+  (a diagnosis, its executor is probably blocked, not an error), it offers no parameter
+  service, or the dump was unreadable or over 1 MiB. The interfaces are returned anyway.
+- `use_sim_time` is a boolean read from the parameters, else `null` with `use_sim_time_note`.
+- A parameter is `{name, value, masked, truncated, original_size}`; names are dotted and
+  sorted. A name containing password, secret, token, api_key or credential (any case) has its
+  value replaced by `<masked>`. A string over 2048 characters or a list over 128 elements is
+  cut and flagged `truncated`; `parameters_note` says how many were masked or cut.
+- Non-finite floats are the strings `inf`, `-inf` and `nan` (2.1).
+- The command is `ros2 param dump <node>` with no output option: it prints YAML on stdout and
+  nothing is written to disk. The only request TopicForge ever sends to a node is a parameter
+  read (list/get).
+- A name used by several nodes is flagged: `duplicate_count` above 1 and a `note`, because the
+  CLI answers for one of them without saying which.
+- An unknown node is an `isError` result naming close matches (1.6).

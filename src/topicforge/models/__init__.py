@@ -1,5 +1,12 @@
 """Pydantic schemas: the contract between TopicForge and MCP clients."""
 
+from topicforge.models.nodes import (
+    NodeInfo,
+    NodeInterface,
+    NodeListing,
+    NodeListItem,
+    NodeParameter,
+)
 from topicforge.models.schemas import (
     BagAnalysis,
     BagTopicStats,
@@ -52,6 +59,11 @@ __all__ = [
     "MessageSummary",
     "MismatchReport",
     "MismatchScan",
+    "NodeInfo",
+    "NodeInterface",
+    "NodeListItem",
+    "NodeListing",
+    "NodeParameter",
     "NotMatchedPair",
     "OdometrySummary",
     "ParticipantEvent",

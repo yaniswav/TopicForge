@@ -22,14 +22,27 @@ from pathlib import Path
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common.bag_kind import classify_bag_topic
+from topicforge.adapters.common.nodes import (
+    build_node_info,
+    build_node_listing,
+    build_parameters,
+    offers_parameter_services,
+    unknown_node_error,
+)
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
+from topicforge.adapters.ros2_live.node_parsers import (
+    is_node_not_found,
+    parse_node_info,
+    parse_node_list,
+    parse_param_dump,
+)
 from topicforge.adapters.ros2_live.parsers import (
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
     side_nodes,
     summarize_side_qos,
 )
-from topicforge.adapters.ros2_live.process_runner import run_process
+from topicforge.adapters.ros2_live.process_runner import ProcessResult, run_process
 from topicforge.adapters.ros2_live.sample_extras import (
     WHOLE_ARRAY_STREAM_MAX_CHARS,
     decode_with_summary,
@@ -47,6 +60,9 @@ from topicforge.models import (
     EndpointListing,
     MessageSample,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
+    NodeParameter,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -68,6 +84,10 @@ _MIN_ECHO_SEC = 0.5
 # Time `sample_messages` keeps back from the call budget for stopping the CLI
 # (about 2 s) and decoding (until 1 s past the deadline).
 _STOP_RESERVE_SEC = 3.0
+# Longest `ros2 param dump` output kept (1 MiB): a robot description can be that large.
+_PARAM_DUMP_MAX_BYTES = 1024 * 1024
+# Time `get_node_info` keeps back from the call budget for killing a stuck `ros2 param`.
+_PARAM_STOP_RESERVE_SEC = 2.0
 # A `/clock` publisher hint older than this is reported as unknown.
 _CLOCK_HINT_TTL_SEC = 120.0
 
@@ -154,6 +174,86 @@ class Ros2CliAdapter:
         from topicforge.services.bag_service import BagService
 
         return BagService().peek_samples(path, topic, count)
+
+    def list_nodes(self) -> NodeListing:
+        """Nodes on the graph from one `ros2 node list` call: names, namespaces, duplicates."""
+        return build_node_listing(self._node_names(), self.effective_mode)
+
+    def get_node_info(self, node: str, timeout_s: float = _DEFAULT_TIMEOUT_SEC) -> NodeInfo:
+        """Interfaces and parameters of one node.
+
+        Three steps: `ros2 node list` (the node must exist; duplicates are counted),
+        `ros2 node info` (a graph query that never waits for the node), then
+        `ros2 param dump` bounded by `timeout_s` and the call budget. The dump prints
+        YAML on stdout and is never given an output option, so nothing is written to
+        disk. A node that does not answer in time yields `parameters` `None` with a
+        note: a diagnosis (its executor is probably blocked), not an error.
+        """
+        names = self._node_names()
+        if node not in names:
+            raise unknown_node_error(node, sorted(set(names)))
+        out = self._run([self._exe, "node", "info", node])
+        if is_node_not_found(out):
+            raise unknown_node_error(node, sorted(set(names)))
+        interfaces = parse_node_info(out)
+        if interfaces is None:
+            raise AdapterError(
+                f"Could not read the interfaces of node {node!r}: unrecognized "
+                "`ros2 node info` output."
+            )
+        parameters, parameters_note = None, None
+        if offers_parameter_services(node, interfaces["service_servers"]):
+            parameters, parameters_note = self._read_parameters(node, timeout_s)
+        else:
+            parameters_note = (
+                "The node does not offer parameter services (no "
+                f"{node}/list_parameters), so its parameters cannot be read."
+            )
+        return build_node_info(
+            node,
+            interfaces,
+            parameters=parameters,
+            parameters_note=parameters_note,
+            duplicate_count=names.count(node),
+            mode=self.effective_mode,
+        )
+
+    def _node_names(self) -> list[str]:
+        """Every node name `ros2 node list` prints, duplicates kept."""
+        return parse_node_list(self._run([self._exe, "node", "list"]))
+
+    def _read_parameters(
+        self, node: str, timeout_s: float
+    ) -> tuple[list[NodeParameter] | None, str | None]:
+        """`(parameters, note)` from `ros2 param dump <node>`; `(None, why)` when unreadable."""
+        wait = call_budget.clamp(timeout_s, _PARAM_STOP_RESERVE_SEC)
+        if wait <= 0:
+            return None, (
+                "No time was left in this call's budget to read the parameters (the call "
+                "waited for the ROS lock or for the graph queries): retry."
+            )
+        result, shown = self._exec(
+            [self._exe, "param", "dump", node],
+            wait,
+            max_output_bytes=_PARAM_DUMP_MAX_BYTES,
+        )
+        if result.timed_out:
+            return None, (
+                "The node announced its parameter services but did not answer within "
+                f"{shown:g} s: its executor is probably blocked."
+            )
+        if result.returncode != 0:
+            tail = [ln for ln in result.stderr.strip().splitlines() if ln][-1:]
+            return None, (
+                f"`ros2 param dump` failed (exit {result.returncode}): "
+                f"{tail[0] if tail else 'no stderr'}"
+            )
+        if result.truncated:
+            return None, "The parameter dump is larger than 1 MiB and was not read."
+        raw = parse_param_dump(result.stdout)
+        if raw is None:
+            return None, "`ros2 param dump` printed something that is not a parameter document."
+        return build_parameters(raw)
 
     def list_topics(self) -> list[TopicListItem]:
         """Topics with types and publisher/subscriber counts; QoS is not read here.
@@ -392,8 +492,18 @@ class Ros2CliAdapter:
             return (0, 0)
         return parse_pub_sub_counts(text)
 
-    def _run(self, cmd: list[str], timeout: float = _DEFAULT_TIMEOUT_SEC) -> str:
-        """Run a `ros2` command and return its stdout, within `timeout` or the call budget."""
+    def _exec(
+        self,
+        cmd: list[str],
+        timeout: float,
+        *,
+        max_output_bytes: int | None = None,
+    ) -> tuple[ProcessResult, float]:
+        """Run `cmd` within `timeout` or the call budget; `(result, seconds allowed)`.
+
+        Raises only when the process cannot start. A deadline or a non-zero exit is
+        left in the result for the caller to read.
+        """
         # Resolve to a full path so Windows .cmd/.bat shims work without shell=True.
         resolved = shutil.which(cmd[0]) if cmd[0] == self._exe else cmd[0]
         if resolved is None:
@@ -405,9 +515,10 @@ class Ros2CliAdapter:
         log.debug("ros2 cmd: %s", " ".join(full_cmd))
         shown = timeout if effective >= timeout else round(effective, 1)
         if effective <= 0:
-            raise AdapterError(f"`{' '.join(cmd)}` timed out after {shown}s")
+            return ProcessResult(None, "", "", timed_out=True, truncated=False), shown
+        options = {} if max_output_bytes is None else {"max_output_bytes": max_output_bytes}
         try:
-            result = run_process(full_cmd, deadline_s=effective)
+            result = run_process(full_cmd, deadline_s=effective, **options)
         except FileNotFoundError as exc:
             raise AdapterError(
                 f"`{self._exe}` not found on PATH. Source your ROS2 setup file."
@@ -416,6 +527,11 @@ class Ros2CliAdapter:
             raise AdapterError(
                 f"could not start `{self._exe}`: {exc.strerror or type(exc).__name__}"
             ) from exc
+        return result, shown
+
+    def _run(self, cmd: list[str], timeout: float = _DEFAULT_TIMEOUT_SEC) -> str:
+        """Run a `ros2` command and return its stdout, within `timeout` or the call budget."""
+        result, shown = self._exec(cmd, timeout)
         if result.timed_out:
             raise AdapterError(f"`{' '.join(cmd)}` timed out after {shown}s")
 

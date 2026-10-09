@@ -97,6 +97,23 @@ Configuration and Python API:
 
 ### Added
 
+- Two tools, additive: `list_nodes` and `get_node_info` (the surface is now fourteen tools).
+  - `list_nodes` -> `NodeListing {nodes, returned, total, truncated, duplicates,
+    mode_effective, note}`: one `ros2 node list` call, names, namespaces and the full names used
+    by more than one node (`duplicate_count`).
+  - `get_node_info(node, timeout_s)` -> `NodeInfo`: publishers, subscribers, service servers and
+    clients, action servers and clients (each `{name, type}`) from `ros2 node info`, then the
+    parameters from `ros2 param dump` (YAML on stdout, never an output option, so nothing is
+    written to disk) and `use_sim_time`. `timeout_s` is 1..20, default 8. A node that does not
+    answer its parameter read in time gives `parameters` null and a `parameters_note` (its
+    executor is probably blocked): a finding, not an error. A value whose name contains
+    password, secret, token, api_key or credential is masked; a value over 2048 characters or
+    128 list elements (a robot description) is cut and flagged; the dump is capped at 1 MiB.
+    A name used by several nodes is flagged in `duplicate_count` and `note`. An unknown node
+    raises an error that lists close matches.
+  - Both run the `ros2` CLI in the ROS lane; DDS-only setups raise a clear error. The only
+    request TopicForge ever sends to a node is a parameter read (SECURITY.md).
+  - The `inspect-ros2-robot` prompt and plugin skill gain the node step.
 - Per-type message summaries and an observed rate with a verdict on `sample_messages` and
   `peek_bag_samples` (additive; no new input, no new tool).
   - `MessageSample.summary`: `laser_scan` (beam count, angle geometry, finite / `inf` /

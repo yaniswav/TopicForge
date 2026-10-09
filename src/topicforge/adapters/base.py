@@ -14,6 +14,8 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -96,6 +98,10 @@ class MiddlewareAdapter(Protocol):
     ) -> SampleResult: ...
 
     def analyze_bag(self, path: str) -> BagAnalysis: ...
+
+    def list_nodes(self) -> NodeListing: ...
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo: ...
 
     # DDS methods. The ROS2 CLI backend raises AdapterError when no DDS
     # backend is configured.

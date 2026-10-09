@@ -5,15 +5,17 @@ served in mock mode. Do not edit by hand: `tests/test_contract_snapshots.py`
 fails when this file is out of date. The rules behind the shapes are in
 [CONTRACT.md](CONTRACT.md).
 
-12 tools, all read-only.
+14 tools, all read-only.
 
 | Tool | Title | World |
 | --- | --- | --- |
 | [`analyze_bag`](#analyze_bag) | Analyze bag | closed |
 | [`detect_qos_mismatches`](#detect_qos_mismatches) | Detect QoS mismatches | open |
+| [`get_node_info`](#get_node_info) | Get node info | open |
 | [`get_topic_info`](#get_topic_info) | Get topic info | open |
 | [`health_check`](#health_check) | Health check | closed |
 | [`list_endpoints`](#list_endpoints) | List DDS endpoints | open |
+| [`list_nodes`](#list_nodes) | List ROS 2 nodes | open |
 | [`list_participants`](#list_participants) | List DDS participants | open |
 | [`list_topics`](#list_topics) | List ROS 2 topics | open |
 | [`participant_events`](#participant_events) | DDS participant events | open |
@@ -80,6 +82,40 @@ Explain why DDS readers and writers on the same topic do not talk, and who will.
 | `topics_scanned` | `int` | yes | Topics that had at least one endpoint in scope. |
 | `policies_checked` | `list[str]` | yes | Policies compared on every pair. |
 | `policies_unchecked` | `list[str]` | yes | Policies and facts this scan does not cover, each with a one-line reason. A clean result says nothing about them. |
+| `mode_effective` | `"mock" \| "live"` | yes | Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`. |
+| `note` | `str \| null` | no | One sentence of context for the result. `None` means nothing to add. |
+
+## `get_node_info`
+
+**Get node info**
+
+Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
+
+ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Returns a `NodeInfo` `{full_name, publishers, subscribers, service_servers, service_clients, action_servers, action_clients, parameters, parameters_note, use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. The interfaces come from the graph (`ros2 node info`), which never waits for the node. The parameters come from a parameter read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null` and `parameters_note` says its executor is probably blocked, while the interfaces are still returned. Parameters are sorted; a value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` (`masked` true) and a long value such as a robot description is cut (`truncated` true, `original_size`), both said in `parameters_note`. `use_sim_time` is `null` with a `use_sim_time_note` when it cannot be read. If several nodes share the name, `duplicate_count` is above 1 and `note` warns that the answer belongs to one of them. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or no `ros2` CLI is available. **Read-only**: the only request TopicForge ever sends to a node is a parameter read (list/get); it sets nothing and calls nothing else. **Mock mode** returns the fictional demo robot's nodes, instantly. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. It makes up to three CLI calls (node list and node info, 8 s each at most, then the parameter read, at most `timeout_s`, 20 s), and the whole call, lock wait included, ends within 45 s: if another `ros2` call keeps the lock it fails at once with a `busy` error (retry), and a call that waited has that much less time for the parameter read.
+
+### Input parameters
+
+| Name | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `node` | `str` | yes | - | - | Fully qualified ROS 2 node name, e.g. `/lidar_driver` or `/robot1/lidar_driver` (as `list_nodes` gives it; a missing leading `/` is added). Each `/`-separated segment must start with a letter or underscore and contain only letters, digits and underscores. |
+| `timeout_s` | `float` | no | `8.0` | >= 1.0, <= 20.0 | Seconds to wait for the node to answer its parameter read, 1..20, default 8. The graph queries before it have their own limit of 8 s each. A node that does not answer in time is reported in `parameters_note`, not as an error. |
+
+### Output (top-level fields)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `full_name` | `str` | yes | Fully qualified node name, e.g. `/lidar_driver`. |
+| `publishers` | `list[NodeInterface]` | yes | Topics the node publishes. |
+| `subscribers` | `list[NodeInterface]` | yes | Topics the node subscribes to. |
+| `service_servers` | `list[NodeInterface]` | yes | Services the node offers, its own parameter services included. |
+| `service_clients` | `list[NodeInterface]` | yes | Services the node calls. |
+| `action_servers` | `list[NodeInterface]` | yes | Actions the node serves. |
+| `action_clients` | `list[NodeInterface]` | yes | Actions the node calls. |
+| `parameters` | `list[NodeParameter] \| null` | no | Parameters of the node, sorted by name. `None` when they could not be read: see `parameters_note`. An empty list means the node answered and has no parameter. |
+| `parameters_note` | `str \| null` | no | Why `parameters` is `None` (the node did not answer in time, or offers no parameter service), or what was masked or cut when it is set. `None` when the list is complete. |
+| `use_sim_time` | `bool \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
+| `use_sim_time_note` | `str \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
+| `duplicate_count` | `int` | yes | How many nodes on the graph use this exact full name. More than 1 means the interfaces and parameters above belong to one of them, unidentified. |
 | `mode_effective` | `"mock" \| "live"` | yes | Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`. |
 | `note` | `str \| null` | no | One sentence of context for the result. `None` means nothing to add. |
 
@@ -196,6 +232,30 @@ List every DDS endpoint (writer and reader) announced on the bus, one `EndpointI
 | `hints` | `list[str]` | no | Facts that apply to every endpoint of the listing, stated once, for example that liveness is not observed. |
 | `note` | `str \| null` | no | Hint when a `topic` filter matched nothing: names the closest known topics. |
 | `mode_effective` | `"mock" \| "live"` | yes | Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`. |
+
+## `list_nodes`
+
+**List ROS 2 nodes**
+
+Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
+
+ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the current ROS 2 graph (or the mock graph in mock mode) from one `ros2 node list` call. Returns a `NodeListing` `{nodes, returned, total, truncated, duplicates, mode_effective, note}`: each node has `name`, `namespace`, `full_name` and `duplicate_count`. `duplicates` lists the full names used by more than one node (the ROS 2 CLI answers for one of them without saying which, so any per-node tool is ambiguous there). Nodes whose name starts with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has no node. Call `get_node_info` for the topics, services and parameters of one node. **Raises an MCP error** when no `ros2` CLI is available (DDS-only setup). Read-only; no side effects. It is cheap: one CLI call. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps the lock it fails at once with a `busy` error (retry).
+
+### Input parameters
+
+None.
+
+### Output (top-level fields)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `nodes` | `list[NodeListItem]` | yes | Nodes on the graph, one entry per distinct full name, sorted by name. |
+| `returned` | `int` | yes | Length of `nodes`. |
+| `total` | `int` | yes | Distinct node names on the graph (no cap applies). |
+| `truncated` | `bool` | yes | True when `returned` is less than `total` because of a cap. |
+| `duplicates` | `list[str]` | yes | Full names that appear more than once on the graph. Empty when every name is unique. |
+| `mode_effective` | `"mock" \| "live"` | yes | Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`. |
+| `note` | `str \| null` | no | One sentence of context for the result. `None` means nothing to add. |
 
 ## `list_participants`
 

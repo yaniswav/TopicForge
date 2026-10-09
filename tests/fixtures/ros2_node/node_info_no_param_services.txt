@@ -1,0 +1,13 @@
+/legacy_bridge
+  Subscribers:
+
+  Publishers:
+    /rosout: rcl_interfaces/msg/Log
+  Service Servers:
+
+  Service Clients:
+
+  Action Servers:
+
+  Action Clients:
+

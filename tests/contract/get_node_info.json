@@ -1,0 +1,260 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Get node info"
+  },
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Returns a `NodeInfo` `{full_name, publishers, subscribers, service_servers, service_clients, action_servers, action_clients, parameters, parameters_note, use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. The interfaces come from the graph (`ros2 node info`), which never waits for the node. The parameters come from a parameter read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null` and `parameters_note` says its executor is probably blocked, while the interfaces are still returned. Parameters are sorted; a value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` (`masked` true) and a long value such as a robot description is cut (`truncated` true, `original_size`), both said in `parameters_note`. `use_sim_time` is `null` with a `use_sim_time_note` when it cannot be read. If several nodes share the name, `duplicate_count` is above 1 and `note` warns that the answer belongs to one of them. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or no `ros2` CLI is available. **Read-only**: the only request TopicForge ever sends to a node is a parameter read (list/get); it sets nothing and calls nothing else. **Mock mode** returns the fictional demo robot's nodes, instantly. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. It makes up to three CLI calls (node list and node info, 8 s each at most, then the parameter read, at most `timeout_s`, 20 s), and the whole call, lock wait included, ends within 45 s: if another `ros2` call keeps the lock it fails at once with a `busy` error (retry), and a call that waited has that much less time for the parameter read.",
+  "inputSchema": {
+    "properties": {
+      "node": {
+        "description": "Fully qualified ROS 2 node name, e.g. `/lidar_driver` or `/robot1/lidar_driver` (as `list_nodes` gives it; a missing leading `/` is added). Each `/`-separated segment must start with a letter or underscore and contain only letters, digits and underscores.",
+        "title": "Node",
+        "type": "string"
+      },
+      "timeout_s": {
+        "default": 8.0,
+        "description": "Seconds to wait for the node to answer its parameter read, 1..20, default 8. The graph queries before it have their own limit of 8 s each. A node that does not answer in time is reported in `parameters_note`, not as an error.",
+        "maximum": 20.0,
+        "minimum": 1.0,
+        "title": "Timeout S",
+        "type": "number"
+      }
+    },
+    "required": [
+      "node"
+    ],
+    "title": "get_node_infoArguments",
+    "type": "object"
+  },
+  "name": "get_node_info",
+  "outputSchema": {
+    "$defs": {
+      "JsonValue": {},
+      "NodeInterface": {
+        "additionalProperties": false,
+        "description": "One topic, service or action a node uses, with its type.",
+        "properties": {
+          "name": {
+            "description": "Fully qualified topic, service or action name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "description": "Interface type, e.g. `sensor_msgs/msg/LaserScan`, `std_srvs/srv/Empty` or `nav2_msgs/action/NavigateToPose`.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "NodeInterface",
+        "type": "object"
+      },
+      "NodeParameter": {
+        "additionalProperties": false,
+        "description": "One parameter of a node, as `ros2 param dump` printed it.",
+        "properties": {
+          "masked": {
+            "description": "True when the name looks like a secret (it contains password, secret, token, api_key or credential) and the value was replaced by `<masked>`.",
+            "title": "Masked",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Parameter name, with `.` between levels (`qos_overrides./scan.publisher.depth`).",
+            "title": "Name",
+            "type": "string"
+          },
+          "original_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Characters (string) or elements (list) the value had before the cut. `None` unless `truncated` is true.",
+            "title": "Original Size"
+          },
+          "truncated": {
+            "description": "True when `value` was cut because it was too long (an URDF, a long list).",
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/$defs/JsonValue",
+            "description": "Parameter value: boolean, integer, float, string or a list of those. A masked value is the string `<masked>`; a cut value holds its first elements or characters (see `truncated`)."
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "masked",
+          "truncated"
+        ],
+        "title": "NodeParameter",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Detail of one node: its interfaces, its parameters and `use_sim_time`.",
+    "properties": {
+      "action_clients": {
+        "description": "Actions the node calls.",
+        "items": {
+          "$ref": "#/$defs/NodeInterface"
+        },
+        "title": "Action Clients",
+        "type": "array"
+      },
+      "action_servers": {
+        "description": "Actions the node serves.",
+        "items": {
+          "$ref": "#/$defs/NodeInterface"
+        },
+        "title": "Action Servers",
+        "type": "array"
+      },
+      "duplicate_count": {
+        "description": "How many nodes on the graph use this exact full name. More than 1 means the interfaces and parameters above belong to one of them, unidentified.",
+        "minimum": 1,
+        "title": "Duplicate Count",
+        "type": "integer"
+      },
+      "full_name": {
+        "description": "Fully qualified node name, e.g. `/lidar_driver`.",
+        "title": "Full Name",
+        "type": "string"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "parameters": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/NodeParameter"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Parameters of the node, sorted by name. `None` when they could not be read: see `parameters_note`. An empty list means the node answered and has no parameter.",
+        "title": "Parameters"
+      },
+      "parameters_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why `parameters` is `None` (the node did not answer in time, or offers no parameter service), or what was masked or cut when it is set. `None` when the list is complete.",
+        "title": "Parameters Note"
+      },
+      "publishers": {
+        "description": "Topics the node publishes.",
+        "items": {
+          "$ref": "#/$defs/NodeInterface"
+        },
+        "title": "Publishers",
+        "type": "array"
+      },
+      "service_clients": {
+        "description": "Services the node calls.",
+        "items": {
+          "$ref": "#/$defs/NodeInterface"
+        },
+        "title": "Service Clients",
+        "type": "array"
+      },
+      "service_servers": {
+        "description": "Services the node offers, its own parameter services included.",
+        "items": {
+          "$ref": "#/$defs/NodeInterface"
+        },
+        "title": "Service Servers",
+        "type": "array"
+      },
+      "subscribers": {
+        "description": "Topics the node subscribes to.",
+        "items": {
+          "$ref": "#/$defs/NodeInterface"
+        },
+        "title": "Subscribers",
+        "type": "array"
+      },
+      "use_sim_time": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`.",
+        "title": "Use Sim Time"
+      },
+      "use_sim_time_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why `use_sim_time` is `None`. `None` when it is set.",
+        "title": "Use Sim Time Note"
+      }
+    },
+    "required": [
+      "full_name",
+      "publishers",
+      "subscribers",
+      "service_servers",
+      "service_clients",
+      "action_servers",
+      "action_clients",
+      "duplicate_count",
+      "mode_effective"
+    ],
+    "title": "NodeInfo",
+    "type": "object"
+  },
+  "title": "Get node info"
+}

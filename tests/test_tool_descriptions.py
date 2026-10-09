@@ -31,8 +31,17 @@ LOCKED_TOOLS = {
     "participant_events",
     "topic_metrics",
     "list_endpoints",
+    "list_nodes",
+    "get_node_info",
 }
-ROS_TOOLS = {"list_topics", "get_topic_info", "sample_messages", "analyze_bag"}
+ROS_TOOLS = {
+    "list_topics",
+    "get_topic_info",
+    "sample_messages",
+    "analyze_bag",
+    "list_nodes",
+    "get_node_info",
+}
 
 
 @pytest.fixture(scope="module")
