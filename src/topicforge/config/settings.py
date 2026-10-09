@@ -17,21 +17,16 @@ from topicforge.constants import DEFAULT_MAX_SAMPLE_BYTES
 Mode = Literal["mock", "live", "auto"]
 ResolvedMode = Literal["mock", "live"]
 
-DdsBackend = Literal["mock", "cyclone", "fast", "opendds", "dust", "auto"]
-ResolvedDdsBackend = Literal["mock", "cyclone", "fast", "opendds", "dust"]
+DdsBackend = Literal["mock", "cyclone", "fast", "auto"]
+ResolvedDdsBackend = Literal["mock", "cyclone", "fast"]
 
 _VALID_MODES: tuple[Mode, ...] = ("mock", "live", "auto")
-_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = (
-    "mock",
-    "cyclone",
-    "fast",
-    "opendds",
-    "dust",
-    "auto",
+_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "fast", "auto")
+# Identifiers that older releases accepted but that never served. They get a hint
+# so an existing deployment learns what to use instead.
+_RETIRED_DDS_BACKENDS: frozenset[str] = frozenset(
+    {"rti", "opensplice", "coredx", "intercom", "opendds", "dust"}
 )
-# Vendor identifiers of the retired Pro tier. They get a dedicated error so an
-# existing deployment learns why its configuration stopped working.
-_REMOVED_DDS_BACKENDS: frozenset[str] = frozenset({"rti", "opensplice", "coredx", "intercom"})
 _VALID_LOG_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Telemetry is opt-in: only the on-values enable it, and unknown values raise.
 _TELEMETRY_ON_VALUES: frozenset[str] = frozenset({"on", "1", "true", "yes", "enabled"})
@@ -44,16 +39,12 @@ _MAX_SAMPLE_BYTES_MAX = 64 * 1024 * 1024
 
 # Vendor -> Python module, shared by `auto` resolution and `HealthService`.
 DDS_BACKEND_MODULES: dict[str, str] = {
-    "opendds": "pyopendds",
     "fast": "fastdds",
     "cyclone": "cyclonedds",
-    "dust": "dust_dds_python",
 }
 
 # Priority for `dds_backend == "auto"`: the first importable module wins, else
-# mock. Only backends with a working adapter belong here: `opendds` and `dust`
-# are stubs, and `pyopendds` is on PyPI, so listing it would pick the stub and
-# never try Cyclone. They stay selectable explicitly.
+# mock. Only backends with a working adapter belong here.
 _DDS_AUTO_DETECT_ORDER: tuple[str, ...] = ("fast", "cyclone")
 
 
@@ -143,16 +134,16 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
         )
 
     raw_dds_backend = src.get("TOPICFORGE_DDS_BACKEND", "mock").strip().lower()
-    if raw_dds_backend in _REMOVED_DDS_BACKENDS:
-        raise ValueError(
-            f"TOPICFORGE_DDS_BACKEND={raw_dds_backend!r} was removed in 0.5.3; expected one of "
-            f"{_VALID_DDS_BACKENDS}. Use `cyclone`: it sees RTI, CoreDX and OpenSplice "
-            "participants through standard RTPS discovery (not yet observed by the author)."
-        )
     if raw_dds_backend not in _VALID_DDS_BACKENDS:
+        hint = ""
+        if raw_dds_backend in _RETIRED_DDS_BACKENDS:
+            hint = (
+                " Use `cyclone`: through standard RTPS discovery it already sees participants "
+                "of every conformant vendor (RTI, OpenDDS, CoreDX, OpenSplice, Dust)."
+            )
         raise ValueError(
             f"Invalid TOPICFORGE_DDS_BACKEND={raw_dds_backend!r}; "
-            f"expected one of {_VALID_DDS_BACKENDS}"
+            f"expected one of {_VALID_DDS_BACKENDS}.{hint}"
         )
 
     raw_dds_domain = src.get("TOPICFORGE_DDS_DOMAIN_ID", "0").strip()

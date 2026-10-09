@@ -57,7 +57,8 @@ def test_every_snapshot_is_ascii_and_names_its_tool(snap: ModuleType) -> None:
         raw = path.read_bytes()
         assert all(b < 128 for b in raw), f"{path.name} is not ASCII"
         assert b"\r" not in raw, f"{path.name} has CRLF line endings"
-        assert f'"name": "{path.stem}"' in raw.decode("ascii"), path.name
+        if not path.stem.startswith("_"):
+            assert f'"name": "{path.stem}"' in raw.decode("ascii"), path.name
 
 
 def test_tools_doc_is_up_to_date(snap: ModuleType, tools: list[dict]) -> None:
@@ -73,3 +74,10 @@ def test_a_changed_description_is_reported_as_a_diff(snap: ModuleType, tools: li
     assert len(problems) == 1
     assert "Extra sentence." in problems[0]
     assert problems[0].count("\n") > 2
+
+
+def test_prompts_and_instructions_match_the_snapshot(snap: ModuleType) -> None:
+    problems = snap.compare_prompts(snap.collect_prompts())
+    assert not problems, f"Regenerate with `{_REGEN}` and review the diff.\n\n" + "\n".join(
+        problems
+    )

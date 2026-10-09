@@ -27,12 +27,8 @@ AdapterName = Literal[
     "ros2_cli",
     "cyclone",
     "fast",
-    "opendds",
-    "dust",
     "ros2_cli+cyclone",
     "ros2_cli+fast",
-    "ros2_cli+opendds",
-    "ros2_cli+dust",
 ]
 """Implementation tag for the active adapter.
 
@@ -125,7 +121,3 @@ class MiddlewareAdapter(Protocol):
         include_departed: bool = False,
         include_internal: bool = False,
     ) -> EndpointListing: ...
-
-
-# Alias kept for external code that imports the old name.
-RosAdapter = MiddlewareAdapter

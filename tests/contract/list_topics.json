@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List ROS 2 topics"
   },
-  "description": "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List every ROS 2 topic on the current graph (or the mock graph in mock mode). Returns a `TopicListing` `{topics, returned, total, truncated, mode_effective, note}`: each topic carries `name`, `message_type`, `publisher_count` and `subscriber_count`, and `mode_effective` (`live` or `mock`) tells a real graph from fixtures. QoS is not in the listing: call `get_topic_info` for a topic's QoS. **Empty `topics`** when the graph has no topics or when live discovery times out. **Raises an MCP error** when no `ros2` CLI is available (DDS-only setup). Read-only; no side effects.",
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List every ROS 2 topic on the current graph (or the mock graph in mock mode). Returns a `TopicListing` `{topics, returned, total, truncated, mode_effective, note}`: each topic carries `name`, `message_type`, `publisher_count` and `subscriber_count`, and `mode_effective` (`live` or `mock`) tells a real graph from fixtures. QoS is not in the listing: call `get_topic_info` for a topic's QoS. **Empty `topics`** when the graph has no topics or when live discovery times out. **Raises an MCP error** when no `ros2` CLI is available (DDS-only setup). Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps the lock it fails at once with a `busy` error (retry).",
   "inputSchema": {
     "properties": {},
     "title": "list_topicsArguments",

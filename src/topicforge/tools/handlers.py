@@ -62,12 +62,10 @@ _DOMAIN_PARAM_DESC = (
 )
 
 _COUNT_PARAM_DESC = (
-    "Maximum number of recent messages to return. Defaults to 5; silently "
-    "clamped to 50 (the hard cap that keeps tool output bounded; read it "
-    "from `health_check.max_sample_count`). Negative values raise an error. "
-    "The returned `SampleResult.count` reflects the actual number of "
-    "samples produced: it can be lower than the request (empty topic, "
-    "timeout, mock fixture shorter than requested)."
+    "Maximum number of messages to return. Defaults to 5; at most 50 (read it "
+    "from `health_check.max_sample_count`), a larger request is capped to 50. "
+    "Negative values raise an error. The result's `count` is how many were "
+    "returned: fewer than requested when the topic has fewer samples to give."
 )
 
 _SAMPLE_COUNT_PARAM_DESC = (
@@ -115,6 +113,29 @@ _PATH_PARAM_DESC = (
     "any well-formed path)."
 )
 
+_ROS_LANE_NOTE = (
+    " **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. "
+    "The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps "
+    "the lock it fails at once with a `busy` error (retry)."
+)
+
+_DDS_LANE_NOTE = (
+    " **Duration**: uses the DDS binding behind the DDS lock, one DDS call at a time. "
+    "The whole call, lock wait included, ends within 45 s; if another DDS call keeps "
+    "the lock it fails at once with a `busy` error (retry)."
+)
+
+_NO_LOCK_NOTE = (
+    " **Duration**: never waits for a lock and never runs the `ros2` CLI, so it "
+    "answers at once even while another call is running."
+)
+
+_BAG_NOTE = (
+    " **Duration**: takes no lock (it reads the file in-process, so it can run "
+    "while a ROS 2 or DDS call is busy); it stops after `count` samples, so the "
+    "time follows the bag's size and how far into it the first samples are."
+)
+
 
 def register_tools(
     mcp: MCPServer,
@@ -153,7 +174,7 @@ def register_tools(
             "/ `tracker_errors` / `tracker_last_pass_ns` / `tracker_cache_evictions` "
             "(errors or evictions above 0, or a stale last pass, mean the "
             "discovery data has gaps). **Always succeeds**: call it first when "
-            "something looks wrong. Read-only; no side effects."
+            "something looks wrong. Read-only; no side effects." + _NO_LOCK_NOTE
         ),
     )
     @guarded(None)
@@ -174,7 +195,7 @@ def register_tools(
             "topic's QoS. **Empty `topics`** "
             "when the graph has no topics or when live discovery times out. "
             "**Raises an MCP error** when no `ros2` CLI is available (DDS-only "
-            "setup). Read-only; no side effects."
+            "setup). Read-only; no side effects." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -196,7 +217,7 @@ def register_tools(
             "`publisher_nodes` / `subscriber_nodes` (fully qualified node names). "
             "**Raises an MCP error** if the topic name is "
             "malformed, the topic is unknown to the active graph, or no `ros2` "
-            "CLI is available. Read-only; no side effects."
+            "CLI is available. Read-only; no side effects." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -241,6 +262,11 @@ def register_tools(
             "`ros2` CLI is available, the topic is unknown, or the CLI fails. "
             "Read-only; never publishes. Distinct from `peek_dds_samples`, "
             "which reads the raw DDS layer."
+            " **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at "
+            "a time. It returns within `timeout_s` (at most 40) plus about 3 s to stop "
+            "the CLI and decode, and the whole call, lock wait included, ends within 45 s: "
+            "a call that cannot get the lock fails at once with a `busy` error (retry), and "
+            "one that waited for the lock has that much less time to collect messages."
         ),
     )
     @guarded("ros")
@@ -298,7 +324,7 @@ def register_tools(
             "MCP error** if the path"
             " is malformed, missing in live mode, or unparseable, or if no "
             "`ros2` CLI is available. Anomaly detection is available in mock "
-            "mode only. Read-only; no side effects."
+            "mode only. Read-only; no side effects." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -348,7 +374,7 @@ def register_tools(
             "alter the bus. **Raises an MCP error** when no DDS module is "
             "active (install `pip install topicforge[dds]` and set "
             "`TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend returns "
-            "fixtures."
+            "fixtures." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -400,7 +426,7 @@ def register_tools(
             "`late_joiner` is a VOLATILE writer whose reader joined later on "
             "the same host: normal, not a fault. "
             "**Read-only by architecture**. **Raises an MCP error** when no "
-            "DDS module is active; the mock backend returns fixtures."
+            "DDS module is active; the mock backend returns fixtures." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -444,7 +470,7 @@ def register_tools(
             "the bus raises an error. Right after server start the call waits "
             "up to 3 s for discovery to warm up. **Read-only by architecture**:"
             " it cannot publish. **Raises an MCP error** when no DDS module is "
-            "active or the topic is not announced on the bus."
+            "active or the topic is not announced on the bus." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -491,7 +517,7 @@ def register_tools(
             "after server start the call waits up to 3 s for discovery to warm "
             "up. **Read-only by architecture**. **Raises an MCP error** when no"
             " DDS module is active (install `pip install topicforge[dds]` and "
-            "set `TOPICFORGE_DDS_BACKEND=cyclone|fast`)."
+            "set `TOPICFORGE_DDS_BACKEND=cyclone|fast`)." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -544,7 +570,7 @@ def register_tools(
             "none announced one. **Read-only by architecture**. **Raises an MCP"
             " error** when no DDS module is active or `window_s` is out "
             "of range (1..3600). Right after server start the call waits up to "
-            "3 s for discovery to warm up."
+            "3 s for discovery to warm up." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -604,7 +630,7 @@ def register_tools(
             "cut and `note` lists the fields. **Read-only by "
             "architecture**: nothing writes to the bag file. **Raises an MCP "
             "error** when the bag path does not exist, the topic is not present"
-            " in the bag, or `rosbags` is not installed."
+            " in the bag, or `rosbags` is not installed." + _BAG_NOTE
         ),
     )
     @guarded(None)
@@ -663,7 +689,7 @@ def register_tools(
             "(`truncated`, `total`); `by_topic` still covers all "
             "matches. Read-only. **Raises an MCP error** when no DDS module "
             "is active. Mock mode returns a fixture matching the other mock "
-            "DDS tools."
+            "DDS tools." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")

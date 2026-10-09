@@ -21,7 +21,6 @@ participants when imported), so we stub them via monkeypatching.
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 import sys
 import types
@@ -279,53 +278,6 @@ def test_auto_mode_with_no_ros2_picks_mock(monkeypatch: pytest.MonkeyPatch) -> N
     )
     adapter = factory.build_adapter(settings)
     assert isinstance(adapter, MockAdapter)
-
-
-def test_dds_auto_with_pyopendds_importable_still_builds_cyclone(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """`pyopendds` exists on PyPI; the stub adapter must not shadow Cyclone."""
-    real_find_spec = importlib.util.find_spec
-    present = {"pyopendds", "cyclonedds"}
-
-    def fake_find_spec(name: str, *args: object, **kwargs: object) -> object | None:
-        if name in ("pyopendds", "cyclonedds", "fastdds", "dust_dds_python"):
-            return object() if name in present else None
-        return real_find_spec(name, *args, **kwargs)
-
-    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
-    _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", _FakeCyclone)
-    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: False)
-
-    adapter = factory.build_adapter(_live_settings(dds_backend="auto"))
-
-    assert isinstance(adapter, _FakeCyclone)
-
-
-# ---------------------------------------------------------------------------
-# Stub vendors: selectable explicitly, never serve
-# ---------------------------------------------------------------------------
-
-
-def test_opendds_backend_falls_back_to_ros2_cli_when_binding_absent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The OpenDdsAdapter stub reports unavailable and the factory falls back
-    to ROS2 CLI alone."""
-    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
-    settings = _live_settings(dds_backend="opendds")
-    adapter = factory.build_adapter(settings)
-    assert isinstance(adapter, Ros2CliAdapter)
-
-
-def test_dust_backend_falls_back_to_ros2_cli_when_binding_absent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Dust DDS stub always reports unavailable ; ROS2 CLI takes over."""
-    monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
-    settings = _live_settings(dds_backend="dust")
-    adapter = factory.build_adapter(settings)
-    assert isinstance(adapter, Ros2CliAdapter)
 
 
 # ---------------------------------------------------------------------------
