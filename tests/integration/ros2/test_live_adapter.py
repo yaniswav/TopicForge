@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -70,12 +71,13 @@ def test_get_topic_info_counts(adapter: Ros2CliAdapter) -> None:
 
 
 def test_get_topic_info_reports_qos_reliability(adapter: Ros2CliAdapter) -> None:
-    assert adapter.get_topic_info("/scan").qos_reliability == "reliable"
+    qos = adapter.get_topic_info("/scan").publisher_qos
+    assert qos is not None and qos.reliability == "reliable"
 
 
 def test_get_topic_info_reports_latched_durability(adapter: Ros2CliAdapter) -> None:
-    info = adapter.get_topic_info("/robot_description_lite")
-    assert info.qos_durability == "transient_local"
+    qos = adapter.get_topic_info("/robot_description_lite").publisher_qos
+    assert qos is not None and qos.durability == "transient_local"
 
 
 def test_get_topic_info_unknown_topic_raises(adapter: Ros2CliAdapter) -> None:
@@ -221,11 +223,13 @@ def bag() -> Path:
 
 def test_analyze_bag_summary(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.analyze_bag(str(bag))
-    assert result.duration_seconds == pytest.approx(8.0, abs=2.0)
+    # The recorder runs for about 8 s, but on a loaded runner it starts late, so the
+    # span varies; the /scan count must follow the span at 10 Hz.
+    assert 4.0 <= result.duration_s <= 10.0
     by_name = {t.name: t for t in result.topics}
     assert set(by_name) >= {"/clock", "/scan", "/cmd_vel_out", "/camera/image_raw"}
     assert by_name["/scan"].message_type == "sensor_msgs/msg/LaserScan"
-    assert 60 <= by_name["/scan"].message_count <= 100
+    assert by_name["/scan"].message_count == pytest.approx(result.duration_s * 10, rel=0.3)
     assert result.storage_format == ("sqlite3" if IS_HUMBLE else "mcap")
 
 
@@ -307,3 +311,141 @@ def test_health_reports_the_sim_clock_publisher(adapter: Ros2CliAdapter) -> None
         mode="live", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
     )
     assert HealthService(settings, adapter).report().sim_clock_published is True
+
+
+# ---- summaries and rate (bench publisher: /scan 10 Hz, /cmd_vel_out 5 Hz, edge 2 Hz) ----
+
+
+def test_scan_summary_reads_all_beams_while_the_payload_is_cut(adapter: Ros2CliAdapter) -> None:
+    sample = adapter.sample_messages("/scan", 1).samples[0]
+    assert len(_ranges(sample.payload)) == 128  # the default cut, as before
+    summary = sample.summary
+    assert summary is not None and summary.summary_type == "laser_scan"
+    assert summary.beam_count == N_BEAMS and summary.frame_id == "base_laser"
+    assert summary.finite_count == N_BEAMS and summary.inf_count == 0
+    # ranges are 1.0 + i * 0.001. Index 0 (bearing -135 deg) is inside the 128 beams that the
+    # payload keeps; the front sector minimum, at index 180, is past the cut.
+    assert summary.closest_obstacle is not None
+    assert summary.closest_obstacle.range == pytest.approx(1.0, abs=1e-4)
+    assert summary.closest_obstacle.beam_index == 0
+    front = summary.sectors.front.closest
+    assert front is not None and front.beam_index == 180
+    assert front.range == pytest.approx(1.18, abs=1e-4)
+    assert summary.sectors.rear.beam_count == 0  # the scan spans exactly +-135 degrees
+
+
+def test_scan_edge_summary_counts_nan_and_inf(adapter: Ros2CliAdapter) -> None:
+    sample = adapter.sample_messages("/scan_edge", 1).samples[0]
+    assert sample.payload["ranges"] == ["inf", "nan", "-inf", 1.5]
+    summary = sample.summary
+    assert summary is not None and summary.summary_type == "laser_scan"
+    assert (summary.finite_count, summary.inf_count) == (1, 1)
+    assert (summary.neg_inf_count, summary.nan_count) == (1, 1)
+    # The publisher sets no angle geometry: counts only, and the summary says so.
+    assert summary.closest_obstacle is None and summary.note is not None
+
+
+def test_image_summary_never_needs_the_pixels(adapter: Ros2CliAdapter) -> None:
+    summary = adapter.sample_messages("/camera/image_raw", 1).samples[0].summary
+    assert summary is not None and summary.summary_type == "image"
+    assert (summary.width, summary.height, summary.encoding) == (640, 480, "rgb8")
+    assert (summary.data_length, summary.data_length_basis) == (921600, "step_x_height")
+
+
+def test_scan_rate_is_close_to_the_publish_rate(adapter: Ros2CliAdapter) -> None:
+    rate = adapter.sample_messages("/scan", 20).rate
+    assert rate is not None and rate.basis == "received_ns" and rate.message_count == 20
+    assert rate.observed_frequency_hz == pytest.approx(10.0, rel=0.1)
+    # CONTRACT 4: STABLE_CV moves to 0.3 only if this fixed-rate publisher itself reads >= 0.2.
+    assert rate.verdict in ("stable", "jittery")
+    assert rate.interval_cv is not None and rate.interval_cv < 0.3
+    if rate.interval_cv >= 0.2:
+        warnings.warn(
+            f"measuring path cv {rate.interval_cv}: CONTRACT 4 says move STABLE_CV to 0.3",
+            stacklevel=1,
+        )
+    assert rate.trailing_gap_s is None  # stopped on count
+    # Sim time runs on the wall clock in the bench, so the two rates agree.
+    assert rate.sim_frequency_hz == pytest.approx(rate.observed_frequency_hz, rel=0.1)
+
+
+def test_twist_rate_is_stable_at_five_hertz(adapter: Ros2CliAdapter) -> None:
+    rate = adapter.sample_messages("/cmd_vel_out", 20).rate
+    assert rate is not None
+    assert rate.observed_frequency_hz == pytest.approx(5.0, rel=0.1)
+    assert rate.verdict == "stable"
+    assert rate.sim_frequency_hz is None  # a Twist has no stamp
+
+
+def test_slow_topic_stopped_by_the_deadline_has_a_trailing_gap(adapter: Ros2CliAdapter) -> None:
+    # The camera publishes at 2 Hz: 50 messages cannot arrive in 3 s.
+    rate = adapter.sample_messages("/camera/image_raw", 50, timeout_s=3).rate
+    assert rate is not None and rate.message_count < 50
+    if rate.message_count:  # the camera may not have started yet
+        assert rate.trailing_gap_s is not None and rate.trailing_gap_s < 1.5
+
+
+# ----- list_nodes / get_node_info -----
+
+
+def _param_dump_processes() -> list[str]:
+    """Command lines of running `ros2 param dump` processes (Linux `/proc`)."""
+    found = []
+    for cmdline in Path("/proc").glob("[0-9]*/cmdline"):
+        try:
+            text = cmdline.read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            continue
+        if "param dump" in text and "pytest" not in text:
+            found.append(text)
+    return found
+
+
+def test_list_nodes_sees_the_bench_nodes(adapter: Ros2CliAdapter) -> None:
+    listing = adapter.list_nodes()
+    names = {n.full_name for n in listing.nodes}
+    assert {"/bench_robot", "/bench_blocked"} <= names
+    robot = next(n for n in listing.nodes if n.full_name == "/bench_robot")
+    assert (robot.name, robot.namespace, robot.duplicate_count) == ("bench_robot", "/", 1)
+    assert listing.mode_effective == "live" and listing.duplicates == []
+
+
+def test_get_node_info_of_the_publisher(adapter: Ros2CliAdapter) -> None:
+    info = adapter.get_node_info("/bench_robot")
+    published = {i.name: i.type for i in info.publishers}
+    assert published["/scan"] == "sensor_msgs/msg/LaserScan"
+    assert published["/clock"] == "rosgraph_msgs/msg/Clock"
+    assert published["/cmd_vel_out"] == "geometry_msgs/msg/Twist"
+    assert any(s.name == "/bench_robot/list_parameters" for s in info.service_servers)
+    assert info.parameters is not None and info.parameters_note is None
+    assert info.use_sim_time is False and info.use_sim_time_note is None
+    assert info.duplicate_count == 1
+
+
+def test_get_node_info_unknown_node_lists_close_matches(adapter: Ros2CliAdapter) -> None:
+    with pytest.raises(AdapterError, match="/bench_robot"):
+        adapter.get_node_info("/bench_robo")
+
+
+def test_get_node_info_reports_a_blocked_executor_within_its_deadline(
+    adapter: Ros2CliAdapter,
+) -> None:
+    started = time.monotonic()
+    info = adapter.get_node_info("/bench_blocked", timeout_s=3)
+    elapsed = time.monotonic() - started
+    assert info.parameters is None
+    assert info.parameters_note is not None
+    assert "executor is probably blocked" in info.parameters_note
+    assert info.use_sim_time is None and info.use_sim_time_note
+    assert any(s.name == "/bench_blocked/list_parameters" for s in info.service_servers)
+    assert elapsed < 3 + 8 + 8  # two graph queries and the parameter read at most
+    assert not _param_dump_processes(), "the killed `ros2 param` left a process behind"
+
+
+def test_get_node_info_writes_no_file(
+    adapter: Ros2CliAdapter, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    adapter.list_nodes()
+    adapter.get_node_info("/bench_robot")
+    assert list(tmp_path.iterdir()) == []

@@ -55,9 +55,9 @@ def _strings(node: Any) -> list[str]:
 
 def test_no_tool_or_parameter_description_carries_internal_history() -> None:
     tools = asyncio.run(_app().list_tools())
-    assert len(tools) == 12
+    assert len(tools) == 14
     for tool in tools:
-        texts = [tool.description or "", *_strings(tool.inputSchema)]
+        texts = [tool.description or "", *_strings(tool.input_schema)]
         for text in texts:
             assert not _HISTORY.search(text), (tool.name, _HISTORY.search(text).group(0))
 
@@ -72,9 +72,9 @@ def test_ros_tools_say_ros2_only_and_point_to_list_endpoints() -> None:
 def test_domain_and_topic_params_are_explained_plainly() -> None:
     tools = {t.name: t for t in asyncio.run(_app().list_tools())}
     for name in ("list_participants", "participant_events", "topic_metrics", "list_endpoints"):
-        desc = tools[name].inputSchema["properties"]["domain_id"]["description"]
+        desc = tools[name].input_schema["properties"]["domain_id"]["description"]
         assert "does not switch domains" in desc
-    topic = tools["peek_dds_samples"].inputSchema["properties"]["topic"]["description"]
+    topic = tools["peek_dds_samples"].input_schema["properties"]["topic"]["description"]
     assert "`scan`" in topic and "`rt/scan`" in topic and "DCPSParticipant" in topic
 
 
@@ -103,7 +103,7 @@ def _endpoint(role: str, topic: str, deadline_ns: int | None) -> EndpointInfo:
         guid="g",
         role=role,  # type: ignore[arg-type]
         participant_guid="p",
-        topic=topic,
+        dds_topic=topic,
         qos=QosProfile(
             reliability="RELIABLE",
             durability="VOLATILE",
@@ -112,8 +112,6 @@ def _endpoint(role: str, topic: str, deadline_ns: int | None) -> EndpointInfo:
             deadline_ns=deadline_ns,
         ),
         is_observer=False,
-        domain_id=0,
-        mode_effective="live",
     )
 
 
@@ -151,9 +149,9 @@ def test_mock_participants_carry_the_new_fields() -> None:
 def test_mock_metrics_status_and_declared_rate() -> None:
     adapter = MockAdapter()
     busy = adapter.topic_metrics("/dds/heartbeat_10hz", 60, 0)
-    assert busy.status == "ok" and busy.frequency_hz_declared == 10.0
+    assert busy.status == "ok" and busy.declared_frequency_hz == 10.0
     empty = adapter.topic_metrics("/dds/never_seen", 60, 0)
-    assert empty.status == "no_samples_yet" and empty.frequency_hz_declared is None
+    assert empty.status == "no_samples_yet" and empty.declared_frequency_hz is None
 
 
 def _health(adapter: Any) -> Any:
@@ -173,7 +171,7 @@ class _Named:
 def test_health_reports_ros_tools_decoding_and_security() -> None:
     report = _health(MockAdapter())
     assert report.ros_tools_available is True
-    assert report.payload_decoding == "disabled" and report.payload_decoding_reason
+    assert report.payload_decoding == "disabled" and report.payload_decoding_note
     assert report.dds_security == "not_supported"
 
     dds_only = _health(_Named("cyclone"))
@@ -183,8 +181,7 @@ def test_health_reports_ros_tools_decoding_and_security() -> None:
 
 def test_health_check_tool_exposes_the_new_fields() -> None:
     result = asyncio.run(_app().call_tool("health_check", {}))
-    blocks = result[0] if isinstance(result, tuple) else result
-    payload = json.loads(blocks[0].text)
+    payload = json.loads(result.content[0].text)
     assert payload["ros_tools_available"] is True
     assert payload["dds_security"] == "not_supported"
 

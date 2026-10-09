@@ -5,7 +5,7 @@ description: Diagnose a DDS or ROS 2 bus with TopicForge when nodes do not talk,
 
 # Diagnose a DDS bus
 
-Use the TopicForge tools. They only observe discovery; nothing here publishes, commands or changes QoS. Never suggest doing that through TopicForge.
+Use the TopicForge tools (output contract 2: check `health_check.contract_version` is 2). The same procedure is available as the MCP prompt `diagnose-dds-bus`. They only observe discovery; nothing here publishes, commands or changes QoS. Never suggest doing that through TopicForge.
 
 ## Call order
 
@@ -13,7 +13,7 @@ Use the TopicForge tools. They only observe discovery; nothing here publishes, c
 2. `list_participants`. Is each expected node present, with the right `name`? A missing one may be on another domain or have crashed.
 3. `list_endpoints` with `topic` set to the failing topic (`scan` and `rt/scan` match each other). Check `by_topic`: `orphan` is `no_reader` or `no_writer`, and `departed_writers` / `departed_readers` name a peer that left.
 4. `detect_qos_mismatches` with the same `topic`.
-5. `participant_events` for crashes or restarts. Use a short `lookback_seconds`.
+5. `participant_events` for crashes or restarts. Use a short `lookback_s`.
 
 Stop as soon as one step explains the symptom.
 

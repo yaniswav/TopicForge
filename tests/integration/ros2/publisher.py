@@ -1,7 +1,8 @@
 """Publisher node that mimics a simulated 2D-lidar robot (runs inside the bench container).
 
 Everything is stamped with simulated time that starts at 0, and `/clock`
-is published by this same node.
+is published by this same node. The numbers it publishes come from `ground_truth.py`, which
+also writes the matching `ground_truth.json` when the node starts.
 """
 
 from __future__ import annotations
@@ -9,17 +10,16 @@ from __future__ import annotations
 import math
 import time
 
+import ground_truth as model
 import rclpy
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Twist
+from ground_truth import CAMERA_DELAY_SEC, N_BEAMS
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import String
-
-N_BEAMS = 541
-CAMERA_DELAY_SEC = 5.0
 
 
 def sim_time_msg(t: float) -> Time:
@@ -45,11 +45,11 @@ class BenchRobot(Node):
         self._desc_pub = self.create_publisher(String, "/robot_description_lite", latched)
 
         self._image_data = bytes(640 * 480 * 3)
-        self.create_timer(0.02, self._tick_clock)
-        self.create_timer(0.1, self._tick_scan)
-        self.create_timer(0.2, self._tick_twist)
-        self.create_timer(0.5, self._tick_image)
-        self.create_timer(0.5, self._tick_edge)
+        self.create_timer(model.CLOCK_PERIOD, self._tick_clock)
+        self.create_timer(model.SCAN_PERIOD, self._tick_scan)
+        self.create_timer(model.TWIST_PERIOD, self._tick_twist)
+        self.create_timer(model.IMAGE_PERIOD, self._tick_image)
+        self.create_timer(model.EDGE_PERIOD, self._tick_edge)
 
         desc = String()
         desc.data = "bench_robot: differential drive, 2D lidar"
@@ -66,15 +66,15 @@ class BenchRobot(Node):
     def _tick_scan(self) -> None:
         msg = LaserScan()
         msg.header.stamp = sim_time_msg(self._now())
-        msg.header.frame_id = "base_laser"
-        msg.angle_min = -0.75 * math.pi
-        msg.angle_max = 0.75 * math.pi
-        msg.angle_increment = 1.5 * math.pi / (N_BEAMS - 1)
+        msg.header.frame_id = model.SCAN_FRAME
+        msg.angle_min = model.ANGLE_MIN
+        msg.angle_max = -model.ANGLE_MIN
+        msg.angle_increment = model.ANGLE_INCREMENT
         msg.time_increment = 0.0
-        msg.scan_time = 0.1
-        msg.range_min = 0.05
-        msg.range_max = 30.0
-        msg.ranges = [1.0 + i * 0.001 for i in range(N_BEAMS)]
+        msg.scan_time = model.SCAN_TIME
+        msg.range_min = model.RANGE_MIN
+        msg.range_max = model.RANGE_MAX
+        msg.ranges = model.scan_ranges()
         msg.intensities = [float(i) for i in range(N_BEAMS)]
         self._scan_pub.publish(msg)
 
@@ -107,6 +107,7 @@ class BenchRobot(Node):
 
 
 def main() -> None:
+    model.write_truth()
     rclpy.init()
     node = BenchRobot()
     try:

@@ -174,14 +174,10 @@ def test_middleware_unavailable_without_dds_module() -> None:
 
 def _call_health_check(app: Any) -> dict[str, Any]:
     result = asyncio.run(app.call_tool("health_check", {}))
-    # FastMCP returns either (content, structured) or a content list
-    # depending on the SDK version.
-    if isinstance(result, tuple):
-        structured = result[1]
-        if isinstance(structured, dict):
-            return structured
-        result = result[0]
-    return json.loads(result[0].text)
+    # mcp 2.x returns a `CallToolResult`: structured output, with the JSON text as fallback.
+    if isinstance(result.structured_content, dict):
+        return result.structured_content
+    return json.loads(result.content[0].text)
 
 
 def test_live_without_ros2_reports_the_mock_that_was_built() -> None:
@@ -242,32 +238,67 @@ def test_sim_clock_hint_comes_from_the_adapter_and_never_breaks_health(
     assert HealthService(_settings(), adapter).report().sim_clock_published is expected
 
 
-def test_cli_adapter_reads_publisher_count_of_clock(monkeypatch: pytest.MonkeyPatch) -> None:
-    from topicforge.adapters.ros2_live import Ros2CliAdapter
-
-    adapter = Ros2CliAdapter()
-    outputs = {
-        "Type: rosgraph_msgs/msg/Clock\nPublisher count: 1\nSubscription count: 0\n": True,
-        "Type: rosgraph_msgs/msg/Clock\nPublisher count: 0\nSubscription count: 2\n": False,
-    }
-    for text, expected in outputs.items():
-        monkeypatch.setattr(adapter, "_run", lambda cmd, timeout=8.0, t=text: t)
-        assert adapter.sim_clock_published() is expected
+_LIST_T = "/clock [rosgraph_msgs/msg/Clock]\n/tf [tf2_msgs/msg/TFMessage]\n"
+_CLOCK_INFO = "Type: rosgraph_msgs/msg/Clock\nPublisher count: {pubs}\nSubscription count: 0\n"
 
 
-def test_cli_adapter_clock_probe_failure_modes(monkeypatch: pytest.MonkeyPatch) -> None:
-    from topicforge.adapters.base import AdapterError
+def _cli_adapter(monkeypatch: pytest.MonkeyPatch, verbose: str) -> Any:
     from topicforge.adapters.ros2_live import Ros2CliAdapter
 
     adapter = Ros2CliAdapter()
 
-    def unknown(cmd: list[str], timeout: float = 8.0) -> str:
-        raise AdapterError("failed (exit 1): Unknown topic '/clock'")
+    def run(cmd: list[str], timeout: float = 8.0) -> str:
+        return verbose if "-v" in cmd else _LIST_T
 
-    def timed_out(cmd: list[str], timeout: float = 8.0) -> str:
-        raise AdapterError("timed out after 8.0s")
+    monkeypatch.setattr(adapter, "_run", run)
+    return adapter
 
-    monkeypatch.setattr(adapter, "_run", unknown)
-    assert adapter.sim_clock_published() is False
-    monkeypatch.setattr(adapter, "_run", timed_out)
+
+def test_cli_adapter_clock_hint_is_unknown_until_the_graph_is_read() -> None:
+    from topicforge.adapters.ros2_live import Ros2CliAdapter
+
+    assert Ros2CliAdapter().sim_clock_published() is None
+
+
+def test_cli_adapter_never_runs_the_cli_for_the_clock_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.adapters.ros2_live import Ros2CliAdapter
+
+    adapter = Ros2CliAdapter()
+
+    def boom(*_a: object, **_k: object) -> str:
+        raise AssertionError("health must not run the CLI")
+
+    monkeypatch.setattr(adapter, "_run", boom)
+    assert adapter.sim_clock_published() is None
+
+
+def test_list_topics_refreshes_the_clock_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    with_clock = "Published topics:\n * /clock [rosgraph_msgs/msg/Clock] 1 publisher\n"
+    adapter = _cli_adapter(monkeypatch, with_clock)
+    adapter.list_topics()
+    assert adapter.sim_clock_published() is True
+    without = _cli_adapter(
+        monkeypatch, "Published topics:\n * /tf [tf2_msgs/msg/TFMessage] 1 publisher\n"
+    )
+    without.list_topics()
+    assert without.sim_clock_published() is False
+
+
+def test_topic_info_on_clock_refreshes_the_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.adapters.ros2_live import Ros2CliAdapter
+
+    adapter = Ros2CliAdapter()
+    monkeypatch.setattr(adapter, "_run", lambda cmd, timeout=8.0: _CLOCK_INFO.format(pubs=1))
+    adapter.get_topic_info("/clock")
+    assert adapter.sim_clock_published() is True
+
+
+def test_clock_hint_expires(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.adapters.ros2_live import Ros2CliAdapter
+    from topicforge.adapters.ros2_live import adapter as live
+
+    adapter = Ros2CliAdapter()
+    monkeypatch.setattr(adapter, "_run", lambda cmd, timeout=8.0: _CLOCK_INFO.format(pubs=1))
+    adapter.get_topic_info("/clock")
+    monkeypatch.setattr(live, "_CLOCK_HINT_TTL_SEC", -1.0)
     assert adapter.sim_clock_published() is None

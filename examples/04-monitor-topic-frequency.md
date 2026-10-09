@@ -36,52 +36,56 @@ You:
 > `/dds/heartbeat_10hz` over the last minute.
 
 Claude calls: `topic_metrics(topic="/dds/heartbeat_10hz",
-window_seconds=60, domain_id=0)` -> returns a `TopicMetrics`:
+window_s=60, domain_id=0)` -> returns a `TopicMetrics`:
 
 ```json
 {
   "topic": "/dds/heartbeat_10hz",
-  "window_seconds": 60,
-  "window_seconds_actual": 10.0,
+  "window_s": 60,
+  "window_actual_s": 10.0,
   "samples_observed": 100,
-  "frequency_hz_observed": 10.0,
-  "frequency_hz_declared": null,
+  "observed_frequency_hz": 10.0,
+  "declared_frequency_hz": 10.0,
+  "status": "ok",
   "sequence_gaps_count": 0,
   "sequence_numbers_available": true,
   "latency_ns_p50": 50000000,
   "latency_ns_p95": 50000000,
   "latency_ns_p99": 50000000,
   "latency_available": true,
-  "mode_effective": "mock"
+  "mode_effective": "mock",
+  "note": null
 }
 ```
 
-`frequency_hz_observed` is 99 intervals over the 9.9 s span of the
-samples, so 10.0 up to floating-point rounding. `frequency_hz_declared`
-is `null` here, as it is in every response: no adapter populates it, so
-there is nothing to compare the observed rate against.
+`observed_frequency_hz` is 99 intervals over the 9.9 s span of the
+samples, so 10.0 up to floating-point rounding. `declared_frequency_hz`
+is 10.0 here: it is `1 / deadline` of the shortest QoS Deadline a writer on the
+topic announced in discovery (100 ms in the fixture), and `null` when no writer
+announced a deadline. It is declared, not measured.
 
 You:
 
 > Did any participants come or go on the bus?
 
 Claude calls: `participant_events(domain_id=0,
-lookback_seconds=300)` -> returns 4 `ParticipantEvent` entries, newest
+lookback_s=300)` -> returns a `ParticipantEventListing` of 4 `ParticipantEvent` entries, newest
 first, all `event_type="discovered"` and none `"lost"`: the Dust DDS
 participant `mock-rust-node`, the Fast DDS participant
 `mock-aerospace-node`, then the Cyclone participants `mock-laptop` and
 `mock-robot`. Each carries `guid`, `event_type`,
-`vendor`, `timestamp_ns`, `hostname`, `domain_id` and `mode_effective`.
+`vendor`, `timestamp_ns`, `hostname` and `domain_id`; the listing's
+`mode_effective` and `domain_id` say where they were observed.
 (The mock clock sits two minutes after the first event, so
-`lookback_seconds=60` returns an empty list and `300` returns all four.)
+`lookback_s=60` returns an empty list and `300` returns all four.)
 
 Claude answers:
 
 > The mock buffer holds 100 samples on `/dds/heartbeat_10hz` at about
 > 10 Hz, with contiguous sequence numbers (0 gaps) and a uniform 50 ms
-> publish-to-receive latency, so there is no jitter in this data. I
-> can't check the rate against a declared one, because
-> `frequency_hz_declared` is null. No participant was lost in the
+> publish-to-receive latency, so there is no jitter in this data. The
+> rate matches the 10 Hz that the writer's deadline declares
+> (`declared_frequency_hz`). No participant was lost in the
 > window. This is fixture data: it says nothing about a real robot.
 
 ## What happens on a live bus
@@ -94,7 +98,7 @@ Since 0.5.3 a user topic returns `samples_observed=0` with every metric
 `null`; before that, the Fast adapter counted placeholder samples it had
 made up. On a builtin topic:
 
-- `frequency_hz_observed` reflects how often you call
+- `observed_frequency_hz` reflects how often you call
   `peek_dds_samples`. Samples from one call share one capture instant,
   so a single call gives `null`.
 - `sequence_numbers_available` is `false` and `sequence_gaps_count` is

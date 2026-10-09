@@ -20,10 +20,13 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -55,7 +58,7 @@ class CompositeAdapter:
 
     # ----- ROS2 graph surface -> ROS adapter -----
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
         return self._ros.list_topics()
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -81,12 +84,23 @@ class CompositeAdapter:
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._ros.analyze_bag(path)
 
+    def list_nodes(self) -> NodeListing:
+        return self._ros.list_nodes()
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
+        return self._ros.get_node_info(node, timeout_s)
+
     def sim_clock_published(self) -> bool | None:
         """The ROS 2 half's `/clock` probe, `None` when it has none."""
         probe = getattr(self._ros, "sim_clock_published", None)
         return probe() if callable(probe) else None
 
     # ----- DDS surface -> DDS adapter -----
+
+    @property
+    def observed_domain_id(self) -> int | None:
+        """The DDS half's joined domain, `None` when it does not say."""
+        return getattr(self._dds, "observed_domain_id", None)
 
     def observer_status(self) -> dict[str, Any] | None:
         """The DDS half's observer/tracker status, `None` when it has none."""
@@ -108,14 +122,12 @@ class CompositeAdapter:
         return self._dds.peek_dds_samples(topic, count)
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
-        return self._dds.participant_events(domain_id, lookback_seconds)
+        return self._dds.participant_events(domain_id, lookback_s)
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
-        return self._dds.topic_metrics(topic, window_seconds, domain_id)
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
+        return self._dds.topic_metrics(topic, window_s, domain_id)
 
     def list_endpoints(
         self,
@@ -123,8 +135,11 @@ class CompositeAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
-        return self._dds.list_endpoints(topic, participant_guid, include_observer, include_departed)
+        return self._dds.list_endpoints(
+            topic, participant_guid, include_observer, include_departed, include_internal
+        )
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         # Bag decoding is on the ROS half (MCAP and rosbags are ROS tooling).

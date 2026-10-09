@@ -6,6 +6,7 @@ import pytest
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_mock import MockAdapter
+from topicforge.models import TopicListItem
 
 
 def test_is_available_always_true() -> None:
@@ -20,8 +21,8 @@ def test_list_topics_includes_known_fixtures(mock_adapter: MockAdapter) -> None:
     topics = mock_adapter.list_topics()
     names = {t.name for t in topics}
     assert {"/cmd_vel", "/odom", "/scan", "/tf", "/camera/image_raw"} <= names
-    # Every listed TopicInfo carries the mock-mode marker.
-    assert all(t.mode_effective == "mock" for t in topics)
+    # The listing items carry no QoS and no mode: the envelope has the mode.
+    assert all(set(t.model_dump()) == set(TopicListItem.model_fields) for t in topics)
 
 
 def test_get_topic_info_returns_known_type(mock_adapter: MockAdapter) -> None:
@@ -62,7 +63,7 @@ def test_sample_messages_unknown_topic_raises(mock_adapter: MockAdapter) -> None
 def test_analyze_bag_returns_fixture_with_path(mock_adapter: MockAdapter) -> None:
     result = mock_adapter.analyze_bag("/tmp/demo.mcap")
     assert result.path == "/tmp/demo.mcap"
-    assert result.duration_seconds > 0
+    assert result.duration_s > 0
     assert result.message_count > 0
     assert any(t.name == "/cmd_vel" for t in result.topics)
     assert result.anomalies  # mock fixture intentionally includes some
@@ -107,12 +108,40 @@ def test_headerless_mock_samples_match_the_live_shape(mock_adapter: MockAdapter)
         assert sample.stamp_source == "header" and sample.timestamp_ns > 0
 
 
-def test_mock_summaries_use_the_live_summary_format(mock_adapter: MockAdapter) -> None:
-    scan = mock_adapter.sample_messages("/scan", 1).samples[0].payload
-    image = mock_adapter.sample_messages("/camera/image_raw", 1).samples[0].payload
-    assert scan["ranges"] == "<sequence type: float, length: 720>"
-    assert image["data"] == "<sequence type: uint8, length: 921600>"
-    assert "ranges_summary" not in scan and "data_summary" not in image
+def test_mock_arrays_are_cut_like_live_and_summarized_on_the_whole_message(
+    mock_adapter: MockAdapter,
+) -> None:
+    scan = mock_adapter.sample_messages("/scan", 1).samples[0]
+    assert len(scan.payload["ranges"]) == 128
+    assert scan.payload["_truncated_fields"] == ["ranges"]
+    assert scan.summary is not None and scan.summary.beam_count == 720
+    whole = mock_adapter.sample_messages("/scan", 1, max_array_length=None).samples[0]
+    assert len(whole.payload["ranges"]) == 720 and "_truncated_fields" not in whole.payload
+
+
+def test_mock_arrays_summary_only_uses_the_live_text_format(mock_adapter: MockAdapter) -> None:
+    scan = mock_adapter.sample_messages("/scan", 1, arrays_summary_only=True).samples[0]
+    image = mock_adapter.sample_messages("/camera/image_raw", 1).samples[0]
+    assert scan.payload["ranges"] == "<sequence type: float, length: 720>"
+    assert scan.summary is None
+    assert image.payload["data"] == "<sequence type: uint8, length: 921600>"
+    assert image.summary is not None and image.summary.data_length == 921600
+
+
+def test_mock_scan_summary_and_rate_match_the_scenario(mock_adapter: MockAdapter) -> None:
+    result = mock_adapter.sample_messages("/scan", 5)
+    summary = result.samples[0].summary
+    assert summary is not None and summary.summary_type == "laser_scan"
+    # The front wall is 3.0 m away; the sector minimum is at its -45 degree edge (right wall).
+    assert summary.sectors.front.closest.range == pytest.approx(1.5 / 0.7071, abs=0.01)
+    assert summary.closest_obstacle.range == pytest.approx(1.5, abs=0.01)
+    assert summary.sectors.right.closest.range == pytest.approx(1.5, abs=0.01)
+    assert summary.sectors.left.closest.range == pytest.approx(2.0, abs=0.01)
+    assert summary.sectors.rear.closest.range == pytest.approx(1.5 / 0.7071, abs=0.03)
+    assert summary.inf_count > 0
+    assert result.rate is not None
+    assert result.rate.verdict == "stable"
+    assert result.rate.observed_frequency_hz == pytest.approx(10.0)
 
 
 # ---------------------- fixture-coherence regression -----------------------
@@ -167,7 +196,7 @@ def test_list_participants_carries_lifecycle_fields(mock_adapter: MockAdapter) -
 def test_participant_events_default_window_returns_all_mock_events(
     mock_adapter: MockAdapter,
 ) -> None:
-    events = mock_adapter.participant_events(domain_id=0, lookback_seconds=300)
+    events = mock_adapter.participant_events(domain_id=0, lookback_s=300)
     assert len(events) == 4
     assert all(e.event_type == "discovered" for e in events)
     assert all(e.domain_id == 0 for e in events)
@@ -182,27 +211,27 @@ def test_participant_events_short_lookback_filters_old_events(
     # Mock anchor is `now = base + 120s`. A 60s lookback drops events
     # older than `now - 60s = base + 60s`: the fixture only places
     # discovery events at base..base+15s, so all four drop out.
-    events = mock_adapter.participant_events(domain_id=0, lookback_seconds=60)
+    events = mock_adapter.participant_events(domain_id=0, lookback_s=60)
     assert events == []
 
 
 def test_participant_events_unknown_domain_returns_empty(mock_adapter: MockAdapter) -> None:
-    events = mock_adapter.participant_events(domain_id=42, lookback_seconds=300)
+    events = mock_adapter.participant_events(domain_id=42, lookback_s=300)
     assert events == []
 
 
 def test_participant_events_invalid_domain_raises(mock_adapter: MockAdapter) -> None:
     with pytest.raises(AdapterError, match="domain_id"):
-        mock_adapter.participant_events(domain_id=-1, lookback_seconds=300)
+        mock_adapter.participant_events(domain_id=-1, lookback_s=300)
     with pytest.raises(AdapterError, match="domain_id"):
-        mock_adapter.participant_events(domain_id=233, lookback_seconds=300)
+        mock_adapter.participant_events(domain_id=233, lookback_s=300)
 
 
 def test_participant_events_invalid_lookback_raises(mock_adapter: MockAdapter) -> None:
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        mock_adapter.participant_events(domain_id=0, lookback_seconds=0)
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        mock_adapter.participant_events(domain_id=0, lookback_seconds=86401)
+    with pytest.raises(AdapterError, match="lookback_s"):
+        mock_adapter.participant_events(domain_id=0, lookback_s=0)
+    with pytest.raises(AdapterError, match="lookback_s"):
+        mock_adapter.participant_events(domain_id=0, lookback_s=86401)
 
 
 # ---------------------------------------------------------------------------

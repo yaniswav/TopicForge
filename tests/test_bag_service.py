@@ -171,6 +171,6 @@ def test_bag_service_analyze_returns_enriched_bag_analysis_db3(
     svc = BagService()
     analysis = svc.analyze(str(bag_path))
     assert analysis.bag_format == "db3"
-    assert analysis.recording_duration_ns is not None
+    assert analysis.duration_s > 0
     assert analysis.message_count >= 5
     assert any(t.name == "/test_topic" for t in analysis.topics)

@@ -9,10 +9,14 @@ from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapte
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
+    DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
     MAX_ARRAY_LENGTH,
+    MAX_NODE_TIMEOUT_S,
+    MAX_PARTICIPANT_EVENTS,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
     TRUNCATED_FIELDS_KEY,
 )
@@ -20,10 +24,13 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
-    ParticipantEvent,
-    ParticipantInfo,
+    NodeInfo,
+    NodeListing,
+    ParticipantEventListing,
+    ParticipantListing,
     SampleResult,
     TopicInfo,
+    TopicListing,
     TopicMetrics,
 )
 from topicforge.services.sample_budget import apply_sample_budget
@@ -71,9 +78,25 @@ class Inspector:
     def backend_name(self) -> AdapterName:
         return self._adapter.name
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> TopicListing:
         # No arguments, so nothing to validate here.
-        return self._adapter.list_topics()
+        topics = self._adapter.list_topics()
+        return TopicListing(
+            topics=topics,
+            returned=len(topics),
+            total=len(topics),
+            truncated=False,
+            mode_effective=self._adapter.effective_mode,
+        )
+
+    def list_nodes(self) -> NodeListing:
+        # No arguments, so nothing to validate here.
+        return self._adapter.list_nodes()
+
+    def get_node_info(self, node: str, timeout_s: float = DEFAULT_NODE_TIMEOUT_S) -> NodeInfo:
+        name = _validate_node_name(node)
+        _validate_node_timeout_s(timeout_s)
+        return self._adapter.get_node_info(name, timeout_s)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         _validate_topic_name(topic)
@@ -127,10 +150,23 @@ class Inspector:
         if callable(wait):
             wait()
 
-    def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
+    def _observed_domain(self, requested: int) -> int:
+        """The domain the adapter joined at startup; the requested one when it does not say."""
+        joined = getattr(self._adapter, "observed_domain_id", None)
+        return joined if isinstance(joined, int) else requested
+
+    def list_participants(self, domain_id: int = 0) -> ParticipantListing:
         _validate_dds_domain(domain_id)
         self._await_dds()
-        return self._adapter.list_participants(domain_id)
+        participants = self._adapter.list_participants(domain_id)
+        return ParticipantListing(
+            participants=participants,
+            returned=len(participants),
+            total=len(participants),
+            truncated=False,
+            domain_id=self._observed_domain(domain_id),
+            mode_effective=self._adapter.effective_mode,
+        )
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None:
@@ -147,24 +183,40 @@ class Inspector:
         return self._adapter.peek_dds_samples(topic, min(n, MAX_SAMPLE_COUNT))
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int | None = None
-    ) -> list[ParticipantEvent]:
+        self, domain_id: int = 0, lookback_s: int | None = None
+    ) -> ParticipantEventListing:
         _validate_dds_domain(domain_id)
-        seconds = DEFAULT_LOOKBACK_SECONDS if lookback_seconds is None else lookback_seconds
-        _validate_lookback_seconds(seconds)
+        seconds = DEFAULT_LOOKBACK_SECONDS if lookback_s is None else lookback_s
+        _validate_lookback_s(seconds)
         self._await_dds()
-        return self._adapter.participant_events(domain_id, seconds)
+        events = self._adapter.participant_events(domain_id, seconds)
+        # The adapters keep a ring of MAX_PARTICIPANT_EVENTS: a full result may have lost older ones.
+        full = len(events) >= MAX_PARTICIPANT_EVENTS
+        return ParticipantEventListing(
+            events=events,
+            returned=len(events),
+            total=len(events),
+            truncated=full,
+            domain_id=self._observed_domain(domain_id),
+            mode_effective=self._adapter.effective_mode,
+            note=(
+                f"The event log holds the last {MAX_PARTICIPANT_EVENTS} events; older events "
+                "inside the window may have been dropped. Narrow `lookback_s`."
+                if full
+                else None
+            ),
+        )
 
     def topic_metrics(
         self,
         topic: str,
-        window_seconds: int | None = None,
+        window_s: int | None = None,
         domain_id: int = 0,
     ) -> TopicMetrics:
         _validate_topic_name_dds(topic)
         _validate_dds_domain(domain_id)
-        seconds = DEFAULT_WINDOW_SECONDS if window_seconds is None else window_seconds
-        _validate_window_seconds(seconds)
+        seconds = DEFAULT_WINDOW_SECONDS if window_s is None else window_s
+        _validate_window_s(seconds)
         self._await_dds()
         return self._adapter.topic_metrics(topic, seconds, domain_id)
 
@@ -175,6 +227,7 @@ class Inspector:
         include_observer: bool = False,
         domain_id: int = 0,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         _validate_dds_domain(domain_id)
         if topic is not None:
@@ -183,7 +236,9 @@ class Inspector:
         if participant_guid is not None and not guid:
             raise AdapterError("participant_guid must be a non-empty string when given")
         self._await_dds()
-        return self._adapter.list_endpoints(topic, guid, include_observer, include_departed)
+        return self._adapter.list_endpoints(
+            topic, guid, include_observer, include_departed, include_internal
+        )
 
     def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
         clean_path = _validate_bag_path(path)
@@ -226,20 +281,18 @@ def _validate_dds_domain(domain_id: int) -> None:
         )
 
 
-def _validate_lookback_seconds(seconds: int) -> None:
+def _validate_lookback_s(seconds: int) -> None:
     if not isinstance(seconds, int) or isinstance(seconds, bool):
-        raise AdapterError(f"lookback_seconds must be an int, got {type(seconds).__name__}")
+        raise AdapterError(f"lookback_s must be an int, got {type(seconds).__name__}")
     if seconds < _LOOKBACK_MIN or seconds > _LOOKBACK_MAX:
-        raise AdapterError(
-            f"lookback_seconds must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}"
-        )
+        raise AdapterError(f"lookback_s must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}")
 
 
-def _validate_window_seconds(seconds: int) -> None:
+def _validate_window_s(seconds: int) -> None:
     if not isinstance(seconds, int) or isinstance(seconds, bool):
-        raise AdapterError(f"window_seconds must be an int, got {type(seconds).__name__}")
+        raise AdapterError(f"window_s must be an int, got {type(seconds).__name__}")
     if seconds < _WINDOW_MIN or seconds > _WINDOW_MAX:
-        raise AdapterError(f"window_seconds must be in {_WINDOW_MIN}..{_WINDOW_MAX}, got {seconds}")
+        raise AdapterError(f"window_s must be in {_WINDOW_MIN}..{_WINDOW_MAX}, got {seconds}")
 
 
 def _validate_topic_name(topic: str) -> None:
@@ -252,6 +305,31 @@ def _validate_topic_name(topic: str) -> None:
             f"topic name is malformed (got {topic!r}); each `/`-separated "
             "segment must start with a letter or underscore and contain only "
             "letters, digits, and underscores (no `//`, no trailing `/`)"
+        )
+
+
+def _validate_node_name(node: str) -> str:
+    """The fully qualified node name; a missing leading `/` is added."""
+    if not isinstance(node, str) or not node.strip():
+        raise AdapterError("node must be a non-empty string")
+    name = node.strip()
+    if not name.startswith("/"):
+        name = "/" + name
+    if not _TOPIC_NAME_RE.match(name):
+        raise AdapterError(
+            f"node name is malformed (got {node!r}); give the fully qualified name, e.g. "
+            "`/lidar_driver` or `/robot1/lidar_driver`: each `/`-separated segment must "
+            "start with a letter or underscore and contain only letters, digits and underscores"
+        )
+    return name
+
+
+def _validate_node_timeout_s(value: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AdapterError(f"timeout_s must be a number, got {type(value).__name__}")
+    if value < MIN_NODE_TIMEOUT_S or value > MAX_NODE_TIMEOUT_S:
+        raise AdapterError(
+            f"timeout_s must be in {MIN_NODE_TIMEOUT_S:g}..{MAX_NODE_TIMEOUT_S:g}, got {value}"
         )
 
 

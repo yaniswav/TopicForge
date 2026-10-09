@@ -22,22 +22,22 @@ def test_topic_metrics_returns_topic_metrics_shape(inspector: Inspector) -> None
     result = inspector.topic_metrics("/dds/heartbeat_10hz")
     assert isinstance(result, TopicMetrics)
     assert result.topic == "/dds/heartbeat_10hz"
-    assert result.window_seconds == 60
+    assert result.window_s == 60
     assert result.mode_effective == "mock"
 
 
 def test_topic_metrics_heartbeat_fixture_frequency_in_range(inspector: Inspector) -> None:
     """Mock fixture is 100 samples spaced 100 ms apart -> ~10 Hz."""
-    result = inspector.topic_metrics("/dds/heartbeat_10hz", window_seconds=60)
+    result = inspector.topic_metrics("/dds/heartbeat_10hz", window_s=60)
     assert result.samples_observed == 100
-    # window_seconds_actual = 10 s (from first to fixture_now); 100/10 = 10
-    assert result.frequency_hz_observed is not None
-    assert 9.5 <= result.frequency_hz_observed <= 10.5
+    # window_actual_s = 10 s (from first to fixture_now); 100/10 = 10
+    assert result.observed_frequency_hz is not None
+    assert 9.5 <= result.observed_frequency_hz <= 10.5
 
 
 def test_topic_metrics_heartbeat_fixture_latency(inspector: Inspector) -> None:
     """Mock fixture has deterministic 50 ms latency on every sample."""
-    result = inspector.topic_metrics("/dds/heartbeat_10hz", window_seconds=60)
+    result = inspector.topic_metrics("/dds/heartbeat_10hz", window_s=60)
     assert result.latency_available is True
     assert result.latency_ns_p50 == 50_000_000
     assert result.latency_ns_p95 == 50_000_000
@@ -54,7 +54,7 @@ def test_topic_metrics_unknown_topic_returns_zero_samples(inspector: Inspector) 
     """A topic with no recorded samples returns an empty TopicMetrics."""
     result = inspector.topic_metrics("/dds/never_seen")
     assert result.samples_observed == 0
-    assert result.frequency_hz_observed is None
+    assert result.observed_frequency_hz is None
     assert result.latency_available is False
     assert result.sequence_numbers_available is False
 
@@ -63,7 +63,7 @@ def test_topic_metrics_singleton_returns_none_frequency(inspector: Inspector) ->
     """A topic with exactly 1 sample cannot define a frequency."""
     result = inspector.topic_metrics("/dds/singleton")
     assert result.samples_observed == 1
-    assert result.frequency_hz_observed is None
+    assert result.observed_frequency_hz is None
 
 
 def test_topic_metrics_domain_filter(inspector: Inspector) -> None:
@@ -80,15 +80,15 @@ def test_topic_metrics_domain_filter(inspector: Inspector) -> None:
 
 
 def test_topic_metrics_rejects_invalid_window(inspector: Inspector) -> None:
-    with pytest.raises(AdapterError, match="window_seconds"):
-        inspector.topic_metrics("/dds/heartbeat_10hz", window_seconds=0)
-    with pytest.raises(AdapterError, match="window_seconds"):
-        inspector.topic_metrics("/dds/heartbeat_10hz", window_seconds=3601)
+    with pytest.raises(AdapterError, match="window_s"):
+        inspector.topic_metrics("/dds/heartbeat_10hz", window_s=0)
+    with pytest.raises(AdapterError, match="window_s"):
+        inspector.topic_metrics("/dds/heartbeat_10hz", window_s=3601)
 
 
 def test_topic_metrics_rejects_non_int_window(inspector: Inspector) -> None:
-    with pytest.raises(AdapterError, match="window_seconds"):
-        inspector.topic_metrics("/dds/heartbeat_10hz", window_seconds="60")  # type: ignore[arg-type]
+    with pytest.raises(AdapterError, match="window_s"):
+        inspector.topic_metrics("/dds/heartbeat_10hz", window_s="60")  # type: ignore[arg-type]
 
 
 def test_topic_metrics_rejects_invalid_domain(inspector: Inspector) -> None:

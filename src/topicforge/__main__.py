@@ -9,6 +9,7 @@ import sys
 from topicforge import __version__
 from topicforge.config import load_settings
 from topicforge.server import build_app
+from topicforge.server.http import DEFAULT_HTTP_PORT, LOOPBACK_HOST, serve_http
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -16,8 +17,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         prog="topicforge",
         description=(
             "ROS Topic Inspector & Bag Analyzer MCP server. "
-            "Runs on stdio so MCP clients (Claude Desktop, Claude Code, etc.) "
-            "can spawn it directly."
+            "Runs on stdio by default so MCP clients (Claude Desktop, Claude "
+            "Code, etc.) can spawn it directly; --transport streamable-http "
+            "serves it on 127.0.0.1 only."
         ),
         epilog=(
             "Configuration is read from environment variables: "
@@ -31,12 +33,33 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"topicforge {__version__}",
     )
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "streamable-http"),
+        default="stdio",
+        help=(
+            "stdio (default) or streamable-http, a local HTTP endpoint bound to "
+            f"{LOOPBACK_HOST} only (no authentication; reach it through an SSH tunnel)."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=f"TCP port for --transport streamable-http (default {DEFAULT_HTTP_PORT}).",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """Build the MCP app from environment settings and run it on stdio."""
-    _build_arg_parser().parse_args(argv)
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.port is not None and args.transport != "streamable-http":
+        parser.error("--port only applies to --transport streamable-http")
+    port = DEFAULT_HTTP_PORT if args.port is None else args.port
+    if not 1 <= port <= 65535:
+        parser.error("--port must be in 1..65535")
 
     try:
         settings = load_settings()
@@ -54,7 +77,10 @@ def main(argv: list[str] | None = None) -> int:
 
     app = build_app(settings)
     try:
-        app.run()
+        if args.transport == "streamable-http":
+            serve_http(app, port)
+        else:
+            app.run()
     except KeyboardInterrupt:
         log.info("interrupted by user")
         return 0

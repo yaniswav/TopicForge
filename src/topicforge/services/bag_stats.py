@@ -15,6 +15,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from topicforge.adapters.common.bag_kind import classify_bag_topic
 from topicforge.models import BagTopicStats
 
 log = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ def build_topic_stats(span: TopicSpan) -> BagTopicStats:
         name=span.name,
         message_type=span.message_type,
         message_count=span.count,
+        kind=classify_bag_topic(span.name),
         frequency_hz=freq,
         first_timestamp_ns=span.first_ns,
         last_timestamp_ns=span.last_ns,

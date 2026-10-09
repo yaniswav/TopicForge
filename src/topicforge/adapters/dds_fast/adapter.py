@@ -58,11 +58,14 @@ from topicforge.models import (
     EndpointListing,
     MessageSample,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     QosProfile,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -228,7 +231,13 @@ class FastDdsAdapter:
 
     # ----- ROS2 surface: not served by this adapter -----
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def list_nodes(self) -> NodeListing:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -251,6 +260,11 @@ class FastDdsAdapter:
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
+    @property
+    def observed_domain_id(self) -> int:
+        """The DDS domain joined at construction (the only one observed)."""
+        return self._domain_id
+
     # ----- DDS surface -----
 
     def list_endpoints(
@@ -259,6 +273,7 @@ class FastDdsAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         # The listener keeps raw discovery objects whose layout has not been
         # checked on a real bus, so no endpoint record is built from them.
@@ -312,6 +327,7 @@ class FastDdsAdapter:
                 topic=topic,
                 message_type=f"dds_builtin/{topic}",
                 timestamp_ns=0,
+                stamp_source="none",
                 payload={
                     "vendor": canonicalize_vendor_id(_extract_vendor_id(s)),
                     "guid": format_guid(_extract_guid(s)),
@@ -365,29 +381,27 @@ class FastDdsAdapter:
         return {_extract_topic_name(sample) for sample in samples}
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
         """Lifecycle events captured by the listener callbacks."""
-        if lookback_seconds < 1 or lookback_seconds > 86400:
-            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        if lookback_s < 1 or lookback_s > 86400:
+            raise AdapterError(f"lookback_s must be in 1..86400, got {lookback_s}")
         return self._lifecycle.events_since(
-            lookback_seconds=lookback_seconds,
+            lookback_s=lookback_s,
             domain_id=self._domain_id,
         )
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         """Metrics from the buffer that `peek_dds_samples` fills.
 
         As with Cyclone, nothing is collected in the background: the
         fastdds 2.6.x Python binding has no per-sample callback.
         """
-        if window_seconds < 1 or window_seconds > 3600:
-            raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
+        if window_s < 1 or window_s > 3600:
+            raise AdapterError(f"window_s must be in 1..3600, got {window_s}")
         metrics = self._metrics.compute_metrics(
             topic=topic,
-            window_seconds=window_seconds,
+            window_s=window_s,
             domain_id=self._domain_id,
             mode_effective="live",
         )

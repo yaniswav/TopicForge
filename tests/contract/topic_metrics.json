@@ -1,0 +1,201 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Topic metrics"
+  },
+  "description": "Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent time window. Returns a `TopicMetrics` payload carrying `status`, `samples_observed`, `observed_frequency_hz`, `declared_frequency_hz`, `sequence_gaps_count`, `latency_ns_p50/p95/p99`, and boolean availability flags. **Read `status` first**: `unsupported_user_topic` means the topic is a user topic, whose payload is not decoded, so there are no metrics: every number is null or 0 and none of it is a measurement. `no_samples_yet` means a builtin topic with nothing buffered in the window. `ok` means metrics were computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how often it was called, not the real publish rate: treat it as a coarse presence signal. `declared_frequency_hz` is declared, not measured: `1 / deadline` of the shortest QoS Deadline a writer on the topic announced in discovery, null when none announced one. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is out of range (1..3600). Right after server start the call waits up to 3 s for discovery to warm up. **Duration**: uses the DDS binding behind the DDS lock, one DDS call at a time. The whole call, lock wait included, ends within 45 s; if another DDS call keeps the lock it fails at once with a `busy` error (retry).",
+  "inputSchema": {
+    "properties": {
+      "domain_id": {
+        "default": 0,
+        "description": "Accepted for compatibility (0..232). TopicForge observes the domain it joined at startup (TOPICFORGE_DDS_DOMAIN_ID); this argument does not switch domains, and the response `domain_id` says which one was observed.",
+        "maximum": 232,
+        "minimum": 0,
+        "title": "Domain Id",
+        "type": "integer"
+      },
+      "topic": {
+        "description": "DDS topic name. Bare DDS names such as `scan` are valid, as are ROS 2 mangled names such as `rt/scan` and the builtin discovery topics `DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`. Letters, digits, `_`, `/` and `::` are allowed; anything else is rejected.",
+        "title": "Topic",
+        "type": "string"
+      },
+      "window_s": {
+        "default": 60,
+        "description": "Window in seconds over which to compute metrics (1..3600). Defaults to 60 seconds. Smaller windows reflect more recent state; larger windows smooth transient anomalies.",
+        "maximum": 3600,
+        "minimum": 1,
+        "title": "Window S",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "topic"
+    ],
+    "title": "topic_metricsArguments",
+    "type": "object"
+  },
+  "name": "topic_metrics",
+  "outputSchema": {
+    "additionalProperties": false,
+    "description": "Temporal metrics for a single DDS topic over a recent window.\n\nBuilt from samples that pass through `peek_dds_samples`. The buffer is\nfilled on demand because neither the `cyclonedds` nor the `fastdds`\nPython binding has a reliable per-sample callback, so a burst between two\ncalls is not seen.\n\nNumeric fields are `None` (`0` for `sequence_gaps_count`) when the data is\nmissing: no samples, no source timestamps, no sequence number in the\npayload. `samples_observed=0` is a valid result, not an error.",
+    "properties": {
+      "declared_frequency_hz": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Declared, not measured: `1 / deadline` for the shortest QoS Deadline period announced by a writer on this topic in discovery. `None` when no writer announced a finite Deadline or the topic is not announced. It is the rate the application promised, not the rate observed.",
+        "title": "Declared Frequency Hz"
+      },
+      "latency_available": {
+        "default": false,
+        "description": "True when at least one sample in the window carried both a publish timestamp and a receive timestamp. The percentile fields are `None` when this is False.",
+        "title": "Latency Available",
+        "type": "boolean"
+      },
+      "latency_ns_p50": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Median publish-to-receive latency in nanoseconds, computed only when the sample type exposes a publish timestamp (typically via `header.stamp` on `Header`-stamped messages). `None` when `latency_available=False`.",
+        "title": "Latency Ns P50"
+      },
+      "latency_ns_p95": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "95th-percentile publish-to-receive latency (ns).",
+        "title": "Latency Ns P95"
+      },
+      "latency_ns_p99": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "99th-percentile publish-to-receive latency (ns).",
+        "title": "Latency Ns P99"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "observed_frequency_hz": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "`samples_observed / window_actual_s`. `None` when fewer than 2 samples were observed (a single sample does not define a frequency).",
+        "title": "Observed Frequency Hz"
+      },
+      "samples_observed": {
+        "description": "Number of samples in the buffer matching `topic` within the window. `0` means TopicForge has not seen any sample on this topic recently: it does NOT mean the topic has no publisher, only that no `peek_dds_samples` call captured one in the window.",
+        "minimum": 0,
+        "title": "Samples Observed",
+        "type": "integer"
+      },
+      "sequence_gaps_count": {
+        "default": 0,
+        "description": "Number of missing sequence numbers detected in the buffered samples. `0` either means no gaps observed OR the sample type did not expose a sequence number (check `sequence_numbers_available` to disambiguate).",
+        "minimum": 0,
+        "title": "Sequence Gaps Count",
+        "type": "integer"
+      },
+      "sequence_numbers_available": {
+        "default": false,
+        "description": "True when the adapter successfully extracted sequence numbers from at least one sample. Sequence number support depends on the message type: `Header`-stamped messages with a `seq` field expose it; primitives like `std_msgs/String` do not.",
+        "title": "Sequence Numbers Available",
+        "type": "boolean"
+      },
+      "status": {
+        "default": "ok",
+        "description": "How to read the numbers. `unsupported_user_topic`: the topic is a user topic, whose payload is not decoded, so no metric exists and the null fields are not a measurement. `no_samples_yet`: a supported topic with nothing buffered in the window. `ok`: metrics computed from buffered samples.",
+        "enum": [
+          "ok",
+          "no_samples_yet",
+          "unsupported_user_topic"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "topic": {
+        "description": "Topic the metrics were computed for.",
+        "title": "Topic",
+        "type": "string"
+      },
+      "window_actual_s": {
+        "description": "Actual elapsed seconds within the window. May be smaller than `window_s` when the adapter buffered samples for less time than the requested window (e.g., the server just started). `0.0` when `samples_observed=0`.",
+        "minimum": 0,
+        "title": "Window Actual S",
+        "type": "number"
+      },
+      "window_s": {
+        "description": "Requested window in seconds (1..3600). Echoed back from the tool call so the LLM can correlate the request.",
+        "maximum": 3600,
+        "minimum": 1,
+        "title": "Window S",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "topic",
+      "window_s",
+      "window_actual_s",
+      "samples_observed",
+      "mode_effective"
+    ],
+    "title": "TopicMetrics",
+    "type": "object"
+  },
+  "title": "Topic metrics"
+}

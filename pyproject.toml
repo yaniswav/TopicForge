@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "mcp>=1.0.0,<2",
+    "mcp>=2.3,<3",
     "pydantic>=2.6",
     "pyyaml>=6",
     # Bag reader behind `peek_bag_samples`, core since 0.6.4 (it used to be the `[bags]`
@@ -54,7 +54,7 @@ dev = [
 # `[dds-all-oss]`. `fastdds` and `dust-dds-python` do not exist on PyPI, so
 # those extras failed to install, and an unclaimed package name in a published
 # extra is a dependency-confusion risk: anyone could register it. `pyopendds`
-# exists but the OpenDDS adapter is a permanent stub that never imports it.
+# exists but no OpenDDS adapter ships any more (removed in 0.7.0).
 # Fast DDS still works if its Python binding is built from eProsima's sources;
 # see docs/DDS_QUICKSTART.md. Do not add a name here without checking it
 # resolves on PyPI and belongs to the upstream project.
@@ -100,8 +100,6 @@ pythonpath = ["src"]
 markers = [
     "requires_cyclonedds: tests needing the `cyclonedds` Python bindings; auto-skip without them",
     "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
-    "requires_opendds: tests needing the `pyopendds` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
-    "requires_dust: tests needing the `dust_dds_python` Python bindings; auto-skip without them (v0.4.0 Phase 1.5+)",
     "integration: real-bus DDS scenarios; deselected by default via addopts, select with `-m integration`",
     "requires_rosbags: tests needing the `rosbags` Python library; auto-skip without it (v0.4.0 Phase 3+)",
 ]

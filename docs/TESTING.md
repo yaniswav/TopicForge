@@ -4,7 +4,7 @@ How to get a working ROS2 environment to point TopicForge at, and how to wire it
 
 | You want to... | Time | Path |
 | --- | --- | --- |
-| Try the twelve tools without installing ROS2 | 5 min | [Mock mode](#mock-mode) |
+| Try the fourteen tools without installing ROS2 | 5 min | [Mock mode](#mock-mode) |
 | Live mode on Windows | 45 min | [WSL2 + Humble](#wsl2--ros2-humble-windows-recommended) |
 | Live mode on Ubuntu | 20 min | [Linux native](#linux-native) |
 | Throwaway environment | 15 min | [Docker](#docker) |
@@ -102,4 +102,4 @@ TopicForge speaks MCP over stdio; any compliant client can spawn it with a comma
 }
 ```
 
-That is the Claude Desktop shape (`claude_desktop_config.json`); restart the app and the twelve tools appear under the hammer icon. For Claude Code run `claude mcp add topicforge -- topicforge`. Cursor, Continue and Cline accept the same stdio config; ready-to-paste configs for every major client are in [`CLIENTS.md`](CLIENTS.md). If the `topicforge` script is not on PATH, use `"command": "python", "args": ["-m", "topicforge"]`, or the absolute path of the binary inside your venv: desktop clients do not inherit your shell's PATH or venv activation.
+That is the Claude Desktop shape (`claude_desktop_config.json`); restart the app and the fourteen tools appear under the hammer icon. For Claude Code run `claude mcp add topicforge -- topicforge`. Cursor, Continue and Cline accept the same stdio config; ready-to-paste configs for every major client are in [`CLIENTS.md`](CLIENTS.md). If the `topicforge` script is not on PATH, use `"command": "python", "args": ["-m", "topicforge"]`, or the absolute path of the binary inside your venv: desktop clients do not inherit your shell's PATH or venv activation.

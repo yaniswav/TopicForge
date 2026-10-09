@@ -23,13 +23,16 @@ from typing import Any
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import annotate_raw
+from topicforge.adapters.common.cdr_decoder import stringify_non_finite
 from topicforge.adapters.common.stamps import payload_stamp
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
     MessageSample,
+    MessageSummary,
     SampleResult,
+    TopicRate,
 )
 from topicforge.services.bag_stats import (
     TopicSpan,
@@ -38,6 +41,7 @@ from topicforge.services.bag_stats import (
     parse_offered_qos_latched,
     read_db3_spans,
 )
+from topicforge.services.summaries import compute_rate, needs_whole_arrays, summarize_message
 
 log = logging.getLogger(__name__)
 
@@ -124,15 +128,12 @@ class BagService:
         return BagAnalysis(
             path=str(path),
             storage_format=bag_format if bag_format != "unknown" else None,
-            duration_seconds=reader_data["duration_seconds"],
+            duration_s=reader_data["duration_s"],
             message_count=reader_data["message_count"],
             topics=reader_data["topics"],
             anomalies=[],
             mode_effective=mode_effective,  # type: ignore[arg-type]
             bag_format=bag_format,  # type: ignore[arg-type]
-            samples_decoded_count=reader_data["samples_decoded_count"],
-            recording_duration_ns=reader_data["recording_duration_ns"],
-            participants_recorded=[],
         )
 
     def peek_samples(
@@ -169,7 +170,23 @@ class BagService:
             samples=samples,
             mode_effective=mode_effective,  # type: ignore[arg-type]
             note=note,
+            rate=_bag_rate(samples),
         )
+
+
+def _bag_rate(samples: list[MessageSample]) -> TopicRate:
+    """Rate block of the peeked messages, on the bag record time.
+
+    The messages are the first `count` of the topic, so the window has no end to measure
+    a trailing gap against.
+    """
+    recorded = [s.recorded_ns for s in samples if s.recorded_ns is not None]
+    stamped = all(s.stamp_source in ("header", "payload") for s in samples)
+    return compute_rate(
+        recorded,
+        basis="recorded_ns",
+        stamps_ns=[s.timestamp_ns for s in samples] if samples and stamped else None,
+    )
 
 
 def read_topic_spans(path: Path) -> dict[str, TopicSpan] | None:
@@ -313,8 +330,7 @@ def _spans_from_messages(
 def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
     """Open `resolved` with `rosbags` and compute per-topic stats.
 
-    Returns a dict with `duration_seconds`, `message_count`, `topics`,
-    `samples_decoded_count` and `recording_duration_ns`. `.db3` spans come
+    Returns a dict with `duration_s`, `message_count` and `topics`. `.db3` spans come
     from `sqlite3`; other containers are scanned through `rosbags`.
     """
     reader, _ = _open_reader(resolved)
@@ -329,11 +345,9 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
         topics: list[BagTopicStats] = [build_topic_stats(span) for span in spans.values()]
 
     return {
-        "duration_seconds": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
+        "duration_s": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
         "message_count": sum(t.message_count for t in topics),
         "topics": topics,
-        "samples_decoded_count": 0,  # analysis reads stats only; peek_samples decodes
-        "recording_duration_ns": duration_ns if duration_ns > 0 else None,
     }
 
 
@@ -353,12 +367,16 @@ def _peek_with_rosbags(
             )
 
         message_type = getattr(connections[0], "msgtype", "<unknown>")
+        whole = needs_whole_arrays(message_type)
         assumed = _lacks_embedded_definitions(reader)
         for connection, timestamp, raw in reader.messages(connections=connections):
             if len(samples) >= count:
                 break
-            payload = _decode_bag_message(reader, connection, raw)
-            found = payload_stamp(payload)
+            decoded = _decode_bag_message(reader, connection, raw, whole_arrays=whole)
+            found = payload_stamp(decoded)
+            cut_here: set[str] = set()
+            payload = _cap_arrays(decoded, cut_here)
+            capped.update(cut_here)
             samples.append(
                 MessageSample(
                     topic=topic,
@@ -366,7 +384,8 @@ def _peek_with_rosbags(
                     timestamp_ns=int(timestamp) if found is None else found[0],
                     stamp_source="recorded" if found is None else found[1],
                     recorded_ns=int(timestamp),
-                    payload=_cap_arrays(payload, capped),
+                    payload=stringify_non_finite(payload),
+                    summary=_bag_summary(message_type, decoded, set() if whole else cut_here),
                 )
             )
 
@@ -399,8 +418,23 @@ def _cap_arrays(payload: dict[str, Any], capped: set[str], prefix: str = "") -> 
     return out
 
 
-def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, Any]:
-    """Deserialize one bag message and run it through `decode_dynamic_sample`."""
+def _bag_summary(
+    message_type: str, decoded: dict[str, Any], cut_fields: set[str]
+) -> MessageSummary | None:
+    """Summary of a fully decoded message; `None` when the decode was partial or failed."""
+    if decoded.get("_decode_status") != "full":
+        return None
+    return summarize_message(message_type, decoded, cut_fields)
+
+
+def _decode_bag_message(
+    reader: Any, connection: Any, raw: bytes, *, whole_arrays: bool = False
+) -> dict[str, Any]:
+    """Deserialize one bag message and run it through `decode_dynamic_sample`.
+
+    `whole_arrays` keeps every array element (for a summary that reads an array);
+    otherwise an array is read up to `_MAX_ARRAY_ELEMENTS` and one more.
+    """
     try:
         deserialized = reader.deserialize(raw, connection.msgtype)
     except Exception as exc:  # pragma: no cover: binding-side error
@@ -411,4 +445,6 @@ def _decode_bag_message(reader: Any, connection: Any, raw: bytes) -> dict[str, A
 
     from topicforge.adapters.common.cdr_decoder import decode_dynamic_sample
 
-    return decode_dynamic_sample(deserialized, max_array_elements=_MAX_ARRAY_ELEMENTS)
+    return decode_dynamic_sample(
+        deserialized, max_array_elements=None if whole_arrays else _MAX_ARRAY_ELEMENTS
+    )

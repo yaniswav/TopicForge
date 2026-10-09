@@ -1,0 +1,591 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Detect QoS mismatches"
+  },
+  "description": "Explain why DDS readers and writers on the same topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, each with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, so a partition split is not blamed on Reliability; `latent_incompatible_policies` lists the RxO policies that would ALSO be incompatible once the partition/type issue is fixed), `hints` (orphan topics with a near-identical name, i.e. probable typos, and type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (with `*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, and only where announced: discovery does not carry it). Not checked: see `policies_unchecked`. **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a reader logging 'deadline missed' with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot observe). Pass `topic` to scope to one topic; omit to scan all. `reports`, `matched` and `not_matched` are capped at 200 entries each (`truncated` is true, the `*_total` fields keep the real counts, incompatible reports come first). A matched pair flagged `late_joiner` is a VOLATILE writer whose reader joined later on the same host: normal, not a fault. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; the mock backend returns fixtures. **Duration**: uses the DDS binding behind the DDS lock, one DDS call at a time. The whole call, lock wait included, ends within 45 s; if another DDS call keeps the lock it fails at once with a `busy` error (retry).",
+  "inputSchema": {
+    "properties": {
+      "topic": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Optional DDS topic name to scope the scan to: a bare name such as `scan` or a ROS 2 mangled name such as `rt/scan`. Omit to scan all topics.",
+        "title": "Topic"
+      }
+    },
+    "title": "detect_qos_mismatchesArguments",
+    "type": "object"
+  },
+  "name": "detect_qos_mismatches",
+  "outputSchema": {
+    "$defs": {
+      "MatchedPair": {
+        "additionalProperties": false,
+        "description": "A reader and a writer that DDS will connect given their announced QoS.",
+        "properties": {
+          "late_joiner": {
+            "default": false,
+            "description": "True when the writer is VOLATILE and the reader was announced more than 1 s after it, both on the same host: samples published before the reader joined are not delivered to it. Normal for a VOLATILE writer, not a fault.",
+            "title": "Late Joiner",
+            "type": "boolean"
+          },
+          "late_joiner_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "One-line explanation, set together with `late_joiner`.",
+            "title": "Late Joiner Note"
+          },
+          "reader_guid": {
+            "description": "GUID of the reader endpoint.",
+            "title": "Reader Guid",
+            "type": "string"
+          },
+          "reader_participant_guid": {
+            "description": "GUID of the reader's participant.",
+            "title": "Reader Participant Guid",
+            "type": "string"
+          },
+          "reader_participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the reader's participant.",
+            "title": "Reader Participant Name"
+          },
+          "topic": {
+            "description": "Topic name both endpoints use.",
+            "title": "Topic",
+            "type": "string"
+          },
+          "type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Type name both announced.",
+            "title": "Type Name"
+          },
+          "writer_guid": {
+            "description": "GUID of the writer endpoint.",
+            "title": "Writer Guid",
+            "type": "string"
+          },
+          "writer_participant_guid": {
+            "description": "GUID of the writer's participant.",
+            "title": "Writer Participant Guid",
+            "type": "string"
+          },
+          "writer_participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the writer's participant.",
+            "title": "Writer Participant Name"
+          }
+        },
+        "required": [
+          "topic",
+          "reader_guid",
+          "reader_participant_guid",
+          "writer_guid",
+          "writer_participant_guid"
+        ],
+        "title": "MatchedPair",
+        "type": "object"
+      },
+      "MismatchReport": {
+        "additionalProperties": false,
+        "description": "A single reader/writer QoS incompatibility detected on a topic.\n\nOnly pairs that share a partition and a type name are reported here: those\nseparated by partition or type are `NotMatchedPair`s in the same scan.",
+        "properties": {
+          "details": {
+            "description": "Requested and offered value and the failed rule, one entry per policy.",
+            "items": {
+              "$ref": "#/$defs/PolicyMismatch"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "incompatible_policies": {
+            "description": "Names of the QoS policies that block communication or risk degradation: see `details` for the compared values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Incompatible Policies",
+            "type": "array"
+          },
+          "reader_guid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "GUID of the reader endpoint involved in the mismatch, if known.",
+            "title": "Reader Guid"
+          },
+          "reader_participant_guid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "GUID of the participant that owns the reader, if known.",
+            "title": "Reader Participant Guid"
+          },
+          "reader_participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the reader's participant, if it set one.",
+            "title": "Reader Participant Name"
+          },
+          "reader_type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Type name the reader announced.",
+            "title": "Reader Type Name"
+          },
+          "severity": {
+            "description": "`incompatible` means communication is definitely blocked; `risky` means it may degrade but is not strictly blocked by the DDS spec (History only). Useful for an LLM to triage user-facing advice.",
+            "enum": [
+              "incompatible",
+              "risky"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "suggested_fixes": {
+            "description": "Fixes proposed as text for a human to apply; TopicForge never applies them. Empty when it proposes none for this finding.",
+            "items": {
+              "$ref": "#/$defs/SuggestedFix"
+            },
+            "title": "Suggested Fixes",
+            "type": "array"
+          },
+          "topic": {
+            "description": "Topic name where the mismatch was detected.",
+            "title": "Topic",
+            "type": "string"
+          },
+          "unchecked": {
+            "description": "Policies that could not be compared for this pair because one side did not announce a value.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unchecked",
+            "type": "array"
+          },
+          "writer_guid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "GUID of the writer endpoint involved in the mismatch, if known.",
+            "title": "Writer Guid"
+          },
+          "writer_participant_guid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "GUID of the participant that owns the writer, if known.",
+            "title": "Writer Participant Guid"
+          },
+          "writer_participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the writer's participant, if it set one.",
+            "title": "Writer Participant Name"
+          },
+          "writer_type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Type name the writer announced.",
+            "title": "Writer Type Name"
+          }
+        },
+        "required": [
+          "topic",
+          "incompatible_policies",
+          "severity"
+        ],
+        "title": "MismatchReport",
+        "type": "object"
+      },
+      "NotMatchedPair": {
+        "additionalProperties": false,
+        "description": "A reader and a writer on one topic that DDS will not match, whatever their QoS.",
+        "properties": {
+          "detail": {
+            "description": "The two partition lists or the two type names.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "latent_incompatible_policies": {
+            "description": "RxO policies that would ALSO be incompatible once the partition / type issue is fixed (same shape as `MismatchReport.details`). Empty when the QoS of the two endpoints would be compatible, or could not be compared.",
+            "items": {
+              "$ref": "#/$defs/PolicyMismatch"
+            },
+            "title": "Latent Incompatible Policies",
+            "type": "array"
+          },
+          "reader_guid": {
+            "description": "GUID of the reader endpoint.",
+            "title": "Reader Guid",
+            "type": "string"
+          },
+          "reader_participant_guid": {
+            "description": "GUID of the reader's participant.",
+            "title": "Reader Participant Guid",
+            "type": "string"
+          },
+          "reader_participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the reader's participant.",
+            "title": "Reader Participant Name"
+          },
+          "reason": {
+            "description": "`partition`: no reader partition matches a writer partition. `type_name`: the endpoints announced different type names. The RxO QoS rules are not evaluated for such a pair.",
+            "enum": [
+              "partition",
+              "type_name"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "topic": {
+            "description": "Topic name both endpoints use.",
+            "title": "Topic",
+            "type": "string"
+          },
+          "writer_guid": {
+            "description": "GUID of the writer endpoint.",
+            "title": "Writer Guid",
+            "type": "string"
+          },
+          "writer_participant_guid": {
+            "description": "GUID of the writer's participant.",
+            "title": "Writer Participant Guid",
+            "type": "string"
+          },
+          "writer_participant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Announced name of the writer's participant.",
+            "title": "Writer Participant Name"
+          }
+        },
+        "required": [
+          "topic",
+          "reader_guid",
+          "reader_participant_guid",
+          "writer_guid",
+          "writer_participant_guid",
+          "reason",
+          "detail"
+        ],
+        "title": "NotMatchedPair",
+        "type": "object"
+      },
+      "PolicyMismatch": {
+        "additionalProperties": false,
+        "description": "One QoS policy of a reader/writer pair, with the values that were compared.",
+        "properties": {
+          "offered": {
+            "description": "What the writer offers, same format as `requested`.",
+            "title": "Offered",
+            "type": "string"
+          },
+          "policy": {
+            "description": "Policy name: `Reliability`, `Durability`, `Deadline`, `Liveliness`, `LatencyBudget`, `Ownership`, `DestinationOrder`, `DataRepresentation` or `History`.",
+            "title": "Policy",
+            "type": "string"
+          },
+          "requested": {
+            "description": "What the reader requests, human-readable: `\"RELIABLE\"`, `\"100 ms\"`, `\"infinite\"`.",
+            "title": "Requested",
+            "type": "string"
+          },
+          "rule": {
+            "description": "The compatibility rule that failed, one sentence.",
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy",
+          "requested",
+          "offered",
+          "rule"
+        ],
+        "title": "PolicyMismatch",
+        "type": "object"
+      },
+      "SuggestedFix": {
+        "additionalProperties": false,
+        "description": "A fix proposed as text for a human to apply. TopicForge never applies it.",
+        "properties": {
+          "kind": {
+            "description": "Form of `text`: a CLI command, a ROS 2 QoS override, a DDS profile or a launch parameter.",
+            "enum": [
+              "cli",
+              "qos_override",
+              "dds_profile",
+              "launch_param"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "description": "Which node or side to change, writer or reader.",
+            "title": "Target",
+            "type": "string"
+          },
+          "text": {
+            "description": "The exact command, YAML or XML to apply.",
+            "title": "Text",
+            "type": "string"
+          },
+          "tradeoff": {
+            "description": "What is lost by applying it.",
+            "title": "Tradeoff",
+            "type": "string"
+          },
+          "verify_with": {
+            "description": "The TopicForge tool to run again to confirm the repair.",
+            "title": "Verify With",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "text",
+          "tradeoff",
+          "verify_with"
+        ],
+        "title": "SuggestedFix",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Result of `detect_qos_mismatches`: findings plus what was and was not checked.",
+    "properties": {
+      "hints": {
+        "description": "Leads that are not findings: orphan topics with near-identical names (typos), type id differences, pairs that could not be fully checked.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Hints",
+        "type": "array"
+      },
+      "matched": {
+        "description": "Pairs that will be matched by DDS given the announced QoS: same topic and type name, overlapping partitions, no incompatible RxO policy (a pair with only a `risky` History finding still counts). Actual data flow is not observed.",
+        "items": {
+          "$ref": "#/$defs/MatchedPair"
+        },
+        "title": "Matched",
+        "type": "array"
+      },
+      "matched_total": {
+        "default": 0,
+        "description": "Matched pairs before the size cap.",
+        "minimum": 0,
+        "title": "Matched Total",
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "not_matched": {
+        "description": "Pairs separated by partition or type name. No data flows between them. An empty `reports` with a non-empty `not_matched` does not mean the bus is healthy.",
+        "items": {
+          "$ref": "#/$defs/NotMatchedPair"
+        },
+        "title": "Not Matched",
+        "type": "array"
+      },
+      "not_matched_total": {
+        "default": 0,
+        "description": "Not-matched pairs before the size cap.",
+        "minimum": 0,
+        "title": "Not Matched Total",
+        "type": "integer"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "pairs_checked": {
+        "description": "Same-topic (reader, writer) pairs examined, including those reported in `not_matched`.",
+        "minimum": 0,
+        "title": "Pairs Checked",
+        "type": "integer"
+      },
+      "policies_checked": {
+        "description": "Policies compared on every pair.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Policies Checked",
+        "type": "array"
+      },
+      "policies_unchecked": {
+        "description": "Policies and facts this scan does not cover, each with a one-line reason. A clean result says nothing about them.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Policies Unchecked",
+        "type": "array"
+      },
+      "reports": {
+        "description": "Pairs that share a partition and a type but have incompatible or risky QoS.",
+        "items": {
+          "$ref": "#/$defs/MismatchReport"
+        },
+        "title": "Reports",
+        "type": "array"
+      },
+      "reports_total": {
+        "default": 0,
+        "description": "Reports before the size cap.",
+        "minimum": 0,
+        "title": "Reports Total",
+        "type": "integer"
+      },
+      "topics_scanned": {
+        "description": "Topics that had at least one endpoint in scope.",
+        "minimum": 0,
+        "title": "Topics Scanned",
+        "type": "integer"
+      },
+      "truncated": {
+        "default": false,
+        "description": "True when `reports`, `matched` or `not_matched` was cut to its cap (200 entries each, incompatible reports first): see the `*_total` fields. Narrow the scan with `topic`.",
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "reports",
+      "not_matched",
+      "hints",
+      "pairs_checked",
+      "topics_scanned",
+      "policies_checked",
+      "policies_unchecked",
+      "mode_effective"
+    ],
+    "title": "MismatchScan",
+    "type": "object"
+  },
+  "title": "Detect QoS mismatches"
+}

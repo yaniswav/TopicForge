@@ -242,16 +242,19 @@ class TopicForge:
     async def ask(self, tool: str, **arguments: Any) -> Any:
         """Call one TopicForge tool and return its structured result."""
         result = await self._session.call_tool(tool, arguments)
-        if result.isError:
+        # mcp 2.x exposes snake_case attributes; 1.x used camelCase.
+        is_error = getattr(result, "is_error", getattr(result, "isError", False))
+        if is_error:
             text = " ".join(getattr(c, "text", "") for c in result.content)
             raise RuntimeError(f"{tool} failed: {text}")
-        data = result.structuredContent
+        data = getattr(result, "structured_content", getattr(result, "structuredContent", None))
         if data is not None:
-            return data.get("result", data) if isinstance(data, dict) else data
+            return data
         return [json.loads(c.text) for c in result.content if getattr(c, "text", None)]
 
     async def participants(self) -> list[dict[str, Any]]:
-        return await self.ask("list_participants", domain_id=self.domain)
+        listing = await self.ask("list_participants", domain_id=self.domain)
+        return listing["participants"]
 
     async def mismatches(self) -> dict[str, Any]:
         """The full `MismatchScan`: `reports`, `not_matched`, `hints`, and what was checked."""
@@ -280,10 +283,9 @@ class TopicForge:
                 entry[role].append((owner(ep.get("guid"), parts), ep.get("type_name") or "?"))
         return table
 
-    async def events(self, lookback_seconds: int = 600) -> list[dict[str, Any]]:
-        return await self.ask(
-            "participant_events", domain_id=self.domain, lookback_seconds=lookback_seconds
-        )
+    async def events(self, lookback_s: int = 600) -> list[dict[str, Any]]:
+        listing = await self.ask("participant_events", domain_id=self.domain, lookback_s=lookback_s)
+        return listing["events"]
 
 
 def server_env(domain: int) -> dict[str, str]:

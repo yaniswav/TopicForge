@@ -78,19 +78,25 @@ def test_participant_info_valid_payload():
         vendor="cyclone",
         hostname="robot-01",
         domain_id=0,
-        mode_effective="live",
     )
     assert p.guid == "abc-123"
     assert p.vendor == "cyclone"
 
 
-def test_participant_info_requires_mode_effective():
+def test_participant_info_does_not_repeat_the_envelope() -> None:
+    """`mode_effective` lives in `ParticipantListing`, not on each participant."""
     with pytest.raises(ValidationError):
         ParticipantInfo(  # type: ignore[call-arg]
             guid="abc",
             vendor="cyclone",
             domain_id=0,
+            mode_effective="live",
         )
+
+
+def test_participant_info_reserves_the_node_link() -> None:
+    p = ParticipantInfo(guid="abc", vendor="cyclone", domain_id=0)
+    assert p.node_names == [] and p.node_names_source == "none"
 
 
 def test_participant_info_rejects_domain_out_of_range():
@@ -99,7 +105,6 @@ def test_participant_info_rejects_domain_out_of_range():
             guid="abc",
             vendor="cyclone",
             domain_id=300,
-            mode_effective="live",
         )
 
 
@@ -109,7 +114,6 @@ def test_participant_info_rejects_unknown_vendor():
             guid="abc",
             vendor="vortex",  # type: ignore[arg-type]
             domain_id=0,
-            mode_effective="live",
         )
 
 
@@ -123,7 +127,6 @@ def test_mismatch_report_valid_payload():
         writer_guid="w-1",
         incompatible_policies=["Reliability"],
         severity="incompatible",
-        mode_effective="mock",
     )
     assert report.severity == "incompatible"
     assert report.incompatible_policies == ["Reliability"]
@@ -137,7 +140,6 @@ def test_mismatch_report_rejects_invalid_severity():
             writer_guid=None,
             incompatible_policies=["Reliability"],
             severity="critical",  # type: ignore[arg-type]
-            mode_effective="mock",
         )
 
 
@@ -150,7 +152,6 @@ def test_mismatch_report_allows_empty_policy_list():
         writer_guid=None,
         incompatible_policies=[],
         severity="risky",
-        mode_effective="mock",
     )
     assert report.incompatible_policies == []
 
@@ -162,7 +163,6 @@ def test_mismatch_report_is_frozen():
         writer_guid=None,
         incompatible_policies=["Reliability"],
         severity="incompatible",
-        mode_effective="mock",
     )
     with pytest.raises(ValidationError):
         report.severity = "risky"  # type: ignore[misc]

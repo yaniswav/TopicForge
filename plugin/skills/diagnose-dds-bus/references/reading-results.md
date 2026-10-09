@@ -13,9 +13,10 @@ Checked policies: Partition (`*` and `?` wildcards), type name, Reliability, Dur
 
 ## EndpointListing
 
-- One entry per writer or reader with `role`, `topic`, `type_name`, owning participant and structured `qos`.
+- One entry per writer or reader with `role`, `dds_topic` (raw name, `rt/scan`), `ros_topic` (`/scan`, or `null` with `ros_topic_note` when it is not a ROS 2 topic), `type_name`, owning participant and structured `qos`.
+- ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) are hidden unless `include_internal` is true; `hidden_internal_endpoint_count` says how many. `total` counts every discovered endpoint, `returned` what is listed; `truncated` is only the 500-entry cap.
 - In `qos`, a duration of `None` means infinite or not set; a field of `None` means the endpoint did not announce it.
-- `activity` is always `None`: TopicForge cannot tell a silent writer from a healthy one.
+- Liveness is not observed (the listing's `hints` say so once): TopicForge cannot tell a silent writer from a healthy one.
 - Ownership: among EXCLUSIVE writers the live one with the highest strength delivers. Which one currently owns an instance is runtime state TopicForge cannot see.
 - Departed endpoints are remembered (last 200, 1 hour). Pass `include_departed` to list them in `endpoints`.
 - A topic filter that matches nothing returns a `note` with the closest known topics.

@@ -7,6 +7,224 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Breaking
+
+Output contract 2 (`health_check.contract_version` is 2; 0.6.x is implicitly 1). The tool
+list and the input defaults are unchanged except where noted. `docs/CONTRACT.md` is the
+specification and `docs/MIGRATION-0.7.md` expands this list.
+
+One object per tool, never a bare list:
+
+- `list_topics`: `list[TopicInfo]` -> `TopicListing {topics, returned, total, truncated,
+  mode_effective, note}`.
+- `list_participants`: `list[ParticipantInfo]` -> `ParticipantListing {participants, returned,
+  total, truncated, domain_id, mode_effective, note}`.
+- `participant_events`: `list[ParticipantEvent]` -> `ParticipantEventListing {events,
+  returned, total, truncated, domain_id, mode_effective, note}`. The silent 200-event cap is
+  now `truncated` plus a `note`.
+
+Topic models:
+
+- `TopicInfo` splits: `list_topics` returns `TopicListItem` (`name`, `message_type`,
+  `publisher_count`, `subscriber_count`, no QoS, no `mode_effective`); `get_topic_info`
+  returns `TopicInfo`.
+- `TopicInfo.qos_reliability` and `qos_durability` (publishers only) -> `publisher_qos` and
+  `subscription_qos` (`{reliability, durability, endpoint_count}`, `mixed` when the endpoints
+  of a side disagree), each with a `_note` when it is `null`. A topic with subscribers only
+  no longer reports nothing.
+- `TopicInfo` gains `publisher_nodes` and `subscriber_nodes` (fully qualified node names read
+  from `ros2 topic info --verbose`) and a `note`.
+- Removed because no adapter ever filled them: `TopicInfo.reader_count`, `writer_count` and
+  `qos_profile`; `BagAnalysis.samples_decoded_count`, `participants_recorded` and
+  `recording_duration_ns`.
+
+Renames (unit suffixes, `_reason` -> `_note`):
+
+- `BagAnalysis.duration_seconds` -> `duration_s`.
+- `TopicMetrics.window_seconds` -> `window_s`, `window_seconds_actual` -> `window_actual_s`,
+  `frequency_hz_observed` -> `observed_frequency_hz`, `frequency_hz_declared` ->
+  `declared_frequency_hz`.
+- Tool inputs: `topic_metrics.window_seconds` -> `window_s`, `participant_events.lookback_seconds`
+  -> `lookback_s`.
+- `EndpointListing.departed_endpoints` -> `departed_endpoint_count`,
+  `excluded_observer_endpoints` -> `excluded_observer_endpoint_count`, `total_discovered` ->
+  `total`.
+- `HealthReport.dds_inactive_reason` -> `dds_inactive_note`, `payload_decoding_reason` ->
+  `payload_decoding_note`.
+
+`list_endpoints`:
+
+- `EndpointInfo.topic` -> `dds_topic` (raw name, `rt/scan`) plus `ros_topic` (`/scan`, `null`
+  with `ros_topic_note` for a DDS topic that is not a ROS 2 topic). `TopicSummary.topic` ->
+  `dds_topic` plus `ros_topic`.
+- New input `include_internal` (default false): the ROS 2 service and action endpoints
+  (`rq/`, `rr/`, `rs/`, `rp/`, `ra/` and `ros_discovery_info`) are hidden unless it is true;
+  `hidden_internal_endpoint_count` says how many were left out.
+- `EndpointInfo.activity` (always `null`) and `activity_note` (the same sentence on every
+  endpoint) are removed; the sentence is stated once in the new root-level `hints`.
+- `EndpointInfo.domain_id` and `mode_effective` are removed (the listing carries them once).
+
+Nested items no longer repeat the envelope: `mode_effective` is removed from
+`ParticipantInfo`, `ParticipantEvent`, `EndpointInfo` and `MismatchReport`.
+
+`stamp_source` (every `MessageSample`) is required and has five values: `header`, `payload`,
+`recorded`, `dds_source`, `none`. It was nullable with four. `peek_dds_samples` now says
+`dds_source` (builtin discovery topics, from the announcement timestamp) or `none`.
+
+`sample_messages.timeout_s` accepts 1..40 (see Changed).
+
+Configuration and Python API:
+
+- `TOPICFORGE_DDS_BACKEND` accepts `mock`, `cyclone`, `fast` and `auto` only. `opendds` and
+  `dust` (stub adapters that never served) and the long-rejected `rti`, `opensplice`, `coredx`
+  and `intercom` now fail at startup with an error that names the valid values.
+  `health_check.dds_backend` no longer returns `opendds` or `dust`.
+- `RosAdapter` (an alias of `MiddlewareAdapter`) is removed from `topicforge.adapters`.
+
+### Added (contract 2)
+
+- `health_check`: `contract_version` (2), `rmw_implementation` and `rmw_source` (`env`,
+  `distro_default` or `none`; `ros2_cli` is reserved), and a `note`. The RMW comes from
+  `RMW_IMPLEMENTATION` or the default of `ROS_DISTRO`, never from the running graph.
+- A `note` on `get_topic_info`, `detect_qos_mismatches`, `topic_metrics` and `health_check`.
+- `analyze_bag` topics gain `kind`: `user`, `rosbag2_internal` (`/events/write_split`) or
+  `ros_builtin` (`/parameter_events`, `/rosout`).
+- Reserved optional fields: `ParticipantInfo.node_names` and `node_names_source` (empty and
+  `none` until a tool fills them), `MismatchReport.suggested_fixes` (empty).
+- `tests/test_contract_shape.py` (every tool returns one object and one text block),
+  `tests/test_field_names.py` (no `_seconds`, `_sec`, `_ms`, `_hertz`, `_reason` and similar
+  suffixes in any input or output field).
+
+### Added
+
+- Ground-truth comparator in CI (`scripts/ground_truth/`): one `compare.py`, two producers of
+  ground truth. The OmniSim kit (external, manual, kept as confirmation) and the Docker bench
+  publisher, which now writes its own `ground_truth.json` in the same schema subset
+  (`tests/integration/ros2/ground_truth.py`: topics, types, endpoint counts and QoS, the
+  synthetic 541-beam scan and its sector minima, configured rates, `use_sim_time` per node,
+  RMW and distro). `drive.py` is the parameterised MCP stdio driver and `calls.json` the
+  default call list (graph calls before any sampling). Every `ros2-live.yml` matrix cell
+  (Humble/Jazzy x Fast DDS/Cyclone) runs both after the integration tests, fails on any FAIL
+  or SHAPE row, prints the measured rate `interval_cv` values (the `STABLE_CV` evidence for
+  `docs/CONTRACT.md` section 4) and uploads `COMPARISON.md`, `comparison.json` and the raw
+  results as an artifact. `compare.py` also reads a bag with `rosbags` (`--bag-truth`) to
+  check `analyze_bag` and `peek_bag_samples` independently.
+- Two tools, additive: `list_nodes` and `get_node_info` (the surface is now fourteen tools).
+  - `list_nodes` -> `NodeListing {nodes, returned, total, truncated, duplicates,
+    mode_effective, note}`: one `ros2 node list` call, names, namespaces and the full names used
+    by more than one node (`duplicate_count`).
+  - `get_node_info(node, timeout_s)` -> `NodeInfo`: publishers, subscribers, service servers and
+    clients, action servers and clients (each `{name, type}`) from `ros2 node info`, then the
+    parameters from `ros2 param dump` (YAML on stdout, never an output option, so nothing is
+    written to disk) and `use_sim_time`. `timeout_s` is 1..20, default 8. A node that does not
+    answer its parameter read in time gives `parameters` null and a `parameters_note` (its
+    executor is probably blocked): a finding, not an error. A value whose name contains
+    password, secret, token, api_key or credential is masked; a value over 2048 characters or
+    128 list elements (a robot description) is cut and flagged; the dump is capped at 1 MiB.
+    A name used by several nodes is flagged in `duplicate_count` and `note`. An unknown node
+    raises an error that lists close matches.
+  - Both run the `ros2` CLI in the ROS lane; DDS-only setups raise a clear error. The only
+    request TopicForge ever sends to a node is a parameter read (SECURITY.md).
+  - The `inspect-ros2-robot` prompt and plugin skill gain the node step.
+- Per-type message summaries and an observed rate with a verdict on `sample_messages` and
+  `peek_bag_samples` (additive; no new input, no new tool).
+  - `MessageSample.summary`: `laser_scan` (beam count, angle geometry, finite / `inf` /
+    `-inf` / `nan` counts, closest obstacle, front / left / right / rear sector minima by
+    bearing in the sensor frame), `odometry` (speed, angular z, position, yaw), `imu` (roll,
+    pitch, yaw, angular velocity and acceleration norms, orientation validity), `image`
+    (size, encoding, step, buffer length) and `point_cloud2` (point count, layout). `null`
+    for any other type. Units are meters, radians and seconds with no unit suffix
+    (docs/CONTRACT.md section 4).
+  - The summary is computed on the whole message even when `payload` is cut: a scan is
+    streamed uncut (`--full-length`, up to 4 MiB per message while streaming), summarized,
+    then cut to `max_array_length` as before; `Image` and `PointCloud2` never read their
+    buffers; a bag scan is decoded whole.
+  - `SampleResult.rate`: `message_count`, `window_s`, mean / median / max interval,
+    `interval_cv`, `observed_frequency_hz` (wall clock: `received_ns`, or `recorded_ns` for a
+    bag), `sim_frequency_hz` (from the messages' own stamps), `trailing_gap_s` and a
+    `verdict`: `silent`, `insufficient`, `intermittent`, `stable`, `jittery` or `erratic`.
+    Thresholds confirmed at 0.2 and 0.5 on both bases; the `jittery` note gives the longest
+    gap as a multiple of the median. Physical quantities carry no unit suffix (CONTRACT 1.4).
+  - `peek_bag_samples` now returns non-finite floats as the strings `nan`, `inf`, `-inf`
+    (they could not be written as JSON numbers).
+  - Mock mode: `/scan` is a 720-beam scan in a walled room, and `/imu/data` is a new mock
+    topic.
+- MCP prompts `diagnose-dds-bus` (optional `topic`, `symptom`) and `inspect-ros2-robot`
+  (optional `topic`, `bag_path`), the plugin skills in client-neutral wording, and server
+  `instructions` in the `initialize` result (read-only guarantee, which tool first,
+  `contract_version`) for clients that do not show prompts. They are snapshotted in
+  `tests/contract/_prompts.json`.
+- `tests/test_tool_descriptions.py`: no history words (`v0.x`, `Phase`, `ceiling`, `TODO`,
+  `since 0.`) in any tool or field description, and every tool that takes a lane lock states
+  its 45 s bound.
+- `docs/MIGRATION-0.7.md`: every old field and its new name, with before and after JSON.
+- Optional local HTTP transport: `topicforge --transport streamable-http --port N` serves the
+  tools on `http://127.0.0.1:N/mcp`. stdio stays the default. The bind address is fixed to
+  127.0.0.1 (no flag changes it) and DNS-rebinding protection is on (loopback `Host` and
+  `Origin` only). There is no authentication: use an SSH tunnel to reach a robot. See
+  `docs/CLIENTS.md`.
+- `docs/CONTRACT.md`: the output contract (one object per tool, a single `note`, no silent
+  null, suffix vocabulary, enum casing by layer, non-finite floats, reserved optional fields,
+  rate verdicts) and the complete list of renames and splits.
+- `docs/TOOLS.md`: tool reference generated from the served tools.
+- Golden snapshots of every tool (`tests/contract/*.json`), generated by
+  `scripts/contract/snapshot_tools.py`, and `tests/test_contract_snapshots.py`, which fails
+  with a diff on any change to a description, schema or annotation and when `TOOLS.md` is
+  stale.
+### Removed
+
+- The `opendds` and `dust` stub adapters (`topicforge.adapters.dds_opendds`,
+  `dds_dust`), their tests and the `requires_opendds` / `requires_dust` markers. The Pro tier
+  and `topicforge_pro` hook were already gone in 0.5.3: no code, setting or documentation
+  mentions `TOPICFORGE_LICENSE_KEY` any more.
+- The `RosAdapter` alias (see Breaking).
+
+### Changed
+
+- Tool descriptions state present behaviour only, name the lock they take and their worst-case
+  duration (45 s, lock wait included), and the description of `SampleResult.count` no longer
+  contradicts itself on the maximum of 50.
+- Moved to the MCP Python SDK 2.x: the dependency is now `mcp>=2.3,<3` (it was `mcp>=1.0.0,<2`).
+  `FastMCP` became `MCPServer`; the server reports `name` and `version` through the
+  constructor, which replaces the private-attribute workaround of 0.6.4. Handlers, tool
+  names, parameters and the stdio transport are unchanged. The SDK brings new dependencies
+  (`mcp-types`, `httpx2`, `opentelemetry-api`, `anyio`, `pydantic>=2.12`). The served schemas
+  differ only where the SDK serializes differently (see the golden snapshot commit).
+- Tool calls are serialized per backend (`topicforge.tools.guard`): the 2.x SDK runs
+  synchronous handlers in worker threads, and neither the Cyclone binding nor the `ros2` CLI
+  adapter can take overlapping calls. There are two locks: a ROS lane (`list_topics`,
+  `get_topic_info`, `sample_messages`, `analyze_bag`) and a DDS lane (the six DDS and
+  observability tools), so a slow `sample_messages` no longer delays a DDS call.
+  `health_check` and `peek_bag_samples` take no lock.
+- A tool call has a wall budget of 45 s, lock wait included. A call that waited for its lane
+  runs with the time that is left (the `ros2` timeouts shrink accordingly), and one that cannot
+  start with at least 5 s left fails at once with `busy: another ros call is running, retry`
+  (or `dds`) instead of waiting. At most 16 calls queue per lane.
+- `sample_messages` `timeout_s` now accepts 1..40 (it was 1..45), so that the timeout plus
+  stopping the CLI and decoding stays under the 45 s budget. The default is unchanged (10).
+- `health_check` `sim_clock_published` no longer runs `ros2 topic info /clock`: it reports
+  what the last `list_topics` (or `get_topic_info` on `/clock`) saw, `null` before the first
+  graph read and two minutes after it. This is what lets `health_check` always answer.
+- CI builds the wheel and installs it into a fresh venv on Ubuntu and Windows.
+
+### Fixed
+
+- The server can no longer freeze on a hung `ros2` CLI. Every `ros2` call now goes through one
+  process runner (`adapters/ros2_live/process_runner.py`) instead of `subprocess.run`: the
+  process starts in its own kill unit (Windows Job Object with a `taskkill /T` fallback, POSIX
+  process group with SIGINT then SIGKILL), runs under a hard deadline, and its whole tree is
+  killed at the deadline, so the stock `ros2` launcher can no longer leave an orphan holding
+  the output pipes. Output is capped at 8 MiB per stream. Error messages are unchanged.
+- `health_check` always answers, also while a `sample_messages` call is running.
+- The server no longer blocks the asyncio event loop during a long tool call (a 45 s
+  `sample_messages`, a hung `ros2` CLI): handlers run in worker threads, so the transport
+  keeps answering pings and cancellations.
+- `AdapterError` messages still reach the client as `isError` text. The 2.x SDK keeps the
+  text of any exception other than `ToolError` on the server, so every handler now
+  re-raises `AdapterError` as `ToolError` with the same message. Unexpected exceptions
+  stay redacted ("Error executing tool X") and leak no traceback.
+- `rate.observed_frequency_hz` on `received_ns` no longer counts the start-up drain of `ros2 topic echo` (up to 5 queued messages printed at once, which read `/clock` at 91 Hz for 50 Hz): the leading run of near-zero intervals is set aside and reported in the new additive `startup_burst_count`; the ground-truth comparator gates FAIL and STABLE_CV on 10 messages spanning 0.9 s.
+
 ## [0.6.4] - 2026-10-08
 
 ### Added

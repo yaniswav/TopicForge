@@ -1,0 +1,216 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "DDS participant events"
+  },
+  "description": "Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who was on the bus 5 minutes ago and left?' or 'when did this participant first appear?'. Returns a `ParticipantEventListing` `{events, returned, total, truncated, domain_id, mode_effective, note}`: each event carries `guid`, `event_type`, `vendor`, `timestamp_ns` (wall-clock ns since epoch), `time_source`, `observed_ns`, optional `name` (the participant's announced DDS name), optional `hostname` and `domain_id`. `time_source` says what `timestamp_ns` is: `dds_source_timestamp` (the DDS timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). `observed_ns` is when TopicForge noticed, always at or after a DDS-derived `timestamp_ns`. **Crash caveat**: a `lost` timestamp is an upper bound of the death. After a clean shutdown it is exact; after a crash it is when the lease expired, so the process died between `timestamp_ns` minus the dead participant's lease and `timestamp_ns` (10 s Cyclone default, 20 s Fast DDS, 100 s RTI), and the two cases cannot be told apart. A restarted node is a new participant: expect one `lost` and one `discovered` per restart, with different `guid`s and the same `name`. Sorted newest-first. Capped at 200 events (`truncated` is true and `note` says so; reduce `lookback_s` if you hit it). TopicForge only knows what happened since it started watching (see `health_check.observer_started_ns`). **Backend caveats**: Fast DDS captures arrivals and removals through listener callbacks; Cyclone tracks discovery in the background (a pass every 0.5 s, independent of tool calls), so restarts and crashes are recorded as they happen, but a participant cycle faster than the discovery reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after server start the call waits up to 3 s for discovery to warm up. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active (install `pip install topicforge[dds]` and set `TOPICFORGE_DDS_BACKEND=cyclone|fast`). **Duration**: uses the DDS binding behind the DDS lock, one DDS call at a time. The whole call, lock wait included, ends within 45 s; if another DDS call keeps the lock it fails at once with a `busy` error (retry).",
+  "inputSchema": {
+    "properties": {
+      "domain_id": {
+        "default": 0,
+        "description": "Accepted for compatibility (0..232). TopicForge observes the domain it joined at startup (TOPICFORGE_DDS_DOMAIN_ID); this argument does not switch domains, and the response `domain_id` says which one was observed.",
+        "maximum": 232,
+        "minimum": 0,
+        "title": "Domain Id",
+        "type": "integer"
+      },
+      "lookback_s": {
+        "default": 300,
+        "description": "Window (in seconds) over which to return events. Defaults to 300 (5 minutes). Range: 1..86400 (1 second to 24 hours). Larger windows may hit the 200-event cap: narrow the window or filter on `domain_id` when that happens.",
+        "maximum": 86400,
+        "minimum": 1,
+        "title": "Lookback S",
+        "type": "integer"
+      }
+    },
+    "title": "participant_eventsArguments",
+    "type": "object"
+  },
+  "name": "participant_events",
+  "outputSchema": {
+    "$defs": {
+      "ParticipantEvent": {
+        "additionalProperties": false,
+        "description": "A point-in-time lifecycle event (discovered or lost) for a DDS participant.\n\n`ParticipantInfo` is the current state; this is one event in its history.\nReturned by `participant_events`.",
+        "properties": {
+          "domain_id": {
+            "description": "DDS domain id the event occurred on.",
+            "maximum": 232,
+            "minimum": 0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "event_type": {
+            "description": "`discovered` when the participant first joined the bus (or rejoined after leaving). `lost` when TopicForge observed a `REMOVED` callback (Fast DDS) or a polling delta where the GUID no longer appears in the DCPSParticipant builtin reader snapshot (Cyclone). The transition is reported once per state change.",
+            "enum": [
+              "discovered",
+              "lost"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "guid": {
+            "description": "DDS Global Unique Identifier of the participant involved.",
+            "title": "Guid",
+            "type": "string"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Hostname announced by the participant when known, else `None`.",
+            "title": "Hostname"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Participant name (EntityName QoS) when known, else `None`.",
+            "title": "Name"
+          },
+          "observed_ns": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Local wall-clock time (ns since epoch) at which TopicForge noticed the event. Always at or after `timestamp_ns` when the latter is DDS-derived. `None` when not tracked.",
+            "title": "Observed Ns"
+          },
+          "time_source": {
+            "default": "observed_local",
+            "description": "Where `timestamp_ns` comes from. `dds_source_timestamp`: the DDS timestamp of the discovery announcement or dispose. For a `lost` event it is an upper bound: exact after a clean shutdown, the lease expiry after a crash (the process died up to one lease earlier: 10 s Cyclone default, 20 s Fast, 100 s RTI), and the two cannot be told apart. `observed_local`: the moment TopicForge noticed (weakest).",
+            "enum": [
+              "dds_source_timestamp",
+              "observed_local"
+            ],
+            "title": "Time Source",
+            "type": "string"
+          },
+          "timestamp_ns": {
+            "description": "Wall-clock timestamp (nanoseconds since epoch) when TopicForge captured the event. For Fast DDS this is when the listener callback ran; for Cyclone this is when the polling delta was computed; for mock fixtures this is a deterministic anchor.",
+            "minimum": 0,
+            "title": "Timestamp Ns",
+            "type": "integer"
+          },
+          "vendor": {
+            "description": "DDS implementation tag for the participant involved, decoded the same way as `ParticipantInfo.vendor`.",
+            "enum": [
+              "cyclone",
+              "fast",
+              "rti",
+              "rti_micro",
+              "opensplice",
+              "opendds",
+              "coredx",
+              "intercom",
+              "dust",
+              "mock",
+              "unknown"
+            ],
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guid",
+          "event_type",
+          "vendor",
+          "timestamp_ns",
+          "domain_id"
+        ],
+        "title": "ParticipantEvent",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Envelope returned by `participant_events`.",
+    "properties": {
+      "domain_id": {
+        "description": "DDS domain observed.",
+        "maximum": 232,
+        "minimum": 0,
+        "title": "Domain Id",
+        "type": "integer"
+      },
+      "events": {
+        "description": "Lifecycle events inside the window, newest first.",
+        "items": {
+          "$ref": "#/$defs/ParticipantEvent"
+        },
+        "title": "Events",
+        "type": "array"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "returned": {
+        "description": "Length of `events`.",
+        "minimum": 0,
+        "title": "Returned",
+        "type": "integer"
+      },
+      "total": {
+        "description": "Events inside the window before the cap.",
+        "minimum": 0,
+        "title": "Total",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "True when `returned` is less than `total` because of the 200-event cap.",
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "events",
+      "returned",
+      "total",
+      "truncated",
+      "domain_id",
+      "mode_effective"
+    ],
+    "title": "ParticipantEventListing",
+    "type": "object"
+  },
+  "title": "DDS participant events"
+}

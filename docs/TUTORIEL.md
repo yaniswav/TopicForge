@@ -31,7 +31,7 @@ Add it to your MCP client. For Claude Desktop, edit `claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. All twelve tools appear under the hammer icon. Ask something like:
+Restart Claude Desktop. All fourteen tools appear under the hammer icon. Ask something like:
 
 > What topics are being published right now, and what message types do they carry?
 
@@ -74,7 +74,7 @@ I rely on it.
 Catches flapping nodes (crash-restart loops), unexpected disconnects mid-run, or a new participant on the bus that nobody deployed on purpose.
 
 ```
-Call participant_events(domain_id=0, lookback_seconds=3600) and summarize
+Call participant_events(domain_id=0, lookback_s=3600) and summarize
 the last hour of DDS participant activity. Group by guid: which
 participants were discovered then lost more than once (possible crash
 loop), which are new, and which have been stable the whole window. Call

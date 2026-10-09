@@ -66,7 +66,7 @@ def _apply(caches: DiscoveryCaches, parts=(), pubs=(), subs=(), now: int = T0) -
 
 
 def _events(caches: DiscoveryCaches) -> list[Any]:
-    return list(reversed(caches.lifecycle.events_since(lookback_seconds=86400, now_ns=T0 + SEC)))
+    return list(reversed(caches.lifecycle.events_since(lookback_s=86400, now_ns=T0 + SEC)))
 
 
 def test_valid_participant_is_cached_and_discovered_at_dds_time() -> None:

@@ -76,6 +76,11 @@ class EchoRun:
     exit_code: int | None = None
     stderr_tail: str = ""
     oversized: int = 0
+    # Wall-clock arrival of each dropped message, so a rate can still count it.
+    oversized_received_ns: list[int] = field(default_factory=list)
+    # Wall clock when collection began and when it stopped (before the kill).
+    started_ns: int = 0
+    ended_ns: int = 0
 
 
 def stream_echo(
@@ -119,9 +124,10 @@ def stream_echo(
     for thread in threads:
         thread.start()
 
-    run = EchoRun()
+    run = EchoRun(started_ns=time.time_ns())
     try:
         _collect(run, proc, lines, count, deadline_s, max_document_chars)
+        run.ended_ns = time.time_ns()
     finally:
         kill_process_tree(proc, job)
         for thread in threads:
@@ -163,6 +169,8 @@ def _collect(
         if line.rstrip() == ECHO_DOCUMENT_SEPARATOR:
             if not dropping:
                 run.documents.append(EchoDocument(join_document_lines(current), received_ns))
+            else:
+                run.oversized_received_ns.append(received_ns)
             current, size, dropping = [], 0, False
         elif not dropping:
             size += len(line)

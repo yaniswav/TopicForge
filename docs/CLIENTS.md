@@ -40,7 +40,7 @@ version strings; a test keeps them in sync.
   of `topicforge`, installed only where it ships prebuilt wheels: Python 3.10 to 3.13 on
   Linux x86_64, Windows x64 and macOS. On Linux ARM (Jetson, Raspberry Pi), Windows ARM64
   or Python 3.14 the server still starts and `health_check` says why the DDS backend is
-  off (`dds_inactive_reason`); with a pinned Python, add `"--python", "3.12"` before
+  off (`dds_inactive_note`); with a pinned Python, add `"--python", "3.12"` before
   `"--from"` in the args. To build the binding yourself, install the Cyclone C library and
   run `pip install "topicforge[dds]"`. The `[dds]` and `[dds-cyclone]` extras still work
   as aliases, so older commands keep installing.
@@ -269,7 +269,7 @@ extensions:
 Program tab > Install > Edit `mcp.json` (same notation as Cursor), then paste the
 common JSON shape. LM Studio's docs only show remote examples; local command
 servers follow the Cursor notation but are not documented explicitly. Small
-local models may struggle with twelve tools.
+local models may struggle with fourteen tools.
 
 ## Amazon Q Developer / Kiro
 
@@ -280,6 +280,48 @@ same shape in `~/.aws/amazonq/mcp.json` (the Amazon Q path and the move to Kiro 
 ## Warp
 
 Settings > MCP > "+ Add", then paste the common JSON shape (unverified, last checked 2026-10-06: the Warp docs page could not be fetched).
+
+## Local HTTP transport
+
+stdio is the default and the right choice almost everywhere. When the client cannot launch
+the server itself, TopicForge can serve Streamable HTTP on the local machine:
+
+```
+topicforge --transport streamable-http --port 8765
+```
+
+The endpoint is `http://127.0.0.1:8765/mcp`. Two cases it is meant for:
+
+- WSL2 to Windows: run TopicForge inside WSL2 next to ROS 2, point a Windows client at
+  `http://127.0.0.1:8765/mcp` (WSL2 forwards localhost to Windows).
+- A robot: run it on the robot, then `ssh -L 8765:127.0.0.1:8765 robot` and use the same URL
+  on your laptop.
+
+Threat model: the server has no authentication, so anything that can reach the port can read
+your robot graph. It therefore binds `127.0.0.1` only (there is no flag to change that) and
+rejects any request whose `Host` or `Origin` is not a loopback name with the served port, which
+stops a web page in your browser from reaching it through DNS rebinding. Do not forward the
+port to a network interface; use an SSH tunnel instead.
+
+## Prompts and instructions
+
+The server offers two MCP prompts, `diagnose-dds-bus` (nodes do not talk, a topic gets no data,
+a node crashed) and `inspect-ros2-robot` (what topics exist, what a bag contains), plus short
+server `instructions` sent in the `initialize` result (the read-only guarantee, which tool to
+call first, `contract_version`). Both prompts take optional arguments (`topic`, `symptom` or
+`bag_path`) that only focus the text; they run no tool by themselves.
+
+| Client | Prompts | Instructions |
+| --- | --- | --- |
+| Claude Code, Claude Desktop | yes (slash commands / prompt picker) | yes |
+| Cursor | yes | yes |
+| VS Code / GitHub Copilot | yes (`/mcp.topicforge.<prompt>` in chat) | yes |
+| Gemini CLI | yes (each prompt becomes a slash command) | yes |
+| OpenAI Codex CLI | no | yes: this is how Codex learns the call order |
+| Other clients | depends on the client; check its MCP page | most read them |
+
+The Claude plugin in `plugin/` ships the same procedures as skills, which load by themselves
+when the question matches.
 
 ## Troubleshooting
 

@@ -17,7 +17,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 - `detect_qos_mismatches(topic=None)` returns a `MismatchScan` with one report for `/dds/qos_mismatch`: a RELIABLE reader against a BEST_EFFORT writer.
 - `list_endpoints()` returns the mock writers and readers with their QoS and a `by_topic` roll-up.
 - `peek_dds_samples(topic="/dds/well_matched", count=3)` returns three deterministic samples. The mock only knows `/dds/well_matched`, `/dds/qos_mismatch`, `/dds/topicforge/example` and `/dds/topicforge/opaque`, and raises "Unknown DDS topic" for anything else.
-- `topic_metrics(topic="/dds/heartbeat_10hz", window_seconds=60)` returns a pre-filled 10 Hz buffer (100 samples, no gaps, 50 ms latency). A live adapter behaves differently, see section 5 and [`examples/04-monitor-topic-frequency.md`](../examples/04-monitor-topic-frequency.md).
+- `topic_metrics(topic="/dds/heartbeat_10hz", window_s=60)` returns a pre-filled 10 Hz buffer (100 samples, no gaps, 50 ms latency). A live adapter behaves differently, see section 5 and [`examples/04-monitor-topic-frequency.md`](../examples/04-monitor-topic-frequency.md).
 
 The mock illustrates payload shapes that no live adapter produces today, such as the `"full"` decode status on `/dds/topicforge/example`.
 
@@ -30,11 +30,11 @@ pip install topicforge[dds]             # same as [dds-cyclone]
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-`cyclonedds` publishes wheels for CPython 3.10 to 3.13 on Windows, Linux and macOS (as of 11.0.1), and `topicforge` depends on it only there. Elsewhere (Linux aarch64, Python 3.14, Windows ARM64) `health_check` reports why in `dds_inactive_reason`. A background thread reads the builtin DCPS topics through `BuiltinDataReader`. On a real bus `list_participants` reports each participant's `name` (EntityName QoS) and `hostname` (the `__Hostname` discovery property) when the remote participant sets them, and the vendor from the first two bytes of the GUID prefix; implementations that do not follow that convention (Dust DDS, RTI by default) show vendor `unknown`.
+`cyclonedds` publishes wheels for CPython 3.10 to 3.13 on Windows, Linux and macOS (as of 11.0.1), and `topicforge` depends on it only there. Elsewhere (Linux aarch64, Python 3.14, Windows ARM64) `health_check` reports why in `dds_inactive_note`. A background thread reads the builtin DCPS topics through `BuiltinDataReader`. On a real bus `list_participants` reports each participant's `name` (EntityName QoS) and `hostname` (the `__Hostname` discovery property) when the remote participant sets them, and the vendor from the first two bytes of the GUID prefix; implementations that do not follow that convention (Dust DDS, RTI by default) show vendor `unknown`.
 
 Fast DDS has no PyPI install path. The `fastdds` binding is not published, so TopicForge declares no extra for it. Build eProsima's [Fast-DDS-python](https://github.com/eProsima/Fast-DDS-python) from source (it needs the Fast DDS C++ libraries and SWIG), install it into the same environment, then `TOPICFORGE_DDS_BACKEND=fast`. The adapter was written against the 2.6.x API and has never run against a bus.
 
-Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes importable bindings in the order `fast`, `cyclone`, `mock`. With only the PyPI extra installed it resolves to Cyclone. `opendds` and `dust` are permanent stubs that always report unavailable and are not in the chain.
+Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes importable bindings in the order `fast`, `cyclone`, `mock`. With only the PyPI extra installed it resolves to Cyclone. Any other value (`opendds`, `dust`, `rti`, ...) is rejected at startup with an error that lists the valid ones.
 
 Domain. `TOPICFORGE_DDS_DOMAIN_ID` (`0..232`, default `0`) is joined at startup; the `domain_id` tool parameter exists for protocol uniformity only. Changing domains needs a restart.
 
@@ -117,7 +117,7 @@ User topics are not decoded. For a user topic the tool returns count 0 and a `no
 
 An empty result says nothing about traffic. The earlier decode path never worked on either backend and is disabled until it can be validated against a real bus. The `"full"` and `"partial"` decode statuses stay in the schema and the mock emits examples of them, but no live adapter produces them.
 
-`topic_metrics` only has data for the builtin topics. For a user topic it returns `status="unsupported_user_topic"`, and its null fields are not a measurement. For a builtin topic, `frequency_hz_observed` is how often you called `peek_dds_samples` (one call yields `null`), `sequence_numbers_available` is `false` and the latency percentiles are `null`, because builtin samples carry no publish timestamp. `frequency_hz_declared` is `1 / deadline` for the shortest Deadline a writer announced, when there is one. Use it to watch discovery-layer churn, not to check a publish rate.
+`topic_metrics` only has data for the builtin topics. For a user topic it returns `status="unsupported_user_topic"`, and its null fields are not a measurement. For a builtin topic, `observed_frequency_hz` is how often you called `peek_dds_samples` (one call yields `null`), `sequence_numbers_available` is `false` and the latency percentiles are `null`, because builtin samples carry no publish timestamp. `declared_frequency_hz` is `1 / deadline` for the shortest Deadline a writer announced, when there is one. Use it to watch discovery-layer churn, not to check a publish rate.
 
 Lifecycle. On Cyclone a background thread (0.5 s period) reads the three builtin discovery topics and feeds the caches behind every discovery tool, so `participant_events` and `list_participants` do not depend on when you call them. A participant that cycles faster than the discovery history depth between two passes can still be missed. Event times come from DDS (`announced_ns`, `lost_ns`), with `time_source` saying which clock. A `lost` time is an upper bound of the death: a crash is only noticed when the lease expires, and a crash cannot be told from a clean leave. A writer that is alive but silent is not observable without reading its data. Fast DDS captures arrival and removal through listener callbacks.
 

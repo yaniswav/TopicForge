@@ -5,14 +5,15 @@ description: Inspect a ROS 2 robot or a recorded bag with TopicForge when the us
 
 # Inspect a ROS 2 robot or bag
 
-Use the TopicForge tools. They only read; never suggest publishing, commanding or changing the robot.
+Use the TopicForge tools (output contract 2: check `health_check.contract_version` is 2). The same procedure is available as the MCP prompt `inspect-ros2-robot`. They only read; never suggest publishing, commanding or changing the robot.
 
 ## Live graph
 
 1. `health_check`. If `mode` is `mock`, the data is a fictional demo robot, not the user's: say so. If `ros_backend` is `none` there is no ROS 2 CLI; use the `diagnose-dds-bus` skill tools (`list_endpoints`) instead.
-2. `list_topics`: names, types, publisher and subscriber counts. QoS is null here.
+2. `list_topics`: names, types, publisher and subscriber counts, in `topics`. QoS is not in the listing: `get_topic_info` gives `publisher_qos`, `subscription_qos` and the node names on each side.
 3. `get_topic_info` for one topic: reliability, durability (`transient_local` means latched, as on `/tf_static`).
-4. `sample_messages` for content. Keep `count` small and raise `timeout_s` for topics slower than 1 Hz.
+4. `list_nodes` for who is on the graph, then `get_node_info` for one node: its publishers, subscribers, services, actions, parameters and `use_sim_time`. `duplicates` flags several nodes with one name (the CLI answers for one of them). `parameters` null with a `parameters_note` means the node did not answer its parameter read in time, so its executor is probably blocked: report that as a finding, not an error. Values named password, secret, token, api_key or credential are masked.
+5. `sample_messages` for content. Keep `count` small and raise `timeout_s` for topics slower than 1 Hz.
 
 ## sample_messages options
 

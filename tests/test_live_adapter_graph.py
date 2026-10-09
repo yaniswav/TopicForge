@@ -22,8 +22,11 @@ from topicforge.adapters.ros2_live.parsers import (
     EndpointQos,
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
-    summarize_publisher_qos,
+    qualified_node_name,
+    side_nodes,
+    summarize_side_qos,
 )
+from topicforge.models import SideQos, TopicListItem
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _MODULE = "topicforge.adapters.ros2_live.adapter"
@@ -39,14 +42,18 @@ def _fixture(name: str) -> str:
 
 def test_endpoint_qos_of_a_single_publisher() -> None:
     assert parse_topic_endpoint_qos(_fixture("scan")) == [
-        EndpointQos("PUBLISHER", "reliable", "volatile")
+        EndpointQos("PUBLISHER", "reliable", "volatile", "/omnisim_sensors")
     ]
 
 
 def test_endpoint_qos_of_a_subscription_only_topic() -> None:
     endpoints = parse_topic_endpoint_qos(_fixture("cmd_vel"))
     assert [e.endpoint_type for e in endpoints] == ["SUBSCRIPTION"]
-    assert summarize_publisher_qos(endpoints) == (None, None)
+    assert summarize_side_qos(endpoints, "PUBLISHER", 0)[0] is None
+    assert summarize_side_qos(endpoints, "SUBSCRIPTION", 1) == (
+        SideQos(reliability="reliable", durability="volatile", endpoint_count=1),
+        None,
+    )
 
 
 def test_endpoint_qos_reads_every_endpoint_of_a_busy_topic() -> None:
@@ -56,16 +63,16 @@ def test_endpoint_qos_reads_every_endpoint_of_a_busy_topic() -> None:
 
 
 def test_latched_topic_reports_transient_local() -> None:
-    assert summarize_publisher_qos(parse_topic_endpoint_qos(_fixture("tf_static"))) == (
-        "reliable",
-        "transient_local",
-    )
+    qos, note = summarize_side_qos(parse_topic_endpoint_qos(_fixture("tf_static")), "PUBLISHER", 2)
+    assert note is None
+    assert qos is not None and (qos.reliability, qos.durability) == ("reliable", "transient_local")
 
 
 def test_publishers_that_agree_give_one_value() -> None:
     endpoints = parse_topic_endpoint_qos(_fixture("tf"))
     assert len(endpoints) == 2
-    assert summarize_publisher_qos(endpoints) == ("reliable", "volatile")
+    qos, _ = summarize_side_qos(endpoints, "PUBLISHER", 2)
+    assert qos == SideQos(reliability="reliable", durability="volatile", endpoint_count=2)
 
 
 def test_publishers_that_disagree_give_mixed() -> None:
@@ -74,10 +81,15 @@ def test_publishers_that_disagree_give_mixed() -> None:
         EndpointQos("PUBLISHER", "best_effort", "transient_local"),
         EndpointQos("SUBSCRIPTION", "best_effort", "volatile"),
     ]
-    assert summarize_publisher_qos(endpoints) == ("mixed", "mixed")
+    assert summarize_side_qos(endpoints, "PUBLISHER", 2)[0] == SideQos(
+        reliability="mixed", durability="mixed", endpoint_count=2
+    )
+    assert summarize_side_qos(endpoints, "SUBSCRIPTION", 1)[0] == SideQos(
+        reliability="best_effort", durability="volatile", endpoint_count=1
+    )
 
 
-def test_unknown_policy_values_are_ignored() -> None:
+def test_unknown_policy_values_are_ignored_when_another_endpoint_reports() -> None:
     text = (
         "Type: a/msg/A\n\nPublisher count: 2\n\n"
         "Node name: n1\nEndpoint type: PUBLISHER\nQoS profile:\n"
@@ -85,12 +97,27 @@ def test_unknown_policy_values_are_ignored() -> None:
         "Node name: n2\nEndpoint type: PUBLISHER\nQoS profile:\n"
         "  Reliability: SYSTEM_DEFAULT\n  Durability: VOLATILE\n"
     )
-    assert summarize_publisher_qos(parse_topic_endpoint_qos(text)) == ("best_effort", "volatile")
+    qos, _ = summarize_side_qos(parse_topic_endpoint_qos(text), "PUBLISHER", 2)
+    assert qos == SideQos(reliability="best_effort", durability="volatile", endpoint_count=2)
+
+
+def test_a_policy_nobody_reports_leaves_the_side_without_qos() -> None:
+    text = (
+        "Type: a/msg/A\n\nPublisher count: 1\n\n"
+        "Node name: n1\nNode namespace: /\nEndpoint type: PUBLISHER\nQoS profile:\n"
+        "  Reliability: BEST_EFFORT\n  Durability: UNKNOWN\n"
+    )
+    qos, note = summarize_side_qos(parse_topic_endpoint_qos(text), "PUBLISHER", 1)
+    assert qos is None
+    assert note is not None and "UNKNOWN" in note
 
 
 def test_no_endpoint_blocks_means_no_qos() -> None:
     assert parse_topic_endpoint_qos("Type: a/msg/A\nPublisher count: 0\n") == []
-    assert summarize_publisher_qos([]) == (None, None)
+    qos, note = summarize_side_qos([], "PUBLISHER", 0)
+    assert qos is None and note == "The topic has no publisher, so there is no QoS to report."
+    qos, note = summarize_side_qos([], "SUBSCRIPTION", 2)
+    assert qos is None and note == "The `ros2` CLI did not list the QoS of the subscriptions."
 
 
 def test_parse_topic_info_fills_qos_fields() -> None:
@@ -100,15 +127,82 @@ def test_parse_topic_info_fills_qos_fields() -> None:
     assert info is not None
     assert info.message_type == "tf2_msgs/msg/TFMessage"
     assert info.publisher_count == 2
-    assert info.qos_reliability == "reliable"
-    assert info.qos_durability == "transient_local"
+    assert info.publisher_qos == SideQos(
+        reliability="reliable", durability="transient_local", endpoint_count=2
+    )
+    assert info.publisher_qos_note is None
+    assert info.subscription_qos is None
+    assert (
+        info.subscription_qos_note == "The topic has no subscriber, so there is no QoS to report."
+    )
 
 
 def test_parse_topic_info_without_verbose_block_leaves_qos_empty() -> None:
     text = "Type: a/msg/A\nPublisher count: 1\nSubscription count: 0\n"
     info = parse_topic_info(text, fallback_name="/a", mode_effective="live")
     assert info is not None
-    assert info.qos_reliability is None and info.qos_durability is None
+    assert info.publisher_qos is None and info.subscription_qos is None
+    assert info.publisher_qos_note == "The `ros2` CLI did not list the QoS of the publishers."
+    assert info.publisher_nodes == [] and info.subscriber_nodes == []
+
+
+# ---- nodes on each side ------------------------------------------------------
+
+
+def test_qualified_node_name_joins_namespace_and_name() -> None:
+    assert qualified_node_name("/", "lidar") == "/lidar"
+    assert qualified_node_name("/robot1", "lidar") == "/robot1/lidar"
+    assert qualified_node_name("/robot1/", "lidar") == "/robot1/lidar"
+    assert qualified_node_name("/", "_NODE_NAME_UNKNOWN_") is None
+    assert qualified_node_name("/", "") is None
+
+
+def test_clock_has_one_publisher_and_five_subscribers() -> None:
+    # Shape of OmniSim's /clock: 1 publisher, 5 subscribers (node names from the captures).
+    info = parse_topic_info(_fixture("clock"), fallback_name="/clock", mode_effective="live")
+    assert info is not None
+    assert (info.publisher_count, info.subscriber_count) == (1, 5)
+    assert info.publisher_nodes == ["/omnisim_clock"]
+    assert info.subscriber_nodes == [
+        "/omnisim_sensors",
+        "/omnisim_command",
+        "/omnisim_odometry",
+        "/omnisim_tf",
+        "/husky/omnisim_bridge",
+    ]
+    assert info.publisher_qos == SideQos(
+        reliability="reliable", durability="volatile", endpoint_count=1
+    )
+    assert info.subscription_qos == SideQos(
+        reliability="best_effort", durability="volatile", endpoint_count=5
+    )
+
+
+def test_cmd_vel_has_no_publisher_and_one_subscriber() -> None:
+    # Subscriber-only topic: the subscription side is reported, the publisher side says why not.
+    info = parse_topic_info(_fixture("cmd_vel"), fallback_name="/cmd_vel", mode_effective="live")
+    assert info is not None
+    assert (info.publisher_count, info.subscriber_count) == (0, 1)
+    assert info.publisher_nodes == []
+    assert info.subscriber_nodes == ["/omnisim_command"]
+    assert info.publisher_qos is None
+    assert info.publisher_qos_note == "The topic has no publisher, so there is no QoS to report."
+    assert info.subscription_qos == SideQos(
+        reliability="reliable", durability="volatile", endpoint_count=1
+    )
+    assert info.subscription_qos_note is None
+
+
+def test_side_nodes_are_distinct_and_in_cli_order() -> None:
+    endpoints = [
+        EndpointQos("PUBLISHER", "reliable", "volatile", "/b"),
+        EndpointQos("PUBLISHER", "reliable", "volatile", "/a"),
+        EndpointQos("PUBLISHER", "reliable", "volatile", "/b"),
+        EndpointQos("PUBLISHER", "reliable", "volatile", None),
+        EndpointQos("SUBSCRIPTION", "reliable", "volatile", "/c"),
+    ]
+    assert side_nodes(endpoints, "PUBLISHER") == ["/b", "/a"]
+    assert side_nodes(endpoints, "SUBSCRIPTION") == ["/c"]
 
 
 # ---- topic list -v ---------------------------------------------------------
@@ -153,7 +247,7 @@ def test_parse_topic_list_verbose_unrecognized_format_is_none(text: str) -> None
 
 
 class _Cli:
-    """Stubs `subprocess.run`: answers by CLI subcommand and records the commands."""
+    """Stubs `run_process`: answers by CLI subcommand and records the commands."""
 
     def __init__(self, answers: dict[str, str | int]) -> None:
         self.answers = answers
@@ -166,13 +260,13 @@ class _Cli:
         key = " ".join(cmd[1:3]) + (" -v" if "-v" in cmd else "")
         answer = self.answers.get(key, "")
         if isinstance(answer, int):
-            return SimpleNamespace(returncode=answer, stdout="", stderr="boom")
-        return SimpleNamespace(returncode=0, stdout=answer, stderr="")
+            return SimpleNamespace(timed_out=False, returncode=answer, stdout="", stderr="boom")
+        return SimpleNamespace(timed_out=False, returncode=0, stdout=answer, stderr="")
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, cli: _Cli) -> None:
     monkeypatch.setattr(f"{_MODULE}.shutil.which", lambda name: f"/fake/bin/{name}")
-    monkeypatch.setattr(f"{_MODULE}.subprocess.run", cli)
+    monkeypatch.setattr(f"{_MODULE}.run_process", cli)
 
 
 _LIST_T = (
@@ -191,7 +285,7 @@ def test_list_topics_reads_counts_from_the_verbose_list(
     topics = {t.name: t for t in Ros2CliAdapter().list_topics()}
     assert (topics["/tf"].publisher_count, topics["/tf"].subscriber_count) == (2, 3)
     assert (topics["/cmd_vel"].publisher_count, topics["/cmd_vel"].subscriber_count) == (0, 1)
-    assert all(t.qos_reliability is None and t.qos_durability is None for t in topics.values())
+    assert all(set(t.model_dump()) == set(TopicListItem.model_fields) for t in topics.values())
     # Only the topic absent from both sections costs a per-topic call.
     assert sum(c[1:3] == ["topic", "info"] for c in cli.commands) == 1
 
@@ -232,16 +326,9 @@ def test_get_topic_info_reports_qos(monkeypatch: pytest.MonkeyPatch) -> None:
     cli = _Cli({"topic info": _fixture("tf_static")})
     _install(monkeypatch, cli)
     info = Ros2CliAdapter().get_topic_info("/tf_static")
-    assert (info.qos_reliability, info.qos_durability) == ("reliable", "transient_local")
-
-
-def test_subprocess_output_is_decoded_as_utf8_with_replacement(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cli = _Cli({"topic list": _LIST_T, "topic list -v": _LIST_V})
-    _install(monkeypatch, cli)
-    Ros2CliAdapter().list_topics()
-    assert all(k["encoding"] == "utf-8" and k["errors"] == "replace" for k in cli.kwargs)
+    assert info.publisher_qos == SideQos(
+        reliability="reliable", durability="transient_local", endpoint_count=2
+    )
 
 
 # ---- sample_messages flags -------------------------------------------------
@@ -253,7 +340,7 @@ def _echo_command(
     cli = _Cli(
         {
             "topic info": info
-            or "Type: sensor_msgs/msg/LaserScan\nPublisher count: 1\nSubscription count: 0\n"
+            or "Type: geometry_msgs/msg/Twist\nPublisher count: 1\nSubscription count: 0\n"
         }
     )
     _install(monkeypatch, cli)
@@ -270,7 +357,7 @@ def _echo_command(
 
 def _info(reliability: str, durability: str, count: int = 1) -> str:
     block = (
-        "Type: sensor_msgs/msg/LaserScan\nPublisher count: {n}\nSubscription count: 0\n\n"
+        "Type: geometry_msgs/msg/Twist\nPublisher count: {n}\nSubscription count: 0\n\n"
         "Node name: talker\nEndpoint type: PUBLISHER\n"
         "Reliability: {r}\nDurability: {d}\n"
     )

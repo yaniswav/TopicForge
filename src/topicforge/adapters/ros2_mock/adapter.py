@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
-from topicforge.adapters.ros2_mock import fixtures
+from topicforge.adapters.ros2_mock import fixtures, node_fixtures
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_SAMPLE_TIMEOUT_S,
@@ -15,10 +15,13 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -40,14 +43,21 @@ class MockAdapter:
     def is_available(self) -> bool:
         return True
 
-    def list_topics(self) -> list[TopicInfo]:
-        return list(fixtures.MOCK_TOPICS)
+    def list_topics(self) -> list[TopicListItem]:
+        return list(fixtures.MOCK_TOPIC_ITEMS)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         for t in fixtures.MOCK_TOPICS:
             if t.name == topic:
                 return t
         raise AdapterError(f"Unknown topic: {topic!r}")
+
+    def list_nodes(self) -> NodeListing:
+        return node_fixtures.mock_node_listing()
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
+        # Mock parameters are read instantly, so `timeout_s` does not apply.
+        return node_fixtures.mock_node_info(node)
 
     def sample_messages(
         self,
@@ -58,14 +68,24 @@ class MockAdapter:
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
     ) -> SampleResult:
-        # Mock payloads are small structured dicts and never wait: the array and
-        # timeout options do not apply.
+        # Mock samples never wait, so `timeout_s` does not apply.
         if count < 0:
             raise AdapterError("count must be >= 0")
         # Validate the topic exists first so the error is the same as `get_topic_info`.
         self.get_topic_info(topic)
-        samples = fixtures.mock_samples_for(topic, count)
-        return SampleResult(topic=topic, count=len(samples), samples=samples, mode_effective="mock")
+        samples = fixtures.mock_samples_for(
+            topic,
+            count,
+            max_array_length=max_array_length,
+            arrays_summary_only=arrays_summary_only,
+        )
+        return SampleResult(
+            topic=topic,
+            count=len(samples),
+            samples=samples,
+            mode_effective="mock",
+            rate=fixtures.mock_sample_rate(samples),
+        )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         _reject_non_bag_path(path)
@@ -84,6 +104,7 @@ class MockAdapter:
             count=len(samples),
             samples=samples,
             mode_effective="mock",
+            rate=fixtures.mock_bag_rate(samples),
         )
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
@@ -116,26 +137,27 @@ class MockAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
-        return fixtures.mock_endpoint_listing(topic, participant_guid, include_observer)
+        return fixtures.mock_endpoint_listing(
+            topic, participant_guid, include_observer, include_internal
+        )
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
-        if lookback_seconds < 1 or lookback_seconds > 86400:
-            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
-        return fixtures.mock_participant_events_for(domain_id, lookback_seconds)
+        if lookback_s < 1 or lookback_s > 86400:
+            raise AdapterError(f"lookback_s must be in 1..86400, got {lookback_s}")
+        return fixtures.mock_participant_events_for(domain_id, lookback_s)
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
-        if window_seconds < 1 or window_seconds > 3600:
-            raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
-        return fixtures.mock_topic_metrics_for(topic, window_seconds, domain_id)
+        if window_s < 1 or window_s > 3600:
+            raise AdapterError(f"window_s must be in 1..3600, got {window_s}")
+        return fixtures.mock_topic_metrics_for(topic, window_s, domain_id)
 
 
 def _reject_non_bag_path(path: str) -> None:

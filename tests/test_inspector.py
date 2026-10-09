@@ -9,8 +9,10 @@ from topicforge.services import Inspector
 
 
 def test_list_topics_passes_through(inspector: Inspector) -> None:
-    topics = inspector.list_topics()
-    assert len(topics) >= 5
+    listing = inspector.list_topics()
+    assert len(listing.topics) >= 5
+    assert listing.returned == listing.total == len(listing.topics)
+    assert listing.truncated is False and listing.mode_effective == "mock"
 
 
 def test_get_topic_info_requires_leading_slash(inspector: Inspector) -> None:
@@ -132,9 +134,11 @@ def test_backend_name(inspector: Inspector) -> None:
 
 def test_participant_events_default_lookback(inspector: Inspector) -> None:
     """Default lookback (300s) yields the mock fixture's four events."""
-    events = inspector.participant_events(domain_id=0)
-    assert len(events) == 4
-    assert all(e.event_type == "discovered" for e in events)
+    listing = inspector.participant_events(domain_id=0)
+    assert len(listing.events) == 4
+    assert all(e.event_type == "discovered" for e in listing.events)
+    assert listing.returned == listing.total == 4 and listing.truncated is False
+    assert listing.domain_id == 0 and listing.mode_effective == "mock" and listing.note is None
 
 
 def test_participant_events_rejects_out_of_range_domain(inspector: Inspector) -> None:
@@ -150,12 +154,12 @@ def test_participant_events_rejects_non_int_domain(inspector: Inspector) -> None
 
 
 def test_participant_events_rejects_out_of_range_lookback(inspector: Inspector) -> None:
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        inspector.participant_events(domain_id=0, lookback_seconds=0)
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        inspector.participant_events(domain_id=0, lookback_seconds=86401)
+    with pytest.raises(AdapterError, match="lookback_s"):
+        inspector.participant_events(domain_id=0, lookback_s=0)
+    with pytest.raises(AdapterError, match="lookback_s"):
+        inspector.participant_events(domain_id=0, lookback_s=86401)
 
 
 def test_participant_events_rejects_non_int_lookback(inspector: Inspector) -> None:
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        inspector.participant_events(domain_id=0, lookback_seconds="60")  # type: ignore[arg-type]
+    with pytest.raises(AdapterError, match="lookback_s"):
+        inspector.participant_events(domain_id=0, lookback_s="60")  # type: ignore[arg-type]
