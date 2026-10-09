@@ -70,12 +70,13 @@ def test_get_topic_info_counts(adapter: Ros2CliAdapter) -> None:
 
 
 def test_get_topic_info_reports_qos_reliability(adapter: Ros2CliAdapter) -> None:
-    assert adapter.get_topic_info("/scan").qos_reliability == "reliable"
+    qos = adapter.get_topic_info("/scan").publisher_qos
+    assert qos is not None and qos.reliability == "reliable"
 
 
 def test_get_topic_info_reports_latched_durability(adapter: Ros2CliAdapter) -> None:
-    info = adapter.get_topic_info("/robot_description_lite")
-    assert info.qos_durability == "transient_local"
+    qos = adapter.get_topic_info("/robot_description_lite").publisher_qos
+    assert qos is not None and qos.durability == "transient_local"
 
 
 def test_get_topic_info_unknown_topic_raises(adapter: Ros2CliAdapter) -> None:

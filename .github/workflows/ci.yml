@@ -119,9 +119,9 @@ jobs:
           settings = load_settings()
           build_app(settings)
           report = HealthService(settings, build_adapter(settings)).report()
-          reason = report.dds_inactive_reason or ""
+          reason = report.dds_inactive_note or ""
           print("dds_backend:", report.dds_backend)
-          print("dds_inactive_reason:", reason)
+          print("dds_inactive_note:", reason)
           assert "no prebuilt wheel for linux-aarch64" in reason, reason
           PY
 
