@@ -3,7 +3,9 @@
 The server is built in mock mode and its tools are listed through the MCP
 layer, the way a client sees them. Each tool becomes one JSON file under
 `tests/contract/` holding its name, title, full description, `inputSchema`,
-`outputSchema` and annotations. `docs/TOOLS.md` is generated from the same data.
+`outputSchema` and annotations. `tests/contract/_prompts.json` holds the MCP prompts
+(with their arguments and rendered text) and the server `instructions`.
+`docs/TOOLS.md` is generated from the same data.
 
 Usage (from the repository root):
 
@@ -29,21 +31,49 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_DIR = REPO_ROOT / "tests" / "contract"
 TOOLS_DOC = REPO_ROOT / "docs" / "TOOLS.md"
+PROMPTS_SNAPSHOT = SNAPSHOT_DIR / "_prompts.json"
 
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 JsonDict = dict[str, Any]
 
 
-def collect_tools() -> list[JsonDict]:
-    """List the tools served in mock mode, as plain JSON-ready dicts, sorted by name."""
+def _build_mock_app() -> Any:
     from topicforge.config import Settings
     from topicforge.server import build_app
 
     logging.disable(logging.CRITICAL)
-    app = build_app(
+    return build_app(
         Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
     )
+
+
+def collect_prompts() -> JsonDict:
+    """The MCP prompts (arguments and rendered text) and the server instructions."""
+    app = _build_mock_app()
+
+    async def run() -> JsonDict:
+        out: list[JsonDict] = []
+        for prompt in sorted(await app.list_prompts(), key=lambda p: p.name):
+            wire = prompt.model_dump(by_alias=True, exclude_none=True)
+            rendered = await app.get_prompt(prompt.name, {})
+            out.append(
+                {
+                    "name": prompt.name,
+                    "title": wire.get("title"),
+                    "description": wire.get("description"),
+                    "arguments": wire.get("arguments", []),
+                    "text": "\n".join(m.content.text for m in rendered.messages),
+                }
+            )
+        return {"instructions": app.instructions, "prompts": out}
+
+    return asyncio.run(run())
+
+
+def collect_tools() -> list[JsonDict]:
+    """List the tools served in mock mode, as plain JSON-ready dicts, sorted by name."""
+    app = _build_mock_app()
     tools = asyncio.run(app.list_tools())
     out: list[JsonDict] = []
     for tool in tools:
@@ -91,7 +121,7 @@ def compare(tools: list[JsonDict]) -> list[str]:
     """Return one readable message per difference between stored snapshots and `tools`."""
     problems: list[str] = []
     served = {t["name"]: render_snapshot(t) for t in tools}
-    stored = {p.stem: p for p in SNAPSHOT_DIR.glob("*.json")}
+    stored = {p.stem: p for p in SNAPSHOT_DIR.glob("*.json") if not p.stem.startswith("_")}
     for name in sorted(served.keys() - stored.keys()):
         problems.append(f"tool {name!r} is served but has no snapshot")
     for name in sorted(stored.keys() - served.keys()):
@@ -110,13 +140,30 @@ def write_snapshots(tools: list[JsonDict]) -> list[Path]:
     written: list[Path] = []
     names = {t["name"] for t in tools}
     for stale in SNAPSHOT_DIR.glob("*.json"):
-        if stale.stem not in names:
+        if stale.stem not in names and not stale.stem.startswith("_"):
             stale.unlink()
     for tool in tools:
         path = snapshot_path(tool["name"])
         path.write_text(render_snapshot(tool), encoding="utf-8", newline="\n")
         written.append(path)
     return written
+
+
+def compare_prompts(prompts: JsonDict) -> list[str]:
+    """One readable message when the stored `_prompts.json` differs from `prompts`."""
+    actual = render_snapshot(prompts)
+    if not PROMPTS_SNAPSHOT.exists():
+        return ["tests/contract/_prompts.json is missing"]
+    expected = PROMPTS_SNAPSHOT.read_text(encoding="utf-8")
+    if expected == actual:
+        return []
+    return ["prompts or instructions differ:\n" + diff_snapshot("_prompts", expected, actual)]
+
+
+def write_prompts(prompts: JsonDict) -> Path:
+    """Rewrite `_prompts.json`."""
+    PROMPTS_SNAPSHOT.write_text(render_snapshot(prompts), encoding="utf-8", newline="\n")
+    return PROMPTS_SNAPSHOT
 
 
 # --- docs/TOOLS.md ---------------------------------------------------------
@@ -250,12 +297,13 @@ def main(argv: list[str] | None = None) -> int:
     tools = collect_tools()
     if args.update:
         print(f"wrote {len(write_snapshots(tools))} snapshots to {SNAPSHOT_DIR}")
+        print(f"wrote {write_prompts(collect_prompts())}")
     if args.docs:
         TOOLS_DOC.write_text(render_tools_doc(tools), encoding="utf-8", newline="\n")
         print(f"wrote {TOOLS_DOC}")
     if args.update or args.docs:
         return 0
-    problems = compare(tools)
+    problems = compare(tools) + compare_prompts(collect_prompts())
     for problem in problems:
         print(problem)
     return 1 if problems else 0

@@ -68,11 +68,6 @@ def test_selected_binding_installed_but_adapter_failed(monkeypatch: pytest.Monke
     assert "installed" in reason and "failed to load or start" in reason
 
 
-def test_stub_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    _installed(monkeypatch)
-    assert "stub" in factory._dds_inactive_reason(_settings("opendds"))
-
-
 def test_factory_hands_the_reason_to_the_cli_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     _installed(monkeypatch, "cyclonedds")
     monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)

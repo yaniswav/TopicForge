@@ -152,8 +152,6 @@ def _dds_inactive_reason(settings: Settings) -> str:
             )
         return f"no DDS backend is selected and no DDS binding is installed. {_cyclone_hint()}"
     module = DDS_BACKEND_MODULES.get(backend)
-    if backend in ("opendds", "dust"):
-        return f"`TOPICFORGE_DDS_BACKEND={backend}` is a stub that never serves; use `cyclone`."
     if module is not None and not module_is_importable(module):
         return (
             f"`TOPICFORGE_DDS_BACKEND={backend}` is set but its `{module}` Python binding is "
@@ -177,10 +175,6 @@ def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:
         return _try_build_fast(settings)
     if dds_backend == "cyclone":
         return _try_build_cyclone(settings)
-    if dds_backend == "opendds":
-        return _try_build_opendds(settings)
-    if dds_backend == "dust":
-        return _try_build_dust(settings)
     return None
 
 
@@ -235,52 +229,6 @@ def _try_build_fast(settings: Settings) -> MiddlewareAdapter | None:
         return None
 
     return _instantiate("FastDdsAdapter", lambda: FastDdsAdapter(domain_id=settings.dds_domain_id))
-
-
-def _try_build_opendds(settings: Settings) -> MiddlewareAdapter | None:
-    """Instantiate the `OpenDdsAdapter` stub, which is never available.
-
-    Routing here makes an explicit `TOPICFORGE_DDS_BACKEND=opendds` log a
-    warning instead of falling back to mock silently.
-    """
-    try:
-        from topicforge.adapters.dds_opendds import OpenDdsAdapter
-    except ImportError:
-        log.warning(
-            "TOPICFORGE_DDS_BACKEND=opendds but the OpenDDS adapter "
-            "module is not available. The DDS module is unavailable."
-        )
-        return None
-    except Exception as exc:  # a native library can fail to load (OSError)
-        log.warning(
-            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
-            type(exc).__name__,
-            exc,
-        )
-        return None
-
-    return _instantiate("OpenDdsAdapter", lambda: OpenDdsAdapter(domain_id=settings.dds_domain_id))
-
-
-def _try_build_dust(settings: Settings) -> MiddlewareAdapter | None:
-    """Instantiate the `DustDdsAdapter` stub, which is never available."""
-    try:
-        from topicforge.adapters.dds_dust import DustDdsAdapter
-    except ImportError:
-        log.warning(
-            "TOPICFORGE_DDS_BACKEND=dust but the Dust DDS adapter "
-            "module is not available. The DDS module is unavailable."
-        )
-        return None
-    except Exception as exc:  # a native library can fail to load (OSError)
-        log.warning(
-            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
-            type(exc).__name__,
-            exc,
-        )
-        return None
-
-    return _instantiate("DustDdsAdapter", lambda: DustDdsAdapter(domain_id=settings.dds_domain_id))
 
 
 def _instantiate(label: str, build: Callable[[], MiddlewareAdapter]) -> MiddlewareAdapter | None:

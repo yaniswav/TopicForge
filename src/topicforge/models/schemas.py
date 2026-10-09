@@ -1102,7 +1102,7 @@ class BagAnalysis(BaseModel):
 
 
 class SampleResult(BaseModel):
-    """Envelope returned by the `sample_messages` tool."""
+    """Samples returned by `sample_messages`, `peek_dds_samples` and `peek_bag_samples`."""
 
     model_config = _CONFIG
 
@@ -1110,11 +1110,10 @@ class SampleResult(BaseModel):
     count: int = Field(
         ge=0,
         description=(
-            "Number of samples actually returned. May be 0 (no publisher active "
-            "in live mode, or empty mock fixture), less than the requested count "
-            "(topic yielded fewer messages within the timeout), or capped by the "
-            "the silent maximum of 50: request `count > 50` and you will "
-            "receive at most 50 without warning."
+            "Number of samples in `samples`. May be 0 (no publisher active, an "
+            "empty topic or an empty fixture) or less than requested (the topic "
+            "gave fewer messages before the deadline). Never more than 50 "
+            "(`health_check.max_sample_count`): a larger request is capped to 50."
         ),
     )
     samples: list[MessageSample] = Field(
@@ -1184,8 +1183,6 @@ class HealthReport(BaseModel):
         "mock",
         "cyclone",
         "fast",
-        "opendds",
-        "dust",
         "none",
     ] = Field(
         default="none",
@@ -1195,8 +1192,7 @@ class HealthReport(BaseModel):
             "installs). `mock` for synthetic fixtures. `cyclone` requires "
             '`pip install "topicforge[dds-cyclone]"` (Eclipse CycloneDDS); '
             "`fast` requires a Fast DDS Python binding built from eProsima "
-            "sources (not on PyPI); `opendds` and `dust` are permanent stub "
-            "adapters that never serve."
+            "sources (not on PyPI)."
         ),
     )
     dds_inactive_note: str | None = Field(

@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Health check"
   },
-  "description": "Report TopicForge environment state as a `HealthReport`: effective runtime `mode` (`live` or `mock`), `ros_backend` and `dds_backend`, `ros_tools_available`, `ros2_available`, `ros2_distro` (fed by the `ROS_DISTRO` env var), `dds_domain_id` and `observed_domain_note` (only the DDS domain joined at startup is observed; programs on other domains are invisible), the server version and the server-side sample cap. **Reading `mode`**: `live` with `ros_backend` `none` means the DDS tools are live and the ROS 2 tools are not available (a DDS-only setup: use `list_endpoints` for topics and wiring). With `dds_backend` `none`, `dds_inactive_note` says why: backend not selected, binding not installed, or adapter failed to start. `payload_decoding` is `disabled`: DDS user-topic payloads are not decoded. `dds_security` is `not_supported`: on a secured domain participants show up but protected endpoints and data do not. For a live DDS backend it also reports `dds_domain_id`, `observer_started_ns` and `now_ns` (how long TopicForge has been watching: nothing before `observer_started_ns` was observed) and the discovery tracker status `tracker_running` / `tracker_passes` / `tracker_errors` / `tracker_last_pass_ns` / `tracker_cache_evictions` (errors or evictions above 0, or a stale last pass, mean the discovery data has gaps). **Always succeeds**: call it first when something looks wrong. Read-only; no side effects.",
+  "description": "Report TopicForge environment state as a `HealthReport`: effective runtime `mode` (`live` or `mock`), `ros_backend` and `dds_backend`, `ros_tools_available`, `ros2_available`, `ros2_distro` (fed by the `ROS_DISTRO` env var), `dds_domain_id` and `observed_domain_note` (only the DDS domain joined at startup is observed; programs on other domains are invisible), the server version and the server-side sample cap. **Reading `mode`**: `live` with `ros_backend` `none` means the DDS tools are live and the ROS 2 tools are not available (a DDS-only setup: use `list_endpoints` for topics and wiring). With `dds_backend` `none`, `dds_inactive_note` says why: backend not selected, binding not installed, or adapter failed to start. `payload_decoding` is `disabled`: DDS user-topic payloads are not decoded. `dds_security` is `not_supported`: on a secured domain participants show up but protected endpoints and data do not. For a live DDS backend it also reports `dds_domain_id`, `observer_started_ns` and `now_ns` (how long TopicForge has been watching: nothing before `observer_started_ns` was observed) and the discovery tracker status `tracker_running` / `tracker_passes` / `tracker_errors` / `tracker_last_pass_ns` / `tracker_cache_evictions` (errors or evictions above 0, or a stale last pass, mean the discovery data has gaps). **Always succeeds**: call it first when something looks wrong. Read-only; no side effects. **Duration**: never waits for a lock and never runs the `ros2` CLI, so it answers at once even while another call is running.",
   "inputSchema": {
     "properties": {},
     "title": "health_checkArguments",
@@ -26,13 +26,11 @@
       },
       "dds_backend": {
         "default": "none",
-        "description": "DDS backend of the adapter actually serving requests. `none` when the DDS module is not active (default for ROS2-only installs). `mock` for synthetic fixtures. `cyclone` requires `pip install \"topicforge[dds-cyclone]\"` (Eclipse CycloneDDS); `fast` requires a Fast DDS Python binding built from eProsima sources (not on PyPI); `opendds` and `dust` are permanent stub adapters that never serve.",
+        "description": "DDS backend of the adapter actually serving requests. `none` when the DDS module is not active (default for ROS2-only installs). `mock` for synthetic fixtures. `cyclone` requires `pip install \"topicforge[dds-cyclone]\"` (Eclipse CycloneDDS); `fast` requires a Fast DDS Python binding built from eProsima sources (not on PyPI).",
         "enum": [
           "mock",
           "cyclone",
           "fast",
-          "opendds",
-          "dust",
           "none"
         ],
         "title": "Dds Backend",

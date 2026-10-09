@@ -8,6 +8,7 @@ from mcp.server.mcpserver import MCPServer
 
 from topicforge import __version__
 from topicforge.config import Settings, load_settings
+from topicforge.server.prompts import INSTRUCTIONS, register_prompts
 from topicforge.services import HealthService, Inspector, build_adapter
 from topicforge.telemetry import TelemetryClient, Transport, build_telemetry_client
 from topicforge.tools import register_tools
@@ -39,8 +40,9 @@ def build_app(
         transport=telemetry_transport,
     )
 
-    mcp = MCPServer("topicforge", version=__version__)
+    mcp = MCPServer("topicforge", version=__version__, instructions=INSTRUCTIONS)
     register_tools(mcp, inspector, health, telemetry)
+    register_prompts(mcp)
 
     log.info(
         "topicforge %s ready (mode=%s, requested_mode=%s, adapter=%s, telemetry=%s)",

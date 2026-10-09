@@ -6,12 +6,12 @@
     "readOnlyHint": true,
     "title": "Peek bag samples"
   },
-  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed.",
+  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed. **Duration**: takes no lock (it reads the file in-process, so it can run while a ROS 2 or DDS call is busy); it stops after `count` samples, so the time follows the bag's size and how far into it the first samples are.",
   "inputSchema": {
     "properties": {
       "count": {
         "default": 5,
-        "description": "Maximum number of recent messages to return. Defaults to 5; silently clamped to 50 (the hard cap that keeps tool output bounded; read it from `health_check.max_sample_count`). Negative values raise an error. The returned `SampleResult.count` reflects the actual number of samples produced: it can be lower than the request (empty topic, timeout, mock fixture shorter than requested).",
+        "description": "Maximum number of messages to return. Defaults to 5; at most 50 (read it from `health_check.max_sample_count`), a larger request is capped to 50. Negative values raise an error. The result's `count` is how many were returned: fewer than requested when the topic has fewer samples to give.",
         "minimum": 0,
         "title": "Count",
         "type": "integer"
@@ -113,10 +113,10 @@
       }
     },
     "additionalProperties": false,
-    "description": "Envelope returned by the `sample_messages` tool.",
+    "description": "Samples returned by `sample_messages`, `peek_dds_samples` and `peek_bag_samples`.",
     "properties": {
       "count": {
-        "description": "Number of samples actually returned. May be 0 (no publisher active in live mode, or empty mock fixture), less than the requested count (topic yielded fewer messages within the timeout), or capped by the the silent maximum of 50: request `count > 50` and you will receive at most 50 without warning.",
+        "description": "Number of samples in `samples`. May be 0 (no publisher active, an empty topic or an empty fixture) or less than requested (the topic gave fewer messages before the deadline). Never more than 50 (`health_check.max_sample_count`): a larger request is capped to 50.",
         "minimum": 0,
         "title": "Count",
         "type": "integer"

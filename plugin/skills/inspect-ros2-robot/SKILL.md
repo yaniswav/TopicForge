@@ -5,7 +5,7 @@ description: Inspect a ROS 2 robot or a recorded bag with TopicForge when the us
 
 # Inspect a ROS 2 robot or bag
 
-Use the TopicForge tools. They only read; never suggest publishing, commanding or changing the robot.
+Use the TopicForge tools (output contract 2: check `health_check.contract_version` is 2). The same procedure is available as the MCP prompt `inspect-ros2-robot`. They only read; never suggest publishing, commanding or changing the robot.
 
 ## Live graph
 
