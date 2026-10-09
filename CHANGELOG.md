@@ -97,6 +97,18 @@ Configuration and Python API:
 
 ### Added
 
+- Ground-truth comparator in CI (`scripts/ground_truth/`): one `compare.py`, two producers of
+  ground truth. The OmniSim kit (external, manual, kept as confirmation) and the Docker bench
+  publisher, which now writes its own `ground_truth.json` in the same schema subset
+  (`tests/integration/ros2/ground_truth.py`: topics, types, endpoint counts and QoS, the
+  synthetic 541-beam scan and its sector minima, configured rates, `use_sim_time` per node,
+  RMW and distro). `drive.py` is the parameterised MCP stdio driver and `calls.json` the
+  default call list (graph calls before any sampling). Every `ros2-live.yml` matrix cell
+  (Humble/Jazzy x Fast DDS/Cyclone) runs both after the integration tests, fails on any FAIL
+  or SHAPE row, prints the measured rate `interval_cv` values (the `STABLE_CV` evidence for
+  `docs/CONTRACT.md` section 4) and uploads `COMPARISON.md`, `comparison.json` and the raw
+  results as an artifact. `compare.py` also reads a bag with `rosbags` (`--bag-truth`) to
+  check `analyze_bag` and `peek_bag_samples` independently.
 - Two tools, additive: `list_nodes` and `get_node_info` (the surface is now fourteen tools).
   - `list_nodes` -> `NodeListing {nodes, returned, total, truncated, duplicates,
     mode_effective, note}`: one `ros2 node list` call, names, namespaces and the full names used
