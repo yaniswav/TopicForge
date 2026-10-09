@@ -1282,10 +1282,14 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
     `expected_ranges`, when given, is compared with every `/scan` message (tolerance RANGE_TOL).
     """
     from rosbags.highlevel import AnyReader
+    from rosbags.typesys import Stores, get_typestore
 
     per: dict[str, dict[str, Any]] = {}
     equal = total = 0
-    with AnyReader([bag_dir]) as reader:
+    # Humble's rosbag2 stores no message definitions; the Humble typestore covers
+    # every type the bench records, and bags that embed definitions ignore it.
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    with AnyReader([bag_dir], default_typestore=typestore) as reader:
         for conn, stamp, raw in reader.messages():
             item = per.setdefault(
                 conn.topic, {"type": conn.msgtype, "count": 0, "first_ns": stamp, "last_ns": stamp}

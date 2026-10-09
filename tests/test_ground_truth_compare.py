@@ -652,3 +652,11 @@ def test_scripts_are_ascii() -> None:
     ]:
         if path.is_file():
             path.read_text(encoding="ascii")
+
+
+def test_bag_truth_reads_a_humble_bag_without_message_definitions() -> None:
+    # Humble's rosbag2 records no type definitions; the OmniSim fixture is such a bag.
+    pytest.importorskip("rosbags")
+    truth = compare.build_bag_truth(ROOT / "tests" / "fixtures" / "bags" / "omnisim_humble")
+    assert truth["message_count"] == 1434
+    assert truth["per_topic"]["/scan"]["count"] == 177
