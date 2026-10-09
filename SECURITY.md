@@ -51,6 +51,8 @@ Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
 the DDS adapters or in `adapters/common`.
 
+**The single exception (from 0.7.0, with `get_node_info`; planned, not available yet).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no service call, no parameter set, no lifecycle transition, no action goal.
+
 **Declaration.** All twelve tools carry MCP `ToolAnnotations`:
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, a
 `title`, and an honest `openWorldHint` (true for tools that observe a
