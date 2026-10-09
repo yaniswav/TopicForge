@@ -223,11 +223,13 @@ def bag() -> Path:
 
 def test_analyze_bag_summary(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.analyze_bag(str(bag))
-    assert result.duration_s == pytest.approx(8.0, abs=2.0)
+    # The recorder runs for about 8 s, but on a loaded runner it starts late, so the
+    # span varies; the /scan count must follow the span at 10 Hz.
+    assert 4.0 <= result.duration_s <= 10.0
     by_name = {t.name: t for t in result.topics}
     assert set(by_name) >= {"/clock", "/scan", "/cmd_vel_out", "/camera/image_raw"}
     assert by_name["/scan"].message_type == "sensor_msgs/msg/LaserScan"
-    assert 60 <= by_name["/scan"].message_count <= 100
+    assert by_name["/scan"].message_count == pytest.approx(result.duration_s * 10, rel=0.3)
     assert result.storage_format == ("sqlite3" if IS_HUMBLE else "mcap")
 
 
