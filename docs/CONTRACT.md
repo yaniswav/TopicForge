@@ -1,6 +1,7 @@
 # TopicForge output contract
 
-Status: draft for 0.7.0, pending owner validation. Nothing in this file changes the
+Status: validated at G0, 2026-10-09 (the owner delegated the decisions to the project's
+advisor). Nothing in this file changes the
 behaviour of 0.6.4. The baseline it starts from is recorded in
 [`tests/contract/`](../tests/contract) (one JSON file per tool: description, input
 schema, output schema, annotations) and rendered in [TOOLS.md](TOOLS.md).
@@ -45,6 +46,10 @@ block per element in `content`. From 0.7.0:
 `truncated` is true when `returned < total` because of a cap. A collection that has no
 cap still carries `returned` and `total` (equal).
 
+Every result is exactly one `structuredContent` object plus one `TextContent` block that
+carries the same JSON. `tests/test_contract_shape.py` (planned, section 6) asserts
+`len(result.content) == 1` for every tool in mock mode.
+
 ### 1.2 One envelope, one `note`
 
 Every top-level result carries `mode_effective` (`"live"` or `"mock"`) and a single
@@ -56,6 +61,16 @@ in `note` and the rest become structured fields. Lists of findings that are data
 ```json
 {"count": 3, "samples": [], "mode_effective": "live",
  "note": "3 of 5 messages arrived before the 10 s deadline; the publisher is slow."}
+```
+
+The envelope appears once, at the top level. Nested items do not repeat it: `mode_effective`
+is removed from `ParticipantInfo`, `ParticipantEvent`, `EndpointInfo` and `MismatchReport`,
+`domain_id` is removed from `EndpointInfo`, and a listing envelope carries `domain_id` once.
+
+```json
+{"participants": [{"guid": "01f1a2b3c4d5e6f7a8b9c0d1", "name": "/"}],
+ "returned": 1, "total": 1, "truncated": false,
+ "domain_id": 0, "mode_effective": "live", "note": null}
 ```
 
 `health_check` is the one result that has no `mode_effective`: it reports `mode` and
@@ -83,7 +98,7 @@ A `null` must always be explainable. Two mechanisms, applied by construction:
 ```
 
 A field is never `null` merely because the backend did not say. `stamp_source` is one
-of four strings (decision 2.2), never `null`.
+of five strings (decision 2.2), never `null`.
 
 ### 1.4 Locked suffix vocabulary
 
@@ -93,7 +108,8 @@ A name that carries a unit or a kind ends with exactly one of these suffixes:
 | --- | --- | --- |
 | `_ns` | integer nanoseconds (instant or duration) | `timestamp_ns`, `deadline_ns` |
 | `_s` | seconds, float | `timeout_s`, `window_s` |
-| `_hz` | hertz, float | `frequency_hz` |
+| `_hz` | hertz, float | `observed_frequency_hz` |
+| `_cv` | coefficient of variation: dimensionless, standard deviation divided by mean, >= 0 | `interval_cv` |
 | `_count` | number of items in a set | `publisher_count` |
 | `_total` | number of items before a cap | `reports_total` |
 | `_source` | where a value came from (closed set of strings) | `stamp_source` |
@@ -142,8 +158,11 @@ On SDK 2.x, any exception other than `ToolError` is replaced by a generic messag
 A tool or field description says what the tool does now: no version numbers, no
 "Phase", no "new in", no "previously", no mention of a tool ceiling. It states the
 caveats a caller needs (empty-result behaviour, mock versus live, caps) and the worst-case
-duration, which stays under 45 s for every tool. A regex test fails on history words from
-0.7.0 rc1.
+duration, which stays under 45 s for every tool. The 45 s are wall time, from the request
+to the response, lock wait included. A regex test fails on history words from 0.7.0 rc1.
+
+Requirement for M5: `health_check` never takes the lock, and a handler that waited for the
+lock shortens its own deadline by the time it waited.
 
 ### 1.8 Golden snapshots
 
@@ -190,7 +209,7 @@ statistics computed over the finite values only:
 Where `sample_messages` converts non-finite floats today, it already does this. Bag
 decoding is brought in line in 0.7.0.
 
-### 2.2 `stamp_source` is frozen to four values
+### 2.2 `stamp_source` is frozen to five values
 
 `stamp_source` is exactly one of:
 
@@ -199,9 +218,21 @@ decoding is brought in line in 0.7.0.
 | `header` | `timestamp_ns` is the message's top-level `header.stamp` |
 | `payload` | no header, but the time is in the body of `Clock`, `TFMessage` or `Log` |
 | `recorded` | no time in the message; `timestamp_ns` is the bag record time |
+| `dds_source` | `timestamp_ns` is the DDS source timestamp of the sample |
 | `none` | no time anywhere; `timestamp_ns` is 0 |
 
-It is never `null`. The `null` that the 0.6.4 schema allows is removed in 0.7.0.
+It is never `null`. The `null` that the 0.6.4 schema allows is removed in 0.7.0. Which
+values a tool can return:
+
+| Tool | Possible values |
+| --- | --- |
+| `sample_messages` | `header`, `payload`, `none` |
+| `peek_bag_samples` | `header`, `payload`, `recorded` |
+| `peek_dds_samples` | `dds_source`, `none` |
+
+```json
+{"timestamp_ns": 1760000000123456789, "stamp_source": "dds_source"}
+```
 
 ## 3. Reserved optional fields
 
@@ -253,10 +284,15 @@ read from `ros_discovery_info`) and `node_names_source`.
  "node_names_source": "ros_discovery_info"}
 ```
 
-`node_names_source` is `ros_discovery_info` (read from that topic), `participant_name`
-(the name announced by DDS carried a node name) or `none` (no link could be made, and
-`node_names` is then empty rather than absent). It exists because Fast DDS participants
-all announce the name `/`.
+`node_names_source` is `ros_discovery_info` (read from that topic), `ros2_cli` (derived
+from the `ros2` CLI) or `none` (no link could be made, and `node_names` is then empty
+rather than absent). There is no `participant_name` value: since Foxy the participant
+carries the name of the enclave, not of a node. The field exists because Fast DDS
+participants all announce the name `/`.
+
+Risk for M9: `ros_discovery_info` is a user topic whose `Gid.data` is 24 bytes on Humble
+and 16 bytes from Iron. Fallback: `ros2_cli`, through the GID prefixes printed by
+`ros2 topic info -v /parameter_events` and `/rosout`.
 
 ### 3.3 QoS per side
 
@@ -274,6 +310,14 @@ publisher-only `qos_reliability` and `qos_durability`. Each describes one side a
 endpoints of that side disagree. A topic with subscribers only now reports its
 subscription side instead of `null`.
 
+`TopicInfo` also gains `publisher_nodes` and `subscriber_nodes`: lists of fully qualified
+node names, read from the `Node name:` and `Node namespace:` lines of
+`ros2 topic info -v`. An empty list, never `null`, when none is known.
+
+```json
+{"publisher_nodes": ["/lidar_driver"], "subscriber_nodes": ["/nav2/controller", "/slam"]}
+```
+
 ### 3.4 RMW implementation
 
 On `health_check`: `rmw_implementation` and `rmw_source`.
@@ -282,9 +326,11 @@ On `health_check`: `rmw_implementation` and `rmw_source`.
 {"rmw_implementation": "rmw_fastrtps_cpp", "rmw_source": "env"}
 ```
 
-`rmw_source` is `env` (the `RMW_IMPLEMENTATION` variable is set), `default` (not set; the
-distro default is reported and was not verified on the running graph) or `none` (no ROS 2
-available). When `rmw_source` is `none`, `rmw_implementation` is `null`.
+`rmw_source` is `env` (the `RMW_IMPLEMENTATION` variable is set), `ros2_cli` (reserved:
+read from the `ros2` CLI), `distro_default` (not set; the distro default is reported and
+was not verified on the running graph) or `none` (no ROS 2 available). M6 implements
+`env`, `distro_default` and `none`; `ros2_cli` is reserved. When `rmw_source` is `none`,
+`rmw_implementation` is `null`.
 
 ### 3.5 Bag topic kind
 
@@ -300,30 +346,37 @@ infrastructure topics such as `/parameter_events` and `/rosout`). `/tf`, `/tf_st
 ## 4. Rate verdicts
 
 A topic rate is reported as a `rate` block with a `verdict`. The block is computed from
-message timestamps (`stamp_source` says which clock), so it is right on simulated time.
+the time the messages were received (`received_ns`), so it measures the delivery the
+caller actually gets; `stamp_source` says which clock the message stamps use.
 
 ```json
 {"rate": {"rate_hz": 9.97, "interval_median_s": 0.1, "interval_cv": 0.04,
-          "max_gap_s": 0.13, "samples_count": 50, "window_s": 5.0,
-          "stamp_source": "header", "verdict": "stable"}}
+          "max_gap_s": 0.13, "trailing_gap_s": null, "samples_count": 50,
+          "window_s": 5.0, "stamp_source": "header", "verdict": "stable"}}
 ```
 
 `interval_cv` is the coefficient of variation of the intervals between consecutive
-messages (standard deviation divided by mean). The verdict is one of a closed set,
-evaluated in this order, first match wins:
+messages (standard deviation divided by mean). `trailing_gap_s` is the interval between
+the last message and the end of the window; it is `null` when collection stopped on
+`count` rather than on the deadline. The verdict is one of six values, evaluated in this
+order, first match wins:
 
 | Order | Verdict | Condition |
 | --- | --- | --- |
 | 1 | `silent` | no message in the window |
 | 2 | `insufficient` | fewer than 5 samples |
-| 3 | `intermittent` | at least one gap longer than 3 times the median interval |
-| 4 | `erratic` | `interval_cv >= 0.5` |
-| 5 | `stable` | `interval_cv < 0.2` (and, by order, no such gap) |
-| 6 | `variable` | otherwise (`0.2 <= interval_cv < 0.5`, no such gap) |
+| 3 | `intermittent` | at least one interval longer than 3 times the median interval; the trailing interval counts when collection stopped on the deadline and not on `count`; measured on `received_ns` |
+| 4 | `stable` | `interval_cv < 0.2` |
+| 5 | `jittery` | `0.2 <= interval_cv < 0.5` |
+| 6 | `erratic` | `interval_cv >= 0.5` |
 
-`variable` is proposed here because the thresholds above leave `0.2 <= CV < 0.5` without
-a verdict; it is pending owner validation. A verdict is a description of what was
-observed in the window, not a diagnosis: a `silent` topic may be latched.
+The tool description recommends `count >= 10` and warns that topics with several
+publishers, such as `/tf`, come out `erratic` without being broken. The thresholds are
+confirmed on the bench in M8: if a healthy sensor lands between 0.2 and 0.3, the
+`stable` threshold moves to 0.3.
+
+A verdict is a description of what was observed in the window, not a diagnosis: a
+`silent` topic may be latched.
 
 ## 5. Reserved multimodal exception
 
@@ -346,12 +399,20 @@ other tool returns binary content.
 `health_check.contract_version` (integer, 2 for 0.7) is the only place a client reads the
 version of this contract. It is not repeated in other results.
 
+Planned tests (M6; none exists yet):
+
+| File | Asserts |
+| --- | --- |
+| `tests/test_contract_shape.py` | `len(result.content) == 1` for every tool in mock mode (1.1) |
+| `tests/test_field_names.py` | no output or input field name ends with `_seconds`, `_sec`, `_secs`, `_ms`, `_us`, `_nanos`, `_nanoseconds`, `_hertz`, `_reason`, `_num` or `_nb` (1.4) |
+| `tests/test_server_info_version.py` | `serverInfo.version` of the initialize handshake equals `health_check.server_version` |
+
 ## 7. 0.7.0 migration list
 
 This is the complete list of renames, splits and removals that make 0.7.0 a break. It was
 produced by reading `tools/handlers.py`, `models/schemas.py` and the adapters of 0.6.4.
-After rc1, no rename is added. Anything in "Found by audit, not decided" waits for the
-owner.
+After rc1, no rename is added. Section 7.7 records the decision taken for each item the
+audit found, and section 7.8 collects what G0 added.
 
 ### 7.1 Tools that return a bare list today
 
@@ -362,6 +423,8 @@ Exactly three of the twelve tools (the others already return an object):
 | `list_topics` | `list[TopicInfo]` | `TopicListing {topics: list[TopicListItem], returned, total, truncated, mode_effective, note}` |
 | `list_participants` | `list[ParticipantInfo]` | `ParticipantListing {participants: list[ParticipantInfo], returned, total, truncated, mode_effective, note}` |
 | `participant_events` | `list[ParticipantEvent]` | `ParticipantEventListing {events: list[ParticipantEvent], returned, total, truncated, mode_effective, note}`; the silent 200-event cap becomes `truncated` and `total` |
+
+The participant and event listings also carry `domain_id` once, in the envelope (1.2).
 
 ### 7.2 `TopicInfo` splits in two
 
@@ -383,6 +446,9 @@ no adapter (`ros2_live`, `ros2_mock`, `dds_cyclone`, `dds_fast`, `composite`) an
 service ever assigns them, so they have always been `null`. Not to be confused with
 `TopicSummary.writer_count` and `TopicSummary.reader_count` in `list_endpoints`, which are
 filled and stay.
+
+Three fields of `BagAnalysis` are removed for the same reason, because they were never
+filled: `samples_decoded_count`, `participants_recorded` and `recording_duration_ns`.
 
 ### 7.4 `_reason` becomes `_note`
 
@@ -407,6 +473,8 @@ payloads are `_decode_status`, `_decode_note`, `_truncated_fields`, `_raw_text`,
 - `EndpointInfo.topic` is replaced by `dds_topic` (the raw DDS name, `rt/scan`) and
   `ros_topic` (the ROS name, `/scan`, `null` with a note when the endpoint is not a ROS
   topic). `TopicSummary.topic` follows the same split.
+- `mode_effective` and `domain_id` are removed from `EndpointInfo` (1.2); the listing
+  envelope carries `domain_id` once.
 - A root-level `hints` list (strings, the same idea as `MismatchScan.hints`) replaces the
   sentence repeated on every endpoint: `EndpointInfo.activity` (always `null`) and
   `EndpointInfo.activity_note` (identical on all entries) are removed, and the sentence
@@ -420,21 +488,50 @@ payloads are `_decode_status`, `_decode_note`, `_truncated_fields`, `_raw_text`,
 - A single `note` is added to the results that have none: `get_topic_info`,
   `detect_qos_mismatches`, `topic_metrics`, `health_check`. Existing fields are not
   overloaded: this is additive.
-- `MessageSample.stamp_source` becomes non-nullable (2.2).
+- `MessageSample.stamp_source` becomes non-nullable, with five values (2.2). It is set
+  explicitly in `adapters/dds_cyclone/adapter.py` (lines 165 and 442),
+  `adapters/dds_fast/adapter.py` (line 314), `adapters/common/dds_helpers.py`
+  (line 135) and the DDS fixtures of the mock adapter.
 
-### 7.7 Found by audit, not decided (owner)
+### 7.7 Decided by audit
 
-These are consequences of the principles that the brief did not list. Each is a rename or
-a removal and so must be decided before rc1, or stay as it is.
+These are consequences of the principles that the brief did not list. Each line carries
+the decision taken at G0 (2026-10-09).
 
-| Item | Observation | Proposal |
+| Item | Observation | Decision |
 | --- | --- | --- |
-| `BagAnalysis.duration_seconds`, `TopicMetrics.window_seconds`, `TopicMetrics.window_seconds_actual` | seconds without the `_s` suffix | `duration_s`, `window_s`, `window_actual_s` |
-| tool inputs `participant_events.lookback_seconds`, `topic_metrics.window_seconds` | same, on the input side | `lookback_s`, `window_s` |
-| `TopicMetrics.frequency_hz_observed`, `frequency_hz_declared` | `_hz` in the middle of the name | keep (a suffix pair is clearer), or `observed_frequency_hz` / `declared_frequency_hz` |
-| `EndpointListing.departed_endpoints`, `EndpointListing.excluded_observer_endpoints` | counts without `_count` | `departed_endpoint_count`, `excluded_observer_endpoint_count` |
-| `MismatchScan.pairs_checked`, `topics_scanned`, `TopicMetrics.samples_observed`, `EndpointListing.returned` | counts without `_count`, but read as past participles | keep |
-| `NotMatchedPair.reason` | an enum named `reason`, not a free sentence | keep (it is a closed set, not a `_reason` suffix) |
-| `interval_cv` (section 4) | a ratio, no suffix in the vocabulary | allow `_cv` or call it `interval_variation` |
-| `sample_messages.timeout_s` maximum | allows 45 s and returns within about `timeout_s` + 2 s, so the worst case is 47 s, above the 45 s of 1.7 | lower the maximum to 40 (the default stays 10) |
-| `HealthReport.mode` / `requested_mode` | `health_check` has no `mode_effective` | keep, documented in 1.2 |
+| `BagAnalysis.duration_seconds`, `TopicMetrics.window_seconds`, `TopicMetrics.window_seconds_actual` | seconds without the `_s` suffix | renamed: `duration_s`, `window_s`, `window_actual_s` |
+| tool inputs `participant_events.lookback_seconds`, `topic_metrics.window_seconds` | same, on the input side | renamed: `lookback_s`, `window_s` |
+| `TopicMetrics.frequency_hz_observed`, `frequency_hz_declared` | `_hz` in the middle of the name | renamed: `observed_frequency_hz`, `declared_frequency_hz` |
+| `EndpointListing.departed_endpoints`, `EndpointListing.excluded_observer_endpoints` | counts without `_count` | renamed: `departed_endpoint_count`, `excluded_observer_endpoint_count` |
+| `MismatchScan.pairs_checked`, `topics_scanned`, `TopicMetrics.samples_observed`, `EndpointListing.returned` | counts without `_count`, but read as past participles | kept |
+| `NotMatchedPair.reason` | an enum named `reason`, not a free sentence | kept (a closed set, not a `_reason` suffix) |
+| `interval_cv` (section 4) | a ratio, no suffix in the vocabulary | `_cv` added to the locked vocabulary (1.4) |
+| `sample_messages.timeout_s` maximum | allows 45 s and returns within about `timeout_s` + 2 s, so the worst case is 47 s, above the 45 s of 1.7 | maximum lowered from 45 to 40 (the default stays 10) |
+| `HealthReport.mode` / `requested_mode` | `health_check` has no `mode_effective` | kept, documented in 1.2 |
+
+### 7.8 Added at G0
+
+Everything below goes into the migration list and into `docs/MIGRATION.md`.
+
+- Renames of 7.7, in output models and in the two tool inputs.
+- `BagAnalysis` loses `samples_decoded_count`, `participants_recorded` and
+  `recording_duration_ns` (7.3).
+- Nested items no longer repeat envelope fields (1.2, 7.5): `mode_effective` leaves
+  `ParticipantInfo`, `ParticipantEvent`, `EndpointInfo` and `MismatchReport`;
+  `domain_id` leaves `EndpointInfo`.
+- `stamp_source` has five values and is set explicitly in the DDS paths and in the mock
+  fixtures (7.6).
+- `sample_messages.timeout_s` maximum is 40.
+- `rmw_source` values are `env`, `ros2_cli`, `distro_default`, `none`; `node_names_source`
+  values are `ros_discovery_info`, `ros2_cli`, `none` (3.2, 3.4).
+- Verdict `variable` is replaced by `jittery`; the `rate` block gains `trailing_gap_s`
+  (section 4).
+- `TopicInfo` gains `publisher_nodes` and `subscriber_nodes` (3.3).
+- `list_nodes` (tool 13) is limited to one `ros2 node list` call: names, namespaces and
+  duplicates. Per-node interfaces stay in `get_node_info`. Parameter reads (list/get) are
+  the only request TopicForge ever sends.
+- External callers to update with the renames: `examples/dds/harness.py`,
+  `scripts/integration/interop_check.py` (and the kit's `compare.py`).
+- Pending description fix (E13, for M7): the description of `SampleResult.count` has a
+  duplicated "the" and contradicts itself on the maximum of 50.
