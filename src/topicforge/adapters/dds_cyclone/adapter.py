@@ -73,6 +73,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -163,6 +164,7 @@ def _decode_dynamic_unvalidated(  # pragma: no cover: unreachable, never validat
                 topic=topic,
                 message_type=_dynamic_type_name(type_object),
                 timestamp_ns=0,
+                stamp_source="none",
                 payload=payload,
             )
         )
@@ -321,7 +323,7 @@ class CycloneDdsAdapter:
 
     # ----- ROS2 surface: not served by this adapter -----
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -343,6 +345,11 @@ class CycloneDdsAdapter:
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    @property
+    def observed_domain_id(self) -> int:
+        """The DDS domain joined at construction (the only one observed)."""
+        return self._domain_id
 
     # ----- DDS surface -----
 
@@ -374,8 +381,6 @@ class CycloneDdsAdapter:
             parts,
             pubs,
             subs,
-            domain_id=self._domain_id,
-            mode_effective="live",
             observer_guid=self._observer_guid(),
         )
         hostnames = {p.guid: p.hostname for p in snap.participant_infos}
@@ -391,6 +396,7 @@ class CycloneDdsAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         """List discovered writers and readers, with participant names.
 
@@ -411,6 +417,7 @@ class CycloneDdsAdapter:
             participant_guid=participant_guid,
             include_observer=include_observer,
             include_departed=include_departed,
+            include_internal=include_internal,
             departed=[(r.role, r.sample, r.gone_ns, r.participant_name) for _, r in snap.departed],
         )
 
@@ -440,6 +447,7 @@ class CycloneDdsAdapter:
                 topic=topic,
                 message_type=f"dds_builtin/{topic}",
                 timestamp_ns=announced_ns_of(s) or 0,
+                stamp_source="dds_source" if announced_ns_of(s) else "none",
                 payload=builtin_payload(topic, s, names, observer),
             )
             for s in samples_raw
@@ -523,9 +531,7 @@ class CycloneDdsAdapter:
             domain_id=self._domain_id,
         )
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         """Metrics from the buffer that `peek_dds_samples` fills.
 
         There is no per-sample callback in cyclonedds Python, so a topic not
@@ -553,8 +559,6 @@ class CycloneDdsAdapter:
             [],
             writers,
             [],
-            domain_id=self._domain_id,
-            mode_effective="live",
             observer_guid=None,
         )
         return declared_hz_from_endpoints(infos, topic)

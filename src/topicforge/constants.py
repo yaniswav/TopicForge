@@ -32,6 +32,10 @@ DEFAULT_SAMPLE_TIMEOUT_S = 10.0
 MIN_SAMPLE_TIMEOUT_S = 1.0
 MAX_SAMPLE_TIMEOUT_S = 40.0
 
+# Size of the participant lifecycle event log. `participant_events` returns at most this
+# many events; a full result is reported as truncated.
+MAX_PARTICIPANT_EVENTS = 200
+
 # Reserved payload key listing the dotted paths of fields `sample_messages`
 # cut at `max_array_length` (arrays, strings, bytes).
 TRUNCATED_FIELDS_KEY = "_truncated_fields"

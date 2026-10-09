@@ -21,6 +21,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -52,7 +53,7 @@ class DustDdsAdapter:
 
     # ----- ROS2 surface: not served by this adapter -----
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -88,9 +89,7 @@ class DustDdsAdapter:
     ) -> list[ParticipantEvent]:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
     def list_endpoints(
@@ -99,6 +98,7 @@ class DustDdsAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         raise AdapterError(_DUST_ROADMAP_MSG)
 

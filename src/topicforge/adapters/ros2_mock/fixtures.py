@@ -10,6 +10,7 @@ from __future__ import annotations
 from topicforge.adapters.common.endpoints import build_endpoint_listing
 from topicforge.adapters.common.metrics_buffer import MetricsBuffer
 from topicforge.adapters.common.qos_scan import scan_endpoints
+from topicforge.adapters.common.ros_names import ros_topic_of
 from topicforge.models import (
     BagAnalysis,
     BagTopicStats,
@@ -21,51 +22,88 @@ from topicforge.models import (
     ParticipantInfo,
     QosProfile,
     SampleResult,
+    SideQos,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
+
+def _side(reliability: str, count: int, durability: str = "volatile") -> SideQos:
+    return SideQos(
+        reliability=reliability,  # type: ignore[arg-type]
+        durability=durability,  # type: ignore[arg-type]
+        endpoint_count=count,
+    )
+
+
+def _topic(
+    name: str,
+    message_type: str,
+    reliability: str,
+    publishers: tuple[str, ...],
+    subscribers: tuple[str, ...],
+) -> TopicInfo:
+    """A mock topic whose both sides use `reliability` (volatile), one endpoint per node."""
+    return TopicInfo(
+        name=name,
+        message_type=message_type,
+        publisher_count=len(publishers),
+        subscriber_count=len(subscribers),
+        publisher_qos=_side(reliability, len(publishers)),
+        subscription_qos=_side(reliability, len(subscribers)),
+        publisher_nodes=list(publishers),
+        subscriber_nodes=list(subscribers),
+        mode_effective="mock",
+    )
+
+
 MOCK_TOPICS: tuple[TopicInfo, ...] = (
-    TopicInfo(
-        name="/cmd_vel",
-        message_type="geometry_msgs/msg/Twist",
-        publisher_count=1,
-        subscriber_count=1,
-        qos_reliability="reliable",
-        mode_effective="mock",
+    _topic(
+        "/cmd_vel",
+        "geometry_msgs/msg/Twist",
+        "reliable",
+        ("/nav_planner",),
+        ("/base_controller",),
     ),
-    TopicInfo(
-        name="/odom",
-        message_type="nav_msgs/msg/Odometry",
-        publisher_count=1,
-        subscriber_count=2,
-        qos_reliability="reliable",
-        mode_effective="mock",
+    _topic(
+        "/odom",
+        "nav_msgs/msg/Odometry",
+        "reliable",
+        ("/base_controller",),
+        ("/nav_planner", "/robot_state_publisher"),
     ),
-    TopicInfo(
-        name="/scan",
-        message_type="sensor_msgs/msg/LaserScan",
-        publisher_count=1,
-        subscriber_count=1,
-        qos_reliability="best_effort",
-        mode_effective="mock",
+    _topic(
+        "/scan",
+        "sensor_msgs/msg/LaserScan",
+        "best_effort",
+        ("/lidar_driver",),
+        ("/nav_planner",),
     ),
-    TopicInfo(
-        name="/tf",
-        message_type="tf2_msgs/msg/TFMessage",
-        publisher_count=3,
-        subscriber_count=2,
-        qos_reliability="reliable",
-        mode_effective="mock",
+    _topic(
+        "/tf",
+        "tf2_msgs/msg/TFMessage",
+        "reliable",
+        ("/base_controller", "/robot_state_publisher", "/nav_planner"),
+        ("/nav_planner", "/camera_driver"),
     ),
-    TopicInfo(
-        name="/camera/image_raw",
-        message_type="sensor_msgs/msg/Image",
-        publisher_count=1,
-        subscriber_count=1,
-        qos_reliability="best_effort",
-        mode_effective="mock",
+    _topic(
+        "/camera/image_raw",
+        "sensor_msgs/msg/Image",
+        "best_effort",
+        ("/camera_driver",),
+        ("/nav_planner",),
     ),
+)
+
+MOCK_TOPIC_ITEMS: tuple[TopicListItem, ...] = tuple(
+    TopicListItem(
+        name=t.name,
+        message_type=t.message_type,
+        publisher_count=t.publisher_count,
+        subscriber_count=t.subscriber_count,
+    )
+    for t in MOCK_TOPICS
 )
 
 
@@ -177,7 +215,6 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         hostname="mock-robot",
         name="lidar_driver",
         domain_id=0,
-        mode_effective="mock",
         first_seen_ns=_LIFECYCLE_BASE_TS_NS,
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 60_000_000_000,
         status="active",
@@ -190,7 +227,6 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         hostname="mock-laptop",
         name="nav_planner",
         domain_id=0,
-        mode_effective="mock",
         first_seen_ns=_LIFECYCLE_BASE_TS_NS + 5_000_000_000,
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 55_000_000_000,
         status="active",
@@ -204,7 +240,6 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         hostname="mock-aerospace-node",
         name="camera_driver",
         domain_id=0,
-        mode_effective="mock",
         first_seen_ns=_LIFECYCLE_BASE_TS_NS + 10_000_000_000,
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 50_000_000_000,
         status="active",
@@ -217,7 +252,6 @@ MOCK_PARTICIPANTS: tuple[ParticipantInfo, ...] = (
         vendor="dust",
         hostname="mock-rust-node",
         domain_id=0,
-        mode_effective="mock",
         first_seen_ns=_LIFECYCLE_BASE_TS_NS + 15_000_000_000,
         last_seen_ns=_LIFECYCLE_BASE_TS_NS + 45_000_000_000,
         status="active",
@@ -236,7 +270,6 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
         hostname="mock-robot",
         name="lidar_driver",
         domain_id=0,
-        mode_effective="mock",
     ),
     ParticipantEvent(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000002",
@@ -246,7 +279,6 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
         hostname="mock-laptop",
         name="nav_planner",
         domain_id=0,
-        mode_effective="mock",
     ),
     ParticipantEvent(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000003",
@@ -256,7 +288,6 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
         hostname="mock-aerospace-node",
         name="camera_driver",
         domain_id=0,
-        mode_effective="mock",
     ),
     ParticipantEvent(
         guid="010f1c2a-3b4c-5d6e-7f80-000000000004",
@@ -265,7 +296,6 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
         timestamp_ns=_LIFECYCLE_BASE_TS_NS + 15_000_000_000,
         hostname="mock-rust-node",
         domain_id=0,
-        mode_effective="mock",
     ),
 )
 
@@ -326,6 +356,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
                 topic=topic,
                 message_type="dds/Heartbeat",
                 timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+                stamp_source="dds_source",
                 payload={"seq": i, "vendor": "cyclone"},
             )
             for i in range(min(count, 3))
@@ -338,6 +369,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
                 topic=topic,
                 message_type="dds/Heartbeat",
                 timestamp_ns=_BASE_TS_NS,
+                stamp_source="dds_source",
                 payload={"seq": 0, "vendor": "cyclone", "qos_note": "writer is BEST_EFFORT"},
             )
         ][:count]
@@ -351,6 +383,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
                 topic=topic,
                 message_type="topicforge/Example",
                 timestamp_ns=_BASE_TS_NS + i * 200_000_000,
+                stamp_source="dds_source",
                 payload=annotate_full(
                     {
                         "seq": i,
@@ -371,6 +404,7 @@ def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
                 topic=topic,
                 message_type="topicforge/Opaque",
                 timestamp_ns=_BASE_TS_NS,
+                stamp_source="dds_source",
                 payload=annotate_raw(
                     synthetic_bytes,
                     note="binding XTypes unavailable (mock fallback fixture)",
@@ -408,13 +442,16 @@ def _mock_endpoint(
     announced_offset_s: int,
 ) -> dict[str, object]:
     participant_guid = f"010f1c2a-3b4c-5d6e-7f80-{participant:012d}"
+    ros_topic, ros_topic_note = ros_topic_of(topic)
     return {
         "guid": f"010f1c2a-3b4c-5d6e-7f80-{participant:04d}{index:08d}",
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": _PARTICIPANT_NAMES.get(participant_guid),
         "participant_vendor": _PARTICIPANT_VENDORS.get(participant_guid, "unknown"),
-        "topic": topic,
+        "dds_topic": topic,
+        "ros_topic": ros_topic,
+        "ros_topic_note": ros_topic_note,
         "type_name": type_name,
         "type_id": None,
         "qos": qos,
@@ -472,14 +509,17 @@ def mock_mismatch_scan(topic: str | None) -> MismatchScan:
     topic an orphan hint.
     """
     endpoints = [
-        EndpointInfo(**rec, domain_id=0, mode_effective="mock")  # type: ignore[arg-type]
+        EndpointInfo(**rec)  # type: ignore[arg-type]
         for rec in _MOCK_ENDPOINT_RECORDS
     ]
     return scan_endpoints(endpoints, topic=topic, mode_effective="mock")
 
 
 def mock_endpoint_listing(
-    topic: str | None, participant_guid: str | None, include_observer: bool
+    topic: str | None,
+    participant_guid: str | None,
+    include_observer: bool,
+    include_internal: bool = False,
 ) -> EndpointListing:
     """Deterministic `EndpointListing` for the mock scenario, filtered like the live one."""
     return build_endpoint_listing(
@@ -490,6 +530,7 @@ def mock_endpoint_listing(
         topic=topic,
         participant_guid=participant_guid,
         include_observer=include_observer,
+        include_internal=include_internal,
         snapshot_ns=_LIFECYCLE_BASE_TS_NS + 60_000_000_000,
     )
 
@@ -557,7 +598,7 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
     path="<mock>",
     storage_format="mcap",
     duration_s=42.5,
-    message_count=1287,
+    message_count=1288,
     topics=[
         BagTopicStats(
             name="/cmd_vel",
@@ -583,6 +624,12 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
             message_count=12,
             frequency_hz=0.28,
         ),
+        BagTopicStats(
+            name="/events/write_split",
+            message_type="rosbag2_interfaces/msg/WriteSplitEvent",
+            message_count=1,
+            kind="rosbag2_internal",
+        ),
     ],
     # TODO(roadmap): bag anomaly detection: replace these canned strings with
     # output from a real anomaly detector (clock jumps, frame drops, TF gaps).
@@ -592,9 +639,6 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
     ],
     mode_effective="mock",
     bag_format="mcap",
-    samples_decoded_count=0,  # analysis does not decode; peek_bag_samples does
-    recording_duration_ns=42_500_000_000,  # 42.5s
-    participants_recorded=[],
 )
 
 

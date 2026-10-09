@@ -103,7 +103,7 @@ def _endpoint(role: str, topic: str, deadline_ns: int | None) -> EndpointInfo:
         guid="g",
         role=role,  # type: ignore[arg-type]
         participant_guid="p",
-        topic=topic,
+        dds_topic=topic,
         qos=QosProfile(
             reliability="RELIABLE",
             durability="VOLATILE",
@@ -112,8 +112,6 @@ def _endpoint(role: str, topic: str, deadline_ns: int | None) -> EndpointInfo:
             deadline_ns=deadline_ns,
         ),
         is_observer=False,
-        domain_id=0,
-        mode_effective="live",
     )
 
 

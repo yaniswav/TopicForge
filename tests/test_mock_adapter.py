@@ -6,6 +6,7 @@ import pytest
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_mock import MockAdapter
+from topicforge.models import TopicListItem
 
 
 def test_is_available_always_true() -> None:
@@ -20,8 +21,8 @@ def test_list_topics_includes_known_fixtures(mock_adapter: MockAdapter) -> None:
     topics = mock_adapter.list_topics()
     names = {t.name for t in topics}
     assert {"/cmd_vel", "/odom", "/scan", "/tf", "/camera/image_raw"} <= names
-    # Every listed TopicInfo carries the mock-mode marker.
-    assert all(t.mode_effective == "mock" for t in topics)
+    # The listing items carry no QoS and no mode: the envelope has the mode.
+    assert all(set(t.model_dump()) == set(TopicListItem.model_fields) for t in topics)
 
 
 def test_get_topic_info_returns_known_type(mock_adapter: MockAdapter) -> None:

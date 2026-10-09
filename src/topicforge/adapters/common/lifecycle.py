@@ -21,10 +21,11 @@ from collections import deque
 from typing import Literal
 
 from topicforge.adapters.common.dds_helpers import VendorTag
+from topicforge.constants import MAX_PARTICIPANT_EVENTS
 from topicforge.models import ParticipantEvent, ParticipantInfo
 from topicforge.models.schemas import TimeSource
 
-MAX_EVENTS = 200
+MAX_EVENTS = MAX_PARTICIPANT_EVENTS
 """Hard cap on the event ring. Older entries drop out as new ones arrive."""
 
 MAX_PARTICIPANTS = 4096
@@ -33,7 +34,6 @@ tombstoned (`status == "left"`) participant is dropped first, else the
 oldest-inserted one: so a churny bus cannot grow the map without bound."""
 
 EventType = Literal["discovered", "lost"]
-EffectiveMode = Literal["mock", "live"]
 
 
 class LifecycleBuffer:
@@ -59,7 +59,6 @@ class LifecycleBuffer:
         vendor: VendorTag,
         hostname: str | None,
         domain_id: int,
-        mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
         name: str | None = None,
         announced_ns: int | None = None,
@@ -87,7 +86,6 @@ class LifecycleBuffer:
                     name=name,
                     hostname=hostname,
                     domain_id=domain_id,
-                    mode_effective=mode_effective,
                     first_seen_ns=ts,
                     last_seen_ns=ts,
                     status="active",
@@ -102,7 +100,6 @@ class LifecycleBuffer:
                     hostname=hostname,
                     name=name,
                     domain_id=domain_id,
-                    mode_effective=mode_effective,
                     ts=ts,
                     announced_ns=announced_ns,
                 )
@@ -128,7 +125,6 @@ class LifecycleBuffer:
                     hostname=hostname or existing.hostname,
                     name=name or existing.name,
                     domain_id=domain_id,
-                    mode_effective=mode_effective,
                     ts=ts,
                     announced_ns=announced_ns,
                 )
@@ -140,7 +136,6 @@ class LifecycleBuffer:
         vendor: VendorTag | None = None,
         hostname: str | None = None,
         domain_id: int | None = None,
-        mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
         lost_ns: int | None = None,
         time_source: TimeSource | None = None,
@@ -170,7 +165,6 @@ class LifecycleBuffer:
                 hostname=hostname or existing.hostname,
                 name=existing.name,
                 domain_id=domain_id if domain_id is not None else existing.domain_id,
-                mode_effective=mode_effective,
                 ts=event_ts,
                 time_source=source,
                 observed_ns=ts,
@@ -181,7 +175,6 @@ class LifecycleBuffer:
         *,
         observed_guids: set[str],
         domain_id: int,
-        mode_effective: EffectiveMode = "live",
         now_ns: int | None = None,
     ) -> None:
         """Mark every active GUID of this domain missing from `observed_guids` as lost.
@@ -202,7 +195,6 @@ class LifecycleBuffer:
                     vendor=info.vendor,
                     hostname=info.hostname,
                     domain_id=info.domain_id,
-                    mode_effective=mode_effective,
                     now_ns=now_ns,
                 )
 
@@ -253,7 +245,6 @@ class LifecycleBuffer:
         vendor: VendorTag,
         hostname: str | None,
         domain_id: int,
-        mode_effective: EffectiveMode,
         ts: int,
         name: str | None = None,
         announced_ns: int | None = None,
@@ -275,6 +266,5 @@ class LifecycleBuffer:
                 hostname=hostname,
                 name=name,
                 domain_id=domain_id,
-                mode_effective=mode_effective,
             )
         )

@@ -25,6 +25,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -58,7 +59,7 @@ class OpenDdsAdapter:
 
     # ----- ROS2 surface: not served by this adapter -----
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -94,9 +95,7 @@ class OpenDdsAdapter:
     ) -> list[ParticipantEvent]:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 
     def list_endpoints(
@@ -105,6 +104,7 @@ class OpenDdsAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         raise AdapterError(_OPENDDS_ROADMAP_MSG)
 

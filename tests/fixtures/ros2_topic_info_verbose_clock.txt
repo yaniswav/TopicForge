@@ -1,0 +1,89 @@
+Type: rosgraph_msgs/msg/Clock
+
+Publisher count: 1
+
+Node name: omnisim_clock
+Node namespace: /
+Topic type: rosgraph_msgs/msg/Clock
+Endpoint type: PUBLISHER
+GID: 01.0f.bf.1f.29.0f.4f.a9.00.00.00.00.00.00.10.03.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: RELIABLE
+  History (Depth): UNKNOWN
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Subscription count: 5
+
+Node name: omnisim_sensors
+Node namespace: /
+Topic type: rosgraph_msgs/msg/Clock
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.bf.1f.25.0f.48.0a.00.00.00.00.00.00.20.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: BEST_EFFORT
+  History (Depth): UNKNOWN
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: omnisim_command
+Node namespace: /
+Topic type: rosgraph_msgs/msg/Clock
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.bf.1f.25.0f.48.0a.00.00.00.00.00.00.21.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: BEST_EFFORT
+  History (Depth): UNKNOWN
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: omnisim_odometry
+Node namespace: /
+Topic type: rosgraph_msgs/msg/Clock
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.bf.1f.25.0f.48.0a.00.00.00.00.00.00.22.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: BEST_EFFORT
+  History (Depth): UNKNOWN
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: omnisim_tf
+Node namespace: /
+Topic type: rosgraph_msgs/msg/Clock
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.bf.1f.25.0f.48.0a.00.00.00.00.00.00.23.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: BEST_EFFORT
+  History (Depth): UNKNOWN
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite
+
+Node name: omnisim_bridge
+Node namespace: /husky
+Topic type: rosgraph_msgs/msg/Clock
+Endpoint type: SUBSCRIPTION
+GID: 01.0f.bf.1f.25.0f.48.0a.00.00.00.00.00.00.24.04.00.00.00.00.00.00.00.00
+QoS profile:
+  Reliability: BEST_EFFORT
+  History (Depth): UNKNOWN
+  Durability: VOLATILE
+  Lifespan: Infinite
+  Deadline: Infinite
+  Liveliness: AUTOMATIC
+  Liveliness lease duration: Infinite

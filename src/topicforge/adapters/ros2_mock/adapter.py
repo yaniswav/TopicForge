@@ -19,6 +19,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -40,8 +41,8 @@ class MockAdapter:
     def is_available(self) -> bool:
         return True
 
-    def list_topics(self) -> list[TopicInfo]:
-        return list(fixtures.MOCK_TOPICS)
+    def list_topics(self) -> list[TopicListItem]:
+        return list(fixtures.MOCK_TOPIC_ITEMS)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         for t in fixtures.MOCK_TOPICS:
@@ -116,8 +117,11 @@ class MockAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
-        return fixtures.mock_endpoint_listing(topic, participant_guid, include_observer)
+        return fixtures.mock_endpoint_listing(
+            topic, participant_guid, include_observer, include_internal
+        )
 
     def participant_events(
         self, domain_id: int = 0, lookback_s: int = 300
@@ -128,9 +132,7 @@ class MockAdapter:
             raise AdapterError(f"lookback_s must be in 1..86400, got {lookback_s}")
         return fixtures.mock_participant_events_for(domain_id, lookback_s)
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         if window_s < 1 or window_s > 3600:

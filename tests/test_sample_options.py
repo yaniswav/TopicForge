@@ -24,7 +24,7 @@ from topicforge.services.sample_budget import apply_sample_budget, sample_size_b
 
 
 def _sample(payload: dict[str, object]) -> MessageSample:
-    return MessageSample(topic="/t", message_type="p/msg/T", timestamp_ns=0, payload=payload)
+    return MessageSample(topic="/t", message_type="p/msg/T", timestamp_ns=0, stamp_source="none", payload=payload)
 
 
 class _Recorder(MockAdapter):

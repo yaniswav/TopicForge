@@ -21,12 +21,14 @@ from pathlib import Path
 
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common.bag_kind import classify_bag_topic
 from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
 from topicforge.adapters.ros2_live.parsers import (
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
-    summarize_publisher_qos,
+    side_nodes,
+    summarize_side_qos,
 )
 from topicforge.adapters.ros2_live.process_runner import run_process
 from topicforge.constants import (
@@ -44,6 +46,7 @@ from topicforge.models import (
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -123,9 +126,7 @@ class Ros2CliAdapter:
     ) -> list[ParticipantEvent]:
         raise self._dds_inactive_error()
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         raise self._dds_inactive_error()
 
     def list_endpoints(
@@ -134,6 +135,7 @@ class Ros2CliAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         raise self._dds_inactive_error()
 
@@ -147,7 +149,7 @@ class Ros2CliAdapter:
 
         return BagService().peek_samples(path, topic, count)
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
         """Topics with types and publisher/subscriber counts; QoS is not read here.
 
         Counts come from one `ros2 topic list -v` call. If that output cannot
@@ -158,17 +160,16 @@ class Ros2CliAdapter:
         listed = parse_topic_list(out)
         if graph_counts is not None:
             self._clock_hint = (graph_counts.get("/clock", (0, 0))[0] > 0, time.monotonic())
-        topics: list[TopicInfo] = []
+        topics: list[TopicListItem] = []
         for name, msg_type in listed:
             counts = graph_counts.get(name) if graph_counts is not None else None
             pub_count, sub_count = counts if counts is not None else self._safe_counts(name)
             topics.append(
-                TopicInfo(
+                TopicListItem(
                     name=name,
                     message_type=msg_type,
                     publisher_count=pub_count,
                     subscriber_count=sub_count,
-                    mode_effective=self.effective_mode,
                 )
             )
         return topics
@@ -239,7 +240,12 @@ class Ros2CliAdapter:
             part
             for part in (
                 _short_result_note(
-                    run, len(samples) + skipped, count, budget, has_publisher, info.qos_durability
+                    run,
+                    len(samples) + skipped,
+                    count,
+                    budget,
+                    has_publisher,
+                    _publisher_durability(info),
                 ),
                 _dropped_note(run.oversized, skipped, self._max_message_chars),
             )
@@ -418,9 +424,17 @@ def _echo_qos_args(info: TopicInfo) -> list[str]:
     permissive `best_effort` / `volatile` otherwise (and when there is no
     publisher to read), which connects to any publisher.
     """
-    reliability = "reliable" if info.qos_reliability == "reliable" else "best_effort"
-    durability = "transient_local" if info.qos_durability == "transient_local" else "volatile"
+    qos = info.publisher_qos
+    reliability = "reliable" if qos is not None and qos.reliability == "reliable" else "best_effort"
+    durability = (
+        "transient_local" if qos is not None and qos.durability == "transient_local" else "volatile"
+    )
     return ["--qos-reliability", reliability, "--qos-durability", durability]
+
+
+def _publisher_durability(info: TopicInfo) -> str | None:
+    """Durability of the topic's publishers, `None` when unknown."""
+    return info.publisher_qos.durability if info.publisher_qos is not None else None
 
 
 def _short_result_note(
@@ -520,8 +534,9 @@ def parse_topic_info(
 
     Returns None when no message type is found (the adapter reports the topic
     as not found). `fallback_name` and `mode_effective` come from the caller,
-    not from the output. `qos_reliability` and `qos_durability` summarize the
-    publishers' QoS blocks (see `summarize_publisher_qos`).
+    not from the output. `publisher_qos` and `subscription_qos` summarize the QoS block
+    of each side (see `summarize_side_qos`); `publisher_nodes` and `subscriber_nodes` come
+    from the `Node name:` / `Node namespace:` lines.
     """
     msg_type: str | None = None
     pub = sub = 0
@@ -534,14 +549,20 @@ def parse_topic_info(
             sub = int(m.group(1))
     if msg_type is None:
         return None
-    reliability, durability = summarize_publisher_qos(parse_topic_endpoint_qos(stdout))
+    endpoints = parse_topic_endpoint_qos(stdout)
+    publisher_qos, publisher_note = summarize_side_qos(endpoints, "PUBLISHER", pub)
+    subscription_qos, subscription_note = summarize_side_qos(endpoints, "SUBSCRIPTION", sub)
     return TopicInfo(
         name=fallback_name,
         message_type=msg_type,
         publisher_count=pub,
         subscriber_count=sub,
-        qos_reliability=reliability,
-        qos_durability=durability,
+        publisher_qos=publisher_qos,
+        publisher_qos_note=publisher_note,
+        subscription_qos=subscription_qos,
+        subscription_qos_note=subscription_note,
+        publisher_nodes=side_nodes(endpoints, "PUBLISHER"),
+        subscriber_nodes=side_nodes(endpoints, "SUBSCRIPTION"),
         mode_effective=mode_effective,
     )
 
@@ -570,6 +591,7 @@ def parse_bag_info(
                     name=name,
                     message_type=msg_type,
                     message_count=count,
+                    kind=classify_bag_topic(name),
                     frequency_hz=freq,
                     frequency_basis="bag_duration" if freq is not None else None,
                 )

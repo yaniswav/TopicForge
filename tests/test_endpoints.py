@@ -160,7 +160,7 @@ def test_endpoint_record_fields() -> None:
     assert rec["role"] == "writer"
     assert rec["participant_guid"] == _pguid(100)
     assert rec["participant_name"] == "lidar"
-    assert rec["topic"] == "/t" and rec["type_name"] == "T"
+    assert rec["dds_topic"] == "/t" and rec["type_name"] == "T"
     assert rec["type_id"] is None
     assert rec["qos"].reliability == "RELIABLE"
     assert rec["announced_ns"] == 1_700_000_000_000_000_000
@@ -208,20 +208,20 @@ def _listing(**kw: Any) -> EndpointListing:
 
 def test_listing_excludes_observer_by_default_and_flags_orphans() -> None:
     listing = _listing()
-    assert listing.total_discovered == 5 and listing.returned == 4
+    assert listing.total == 5 and listing.returned == 4
     assert all(not e.is_observer for e in listing.endpoints)
-    orphans = {t.topic: t.orphan for t in listing.by_topic}
+    orphans = {t.dds_topic: t.orphan for t in listing.by_topic}
     assert orphans == {"/a": None, "/b": "no_reader", "/c": "no_writer"}
 
 
 def test_listing_include_observer_removes_orphan() -> None:
     listing = _listing(include_observer=True)
     assert listing.returned == 5
-    assert {t.topic: t.orphan for t in listing.by_topic}["/c"] is None
+    assert {t.dds_topic: t.orphan for t in listing.by_topic}["/c"] is None
 
 
 def test_listing_filters() -> None:
-    assert [e.topic for e in _listing(topic="/b").endpoints] == ["/b"]
+    assert [e.dds_topic for e in _listing(topic="/b").endpoints] == ["/b"]
     only = _listing(participant_guid=_pguid(200).upper()).endpoints
     assert {e.participant_name for e in only} == {"sub"}
 
@@ -259,12 +259,12 @@ def test_mock_listing_is_coherent_with_other_mock_tools() -> None:
     for ep in listing.endpoints:
         assert ep.participant_guid in participants
         assert ep.participant_name == participants[ep.participant_guid]
-    by_topic = {t.topic: t for t in listing.by_topic}
+    by_topic = {t.dds_topic: t for t in listing.by_topic}
     assert by_topic["/dds/topicforge/opaque"].orphan == "no_reader"
     assert by_topic["/dds/qos_mismatch"].orphan is None
     scan = adapter.detect_qos_mismatches("/dds/qos_mismatch")
     mismatch = scan.reports[0]
-    readers = [e for e in listing.endpoints if e.topic == mismatch.topic and e.role == "reader"]
+    readers = [e for e in listing.endpoints if e.dds_topic == mismatch.topic and e.role == "reader"]
     assert readers[0].guid == mismatch.reader_guid
     assert readers[0].participant_guid == mismatch.reader_participant_guid
     assert readers[0].participant_name == mismatch.reader_participant_name
@@ -273,7 +273,7 @@ def test_mock_listing_is_coherent_with_other_mock_tools() -> None:
 def test_mock_listing_filters_and_dust_qos() -> None:
     adapter = MockAdapter()
     one = adapter.list_endpoints(topic="/dds/topicforge/opaque")
-    assert one.returned == 1 and one.total_discovered == 7
+    assert one.returned == 1 and one.total == 7
     qos = one.endpoints[0].qos
     assert qos is not None
     assert (qos.liveliness_kind, qos.ownership_strength, qos.partitions) == (
@@ -305,10 +305,43 @@ def test_tool_call_returns_json_serializable_listing() -> None:
     assert payload["endpoints"][0]["qos"]["reliability"] in {"RELIABLE", "BEST_EFFORT"}
 
 
-def test_activity_is_reserved_and_explained() -> None:
-    ep = MockAdapter().list_endpoints().endpoints[0]
-    assert ep.activity is None
-    assert "not observed" in ep.activity_note
+def test_liveness_is_stated_once_in_the_hints() -> None:
+    listing = MockAdapter().list_endpoints()
+    assert len(listing.hints) == 1 and "Liveness is not observed" in listing.hints[0]
+    assert "activity" not in listing.endpoints[0].model_dump()
+    assert "domain_id" not in listing.endpoints[0].model_dump()
+    assert "mode_effective" not in listing.endpoints[0].model_dump()
+
+
+def test_ros_topic_is_the_unmangled_dds_topic() -> None:
+    rec = endpoint_record(_endpoint_sample(key=1, topic="rt/scan"), "writer", {}, None)
+    assert (rec["dds_topic"], rec["ros_topic"], rec["ros_topic_note"]) == ("rt/scan", "/scan", None)
+    other = endpoint_record(_endpoint_sample(key=2, topic="/dds/x"), "writer", {}, None)
+    assert other["ros_topic"] is None
+    assert "no `rt/` prefix" in other["ros_topic_note"]
+
+
+def _ros_records() -> list[dict[str, Any]]:
+    names = ["rt/scan", "rq/lidar/get_parametersRequest", "rr/lidar/get_parametersReply"]
+    names += ["ros_discovery_info", "ra/fibonacci/_action/send_goalRequest"]
+    return [
+        endpoint_record(_endpoint_sample(key=i + 1, topic=name), "writer", {}, None)
+        for i, name in enumerate(names)
+    ]
+
+
+def test_service_and_action_endpoints_are_hidden_unless_asked() -> None:
+    kw: dict[str, Any] = {"domain_id": 0, "mode_effective": "live", "observer_guid": None}
+    hidden = build_endpoint_listing(_ros_records(), **kw)
+    assert [e.ros_topic for e in hidden.endpoints] == ["/scan"]
+    assert hidden.returned == 1 and hidden.total == 5
+    assert hidden.hidden_internal_endpoint_count == 4
+    assert [t.ros_topic for t in hidden.by_topic] == ["/scan"]
+    shown = build_endpoint_listing(_ros_records(), include_internal=True, **kw)
+    assert shown.returned == 5 and shown.hidden_internal_endpoint_count == 0
+    internal = [e for e in shown.endpoints if e.ros_topic is None]
+    assert len(internal) == 4
+    assert all("not a topic" in (e.ros_topic_note or "") for e in internal)
 
 
 def test_listing_from_samples_joins_names() -> None:
@@ -376,13 +409,13 @@ def test_topic_filter_matches_the_alternate_name_form() -> None:
     one = build_endpoint_listing(
         recs, domain_id=0, mode_effective="live", observer_guid=None, topic="rt/scan"
     )
-    assert [e.topic for e in one.endpoints] == ["scan"]
+    assert [e.dds_topic for e in one.endpoints] == ["scan"]
     assert one.note is not None and "alternate name form" in one.note
     recs = [endpoint_record(_endpoint_sample(key=1, topic="rt/scan"), "writer", {}, None)]
     two = build_endpoint_listing(
         recs, domain_id=0, mode_effective="live", observer_guid=None, topic="scan"
     )
-    assert [e.topic for e in two.endpoints] == ["rt/scan"]
+    assert [e.dds_topic for e in two.endpoints] == ["rt/scan"]
     exact = build_endpoint_listing(
         [*recs, endpoint_record(_endpoint_sample(key=2, topic="scan"), "writer", {}, None)],
         domain_id=0,
@@ -390,7 +423,7 @@ def test_topic_filter_matches_the_alternate_name_form() -> None:
         observer_guid=None,
         topic="scan",
     )
-    assert [e.topic for e in exact.endpoints] == ["scan"] and exact.note is None
+    assert [e.dds_topic for e in exact.endpoints] == ["scan"] and exact.note is None
 
 
 def test_no_match_note_mentions_other_topics_not_hidden_endpoints() -> None:

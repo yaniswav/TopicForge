@@ -9,15 +9,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from topicforge.models import SideQos
+
 _VERBOSE_LIST_HEADER = re.compile(r"^\s*(Published|Subscribed) topics:\s*$")
 _VERBOSE_LIST_ITEM = re.compile(r"^\s*\*\s+(\S+)\s+\[.*\]\s+(\d+)\s+(?:publisher|subscriber)s?\s*$")
-_NODE_NAME = re.compile(r"^\s*Node name:")
+_NODE_NAME = re.compile(r"^\s*Node name:\s*(\S*)")
+_NODE_NAMESPACE = re.compile(r"^\s*Node namespace:\s*(\S*)")
 _ENDPOINT_TYPE = re.compile(r"^\s*Endpoint type:\s*(\S+)")
 _RELIABILITY = re.compile(r"^\s*Reliability:\s*(\S+)")
 _DURABILITY = re.compile(r"^\s*Durability:\s*(\S+)")
 
 _RELIABILITY_VALUES = {"RELIABLE": "reliable", "BEST_EFFORT": "best_effort"}
 _DURABILITY_VALUES = {"VOLATILE": "volatile", "TRANSIENT_LOCAL": "transient_local"}
+_UNKNOWN_NODE = "_NODE_NAME_UNKNOWN_"
 
 
 @dataclass(frozen=True)
@@ -26,12 +30,15 @@ class EndpointQos:
 
     `reliability` and `durability` are lowercase (`reliable`, `best_effort`,
     `volatile`, `transient_local`), or `None` when the CLI printed `UNKNOWN`
-    or `SYSTEM_DEFAULT`.
+    or `SYSTEM_DEFAULT`. `node` is the fully qualified node name from the
+    `Node name:` and `Node namespace:` lines, `None` when the CLI could not name
+    the node (`_NODE_NAME_UNKNOWN_`).
     """
 
     endpoint_type: str
     reliability: str | None
     durability: str | None
+    node: str | None = None
 
 
 def parse_topic_list_verbose(stdout: str) -> dict[str, tuple[int, int]] | None:
@@ -75,15 +82,18 @@ def parse_topic_endpoint_qos(stdout: str) -> list[EndpointQos]:
                     endpoint_type=str(current["type"]),
                     reliability=current.get("reliability"),
                     durability=current.get("durability"),
+                    node=current.get("node"),
                 )
             )
 
     for line in stdout.splitlines():
-        if _NODE_NAME.match(line):
+        if m := _NODE_NAME.match(line):
             close()
-            current = {}
+            current = {"name": m.group(1)}
         elif current is None:
             continue
+        elif m := _NODE_NAMESPACE.match(line):
+            current["node"] = qualified_node_name(m.group(1), current.get("name") or "")
         elif m := _ENDPOINT_TYPE.match(line):
             current["type"] = m.group(1)
         elif m := _RELIABILITY.match(line):
@@ -94,16 +104,56 @@ def parse_topic_endpoint_qos(stdout: str) -> list[EndpointQos]:
     return endpoints
 
 
-def summarize_publisher_qos(endpoints: list[EndpointQos]) -> tuple[str | None, str | None]:
-    """`(reliability, durability)` over the publishers: the shared value, `mixed`, or `None`.
+def qualified_node_name(namespace: str, name: str) -> str | None:
+    """Fully qualified node name from the `Node namespace:` and `Node name:` values.
 
-    Subscriptions are ignored. `None` for a policy no publisher reported.
+    `("/", "lidar")` gives `/lidar`, `("/robot1", "lidar")` gives `/robot1/lidar`.
+    `None` for an empty or unknown name.
     """
-    publishers = [e for e in endpoints if e.endpoint_type.upper() == "PUBLISHER"]
-    return (
-        _agree([e.reliability for e in publishers]),
-        _agree([e.durability for e in publishers]),
-    )
+    if not name or name == _UNKNOWN_NODE:
+        return None
+    prefix = namespace.rstrip("/")
+    return f"{prefix}/{name}"
+
+
+def side_nodes(endpoints: list[EndpointQos], endpoint_type: str) -> list[str]:
+    """Distinct node names of one side (`PUBLISHER` or `SUBSCRIPTION`), in CLI order."""
+    names: list[str] = []
+    for e in endpoints:
+        if e.endpoint_type.upper() == endpoint_type and e.node and e.node not in names:
+            names.append(e.node)
+    return names
+
+
+def summarize_side_qos(
+    endpoints: list[EndpointQos], endpoint_type: str, declared_count: int
+) -> tuple[SideQos | None, str | None]:
+    """`(SideQos, None)` for one side, or `(None, note)` saying why there is none.
+
+    `endpoint_type` is `PUBLISHER` or `SUBSCRIPTION`; `declared_count` is the count the
+    CLI printed for that side. Reliability and durability are the shared value, or
+    `mixed` when the endpoints disagree. A policy that no endpoint reported (`UNKNOWN` or
+    `SYSTEM_DEFAULT`) leaves the side without QoS, with a note.
+    """
+    word = "publishers" if endpoint_type == "PUBLISHER" else "subscriptions"
+    side = [e for e in endpoints if e.endpoint_type.upper() == endpoint_type]
+    if declared_count == 0 and not side:
+        who = "publisher" if endpoint_type == "PUBLISHER" else "subscriber"
+        return None, f"The topic has no {who}, so there is no QoS to report."
+    if not side:
+        return None, f"The `ros2` CLI did not list the QoS of the {word}."
+    reliability = _agree([e.reliability for e in side])
+    durability = _agree([e.durability for e in side])
+    if reliability is None or durability is None:
+        return None, (
+            f"The {word} did not report their reliability and durability "
+            "(the CLI printed UNKNOWN or SYSTEM_DEFAULT)."
+        )
+    return SideQos(
+        reliability=reliability,  # type: ignore[arg-type]
+        durability=durability,  # type: ignore[arg-type]
+        endpoint_count=len(side),
+    ), None
 
 
 def _agree(values: list[str | None]) -> str | None:

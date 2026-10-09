@@ -11,6 +11,7 @@ from topicforge.constants import (
     DEFAULT_MAX_SAMPLE_BYTES,
     DEFAULT_SAMPLE_TIMEOUT_S,
     MAX_ARRAY_LENGTH,
+    MAX_PARTICIPANT_EVENTS,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
@@ -20,10 +21,11 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
-    ParticipantEvent,
-    ParticipantInfo,
+    ParticipantEventListing,
+    ParticipantListing,
     SampleResult,
     TopicInfo,
+    TopicListing,
     TopicMetrics,
 )
 from topicforge.services.sample_budget import apply_sample_budget
@@ -71,9 +73,16 @@ class Inspector:
     def backend_name(self) -> AdapterName:
         return self._adapter.name
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> TopicListing:
         # No arguments, so nothing to validate here.
-        return self._adapter.list_topics()
+        topics = self._adapter.list_topics()
+        return TopicListing(
+            topics=topics,
+            returned=len(topics),
+            total=len(topics),
+            truncated=False,
+            mode_effective=self._adapter.effective_mode,
+        )
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         _validate_topic_name(topic)
@@ -127,10 +136,23 @@ class Inspector:
         if callable(wait):
             wait()
 
-    def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
+    def _observed_domain(self, requested: int) -> int:
+        """The domain the adapter joined at startup; the requested one when it does not say."""
+        joined = getattr(self._adapter, "observed_domain_id", None)
+        return joined if isinstance(joined, int) else requested
+
+    def list_participants(self, domain_id: int = 0) -> ParticipantListing:
         _validate_dds_domain(domain_id)
         self._await_dds()
-        return self._adapter.list_participants(domain_id)
+        participants = self._adapter.list_participants(domain_id)
+        return ParticipantListing(
+            participants=participants,
+            returned=len(participants),
+            total=len(participants),
+            truncated=False,
+            domain_id=self._observed_domain(domain_id),
+            mode_effective=self._adapter.effective_mode,
+        )
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None:
@@ -148,12 +170,28 @@ class Inspector:
 
     def participant_events(
         self, domain_id: int = 0, lookback_s: int | None = None
-    ) -> list[ParticipantEvent]:
+    ) -> ParticipantEventListing:
         _validate_dds_domain(domain_id)
         seconds = DEFAULT_LOOKBACK_SECONDS if lookback_s is None else lookback_s
         _validate_lookback_s(seconds)
         self._await_dds()
-        return self._adapter.participant_events(domain_id, seconds)
+        events = self._adapter.participant_events(domain_id, seconds)
+        # The adapters keep a ring of MAX_PARTICIPANT_EVENTS: a full result may have lost older ones.
+        full = len(events) >= MAX_PARTICIPANT_EVENTS
+        return ParticipantEventListing(
+            events=events,
+            returned=len(events),
+            total=len(events),
+            truncated=full,
+            domain_id=self._observed_domain(domain_id),
+            mode_effective=self._adapter.effective_mode,
+            note=(
+                f"The event log holds the last {MAX_PARTICIPANT_EVENTS} events; older events "
+                "inside the window may have been dropped. Narrow `lookback_s`."
+                if full
+                else None
+            ),
+        )
 
     def topic_metrics(
         self,
@@ -175,6 +213,7 @@ class Inspector:
         include_observer: bool = False,
         domain_id: int = 0,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         _validate_dds_domain(domain_id)
         if topic is not None:
@@ -183,7 +222,9 @@ class Inspector:
         if participant_guid is not None and not guid:
             raise AdapterError("participant_guid must be a non-empty string when given")
         self._await_dds()
-        return self._adapter.list_endpoints(topic, guid, include_observer, include_departed)
+        return self._adapter.list_endpoints(
+            topic, guid, include_observer, include_departed, include_internal
+        )
 
     def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
         clean_path = _validate_bag_path(path)
@@ -230,9 +271,7 @@ def _validate_lookback_s(seconds: int) -> None:
     if not isinstance(seconds, int) or isinstance(seconds, bool):
         raise AdapterError(f"lookback_s must be an int, got {type(seconds).__name__}")
     if seconds < _LOOKBACK_MIN or seconds > _LOOKBACK_MAX:
-        raise AdapterError(
-            f"lookback_s must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}"
-        )
+        raise AdapterError(f"lookback_s must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}")
 
 
 def _validate_window_s(seconds: int) -> None:

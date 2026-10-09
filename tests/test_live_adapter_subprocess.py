@@ -245,7 +245,7 @@ def test_list_topics_safe_counts_default_to_zero_on_failure(
     assert len(topics) == 1
     assert topics[0].publisher_count == 0
     assert topics[0].subscriber_count == 0
-    assert topics[0].mode_effective == "live"
+    assert Ros2CliAdapter().effective_mode == "live"
 
 
 def test_effective_mode_is_live() -> None:

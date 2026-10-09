@@ -63,6 +63,7 @@ from topicforge.models import (
     QosProfile,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -228,7 +229,7 @@ class FastDdsAdapter:
 
     # ----- ROS2 surface: not served by this adapter -----
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_topics(self) -> list[TopicListItem]:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
@@ -251,6 +252,11 @@ class FastDdsAdapter:
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
+    @property
+    def observed_domain_id(self) -> int:
+        """The DDS domain joined at construction (the only one observed)."""
+        return self._domain_id
+
     # ----- DDS surface -----
 
     def list_endpoints(
@@ -259,6 +265,7 @@ class FastDdsAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         # The listener keeps raw discovery objects whose layout has not been
         # checked on a real bus, so no endpoint record is built from them.
@@ -312,6 +319,7 @@ class FastDdsAdapter:
                 topic=topic,
                 message_type=f"dds_builtin/{topic}",
                 timestamp_ns=0,
+                stamp_source="none",
                 payload={
                     "vendor": canonicalize_vendor_id(_extract_vendor_id(s)),
                     "guid": format_guid(_extract_guid(s)),
@@ -375,9 +383,7 @@ class FastDdsAdapter:
             domain_id=self._domain_id,
         )
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         """Metrics from the buffer that `peek_dds_samples` fills.
 
         As with Cyclone, nothing is collected in the background: the

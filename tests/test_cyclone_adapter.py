@@ -148,7 +148,7 @@ def test_list_endpoints_shape_and_observer_exclusion() -> None:
     assert all(not e.is_observer for e in listing.endpoints)
     assert all(e.participant_guid != listing.observer_guid for e in listing.endpoints)
     with_observer = adapter.list_endpoints(include_observer=True)
-    assert with_observer.total_discovered == listing.total_discovered
+    assert with_observer.total == listing.total
 
 
 def test_peek_builtin_endpoints_carry_structured_fields() -> None:

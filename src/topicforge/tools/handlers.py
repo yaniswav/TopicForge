@@ -27,10 +27,11 @@ from topicforge.models import (
     EndpointListing,
     HealthReport,
     MismatchScan,
-    ParticipantEvent,
-    ParticipantInfo,
+    ParticipantEventListing,
+    ParticipantListing,
     SampleResult,
     TopicInfo,
+    TopicListing,
     TopicMetrics,
 )
 from topicforge.services import HealthService, Inspector
@@ -140,7 +141,7 @@ def register_tools(
             "**Reading `mode`**: `live` with `ros_backend` `none` means the DDS"
             " tools are live and the ROS 2 tools are not available (a DDS-only "
             "setup: use `list_endpoints` for topics and wiring). With "
-            "`dds_backend` `none`, `dds_inactive_reason` says why: backend not "
+            "`dds_backend` `none`, `dds_inactive_note` says why: backend not "
             "selected, binding not installed, or adapter failed to start. "
             "`payload_decoding` is `disabled`: DDS user-topic payloads are not "
             "decoded. `dds_security` is `not_supported`: on a secured domain "
@@ -165,11 +166,12 @@ def register_tools(
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List "
             "every ROS 2 topic on the current graph (or the mock graph in mock "
-            "mode). Returns `list[TopicInfo]`: each entry carries `name`, "
-            "`message_type`, `publisher_count`, `subscriber_count`, and "
-            "`mode_effective` (`live` or `mock`) to tell a real graph from "
-            "fixtures. Live mode leaves `qos_reliability` and `qos_durability` "
-            "null here: call `get_topic_info` for a topic's QoS. **Empty list** "
+            "mode). Returns a `TopicListing` `{topics, returned, total, "
+            "truncated, mode_effective, note}`: each topic carries `name`, "
+            "`message_type`, `publisher_count` and `subscriber_count`, and "
+            "`mode_effective` (`live` or `mock`) tells a real graph from "
+            "fixtures. QoS is not in the listing: call `get_topic_info` for a "
+            "topic's QoS. **Empty `topics`** "
             "when the graph has no topics or when live discovery times out. "
             "**Raises an MCP error** when no `ros2` CLI is available (DDS-only "
             "setup). Read-only; no side effects."
@@ -177,7 +179,7 @@ def register_tools(
     )
     @guarded("ros")
     @instrument(telemetry, "list_topics")
-    def list_topics() -> list[TopicInfo]:
+    def list_topics() -> TopicListing:
         return inspector.list_topics()
 
     @mcp.tool(
@@ -186,10 +188,12 @@ def register_tools(
             "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Return"
             " info for a single ROS 2 topic. `topic` must be a fully qualified "
             "name, e.g. `/cmd_vel`. Returns a `TopicInfo` with `mode_effective` "
-            "(`live` or `mock`) and, in live mode, the publishers' "
-            "`qos_reliability` (`reliable` / `best_effort` / `mixed`) and "
-            "`qos_durability` (`volatile` / `transient_local` / `mixed`; "
-            "`transient_local` marks a latched topic such as `/tf_static`). "
+            "(`live` or `mock`) and, in live mode, `publisher_qos` and "
+            "`subscription_qos` (`reliability` `reliable` / `best_effort` / "
+            "`mixed`, `durability` `volatile` / `transient_local` / `mixed`, "
+            "`endpoint_count`; `transient_local` marks a latched topic such as "
+            "`/tf_static`; a side that is `null` says why in its `_note`) and "
+            "`publisher_nodes` / `subscriber_nodes` (fully qualified node names). "
             "**Raises an MCP error** if the topic name is "
             "malformed, the topic is unknown to the active graph, or no `ros2` "
             "CLI is available. Read-only; no side effects."
@@ -310,12 +314,13 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("List DDS participants", open_world=True),
         description=(
-            "List DDS participants observed on the bus. Returns "
-            "`list[ParticipantInfo]`: each entry carries `guid`, `vendor` "
+            "List DDS participants observed on the bus. Returns a "
+            "`ParticipantListing` `{participants, returned, total, truncated, "
+            "domain_id, mode_effective, note}`: each participant carries `guid`, `vendor` "
             "(`cyclone`/`fast`/`rti`/`rti_micro`/`opensplice`/`opendds`/`coredx`/`intercom`/`dust`/`mock`/`unknown`)"
             " with `vendor_source`, optional `name` (announced EntityName QoS, "
             "e.g. `lidar_driver`), optional `hostname`, `domain_id`, "
-            "`is_observer` and `mode_effective` (`live`/`mock`). **Why `vendor`"
+            "and `is_observer`. **Why `vendor`"
             " can be `unknown`**: the vendor is read from the participant GUID "
             "prefix (`vendor_source` `guid_prefix`; `none` when unknown). Some "
             "vendors, e.g. Dust DDS and RTI Connext, do not put their vendor id "
@@ -357,7 +362,7 @@ def register_tools(
                 le=232,
             ),
         ] = 0,
-    ) -> list[ParticipantInfo]:
+    ) -> ParticipantListing:
         return inspector.list_participants(domain_id)
 
     @mcp.tool(
@@ -455,11 +460,13 @@ def register_tools(
         description=(
             "Return DDS participant lifecycle events (`discovered` / `lost`) "
             "from a recent window, e.g. 'who was on the bus 5 minutes ago and "
-            "left?' or 'when did this participant first appear?'. Returns `list[ParticipantEvent]`: each entry carries "
+            "left?' or 'when did this participant first appear?'. Returns a "
+            "`ParticipantEventListing` `{events, returned, total, truncated, domain_id, "
+            "mode_effective, note}`: each event carries "
             "`guid`, `event_type`, `vendor`, `timestamp_ns` (wall-clock ns "
             "since epoch), `time_source`, `observed_ns`, optional `name` (the "
-            "participant's announced DDS name), optional `hostname`, "
-            "`domain_id`, and `mode_effective` (`live`/`mock`). `time_source` "
+            "participant's announced DDS name), optional `hostname` and "
+            "`domain_id`. `time_source` "
             "says what `timestamp_ns` is: `dds_source_timestamp` (the DDS "
             "timestamp of the announcement or dispose) or `observed_local` "
             "(when TopicForge noticed, weakest). `observed_ns` is when "
@@ -472,8 +479,8 @@ def register_tools(
             "and the two cases cannot be told apart. A restarted node is a new "
             "participant: expect one `lost` and one `discovered` per restart, "
             "with different `guid`s and the same `name`. Sorted newest-first. "
-            "Capped at 200 events, silently (reduce `lookback_s` if you "
-            "hit it). TopicForge only knows what happened since it started "
+            "Capped at 200 events (`truncated` is true and `note` says so; "
+            "reduce `lookback_s` if you hit it). TopicForge only knows what happened since it started "
             "watching (see `health_check.observer_started_ns`). **Backend "
             "caveats**: Fast DDS captures arrivals and removals through "
             "listener callbacks; Cyclone tracks discovery in the background (a "
@@ -512,7 +519,7 @@ def register_tools(
                 le=86400,
             ),
         ] = 300,
-    ) -> list[ParticipantEvent]:
+    ) -> ParticipantEventListing:
         return inspector.participant_events(domain_id, lookback_s)
 
     @mcp.tool(
@@ -614,7 +621,9 @@ def register_tools(
         description=(
             "List every DDS endpoint (writer and reader) announced on the bus, "
             "one `EndpointInfo` per endpoint with `role`, "
-            "`topic`, `type_name`, `type_id`, the owning `participant_guid` "
+            "`dds_topic` (raw name such as `rt/scan`), `ros_topic` (`/scan`, "
+            "`null` with `ros_topic_note` when it is not a ROS 2 topic), "
+            "`type_name`, `type_id`, the owning `participant_guid` "
             "joined with its `participant_name`, and a structured `qos` "
             "(reliability, durability, history, deadline, liveliness kind and "
             "lease, ownership kind and strength, partitions, latency budget, "
@@ -642,13 +651,16 @@ def register_tools(
             "source timestamp on the announcing side's clock, which can "
             "differ from this host's clock. **This lists discovery facts, not "
             "data flow**: it shows which endpoints exist and how they are "
-            "configured, not whether samples move. `activity` is always `None` "
-            "(see `activity_note`): TopicForge holds no reader on user topics "
+            "configured, not whether samples move (`hints` says so once): "
+            "TopicForge holds no reader on user topics "
             "and cannot tell a silent or hung writer from a healthy one. Pair "
             "it with `detect_qos_mismatches` to see which pairs cannot match. "
             "TopicForge's own observer participant is excluded unless "
-            "`include_observer` is true. Output is capped at 500 endpoints "
-            "(`truncated`, `total_discovered`); `by_topic` still covers all "
+            "`include_observer` is true. ROS 2 service and action endpoints "
+            "(`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) are left "
+            "out unless `include_internal` is true "
+            "(`hidden_internal_endpoint_count`). Output is capped at 500 endpoints "
+            "(`truncated`, `total`); `by_topic` still covers all "
             "matches. Read-only. **Raises an MCP error** when no DDS module "
             "is active. Mock mode returns a fixture matching the other mock "
             "DDS tools."
@@ -704,9 +716,19 @@ def register_tools(
                 )
             ),
         ] = False,
+        include_internal: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Also list the ROS 2 service and action endpoints (`rq/`, "
+                    "`rr/`, `rs/`, `rp/`, `ra/` and `ros_discovery_info`). "
+                    "Defaults to false: they are most of a small robot's endpoints."
+                )
+            ),
+        ] = False,
     ) -> EndpointListing:
         return inspector.list_endpoints(
-            topic, participant_guid, include_observer, domain_id, include_departed
+            topic, participant_guid, include_observer, domain_id, include_departed, include_internal
         )
 
     # TODO(roadmap): URDF tools: validate / inspect / generate URDF & xacro.

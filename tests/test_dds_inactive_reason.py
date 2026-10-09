@@ -86,14 +86,14 @@ def test_health_check_reports_the_reason_when_dds_is_none() -> None:
     adapter = Ros2CliAdapter(dds_inactive_reason="no DDS backend is selected.")
     report = HealthService(_settings("mock"), adapter).report()
     assert report.dds_backend == "none"
-    assert report.dds_inactive_reason == "no DDS backend is selected."
+    assert report.dds_inactive_note == "no DDS backend is selected."
 
 
 def test_health_check_has_no_reason_when_dds_serves(monkeypatch: pytest.MonkeyPatch) -> None:
     from topicforge.adapters.ros2_mock import MockAdapter
 
     report = HealthService(_settings("mock"), MockAdapter()).report()
-    assert report.dds_backend == "mock" and report.dds_inactive_reason is None
+    assert report.dds_backend == "mock" and report.dds_inactive_note is None
 
 
 def _platform(
@@ -165,7 +165,7 @@ def test_unsupported_platform_message_reaches_health_check(
     adapter = factory.build_adapter(_settings("cyclone"))
     report = HealthService(_settings("cyclone"), adapter).report()
     assert report.dds_backend == "none"
-    assert "linux-aarch64" in (report.dds_inactive_reason or "")
+    assert "linux-aarch64" in (report.dds_inactive_note or "")
 
 
 def test_cyclone_requested_without_ros2_falls_back_to_mock_with_the_reason(
@@ -179,10 +179,10 @@ def test_cyclone_requested_without_ros2_falls_back_to_mock_with_the_reason(
     adapter = factory.build_adapter(_settings("cyclone"))
     assert isinstance(adapter, MockAdapter)
     report = HealthService(_settings("cyclone"), adapter).report()
-    assert "no prebuilt wheel for linux-aarch64" in (report.dds_inactive_reason or "")
+    assert "no prebuilt wheel for linux-aarch64" in (report.dds_inactive_note or "")
 
 
 def test_deliberate_mock_has_no_inactive_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: False)
     adapter = factory.build_adapter(_settings("mock"))
-    assert HealthService(_settings("mock"), adapter).report().dds_inactive_reason is None
+    assert HealthService(_settings("mock"), adapter).report().dds_inactive_note is None

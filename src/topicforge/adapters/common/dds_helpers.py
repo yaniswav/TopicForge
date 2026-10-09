@@ -112,7 +112,7 @@ def declared_hz_from_endpoints(endpoints: Iterable[Any], topic: str) -> float | 
         e.qos.deadline_ns
         for e in endpoints
         if e.role == "writer"
-        and e.topic == topic
+        and e.dds_topic == topic
         and e.qos is not None
         and e.qos.deadline_ns
         and e.qos.deadline_ns > 0
@@ -133,6 +133,7 @@ def user_topic_placeholder(topic: str, count: int, *, note: str) -> list[Message
             topic=topic,
             message_type="dds/unknown",
             timestamp_ns=0,
+            stamp_source="none",
             payload=annotate_raw(b"", note=note),
         )
     ]

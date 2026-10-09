@@ -96,17 +96,24 @@ def test_valid_tool_call_returns_result_not_error() -> None:
 # which would degrade outputSchema back to `additionalProperties: True`.
 _EXPECTED_OUTPUT_TITLES = {
     "health_check": "HealthReport",
+    "list_topics": "TopicListing",
     "get_topic_info": "TopicInfo",
     "sample_messages": "SampleResult",
     "analyze_bag": "BagAnalysis",
-    # DDS module tools
+    "list_participants": "ParticipantListing",
+    "detect_qos_mismatches": "MismatchScan",
     "peek_dds_samples": "SampleResult",
+    "participant_events": "ParticipantEventListing",
+    "topic_metrics": "TopicMetrics",
+    "peek_bag_samples": "SampleResult",
+    "list_endpoints": "EndpointListing",
 }
 
 
 def test_tool_outputs_are_typed_pydantic_schemas() -> None:
     app = _mock_app()
     tools = {t.name: t for t in asyncio.run(app.list_tools())}
+    assert set(_EXPECTED_OUTPUT_TITLES) == MVP_TOOLS
 
     for name, expected_title in _EXPECTED_OUTPUT_TITLES.items():
         schema = tools[name].output_schema
@@ -120,56 +127,36 @@ def test_tool_outputs_are_typed_pydantic_schemas() -> None:
         assert schema.get("additionalProperties") is not True, (
             f"{name}: outputSchema must not be a generic dict envelope"
         )
-
-    # `list_topics` returns `list[TopicInfo]`; the SDK wraps that in a `result`
-    # property and emits TopicInfo under `$defs`.
-    list_schema = tools["list_topics"].output_schema
-    assert list_schema is not None
-    assert "TopicInfo" in (list_schema.get("$defs") or {}), (
-        "list_topics outputSchema should reference TopicInfo via $defs"
-    )
+        # An object, never a bare list wrapped as `{"result": [...]}` (CONTRACT 1.1).
+        assert schema.get("type") == "object" and "result" not in (schema.get("properties") or {})
 
 
-# Pin the `mode_effective` contract: every response carrier
-# (TopicInfo, SampleResult, BagAnalysis) must surface it as a required field
-# so a downstream LLM can distinguish a live response from a mock one without
-# re-reading `health_check`.
-
-
-def _resolve_response_schema(
-    tool_schema: dict[str, object], expected_title: str
-) -> dict[str, object]:
-    if tool_schema.get("title") == expected_title:
-        return tool_schema
-    defs = tool_schema.get("$defs") or {}
-    if isinstance(defs, dict) and expected_title in defs:
-        nested = defs[expected_title]
-        assert isinstance(nested, dict)
-        return nested
-    raise AssertionError(f"could not locate schema for {expected_title!r} in {tool_schema!r}")
+# Pin the `mode_effective` contract: every top-level result except `health_check`
+# (it has `mode` / `requested_mode`) carries it as a required field, once, so a
+# downstream LLM can tell a live response from a mock one without re-reading
+# `health_check`. Nested items do not repeat it.
 
 
 def test_tool_responses_expose_mode_effective_field() -> None:
     app = _mock_app()
     tools = {t.name: t for t in asyncio.run(app.list_tools())}
 
-    # (tool_name, schema_title) pairs that should carry `mode_effective`.
-    checks = [
-        ("get_topic_info", "TopicInfo"),
-        ("sample_messages", "SampleResult"),
-        ("analyze_bag", "BagAnalysis"),
-        ("list_topics", "TopicInfo"),  # nested via $defs in the list envelope
-    ]
-    for tool_name, schema_title in checks:
-        tool_schema = tools[tool_name].output_schema
-        assert tool_schema is not None, f"{tool_name}: outputSchema must be populated"
-        resolved = _resolve_response_schema(tool_schema, schema_title)
-        properties = resolved.get("properties") or {}
-        required = resolved.get("required") or []
-        assert isinstance(properties, dict)
-        assert "mode_effective" in properties, (
-            f"{tool_name}/{schema_title}: outputSchema must declare mode_effective"
-        )
-        assert "mode_effective" in required, (
-            f"{tool_name}/{schema_title}: mode_effective must be required, not optional"
-        )
+    for tool_name, tool in tools.items():
+        schema = tool.output_schema
+        assert schema is not None, f"{tool_name}: outputSchema must be populated"
+        properties = schema.get("properties") or {}
+        required = schema.get("required") or []
+        if tool_name == "health_check":
+            assert "mode_effective" not in properties
+            continue
+        assert "mode_effective" in properties, f"{tool_name}: must declare mode_effective"
+        assert "mode_effective" in required, f"{tool_name}: mode_effective must be required"
+
+    nested = ("ParticipantInfo", "ParticipantEvent", "EndpointInfo", "MismatchReport", "TopicListItem")
+    for tool_name in ("list_participants", "participant_events", "list_endpoints", "list_topics"):
+        schema = tools[tool_name].output_schema
+        assert schema is not None
+        defs = schema.get("$defs") or {}
+        for title in nested:
+            if title in defs:
+                assert "mode_effective" not in defs[title]["properties"], f"{title} repeats it"

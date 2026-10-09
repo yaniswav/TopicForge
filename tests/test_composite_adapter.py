@@ -162,7 +162,6 @@ class _StubDdsAdapter:
                 vendor="cyclone",
                 hostname="host",
                 domain_id=domain_id,
-                mode_effective=self._mode,
             )
         ]
 
