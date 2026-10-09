@@ -2,6 +2,10 @@
 
     python tests/integration/ros2/run_bench.py --distro humble --rmw fastrtps
 
+After the tests the container drives TopicForge over MCP and compares its answers with the
+bench's ground truth (scripts/ground_truth). `--out DIR` keeps COMPARISON.md, comparison.json
+and the raw results on the host (CI uploads that folder).
+
 Extra pytest arguments go after `--`, e.g. `-- -k scan`.
 """
 
@@ -29,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--distro", choices=["humble", "jazzy"], default="humble")
     parser.add_argument("--rmw", choices=sorted(RMW), default="fastrtps")
     parser.add_argument("--no-build", action="store_true", help="reuse an existing image")
+    parser.add_argument("--out", type=Path, help="host folder for the ground-truth report")
     parser.add_argument("pytest_args", nargs="*", help="extra pytest arguments (after --)")
     args = parser.parse_args(argv)
 
@@ -51,6 +56,12 @@ def main(argv: list[str] | None = None) -> int:
             print("bench: image build failed", file=sys.stderr)
             return rc
 
+    mount: list[str] = []
+    if args.out is not None:
+        out = args.out.resolve()
+        out.mkdir(parents=True, exist_ok=True)
+        mount = ["-v", f"{out}:/bench/out"]
+
     name = f"topicforge-bench-{uuid.uuid4().hex[:8]}"
     try:
         rc = _run(
@@ -60,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--rm",
                 "--name",
                 name,
+                *mount,
                 "-e",
                 f"RMW_IMPLEMENTATION={RMW[args.rmw]}",
                 image,

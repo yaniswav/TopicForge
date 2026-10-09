@@ -2,7 +2,10 @@ name: ROS 2 live adapter
 
 # Runs Ros2CliAdapter against a real ROS 2 graph in Docker (official ros:humble
 # and ros:jazzy images). Tests tagged xfail document known bugs and do not
-# fail the job.
+# fail the job. After the tests, the same container drives TopicForge over MCP
+# (scripts/ground_truth/drive.py) and compares every answer with the ground
+# truth the bench publisher wrote (compare.py). A FAIL row fails the job; the
+# report is uploaded as an artifact.
 
 on:
   workflow_dispatch:
@@ -17,6 +20,7 @@ on:
       - "src/topicforge/tools/handlers.py"
       - "pyproject.toml"
       - "tests/integration/ros2/**"
+      - "scripts/ground_truth/**"
       - ".github/workflows/ros2-live.yml"
   pull_request:
     branches: [main]
@@ -29,6 +33,7 @@ on:
       - "src/topicforge/tools/handlers.py"
       - "pyproject.toml"
       - "tests/integration/ros2/**"
+      - "scripts/ground_truth/**"
       - ".github/workflows/ros2-live.yml"
 
 permissions:
@@ -55,7 +60,28 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build image and run the bench
+      - name: Build image, run the bench and the ground-truth comparison
         run: >
           python tests/integration/ros2/run_bench.py
           --distro ${{ matrix.distro }} --rmw ${{ matrix.rmw }}
+          --out bench-out
+
+      - name: Show the comparison and the rate CVs
+        if: always()
+        run: |
+          if [ -f bench-out/COMPARISON.md ]; then
+            grep -v '| PASS |' bench-out/COMPARISON.md || true
+            echo "## Ground truth ${{ matrix.distro }} / ${{ matrix.rmw }}" >> "$GITHUB_STEP_SUMMARY"
+            tail -n 14 bench-out/COMPARISON.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no COMPARISON.md: the bench stopped before the comparison"
+          fi
+
+      - name: Upload the ground-truth report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ground-truth-${{ matrix.distro }}-${{ matrix.rmw }}
+          path: bench-out/
+          if-no-files-found: warn
+          retention-days: 14

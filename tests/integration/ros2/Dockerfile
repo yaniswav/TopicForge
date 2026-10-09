@@ -16,6 +16,7 @@ WORKDIR /opt/topicforge
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY tests ./tests
+COPY scripts/ground_truth ./scripts/ground_truth
 
 # A venv keeps TopicForge off the PEP 668 system interpreter (Jazzy) and off
 # the old system pip (Humble). The sed strips CRLF from a Windows checkout.
