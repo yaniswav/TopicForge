@@ -43,8 +43,6 @@ body:
         - mock
         - cyclone
         - fast
-        - opendds (stub)
-        - dust (stub)
         - none
     validations:
       required: false
