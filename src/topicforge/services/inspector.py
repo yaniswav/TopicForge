@@ -9,11 +9,14 @@ from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapte
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
+    DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
     MAX_ARRAY_LENGTH,
+    MAX_NODE_TIMEOUT_S,
     MAX_PARTICIPANT_EVENTS,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
     TRUNCATED_FIELDS_KEY,
 )
@@ -21,6 +24,8 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEventListing,
     ParticipantListing,
     SampleResult,
@@ -83,6 +88,15 @@ class Inspector:
             truncated=False,
             mode_effective=self._adapter.effective_mode,
         )
+
+    def list_nodes(self) -> NodeListing:
+        # No arguments, so nothing to validate here.
+        return self._adapter.list_nodes()
+
+    def get_node_info(self, node: str, timeout_s: float = DEFAULT_NODE_TIMEOUT_S) -> NodeInfo:
+        name = _validate_node_name(node)
+        _validate_node_timeout_s(timeout_s)
+        return self._adapter.get_node_info(name, timeout_s)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         _validate_topic_name(topic)
@@ -291,6 +305,31 @@ def _validate_topic_name(topic: str) -> None:
             f"topic name is malformed (got {topic!r}); each `/`-separated "
             "segment must start with a letter or underscore and contain only "
             "letters, digits, and underscores (no `//`, no trailing `/`)"
+        )
+
+
+def _validate_node_name(node: str) -> str:
+    """The fully qualified node name; a missing leading `/` is added."""
+    if not isinstance(node, str) or not node.strip():
+        raise AdapterError("node must be a non-empty string")
+    name = node.strip()
+    if not name.startswith("/"):
+        name = "/" + name
+    if not _TOPIC_NAME_RE.match(name):
+        raise AdapterError(
+            f"node name is malformed (got {node!r}); give the fully qualified name, e.g. "
+            "`/lidar_driver` or `/robot1/lidar_driver`: each `/`-separated segment must "
+            "start with a letter or underscore and contain only letters, digits and underscores"
+        )
+    return name
+
+
+def _validate_node_timeout_s(value: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AdapterError(f"timeout_s must be a number, got {type(value).__name__}")
+    if value < MIN_NODE_TIMEOUT_S or value > MAX_NODE_TIMEOUT_S:
+        raise AdapterError(
+            f"timeout_s must be in {MIN_NODE_TIMEOUT_S:g}..{MAX_NODE_TIMEOUT_S:g}, got {value}"
         )
 
 

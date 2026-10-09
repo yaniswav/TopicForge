@@ -32,6 +32,13 @@ DEFAULT_SAMPLE_TIMEOUT_S = 10.0
 MIN_SAMPLE_TIMEOUT_S = 1.0
 MAX_SAMPLE_TIMEOUT_S = 40.0
 
+# `get_node_info` wait for the node to answer its parameter read, in seconds. The graph
+# queries around it have their own 8 s limit: 8 + 8 + MAX stays under the 45 s a call
+# may take, lock wait included.
+DEFAULT_NODE_TIMEOUT_S = 8.0
+MIN_NODE_TIMEOUT_S = 1.0
+MAX_NODE_TIMEOUT_S = 20.0
+
 # Size of the participant lifecycle event log. `participant_events` returns at most this
 # many events; a full result is reported as truncated.
 MAX_PARTICIPANT_EVENTS = 200

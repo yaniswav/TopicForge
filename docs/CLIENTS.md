@@ -269,7 +269,7 @@ extensions:
 Program tab > Install > Edit `mcp.json` (same notation as Cursor), then paste the
 common JSON shape. LM Studio's docs only show remote examples; local command
 servers follow the Cursor notation but are not documented explicitly. Small
-local models may struggle with twelve tools.
+local models may struggle with fourteen tools.
 
 ## Amazon Q Developer / Kiro
 

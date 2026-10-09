@@ -3,7 +3,8 @@
 0.7.0 is `contract_version` 2. It is the one breaking release of the output contract: every
 rename, split and removal happens here, so a client changes once. The rules behind the new
 shapes are in [CONTRACT.md](CONTRACT.md); the served tools are in [TOOLS.md](TOOLS.md). The
-tool list (twelve tools) and the read-only guarantee do not change.
+twelve existing tools keep their names and the read-only guarantee does not change; two
+tools are added (`list_nodes`, `get_node_info`), which breaks no client.
 
 ## Check the version first
 

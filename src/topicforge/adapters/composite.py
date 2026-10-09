@@ -20,6 +20,8 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -81,6 +83,12 @@ class CompositeAdapter:
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         return self._ros.analyze_bag(path)
+
+    def list_nodes(self) -> NodeListing:
+        return self._ros.list_nodes()
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
+        return self._ros.get_node_info(node, timeout_s)
 
     def sim_clock_published(self) -> bool | None:
         """The ROS 2 half's `/clock` probe, `None` when it has none."""

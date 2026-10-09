@@ -34,6 +34,9 @@ MVP_TOOLS = {
     "peek_bag_samples",
     # Endpoint discovery
     "list_endpoints",
+    # ROS 2 nodes
+    "list_nodes",
+    "get_node_info",
 }
 
 
@@ -48,10 +51,10 @@ def test_build_app_succeeds() -> None:
     assert app is not None
 
 
-def test_tool_surface_is_locked_at_twelve() -> None:
+def test_tool_surface_is_locked_at_fourteen() -> None:
     names = {t.name for t in asyncio.run(_mock_app().list_tools())}
     assert names == MVP_TOOLS
-    assert len(names) == 12
+    assert len(names) == 14
 
 
 def test_all_mvp_tools_registered() -> None:
@@ -107,6 +110,8 @@ _EXPECTED_OUTPUT_TITLES = {
     "topic_metrics": "TopicMetrics",
     "peek_bag_samples": "SampleResult",
     "list_endpoints": "EndpointListing",
+    "list_nodes": "NodeListing",
+    "get_node_info": "NodeInfo",
 }
 
 

@@ -17,9 +17,12 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from topicforge.constants import (
+    DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
+    MAX_NODE_TIMEOUT_S,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
 )
 from topicforge.models import (
@@ -27,6 +30,8 @@ from topicforge.models import (
     EndpointListing,
     HealthReport,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEventListing,
     ParticipantListing,
     SampleResult,
@@ -46,6 +51,19 @@ _TOPIC_PARAM_DESC = (
     "underscores; everything else (whitespace, quotes, shell "
     "metacharacters, `//`, trailing `/`) is rejected before reaching the "
     "`ros2` CLI."
+)
+
+_NODE_PARAM_DESC = (
+    "Fully qualified ROS 2 node name, e.g. `/lidar_driver` or `/robot1/lidar_driver` "
+    "(as `list_nodes` gives it; a missing leading `/` is added). Each `/`-separated "
+    "segment must start with a letter or underscore and contain only letters, digits "
+    "and underscores."
+)
+
+_NODE_TIMEOUT_PARAM_DESC = (
+    "Seconds to wait for the node to answer its parameter read, 1..20, default 8. The "
+    "graph queries before it have their own limit of 8 s each. A node that does not "
+    "answer in time is reported in `parameters_note`, not as an error."
 )
 
 _DDS_TOPIC_PARAM_DESC = (
@@ -239,6 +257,74 @@ def register_tools(
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
     ) -> TopicInfo:
         return inspector.get_topic_info(topic)
+
+    @mcp.tool(
+        annotations=read_only_annotations("List ROS 2 nodes", open_world=True),
+        description=(
+            "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on "
+            "the current ROS 2 graph (or the mock graph in mock mode) from one `ros2 node list` "
+            "call. Returns a `NodeListing` `{nodes, returned, total, truncated, duplicates, "
+            "mode_effective, note}`: each node has `name`, `namespace`, `full_name` and "
+            "`duplicate_count`. `duplicates` lists the full names used by more than one node "
+            "(the ROS 2 CLI answers for one of them without saying which, so any per-node "
+            "tool is ambiguous there). Nodes whose name starts with an underscore are hidden "
+            "and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the "
+            "graph has no node. Call `get_node_info` for the topics, services and parameters "
+            "of one node. **Raises an MCP error** when no `ros2` CLI is available (DDS-only "
+            "setup). Read-only; no side effects. It is cheap: one CLI call." + _ROS_LANE_NOTE
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "list_nodes")
+    def list_nodes() -> NodeListing:
+        return inspector.list_nodes()
+
+    @mcp.tool(
+        annotations=read_only_annotations("Get node info", open_world=True),
+        description=(
+            "ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 "
+            "node: the topics it publishes and subscribes to, the services and actions it "
+            "serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Returns "
+            "a `NodeInfo` `{full_name, publishers, subscribers, service_servers, "
+            "service_clients, action_servers, action_clients, parameters, parameters_note, "
+            "use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. The "
+            "interfaces come from the graph (`ros2 node info`), which never waits for the "
+            "node. The parameters come from a parameter read (`ros2 param dump`) bounded by "
+            "`timeout_s`: **a node that does not answer in time is a finding, not an error**: "
+            "`parameters` is `null` and `parameters_note` says its executor is probably "
+            "blocked, while the interfaces are still returned. Parameters are sorted; a value "
+            "whose name contains password, secret, token, api_key or credential is replaced "
+            "by `<masked>` (`masked` true) and a long value such as a robot description is "
+            "cut (`truncated` true, `original_size`), both said in `parameters_note`. "
+            "`use_sim_time` is `null` with a `use_sim_time_note` when it cannot be read. If "
+            "several nodes share the name, `duplicate_count` is above 1 and `note` warns that "
+            "the answer belongs to one of them. **Raises an MCP error** when the node is not "
+            "on the graph (the message lists close matches), the name is malformed, or no "
+            "`ros2` CLI is available. **Read-only**: the only request TopicForge ever sends to "
+            "a node is a parameter read (list/get); it sets nothing and calls nothing else. "
+            "**Mock mode** returns the fictional demo robot's nodes, instantly. "
+            "**Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. "
+            "It makes up to three CLI calls (node list and node info, 8 s each at most, then "
+            "the parameter read, at most `timeout_s`, 20 s), and the whole call, lock wait "
+            "included, ends within 45 s: if another `ros2` call keeps the lock it fails at "
+            "once with a `busy` error (retry), and a call that waited has that much less "
+            "time for the parameter read."
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "get_node_info")
+    def get_node_info(
+        node: Annotated[str, Field(description=_NODE_PARAM_DESC)],
+        timeout_s: Annotated[
+            float,
+            Field(
+                description=_NODE_TIMEOUT_PARAM_DESC,
+                ge=MIN_NODE_TIMEOUT_S,
+                le=MAX_NODE_TIMEOUT_S,
+            ),
+        ] = DEFAULT_NODE_TIMEOUT_S,
+    ) -> NodeInfo:
+        return inspector.get_node_info(node, timeout_s)
 
     @mcp.tool(
         annotations=read_only_annotations("Sample topic messages", open_world=True),

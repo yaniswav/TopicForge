@@ -59,7 +59,9 @@
     { "name": "participant_events", "description": "Timeline of participant discovered and lost events." },
     { "name": "topic_metrics", "description": "Observed frequency, sequence gaps, latency percentiles." },
     { "name": "peek_bag_samples", "description": "Peek decoded samples out of a recorded bag." },
-    { "name": "list_endpoints", "description": "Normalized DDS writers and readers with QoS." }
+    { "name": "list_endpoints", "description": "Normalized DDS writers and readers with QoS." },
+    { "name": "list_nodes", "description": "ROS 2 nodes on the graph: names, namespaces, duplicates." },
+    { "name": "get_node_info", "description": "One node's topics, services, actions and parameters." }
   ],
   "compatibility": {
     "platforms": ["darwin", "linux", "win32"],

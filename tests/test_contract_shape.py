@@ -1,6 +1,6 @@
 """Every tool returns exactly one object (docs/CONTRACT.md section 1.1).
 
-Calls all twelve tools in mock mode through the MCP layer and checks the wire shape: one
+Calls all fourteen tools in mock mode through the MCP layer and checks the wire shape: one
 `structured_content` object (never the `{"result": [...]}` wrapper of a bare list) and one
 text block carrying the same JSON.
 """
@@ -29,6 +29,8 @@ _CALLS: dict[str, dict[str, Any]] = {
     "topic_metrics": {"topic": "/dds/heartbeat_10hz"},
     "peek_bag_samples": {"path": "/tmp/demo.mcap", "topic": "/odom", "count": 2},
     "list_endpoints": {},
+    "list_nodes": {},
+    "get_node_info": {"node": "/lidar_driver"},
 }
 
 

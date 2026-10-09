@@ -12,7 +12,7 @@ A read-only MCP (Model Context Protocol) server that lets an AI agent inspect a 
 
 Every tool also declares itself read-only in the MCP protocol (`readOnlyHint`, `destructiveHint=false`, `idempotentHint`, with an honest `openWorldHint`), and a test fails if any tool lacks it. See [`SECURITY.md`](SECURITY.md#read-only-guarantee-architecture-declaration-proof) for the guarantee and its limits.
 
-It gives the agent twelve typed tools that return frozen Pydantic schemas (output contract 2: one object per tool, one `note`, units in the field names; see [`docs/CONTRACT.md`](docs/CONTRACT.md)), identical whether the server talks to a real robot or to its built-in mock fixtures. Ask why `nav_planner` gets no scan, and the agent reads the bus, finds the BEST_EFFORT writer facing a RELIABLE reader and names the incompatible policy (see [`examples/02-debug-qos-mismatch.md`](examples/02-debug-qos-mismatch.md)). It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
+It gives the agent fourteen typed tools that return frozen Pydantic schemas (output contract 2: one object per tool, one `note`, units in the field names; see [`docs/CONTRACT.md`](docs/CONTRACT.md)), identical whether the server talks to a real robot or to its built-in mock fixtures. Ask why `nav_planner` gets no scan, and the agent reads the bus, finds the BEST_EFFORT writer facing a RELIABLE reader and names the incompatible policy (see [`examples/02-debug-qos-mismatch.md`](examples/02-debug-qos-mismatch.md)). It is meant for ROS2 developers, robotics ML/CV engineers and teams that cannot accept a write path into a production stack.
 
 For DDS, TopicForge joins a domain as a read-only participant through one open-source binding (Eclipse CycloneDDS from PyPI) and reads the builtin discovery topics that the OMG DDS-RTPS protocol standardizes. So far the author has observed Cyclone DDS and Dust DDS participants on a live bus. RTI Connext, OpenDDS, CoreDX and Fast DDS announce themselves through the same standard discovery, but none of them has been observed yet. This covers discovery only: participants, readers, writers and their QoS. See [`docs/dds-interop-matrix.md`](docs/dds-interop-matrix.md).
 
@@ -55,6 +55,8 @@ Every response except `health_check` carries `mode_effective` (`"live"` or `"moc
 | `health_check`          | Environment and mode introspection. Always succeeds; reports `mode` next to `requested_mode`      |
 | `list_topics`           | Discover the ROS2 graph                                                                          |
 | `get_topic_info`        | Message type, publisher/subscriber counts and QoS for one topic                                  |
+| `list_nodes`            | ROS 2 nodes on the graph: names, namespaces, duplicate names (one `ros2 node list` call)         |
+| `get_node_info`         | One node's publishers, subscribers, services, actions, parameters (secrets masked) and `use_sim_time`; a node that does not answer is reported, not an error |
 | `sample_messages`       | Peek recent messages on a ROS2 topic (count capped at 50)                                        |
 | `analyze_bag`           | Summarize a `.mcap` / `.db3` recording or `rosbag2_*` directory (via `ros2 bag info`)            |
 | `list_participants`     | DDS participants on the domain: vendor, `name` (EntityName QoS, Cyclone) and `hostname`          |
@@ -139,7 +141,7 @@ When on, each tool call emits one event with exactly six fields:
 
 | Field        | Example         | Notes                                                       |
 | ------------ | --------------- | ----------------------------------------------------------- |
-| `tool_name`  | `"list_topics"` | One of the twelve tools, never argument values              |
+| `tool_name`  | `"list_topics"` | One of the fourteen tools, never argument values            |
 | `latency_ms` | `12.34`         | Handler wall-clock duration, 2 decimals                     |
 | `mode`       | `"mock"`        | Mode of the adapter actually serving: `mock` or `live`      |
 | `version`    | `"0.6.4"`       | TopicForge server version                                   |

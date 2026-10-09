@@ -381,3 +381,69 @@ def test_slow_topic_stopped_by_the_deadline_has_a_trailing_gap(adapter: Ros2CliA
     assert rate is not None and rate.message_count < 50
     if rate.message_count:  # the camera may not have started yet
         assert rate.trailing_gap_s is not None and rate.trailing_gap_s < 1.5
+
+
+# ----- list_nodes / get_node_info -----
+
+
+def _param_dump_processes() -> list[str]:
+    """Command lines of running `ros2 param dump` processes (Linux `/proc`)."""
+    found = []
+    for cmdline in Path("/proc").glob("[0-9]*/cmdline"):
+        try:
+            text = cmdline.read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            continue
+        if "param dump" in text and "pytest" not in text:
+            found.append(text)
+    return found
+
+
+def test_list_nodes_sees_the_bench_nodes(adapter: Ros2CliAdapter) -> None:
+    listing = adapter.list_nodes()
+    names = {n.full_name for n in listing.nodes}
+    assert {"/bench_robot", "/bench_blocked"} <= names
+    robot = next(n for n in listing.nodes if n.full_name == "/bench_robot")
+    assert (robot.name, robot.namespace, robot.duplicate_count) == ("bench_robot", "/", 1)
+    assert listing.mode_effective == "live" and listing.duplicates == []
+
+
+def test_get_node_info_of_the_publisher(adapter: Ros2CliAdapter) -> None:
+    info = adapter.get_node_info("/bench_robot")
+    published = {i.name: i.type for i in info.publishers}
+    assert published["/scan"] == "sensor_msgs/msg/LaserScan"
+    assert published["/clock"] == "rosgraph_msgs/msg/Clock"
+    assert published["/cmd_vel_out"] == "geometry_msgs/msg/Twist"
+    assert any(s.name == "/bench_robot/list_parameters" for s in info.service_servers)
+    assert info.parameters is not None and info.parameters_note is None
+    assert info.use_sim_time is False and info.use_sim_time_note is None
+    assert info.duplicate_count == 1
+
+
+def test_get_node_info_unknown_node_lists_close_matches(adapter: Ros2CliAdapter) -> None:
+    with pytest.raises(AdapterError, match="/bench_robot"):
+        adapter.get_node_info("/bench_robo")
+
+
+def test_get_node_info_reports_a_blocked_executor_within_its_deadline(
+    adapter: Ros2CliAdapter,
+) -> None:
+    started = time.monotonic()
+    info = adapter.get_node_info("/bench_blocked", timeout_s=3)
+    elapsed = time.monotonic() - started
+    assert info.parameters is None
+    assert info.parameters_note is not None
+    assert "executor is probably blocked" in info.parameters_note
+    assert info.use_sim_time is None and info.use_sim_time_note
+    assert any(s.name == "/bench_blocked/list_parameters" for s in info.service_servers)
+    assert elapsed < 3 + 8 + 8  # two graph queries and the parameter read at most
+    assert not _param_dump_processes(), "the killed `ros2 param` left a process behind"
+
+
+def test_get_node_info_writes_no_file(
+    adapter: Ros2CliAdapter, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    adapter.list_nodes()
+    adapter.get_node_info("/bench_robot")
+    assert list(tmp_path.iterdir()) == []

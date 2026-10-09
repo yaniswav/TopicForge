@@ -17,7 +17,7 @@ INSTRUCTIONS = (
     "or changes QoS, and no tool can. Call `health_check` first: it always answers, "
     "tells a real bus (`mode` live) from fixtures (`mode` mock), and reports "
     f"`contract_version` (this server speaks {CONTRACT_VERSION}). Then use `list_topics` / "
-    "`get_topic_info` / `sample_messages` for a ROS 2 graph, `list_participants` / "
+    "`get_topic_info` / `list_nodes` / `get_node_info` / `sample_messages` for a ROS 2 graph, `list_participants` / "
     "`list_endpoints` / `detect_qos_mismatches` / `participant_events` for a DDS bus, and "
     "`analyze_bag` / `peek_bag_samples` for recordings. Every result carries "
     "`mode_effective` and a `note`: read the `note` before drawing a conclusion. The "
@@ -59,7 +59,8 @@ Live graph:
 1. `health_check`. If `mode` is `mock`, the data is a fictional demo robot, not the user's: say so. If `ros_backend` is `none` there is no ROS 2 CLI; use `list_endpoints` instead.
 2. `list_topics`: names, types, publisher and subscriber counts, in `topics`. QoS is not in the listing: `get_topic_info` gives `publisher_qos`, `subscription_qos` and the node names on each side.
 3. `get_topic_info` for one topic: reliability, durability (`transient_local` means latched, as on `/tf_static`).
-4. `sample_messages` for content. Keep `count` small and raise `timeout_s` (at most 40) for topics slower than 1 Hz.
+4. `list_nodes` for who is on the graph, then `get_node_info` for one node: its publishers, subscribers, services, actions, parameters and `use_sim_time`. `duplicates` flags several nodes with one name (the CLI answers for one of them). `parameters` null with a `parameters_note` means the node did not answer its parameter read in time, so its executor is probably blocked: report that as a finding, not an error. Values named password, secret, token, api_key or credential are masked.
+5. `sample_messages` for content. Keep `count` small and raise `timeout_s` (at most 40) for topics slower than 1 Hz.
 
 sample_messages options:
 

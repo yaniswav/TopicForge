@@ -69,6 +69,8 @@ from topicforge.models import (
     EndpointListing,
     MessageSample,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
@@ -324,6 +326,12 @@ class CycloneDdsAdapter:
     # ----- ROS2 surface: not served by this adapter -----
 
     def list_topics(self) -> list[TopicListItem]:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def list_nodes(self) -> NodeListing:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
