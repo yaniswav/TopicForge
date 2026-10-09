@@ -150,12 +150,12 @@ def test_participant_events_rejects_non_int_domain(inspector: Inspector) -> None
 
 
 def test_participant_events_rejects_out_of_range_lookback(inspector: Inspector) -> None:
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        inspector.participant_events(domain_id=0, lookback_seconds=0)
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        inspector.participant_events(domain_id=0, lookback_seconds=86401)
+    with pytest.raises(AdapterError, match="lookback_s"):
+        inspector.participant_events(domain_id=0, lookback_s=0)
+    with pytest.raises(AdapterError, match="lookback_s"):
+        inspector.participant_events(domain_id=0, lookback_s=86401)
 
 
 def test_participant_events_rejects_non_int_lookback(inspector: Inspector) -> None:
-    with pytest.raises(AdapterError, match="lookback_seconds"):
-        inspector.participant_events(domain_id=0, lookback_seconds="60")  # type: ignore[arg-type]
+    with pytest.raises(AdapterError, match="lookback_s"):
+        inspector.participant_events(domain_id=0, lookback_s="60")  # type: ignore[arg-type]

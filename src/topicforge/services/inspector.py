@@ -147,24 +147,24 @@ class Inspector:
         return self._adapter.peek_dds_samples(topic, min(n, MAX_SAMPLE_COUNT))
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int | None = None
+        self, domain_id: int = 0, lookback_s: int | None = None
     ) -> list[ParticipantEvent]:
         _validate_dds_domain(domain_id)
-        seconds = DEFAULT_LOOKBACK_SECONDS if lookback_seconds is None else lookback_seconds
-        _validate_lookback_seconds(seconds)
+        seconds = DEFAULT_LOOKBACK_SECONDS if lookback_s is None else lookback_s
+        _validate_lookback_s(seconds)
         self._await_dds()
         return self._adapter.participant_events(domain_id, seconds)
 
     def topic_metrics(
         self,
         topic: str,
-        window_seconds: int | None = None,
+        window_s: int | None = None,
         domain_id: int = 0,
     ) -> TopicMetrics:
         _validate_topic_name_dds(topic)
         _validate_dds_domain(domain_id)
-        seconds = DEFAULT_WINDOW_SECONDS if window_seconds is None else window_seconds
-        _validate_window_seconds(seconds)
+        seconds = DEFAULT_WINDOW_SECONDS if window_s is None else window_s
+        _validate_window_s(seconds)
         self._await_dds()
         return self._adapter.topic_metrics(topic, seconds, domain_id)
 
@@ -226,20 +226,20 @@ def _validate_dds_domain(domain_id: int) -> None:
         )
 
 
-def _validate_lookback_seconds(seconds: int) -> None:
+def _validate_lookback_s(seconds: int) -> None:
     if not isinstance(seconds, int) or isinstance(seconds, bool):
-        raise AdapterError(f"lookback_seconds must be an int, got {type(seconds).__name__}")
+        raise AdapterError(f"lookback_s must be an int, got {type(seconds).__name__}")
     if seconds < _LOOKBACK_MIN or seconds > _LOOKBACK_MAX:
         raise AdapterError(
-            f"lookback_seconds must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}"
+            f"lookback_s must be in {_LOOKBACK_MIN}..{_LOOKBACK_MAX}, got {seconds}"
         )
 
 
-def _validate_window_seconds(seconds: int) -> None:
+def _validate_window_s(seconds: int) -> None:
     if not isinstance(seconds, int) or isinstance(seconds, bool):
-        raise AdapterError(f"window_seconds must be an int, got {type(seconds).__name__}")
+        raise AdapterError(f"window_s must be an int, got {type(seconds).__name__}")
     if seconds < _WINDOW_MIN or seconds > _WINDOW_MAX:
-        raise AdapterError(f"window_seconds must be in {_WINDOW_MIN}..{_WINDOW_MAX}, got {seconds}")
+        raise AdapterError(f"window_s must be in {_WINDOW_MIN}..{_WINDOW_MAX}, got {seconds}")
 
 
 def _validate_topic_name(topic: str) -> None:

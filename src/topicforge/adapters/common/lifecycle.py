@@ -221,13 +221,13 @@ class LifecycleBuffer:
     def events_since(
         self,
         *,
-        lookback_seconds: int,
+        lookback_s: int,
         domain_id: int | None = None,
         now_ns: int | None = None,
     ) -> list[ParticipantEvent]:
-        """Events younger than `lookback_seconds`, newest first; `domain_id` filters."""
+        """Events younger than `lookback_s`, newest first; `domain_id` filters."""
         ts = now_ns if now_ns is not None else time.time_ns()
-        cutoff = ts - lookback_seconds * 1_000_000_000
+        cutoff = ts - lookback_s * 1_000_000_000
         with self._lock:
             events = [e for e in self._events if e.timestamp_ns >= cutoff]
             if domain_id is not None:

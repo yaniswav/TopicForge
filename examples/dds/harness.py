@@ -282,9 +282,9 @@ class TopicForge:
                 entry[role].append((owner(ep.get("guid"), parts), ep.get("type_name") or "?"))
         return table
 
-    async def events(self, lookback_seconds: int = 600) -> list[dict[str, Any]]:
+    async def events(self, lookback_s: int = 600) -> list[dict[str, Any]]:
         return await self.ask(
-            "participant_events", domain_id=self.domain, lookback_seconds=lookback_seconds
+            "participant_events", domain_id=self.domain, lookback_s=lookback_s
         )
 
 

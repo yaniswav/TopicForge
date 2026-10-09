@@ -124,7 +124,7 @@ class BagService:
         return BagAnalysis(
             path=str(path),
             storage_format=bag_format if bag_format != "unknown" else None,
-            duration_seconds=reader_data["duration_seconds"],
+            duration_s=reader_data["duration_s"],
             message_count=reader_data["message_count"],
             topics=reader_data["topics"],
             anomalies=[],
@@ -313,7 +313,7 @@ def _spans_from_messages(
 def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
     """Open `resolved` with `rosbags` and compute per-topic stats.
 
-    Returns a dict with `duration_seconds`, `message_count`, `topics`,
+    Returns a dict with `duration_s`, `message_count`, `topics`,
     `samples_decoded_count` and `recording_duration_ns`. `.db3` spans come
     from `sqlite3`; other containers are scanned through `rosbags`.
     """
@@ -329,7 +329,7 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
         topics: list[BagTopicStats] = [build_topic_stats(span) for span in spans.values()]
 
     return {
-        "duration_seconds": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
+        "duration_s": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
         "message_count": sum(t.message_count for t in topics),
         "topics": topics,
         "samples_decoded_count": 0,  # analysis reads stats only; peek_samples decodes

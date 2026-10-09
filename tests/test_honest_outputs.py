@@ -151,9 +151,9 @@ def test_mock_participants_carry_the_new_fields() -> None:
 def test_mock_metrics_status_and_declared_rate() -> None:
     adapter = MockAdapter()
     busy = adapter.topic_metrics("/dds/heartbeat_10hz", 60, 0)
-    assert busy.status == "ok" and busy.frequency_hz_declared == 10.0
+    assert busy.status == "ok" and busy.declared_frequency_hz == 10.0
     empty = adapter.topic_metrics("/dds/never_seen", 60, 0)
-    assert empty.status == "no_samples_yet" and empty.frequency_hz_declared is None
+    assert empty.status == "no_samples_yet" and empty.declared_frequency_hz is None
 
 
 def _health(adapter: Any) -> Any:
@@ -173,7 +173,7 @@ class _Named:
 def test_health_reports_ros_tools_decoding_and_security() -> None:
     report = _health(MockAdapter())
     assert report.ros_tools_available is True
-    assert report.payload_decoding == "disabled" and report.payload_decoding_reason
+    assert report.payload_decoding == "disabled" and report.payload_decoding_note
     assert report.dds_security == "not_supported"
 
     dds_only = _health(_Named("cyclone"))

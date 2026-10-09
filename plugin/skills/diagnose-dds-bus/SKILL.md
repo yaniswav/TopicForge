@@ -13,7 +13,7 @@ Use the TopicForge tools. They only observe discovery; nothing here publishes, c
 2. `list_participants`. Is each expected node present, with the right `name`? A missing one may be on another domain or have crashed.
 3. `list_endpoints` with `topic` set to the failing topic (`scan` and `rt/scan` match each other). Check `by_topic`: `orphan` is `no_reader` or `no_writer`, and `departed_writers` / `departed_readers` name a peer that left.
 4. `detect_qos_mismatches` with the same `topic`.
-5. `participant_events` for crashes or restarts. Use a short `lookback_seconds`.
+5. `participant_events` for crashes or restarts. Use a short `lookback_s`.
 
 Stop as soon as one step explains the symptom.
 

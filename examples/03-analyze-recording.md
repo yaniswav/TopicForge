@@ -36,7 +36,7 @@ Claude calls: `analyze_bag(path="/tmp/demo.mcap")` -> returns a
 {
   "path": "/tmp/demo.mcap",
   "storage_format": "mcap",
-  "duration_seconds": 42.5,
+  "duration_s": 42.5,
   "message_count": 1287,
   "topics": [
     {"name": "/cmd_vel", "message_type": "geometry_msgs/msg/Twist", "message_count": 425, "frequency_hz": 10.0},

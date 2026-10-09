@@ -407,7 +407,7 @@ class TopicMetrics(BaseModel):
     model_config = _CONFIG
 
     topic: str = Field(description="Topic the metrics were computed for.")
-    window_seconds: int = Field(
+    window_s: int = Field(
         ge=1,
         le=3600,
         description=(
@@ -415,11 +415,11 @@ class TopicMetrics(BaseModel):
             "the tool call so the LLM can correlate the request."
         ),
     )
-    window_seconds_actual: float = Field(
+    window_actual_s: float = Field(
         ge=0,
         description=(
             "Actual elapsed seconds within the window. May be smaller "
-            "than `window_seconds` when the adapter buffered samples "
+            "than `window_s` when the adapter buffered samples "
             "for less time than the requested window (e.g., the server "
             "just started). `0.0` when `samples_observed=0`."
         ),
@@ -434,15 +434,15 @@ class TopicMetrics(BaseModel):
             "captured one in the window."
         ),
     )
-    frequency_hz_observed: float | None = Field(
+    observed_frequency_hz: float | None = Field(
         default=None,
         description=(
-            "`samples_observed / window_seconds_actual`. `None` when "
+            "`samples_observed / window_actual_s`. `None` when "
             "fewer than 2 samples were observed (a single sample does "
             "not define a frequency)."
         ),
     )
-    frequency_hz_declared: float | None = Field(
+    declared_frequency_hz: float | None = Field(
         default=None,
         description=(
             "Declared, not measured: `1 / deadline` for the shortest QoS "
@@ -944,7 +944,7 @@ class BagAnalysis(BaseModel):
         default=None,
         description="`mcap`, `sqlite3`, or other storage identifier when known.",
     )
-    duration_seconds: float = Field(
+    duration_s: float = Field(
         ge=0,
         description="Total bag duration, in seconds (wall clock between first and last message).",
     )
@@ -997,7 +997,7 @@ class BagAnalysis(BaseModel):
         description=(
             "Recording duration in nanoseconds when readable from the "
             "bag's index. `None` when only `ros2 bag info` text was parsed; "
-            "`duration_seconds` (float) is the always-populated fallback "
+            "`duration_s` (float) is the always-populated fallback "
             "that downstream LLM consumers should prefer when this is "
             "`None`."
         ),
@@ -1212,7 +1212,7 @@ class HealthReport(BaseModel):
             "content for user topics."
         ),
     )
-    payload_decoding_reason: str | None = Field(
+    payload_decoding_note: str | None = Field(
         default=(
             "user-topic payload decoding is switched off until it is validated "
             "on a real bus; builtin discovery topics are still readable"
@@ -1379,7 +1379,7 @@ class EndpointListing(BaseModel):
     )
     returned: int = Field(ge=0, description="Length of `endpoints`.")
     truncated: bool = Field(description="True when matching endpoints exceeded the cap.")
-    departed_endpoints: int = Field(
+    departed_endpoint_count: int = Field(
         default=0,
         ge=0,
         description=(
@@ -1388,7 +1388,7 @@ class EndpointListing(BaseModel):
             "carries them as `departed_writers` / `departed_readers`."
         ),
     )
-    excluded_observer_endpoints: int = Field(
+    excluded_observer_endpoint_count: int = Field(
         default=0,
         ge=0,
         description=(

@@ -365,29 +365,29 @@ class FastDdsAdapter:
         return {_extract_topic_name(sample) for sample in samples}
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
         """Lifecycle events captured by the listener callbacks."""
-        if lookback_seconds < 1 or lookback_seconds > 86400:
-            raise AdapterError(f"lookback_seconds must be in 1..86400, got {lookback_seconds}")
+        if lookback_s < 1 or lookback_s > 86400:
+            raise AdapterError(f"lookback_s must be in 1..86400, got {lookback_s}")
         return self._lifecycle.events_since(
-            lookback_seconds=lookback_seconds,
+            lookback_s=lookback_s,
             domain_id=self._domain_id,
         )
 
     def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+        self, topic: str, window_s: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         """Metrics from the buffer that `peek_dds_samples` fills.
 
         As with Cyclone, nothing is collected in the background: the
         fastdds 2.6.x Python binding has no per-sample callback.
         """
-        if window_seconds < 1 or window_seconds > 3600:
-            raise AdapterError(f"window_seconds must be in 1..3600, got {window_seconds}")
+        if window_s < 1 or window_s > 3600:
+            raise AdapterError(f"window_s must be in 1..3600, got {window_s}")
         metrics = self._metrics.compute_metrics(
             topic=topic,
-            window_seconds=window_seconds,
+            window_s=window_s,
             domain_id=self._domain_id,
             mode_effective="live",
         )

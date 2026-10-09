@@ -40,7 +40,7 @@ def test_bag_analysis_schema_defaults_when_constructed_minimally() -> None:
     legacy = BagAnalysis(
         path="/tmp/legacy.bag",
         storage_format=None,
-        duration_seconds=10.0,
+        duration_s=10.0,
         message_count=100,
         topics=[
             BagTopicStats(
@@ -64,7 +64,7 @@ def test_bag_analysis_schema_accepts_db3_format() -> None:
     analysis = BagAnalysis(
         path="/tmp/x.db3",
         storage_format="sqlite3",
-        duration_seconds=5.0,
+        duration_s=5.0,
         message_count=50,
         topics=[],
         mode_effective="live",
@@ -80,7 +80,7 @@ def test_bag_analysis_schema_accepts_ros1_bag_format() -> None:
     analysis = BagAnalysis(
         path="/tmp/legacy.bag",
         storage_format="bag",
-        duration_seconds=2.0,
+        duration_s=2.0,
         message_count=20,
         topics=[],
         mode_effective="live",
@@ -96,7 +96,7 @@ def test_bag_analysis_schema_accepts_unknown_format() -> None:
     analysis = BagAnalysis(
         path="/tmp/x.weird",
         storage_format=None,
-        duration_seconds=0.0,
+        duration_s=0.0,
         message_count=0,
         topics=[],
         mode_effective="live",

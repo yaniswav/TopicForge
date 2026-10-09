@@ -83,7 +83,7 @@ def test_parse_bag_info_extracts_duration_and_topics() -> None:
         "  Topic: /scan | Type: sensor_msgs/msg/LaserScan | Count: 425 | Serialization Format: cdr\n"
     )
     result = parse_bag_info(sample, fallback_path="/x/demo.mcap", mode_effective="live")
-    assert result.duration_seconds == 42.5
+    assert result.duration_s == 42.5
     assert result.message_count == 1287
     assert result.storage_format == "mcap"
     assert result.mode_effective == "live"
@@ -97,7 +97,7 @@ def test_parse_bag_info_extracts_duration_and_topics() -> None:
 def test_parse_bag_info_zero_duration_yields_no_frequency() -> None:
     sample = "Storage id: sqlite3\nDuration: 0.000s\nMessages: 0\n"
     result = parse_bag_info(sample, fallback_path="/x/empty.db3", mode_effective="live")
-    assert result.duration_seconds == 0.0
+    assert result.duration_s == 0.0
     assert result.message_count == 0
     assert result.topics == []
     assert result.mode_effective == "live"

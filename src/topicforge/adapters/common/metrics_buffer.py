@@ -99,13 +99,13 @@ class MetricsBuffer:
         self,
         *,
         topic: str,
-        window_seconds: int,
+        window_s: int,
         now_ns: int | None = None,
         declared_hz: float | None = None,
         mode_effective: EffectiveMode = "live",
         domain_id: int = 0,
     ) -> TopicMetrics:
-        """Build a `TopicMetrics` for `topic` over the last `window_seconds`.
+        """Build a `TopicMetrics` for `topic` over the last `window_s`.
 
         `now_ns` defaults to `time.time_ns()` and exists for deterministic
         tests. `declared_hz` is derived from the QoS Deadline; pass `None`
@@ -116,7 +116,7 @@ class MetricsBuffer:
             import time
 
             now_ns = time.time_ns()
-        cutoff_ns = now_ns - window_seconds * 1_000_000_000
+        cutoff_ns = now_ns - window_s * 1_000_000_000
 
         with self._lock:
             ring = self._samples.get(topic)
@@ -130,11 +130,11 @@ class MetricsBuffer:
         if samples_observed == 0:
             return TopicMetrics(
                 topic=topic,
-                window_seconds=window_seconds,
-                window_seconds_actual=0.0,
+                window_s=window_s,
+                window_actual_s=0.0,
                 samples_observed=0,
-                frequency_hz_observed=None,
-                frequency_hz_declared=declared_hz,
+                observed_frequency_hz=None,
+                declared_frequency_hz=declared_hz,
                 sequence_gaps_count=0,
                 sequence_numbers_available=False,
                 latency_ns_p50=None,
@@ -187,11 +187,11 @@ class MetricsBuffer:
 
         return TopicMetrics(
             topic=topic,
-            window_seconds=window_seconds,
-            window_seconds_actual=window_actual_s,
+            window_s=window_s,
+            window_actual_s=window_actual_s,
             samples_observed=samples_observed,
-            frequency_hz_observed=freq_observed,
-            frequency_hz_declared=declared_hz,
+            observed_frequency_hz=freq_observed,
+            declared_frequency_hz=declared_hz,
             sequence_gaps_count=gaps_count,
             sequence_numbers_available=seq_available,
             latency_ns_p50=p50,

@@ -221,7 +221,7 @@ def bag() -> Path:
 
 def test_analyze_bag_summary(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.analyze_bag(str(bag))
-    assert result.duration_seconds == pytest.approx(8.0, abs=2.0)
+    assert result.duration_s == pytest.approx(8.0, abs=2.0)
     by_name = {t.name: t for t in result.topics}
     assert set(by_name) >= {"/clock", "/scan", "/cmd_vel_out", "/camera/image_raw"}
     assert by_name["/scan"].message_type == "sensor_msgs/msg/LaserScan"

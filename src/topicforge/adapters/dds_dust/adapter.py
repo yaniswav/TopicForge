@@ -84,12 +84,12 @@ class DustDdsAdapter:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
         raise AdapterError(_DUST_ROADMAP_MSG)
 
     def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+        self, topic: str, window_s: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         raise AdapterError(_DUST_ROADMAP_MSG)
 

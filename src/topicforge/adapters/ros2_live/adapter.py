@@ -119,12 +119,12 @@ class Ros2CliAdapter:
         raise self._dds_inactive_error()
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
         raise self._dds_inactive_error()
 
     def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+        self, topic: str, window_s: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
         raise self._dds_inactive_error()
 
@@ -578,7 +578,7 @@ def parse_bag_info(
     return BagAnalysis(
         path=fallback_path,
         storage_format=storage,
-        duration_seconds=duration,
+        duration_s=duration,
         message_count=msg_count,
         topics=topics,
         anomalies=[],

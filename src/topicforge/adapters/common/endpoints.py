@@ -234,8 +234,8 @@ def build_endpoint_listing(
         total_discovered=len(all_records),
         returned=len(listed),
         truncated=len(shown) > len(listed),
-        departed_endpoints=len(gone),
-        excluded_observer_endpoints=(
+        departed_endpoint_count=len(gone),
+        excluded_observer_endpoint_count=(
             0 if include_observer else sum(1 for r in all_records if r["is_observer"])
         ),
         note=note,

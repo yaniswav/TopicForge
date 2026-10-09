@@ -108,14 +108,14 @@ class CompositeAdapter:
         return self._dds.peek_dds_samples(topic, count)
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
-        return self._dds.participant_events(domain_id, lookback_seconds)
+        return self._dds.participant_events(domain_id, lookback_s)
 
     def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
+        self, topic: str, window_s: int = 60, domain_id: int = 0
     ) -> TopicMetrics:
-        return self._dds.topic_metrics(topic, window_seconds, domain_id)
+        return self._dds.topic_metrics(topic, window_s, domain_id)
 
     def list_endpoints(
         self,

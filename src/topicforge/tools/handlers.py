@@ -472,7 +472,7 @@ def register_tools(
             "and the two cases cannot be told apart. A restarted node is a new "
             "participant: expect one `lost` and one `discovered` per restart, "
             "with different `guid`s and the same `name`. Sorted newest-first. "
-            "Capped at 200 events, silently (reduce `lookback_seconds` if you "
+            "Capped at 200 events, silently (reduce `lookback_s` if you "
             "hit it). TopicForge only knows what happened since it started "
             "watching (see `health_check.observer_started_ns`). **Backend "
             "caveats**: Fast DDS captures arrivals and removals through "
@@ -498,7 +498,7 @@ def register_tools(
                 le=232,
             ),
         ] = 0,
-        lookback_seconds: Annotated[
+        lookback_s: Annotated[
             int,
             Field(
                 description=(
@@ -513,7 +513,7 @@ def register_tools(
             ),
         ] = 300,
     ) -> list[ParticipantEvent]:
-        return inspector.participant_events(domain_id, lookback_seconds)
+        return inspector.participant_events(domain_id, lookback_s)
 
     @mcp.tool(
         annotations=read_only_annotations("Topic metrics", open_world=True),
@@ -521,7 +521,7 @@ def register_tools(
             "Return temporal metrics (frequency, sequence gaps, latency "
             "percentiles) for a DDS topic over a recent time window. Returns a "
             "`TopicMetrics` payload carrying `status`, `samples_observed`, "
-            "`frequency_hz_observed`, `frequency_hz_declared`, "
+            "`observed_frequency_hz`, `declared_frequency_hz`, "
             "`sequence_gaps_count`, `latency_ns_p50/p95/p99`, and boolean "
             "availability flags. **Read `status` first**: "
             "`unsupported_user_topic` means the topic is a user topic, whose "
@@ -529,13 +529,13 @@ def register_tools(
             "null or 0 and none of it is a measurement. `no_samples_yet` means "
             "a builtin topic with nothing buffered in the window. `ok` means "
             "metrics were computed. **Limits**: the buffer is filled only when "
-            "`peek_dds_samples` runs on the topic, so `frequency_hz_observed` "
+            "`peek_dds_samples` runs on the topic, so `observed_frequency_hz` "
             "reflects how often it was called, not the real publish rate: "
-            "treat it as a coarse presence signal. `frequency_hz_declared` is "
+            "treat it as a coarse presence signal. `declared_frequency_hz` is "
             "declared, not measured: `1 / deadline` of the shortest QoS "
             "Deadline a writer on the topic announced in discovery, null when "
             "none announced one. **Read-only by architecture**. **Raises an MCP"
-            " error** when no DDS module is active or `window_seconds` is out "
+            " error** when no DDS module is active or `window_s` is out "
             "of range (1..3600). Right after server start the call waits up to "
             "3 s for discovery to warm up."
         ),
@@ -544,7 +544,7 @@ def register_tools(
     @instrument(telemetry, "topic_metrics")
     def topic_metrics(
         topic: Annotated[str, Field(description=_DDS_TOPIC_PARAM_DESC)],
-        window_seconds: Annotated[
+        window_s: Annotated[
             int,
             Field(
                 description=(
@@ -566,7 +566,7 @@ def register_tools(
             ),
         ] = 0,
     ) -> TopicMetrics:
-        return inspector.topic_metrics(topic, window_seconds, domain_id)
+        return inspector.topic_metrics(topic, window_s, domain_id)
 
     @mcp.tool(
         annotations=read_only_annotations("Peek bag samples", open_world=False),

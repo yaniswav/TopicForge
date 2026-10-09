@@ -270,14 +270,14 @@ MOCK_PARTICIPANT_EVENTS: tuple[ParticipantEvent, ...] = (
 )
 
 
-def mock_participant_events_for(domain_id: int, lookback_seconds: int) -> list[ParticipantEvent]:
+def mock_participant_events_for(domain_id: int, lookback_s: int) -> list[ParticipantEvent]:
     """Mock events for `domain_id`, newest first.
 
     `now` is pinned two minutes after `_LIFECYCLE_BASE_TS_NS`, so a 60 s
     lookback drops older events and a 300 s lookback returns all of them.
     """
     now_ns = _LIFECYCLE_BASE_TS_NS + 120_000_000_000
-    cutoff = now_ns - lookback_seconds * 1_000_000_000
+    cutoff = now_ns - lookback_s * 1_000_000_000
     filtered = [
         e for e in MOCK_PARTICIPANT_EVENTS if e.domain_id == domain_id and e.timestamp_ns >= cutoff
     ]
@@ -514,7 +514,7 @@ def _build_mock_metrics_buffer() -> MetricsBuffer:
             domain_id=0,
         )
     # A second topic with a single sample: tests that
-    # `frequency_hz_observed` returns None when fewer than 2 samples.
+    # `observed_frequency_hz` returns None when fewer than 2 samples.
     buf.record(
         topic="/dds/singleton",
         receive_ns=_METRICS_BASE_TS_NS,
@@ -539,11 +539,11 @@ _MOCK_METRICS_BUFFER: MetricsBuffer = _build_mock_metrics_buffer()
 _MOCK_DECLARED_HZ: dict[str, float] = {"/dds/heartbeat_10hz": 10.0}
 
 
-def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> TopicMetrics:
+def mock_topic_metrics_for(topic: str, window_s: int, domain_id: int) -> TopicMetrics:
     """TopicMetrics from `_MOCK_METRICS_BUFFER`, with `now_ns` pinned to `_METRICS_NOW_NS`."""
     metrics = _MOCK_METRICS_BUFFER.compute_metrics(
         topic=topic,
-        window_seconds=window_seconds,
+        window_s=window_s,
         now_ns=_METRICS_NOW_NS,
         declared_hz=_MOCK_DECLARED_HZ.get(topic),
         mode_effective="mock",
@@ -556,7 +556,7 @@ def mock_topic_metrics_for(topic: str, window_seconds: int, domain_id: int) -> T
 MOCK_BAG_ANALYSIS = BagAnalysis(
     path="<mock>",
     storage_format="mcap",
-    duration_seconds=42.5,
+    duration_s=42.5,
     message_count=1287,
     topics=[
         BagTopicStats(

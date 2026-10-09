@@ -403,7 +403,7 @@ async def _scenario(domain: str, running: list[Running]) -> int:
                 failures.append(f"no participant reported as left within {LEASE_WAIT_S} s")
 
         events = await _call(
-            session, "participant_events", domain_id=int(domain), lookback_seconds=600
+            session, "participant_events", domain_id=int(domain), lookback_s=600
         )
         print("\n[4] participant_events: the timeline an agent would read")
         for e in events:

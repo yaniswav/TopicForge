@@ -334,8 +334,8 @@ def test_builtin_payload_drops_raw_text_when_structured() -> None:
 
 
 def test_listing_explains_observer_exclusion() -> None:
-    assert _listing().excluded_observer_endpoints == 1
-    assert _listing(include_observer=True).excluded_observer_endpoints == 0
+    assert _listing().excluded_observer_endpoint_count == 1
+    assert _listing(include_observer=True).excluded_observer_endpoint_count == 0
 
 
 def test_endpoint_record_carries_participant_vendor() -> None:
@@ -415,7 +415,7 @@ def test_departed_writer_explains_the_orphan_in_by_topic() -> None:
     assert [(d.participant_name, d.gone_ns) for d in summary.departed_writers] == [
         ("safety_monitor", 42)
     ]
-    assert default.returned == 1 and default.departed_endpoints == 1
+    assert default.returned == 1 and default.departed_endpoint_count == 1
     full = build_endpoint_listing([reader], departed_records=gone, include_departed=True, **kw)
     assert full.returned == 2 and {e.gone_ns for e in full.endpoints} == {None, 42}
 

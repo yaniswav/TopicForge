@@ -53,7 +53,7 @@ def test_repeated_record_seen_emits_only_one_discovered_event() -> None:
     for ts in (100, 200, 300, 400):
         buf.record_seen(guid="g1", vendor="cyclone", hostname=None, domain_id=0, now_ns=ts)
 
-    events = buf.events_since(lookback_seconds=10, now_ns=500)
+    events = buf.events_since(lookback_s=10, now_ns=500)
     assert len(events) == 1
     assert events[0].event_type == "discovered"
 
@@ -66,7 +66,7 @@ def test_record_lost_flips_status_and_emits_event() -> None:
     p = buf.snapshot_participants()[0]
     assert p.status == "left"
 
-    events = buf.events_since(lookback_seconds=10, now_ns=600)
+    events = buf.events_since(lookback_s=10, now_ns=600)
     # Newest first: lost, then discovered.
     assert [e.event_type for e in events] == ["lost", "discovered"]
 
@@ -77,7 +77,7 @@ def test_record_lost_is_idempotent() -> None:
     buf.record_lost(guid="g1", now_ns=500)
     buf.record_lost(guid="g1", now_ns=600)
 
-    events = buf.events_since(lookback_seconds=10, now_ns=700)
+    events = buf.events_since(lookback_s=10, now_ns=700)
     lost_events = [e for e in events if e.event_type == "lost"]
     assert len(lost_events) == 1
 
@@ -88,7 +88,7 @@ def test_record_lost_on_unknown_guid_is_noop() -> None:
     buf.record_lost(guid="never-seen", now_ns=100)
 
     assert buf.snapshot_participants() == []
-    assert buf.events_since(lookback_seconds=10, now_ns=200) == []
+    assert buf.events_since(lookback_s=10, now_ns=200) == []
 
 
 def test_re_join_emits_new_discovered_event() -> None:
@@ -97,7 +97,7 @@ def test_re_join_emits_new_discovered_event() -> None:
     buf.record_lost(guid="g1", now_ns=200)
     buf.record_seen(guid="g1", vendor="cyclone", hostname=None, domain_id=0, now_ns=300)
 
-    events = buf.events_since(lookback_seconds=10, now_ns=400)
+    events = buf.events_since(lookback_s=10, now_ns=400)
     assert [e.event_type for e in events] == ["discovered", "lost", "discovered"]
     p = buf.snapshot_participants()[0]
     assert p.status == "active"
@@ -142,7 +142,7 @@ def test_events_since_drops_old_entries() -> None:
     buf.record_seen(guid="g2", vendor="cyclone", hostname=None, domain_id=0, now_ns=10_000_000_000)
 
     # 5s lookback at t=11s drops the t=0 event.
-    events = buf.events_since(lookback_seconds=5, now_ns=11_000_000_000)
+    events = buf.events_since(lookback_s=5, now_ns=11_000_000_000)
     assert [e.guid for e in events] == ["g2"]
 
 
@@ -152,7 +152,7 @@ def test_events_since_orders_newest_first() -> None:
     buf.record_seen(guid="g2", vendor="cyclone", hostname=None, domain_id=0, now_ns=200)
     buf.record_seen(guid="g3", vendor="cyclone", hostname=None, domain_id=0, now_ns=300)
 
-    events = buf.events_since(lookback_seconds=10, now_ns=400)
+    events = buf.events_since(lookback_s=10, now_ns=400)
     assert [e.guid for e in events] == ["g3", "g2", "g1"]
 
 
@@ -161,10 +161,10 @@ def test_events_since_filters_by_domain() -> None:
     buf.record_seen(guid="g1", vendor="cyclone", hostname=None, domain_id=0, now_ns=100)
     buf.record_seen(guid="g2", vendor="cyclone", hostname=None, domain_id=42, now_ns=200)
 
-    assert [e.guid for e in buf.events_since(lookback_seconds=10, domain_id=0, now_ns=300)] == [
+    assert [e.guid for e in buf.events_since(lookback_s=10, domain_id=0, now_ns=300)] == [
         "g1"
     ]
-    assert [e.guid for e in buf.events_since(lookback_seconds=10, domain_id=42, now_ns=300)] == [
+    assert [e.guid for e in buf.events_since(lookback_s=10, domain_id=42, now_ns=300)] == [
         "g2"
     ]
 
@@ -174,7 +174,7 @@ def test_ring_buffer_drops_oldest_at_overflow() -> None:
     for i in range(10):
         buf.record_seen(guid=f"g{i}", vendor="cyclone", hostname=None, domain_id=0, now_ns=i * 100)
 
-    events = buf.events_since(lookback_seconds=100, now_ns=10_000)
+    events = buf.events_since(lookback_s=100, now_ns=10_000)
     assert len(events) == 5
     # Newest first: the 5 most recent: g9, g8, g7, g6, g5.
     assert [e.guid for e in events] == ["g9", "g8", "g7", "g6", "g5"]
