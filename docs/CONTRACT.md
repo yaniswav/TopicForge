@@ -369,7 +369,7 @@ the time the messages were received (`received_ns`), so it measures the delivery
 caller actually gets; `stamp_source` says which clock the message stamps use.
 
 ```json
-{"rate": {"basis": "received_ns", "message_count": 50, "window_s": 5.0,
+{"rate": {"basis": "received_ns", "message_count": 50, "startup_burst_count": 0, "window_s": 5.0,
           "mean_interval_s": 0.1003, "interval_median_s": 0.1, "max_gap_s": 0.13,
           "interval_cv": 0.04, "observed_frequency_hz": 9.97, "sim_frequency_hz": 9.95,
           "trailing_gap_s": null, "verdict": "stable",
@@ -382,6 +382,8 @@ replaces `rate_hz`, `sim_frequency_hz` is the same computation on the messages' 
 (`null` without stamps), and `basis` is `received_ns` for a live call or `recorded_ns` for a
 bag, where there is no end of window and so `trailing_gap_s` is always `null`. Messages
 dropped for size still count. `interval_cv` uses the population standard deviation.
+
+On `received_ns` the measuring subscriber is a fresh `ros2 topic echo`, whose reader keeps 5 messages (the `sensor_data` depth; the adapter overrides reliability and durability only) between the match and its first callback, then prints them in one go. On a fast topic that reads as a run of near-zero intervals at the start and inflates the frequency: the Docker bench read `/clock` (50 Hz) at 91.3 Hz over 12 messages, 11 intervals in 0.1205 s instead of 0.220 s, exactly five periods short. The block sets aside the leading run of intervals under a quarter of the median interval, never more than half of them, reports it as `startup_burst_count`, and computes the intervals, `observed_frequency_hz`, `interval_cv` and the verdict on the rest; `message_count` still counts them and their stamps still feed `sim_frequency_hz`. `recorded_ns` is never trimmed: what the recorder saw is the data. Kept messages spanning less than about a second stay coarse on both bases (one late message moves the frequency by several percent and the cv over 11 intervals by 0.2); the tool description asks for `count` 50 on a topic above 20 Hz. To check a configured publish rate, `sim_frequency_hz` is the number when the messages are stamped; `observed_frequency_hz` is what reached the subscriber.
 
 `interval_cv` is the coefficient of variation of the intervals between consecutive
 messages (standard deviation divided by mean). `trailing_gap_s` is the interval between
@@ -404,7 +406,7 @@ publishers, such as `/tf`, come out `erratic` without being broken.
 A verdict is a description of what was observed in the window, not a diagnosis: a
 `silent` topic may be latched.
 
-Thresholds confirmed 2026-10-09 under delegation and kept at 0.2 and 0.5, the same on both bases. Measured on the OmniSim fixture bag (`recorded_ns`, sliding windows of 10 to 50 messages): `/odom` cv 0.03-0.11 and `/imu/data` 0.03-0.17, `/scan` 0.16-0.40 and `/gps/local` 0.19-0.41, whose intervals alternate between about 0.16 and 0.25 s at 5 Hz. The same recorder and path give 0.05 on `/odom`, so the spread is the emitter's, not the transport's or the basis's; `jittery` describes it correctly, and the note gives the longest gap as a multiple of the median. 0.3 was rejected: with `count` 10 or 20, 7 to 12 percent of the windows on those two topics stay above 0.3, so the verdict would flap between calls, and a periodic loss of one message in 8 (cv 0.29) or 10 (0.27) would read `stable`; periodic loss never exceeds cv 0.35. The threshold moves to 0.3 only if the Docker bench, a fixed-rate publisher read through `ros2 topic echo`, itself lands at or above 0.2 on `received_ns`: that would mean the measuring path, not the sensor, is that noisy.
+Thresholds confirmed 2026-10-09 under delegation and kept at 0.2 and 0.5, the same on both bases. Measured on the OmniSim fixture bag (`recorded_ns`, sliding windows of 10 to 50 messages): `/odom` cv 0.03-0.11 and `/imu/data` 0.03-0.17, `/scan` 0.16-0.40 and `/gps/local` 0.19-0.41, whose intervals alternate between about 0.16 and 0.25 s at 5 Hz. The same recorder and path give 0.05 on `/odom`, so the spread is the emitter's, not the transport's or the basis's; `jittery` describes it correctly, and the note gives the longest gap as a multiple of the median. 0.3 was rejected: with `count` 10 or 20, 7 to 12 percent of the windows on those two topics stay above 0.3, so the verdict would flap between calls, and a periodic loss of one message in 8 (cv 0.29) or 10 (0.27) would read `stable`; periodic loss never exceeds cv 0.35. The threshold moves to 0.3 only if the Docker bench, a fixed-rate publisher read through `ros2 topic echo`, lands at or above 0.2 on `received_ns` in two consecutive runs on a `count` 50 call (kept messages spanning at least 0.9 s), start-up burst set aside, while the cv of the same messages' stamps stays below 0.2: that would mean the measuring path, not the publisher, is that noisy. The 2026-10-09 readings on `/clock` over 12 messages do not qualify: cv 0.31 was one tick 20 ms late on a loaded runner (the stamps agree at 45.8 Hz), and 91.3 Hz was the drain described above.
 
 ### Message summaries
 

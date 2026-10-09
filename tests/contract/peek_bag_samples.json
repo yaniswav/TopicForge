@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Peek bag samples"
   },
-  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed. **Summary**: a `LaserScan`, `Odometry`, `Imu`, `Image` or `PointCloud2` sample has a `summary` computed on the whole message even when `payload` is cut (closest obstacle and front/left/right/rear minima in the sensor frame for a scan, speed and yaw for odometry, roll/pitch/yaw for an IMU, size and encoding for an image, point count for a cloud; distances in meters, angles in radians); any other type has a null `summary`. **Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a `verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) measured on `recorded_ns` (the bag record time of the returned messages). Ask for `count` >= 10 for a meaningful verdict; a topic with several publishers, such as `/tf`, reads `erratic` without being broken, and a simulated or bridged sensor can read `jittery` while healthy. **Duration**: takes no lock (it reads the file in-process, so it can run while a ROS 2 or DDS call is busy); it stops after `count` samples, so the time follows the bag's size and how far into it the first samples are.",
+  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed. **Summary**: a `LaserScan`, `Odometry`, `Imu`, `Image` or `PointCloud2` sample has a `summary` computed on the whole message even when `payload` is cut (closest obstacle and front/left/right/rear minima in the sensor frame for a scan, speed and yaw for odometry, roll/pitch/yaw for an IMU, size and encoding for an image, point count for a cloud; distances in meters, angles in radians); any other type has a null `summary`. **Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a `verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) measured on `recorded_ns` (the bag record time of the returned messages). Ask for `count` >= 10 for a meaningful verdict, 50 on a topic above 20 Hz so the messages span about a second; a topic with several publishers, such as `/tf`, reads `erratic` without being broken, and a simulated or bridged sensor can read `jittery` while healthy. **Duration**: takes no lock (it reads the file in-process, so it can run while a ROS 2 or DDS call is busy); it stops after `count` samples, so the time follows the bag's size and how far into it the first samples are.",
   "inputSchema": {
     "properties": {
       "count": {
@@ -1053,7 +1053,7 @@
                 "type": "null"
               }
             ],
-            "description": "Messages per second on `basis`: (count - 1) over the time from the first to the last message; `null` with fewer than 2 messages. For a live call this is the rate the caller received, which can be below the publish rate.",
+            "description": "Messages per second on `basis`: (count - 1) over the time from the first to the last message, `startup_burst_count` leading messages set aside; `null` with fewer than 2 messages. For a live call this is the rate the caller received, which can be below the publish rate, and it is coarse when the messages span less than about a second (one late message moves it by several percent): to check a configured publish rate compare `sim_frequency_hz` when present, and ask for `count` 50 on a topic above 20 Hz.",
             "title": "Observed Frequency Hz"
           },
           "sim_frequency_hz": {
@@ -1065,8 +1065,14 @@
                 "type": "null"
               }
             ],
-            "description": "Same computation on the messages' own stamps (`timestamp_ns`), so it is the publisher's clock: sim time on a simulation. `null` when the messages carry no stamp (`stamp_source` `none` or `recorded`), the stamps do not advance, or there are fewer than 2 messages.",
+            "description": "The publisher's own cadence, unaffected by delivery or by the start-up burst: same computation on the messages' own stamps (`timestamp_ns`), so it is the publisher's clock: sim time on a simulation. `null` when the messages carry no stamp (`stamp_source` `none` or `recorded`), the stamps do not advance, or there are fewer than 2 messages.",
             "title": "Sim Frequency Hz"
+          },
+          "startup_burst_count": {
+            "description": "Leading messages set aside before the intervals, `observed_frequency_hz` and the verdict are computed, still counted in `message_count`. On `received_ns` the fresh `ros2 topic echo` prints the messages its reader queued before its first callback (up to 5) in one go; that run of near-zero intervals would inflate the frequency of a fast topic. A leading run of intervals under a quarter of the median interval is that drain. Always 0 on `recorded_ns`; the stamps of those messages still feed `sim_frequency_hz`.",
+            "minimum": 0,
+            "title": "Startup Burst Count",
+            "type": "integer"
           },
           "trailing_gap_s": {
             "anyOf": [
@@ -1108,6 +1114,7 @@
         "required": [
           "basis",
           "message_count",
+          "startup_burst_count",
           "window_s",
           "mean_interval_s",
           "interval_median_s",

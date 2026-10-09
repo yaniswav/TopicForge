@@ -20,6 +20,7 @@ MIN_SAMPLES_FOR_VERDICT = 5
 GAP_FACTOR = 3.0
 STABLE_CV = 0.2
 JITTERY_CV = 0.5
+STARTUP_BURST_FRACTION = 0.25
 
 
 def compute_rate(
@@ -46,26 +47,53 @@ def compute_rate(
     window_s = 0.0 if start is None or end is None else max(0.0, (end - start) / _NS_PER_S)
     trailing_ns = _trailing_ns(times, window_end_ns, stopped_on_deadline)
 
-    intervals = [b - a for a, b in itertools.pairwise(times)]
+    burst = _startup_burst(times) if basis == "received_ns" else 0
+    kept = times[burst:]
+    intervals = [b - a for a, b in itertools.pairwise(kept)]
     mean_ns = statistics.fmean(intervals) if intervals else None
     median_ns = statistics.median(intervals) if intervals else None
     cv = _cv(intervals, mean_ns)
-    span_ns = times[-1] - times[0] if n >= 2 else 0
-    verdict, note = _verdict(n, window_s, intervals, median_ns, trailing_ns, cv, mean_ns, span_ns)
+    span_ns = kept[-1] - kept[0] if len(kept) >= 2 else 0
+    verdict, note = _verdict(
+        len(kept), window_s, intervals, median_ns, trailing_ns, cv, mean_ns, span_ns
+    )
     return TopicRate(
         basis=basis,
         message_count=n,
+        startup_burst_count=burst,
         window_s=_round(window_s),
         mean_interval_s=_seconds(mean_ns),
         interval_median_s=_seconds(median_ns),
         max_gap_s=_seconds(max(intervals) if intervals else None),
         interval_cv=None if cv is None else _round(cv),
-        observed_frequency_hz=_frequency(n, span_ns),
+        observed_frequency_hz=_frequency(len(kept), span_ns),
         sim_frequency_hz=_sim_frequency(stamps_ns),
         trailing_gap_s=_seconds(trailing_ns),
         verdict=verdict,
         verdict_note=note,
     )
+
+
+def _startup_burst(times: list[int]) -> int:
+    """Leading messages that are the start-up drain of a fresh `ros2 topic echo`.
+
+    The echo subscriber's reader keeps up to 5 messages (the `sensor_data`
+    preset depth) between the match and its first callback, then prints them
+    in one go: a run of near-zero intervals before the real cadence starts.
+    That run is a leading one, shorter than a quarter of the median interval,
+    and never more than half of the intervals; fewer than 4 intervals give
+    too little to judge, so nothing is set aside.
+    """
+    intervals = [b - a for a, b in itertools.pairwise(times)]
+    if len(intervals) < 4:
+        return 0
+    limit = STARTUP_BURST_FRACTION * statistics.median(intervals)
+    count = 0
+    for interval in intervals[: len(intervals) // 2]:
+        if interval >= limit:
+            break
+        count += 1
+    return count
 
 
 def _trailing_ns(times: list[int], end_ns: int | None, stopped_on_deadline: bool) -> int | None:

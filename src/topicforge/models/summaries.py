@@ -253,6 +253,18 @@ class TopicRate(BaseModel):
     message_count: int = Field(
         ge=0, description="Messages the rate is computed from, including any dropped for size."
     )
+    startup_burst_count: int = Field(
+        ge=0,
+        description=(
+            "Leading messages set aside before the intervals, `observed_frequency_hz` and the "
+            "verdict are computed, still counted in `message_count`. On `received_ns` the fresh "
+            "`ros2 topic echo` prints the messages its reader queued before its first callback "
+            "(up to 5) in one go; that run of near-zero intervals would inflate the frequency "
+            "of a fast topic. A leading run of intervals under a quarter of the median "
+            "interval is that drain. Always 0 on `recorded_ns`; the stamps of those messages "
+            "still feed `sim_frequency_hz`."
+        ),
+    )
     window_s: float = Field(
         ge=0,
         description=(
@@ -278,13 +290,18 @@ class TopicRate(BaseModel):
     observed_frequency_hz: float | None = Field(
         description=(
             "Messages per second on `basis`: (count - 1) over the time from the first to the "
-            "last message; `null` with fewer than 2 messages. For a live call this is the rate "
-            "the caller received, which can be below the publish rate."
+            "last message, `startup_burst_count` leading messages set aside; `null` with fewer "
+            "than 2 messages. For a live call this is the rate the caller received, which can "
+            "be below the publish rate, and it is coarse when the messages span less than "
+            "about a second (one late message moves it by several percent): to check a "
+            "configured publish rate compare `sim_frequency_hz` when present, and ask for "
+            "`count` 50 on a topic above 20 Hz."
         )
     )
     sim_frequency_hz: float | None = Field(
         description=(
-            "Same computation on the messages' own stamps (`timestamp_ns`), so it is the "
+            "The publisher's own cadence, unaffected by delivery or by the start-up burst: same "
+            "computation on the messages' own stamps (`timestamp_ns`), so it is the "
             "publisher's clock: sim time on a simulation. `null` when the messages carry no "
             "stamp (`stamp_source` `none` or `recorded`), the stamps do not advance, or "
             "there are fewer than 2 messages."

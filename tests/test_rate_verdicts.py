@@ -225,3 +225,57 @@ def test_sim_frequency_is_null_without_stamps_or_with_frozen_ones() -> None:
     assert compute_rate(arrivals, basis="received_ns").sim_frequency_hz is None
     frozen = compute_rate(arrivals, basis="received_ns", stamps_ns=[0] * 10)
     assert frozen.sim_frequency_hz is None
+
+
+# ---- start-up burst of ros2 topic echo --------------------------------------
+
+MS = S // 1000
+
+
+def test_the_echo_drain_is_set_aside_on_received_ns() -> None:
+    rate = compute_rate(_series([MS] * 5 + [20 * MS] * 6), basis="received_ns")
+    assert rate.startup_burst_count == 5
+    assert rate.message_count == 12
+    assert rate.observed_frequency_hz == 50.0
+    assert rate.interval_cv == 0.0
+    assert rate.verdict == "stable"
+
+
+def test_the_drain_is_kept_on_recorded_ns() -> None:
+    rate = compute_rate(_series([MS] * 5 + [20 * MS] * 6), basis="recorded_ns")
+    assert rate.startup_burst_count == 0
+    assert rate.observed_frequency_hz == pytest.approx(11 / 0.125)
+
+
+def test_drained_messages_still_feed_the_sim_frequency() -> None:
+    arrivals = _series([MS] * 5 + [20 * MS] * 6)
+    stamps = [i * 20 * MS for i in range(len(arrivals))]
+    rate = compute_rate(arrivals, basis="received_ns", stamps_ns=stamps)
+    assert rate.startup_burst_count == 5
+    assert rate.sim_frequency_hz == 50.0
+
+
+def test_a_burst_covering_over_half_the_series_is_not_a_drain() -> None:
+    rate = compute_rate(_series([MS] * 8 + [20 * MS] * 3), basis="received_ns")
+    assert rate.startup_burst_count == 0
+
+
+def test_a_burst_in_the_middle_is_not_a_drain() -> None:
+    rate = compute_rate(_series([20 * MS] * 4 + [MS] * 3 + [20 * MS] * 4), basis="received_ns")
+    assert rate.startup_burst_count == 0
+    assert rate.verdict != "stable"
+
+
+def test_fewer_than_four_intervals_are_never_trimmed() -> None:
+    rate = compute_rate(_series([MS, MS, 20 * MS]), basis="received_ns")
+    assert rate.startup_burst_count == 0
+
+
+def test_identical_arrivals_are_not_a_drain() -> None:
+    assert compute_rate([T0] * 5, basis="received_ns").startup_burst_count == 0
+
+
+def test_setting_the_drain_aside_can_leave_too_few_messages() -> None:
+    rate = compute_rate(_series([MS] * 2 + [20 * MS] * 3), basis="received_ns")
+    assert rate.startup_burst_count == 2
+    assert rate.verdict == "insufficient"

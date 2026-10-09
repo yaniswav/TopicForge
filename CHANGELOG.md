@@ -223,6 +223,7 @@ Configuration and Python API:
   text of any exception other than `ToolError` on the server, so every handler now
   re-raises `AdapterError` as `ToolError` with the same message. Unexpected exceptions
   stay redacted ("Error executing tool X") and leak no traceback.
+- `rate.observed_frequency_hz` on `received_ns` no longer counts the start-up drain of `ros2 topic echo` (up to 5 queued messages printed at once, which read `/clock` at 91 Hz for 50 Hz): the leading run of near-zero intervals is set aside and reported in the new additive `startup_burst_count`; the ground-truth comparator gates FAIL and STABLE_CV on 10 messages spanning 0.9 s.
 
 ## [0.6.4] - 2026-10-08
 
