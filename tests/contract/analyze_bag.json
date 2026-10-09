@@ -74,6 +74,17 @@
             "description": "Average publish rate in Hz. With `frequency_basis` `topic_span` it is `(message_count - 1) / (last - first message time)` for this topic; with `bag_duration` it is `message_count / bag duration`, which understates the rate of a topic that started late or stopped early. `null` when fewer than 2 messages, a zero time span, or the topic is `latched` and all its messages fall within 1 second (a start-up burst, not a rate). A latched topic published over a longer span keeps its rate. Not a periodic rate for event-driven topics such as `/parameter_events`.",
             "title": "Frequency Hz"
           },
+          "kind": {
+            "default": "user",
+            "description": "What the topic is: `user` (data, including `/tf`, `/tf_static` and `/clock`), `rosbag2_internal` (written by rosbag2 itself, such as `/events/write_split`) or `ros_builtin` (ROS 2 infrastructure such as `/parameter_events` and `/rosout`).",
+            "enum": [
+              "user",
+              "rosbag2_internal",
+              "ros_builtin"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "last_timestamp_ns": {
             "anyOf": [
               {
@@ -125,196 +136,10 @@
         ],
         "title": "BagTopicStats",
         "type": "object"
-      },
-      "ParticipantInfo": {
-        "additionalProperties": false,
-        "description": "DDS participant discovered on the configured domain.\n\nCarries identity (`guid`, `name`, `vendor`) plus lifecycle fields\n(`first_seen_ns`, `last_seen_ns`, `status`, `seen_count`).",
-        "properties": {
-          "announced_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Nanoseconds since epoch (DDS source timestamp of the participant's most recent announcement, taken from the announcing side's clock; the local clock when the announcer sent none). `None` when the backend does not expose it. Distinct from `first_seen_ns` / `last_seen_ns`, which are TopicForge's own local clock.",
-            "title": "Announced Ns"
-          },
-          "domain_id": {
-            "description": "DDS domain id the participant is bound to.",
-            "maximum": 232,
-            "minimum": 0,
-            "title": "Domain Id",
-            "type": "integer"
-          },
-          "first_seen_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Wall-clock timestamp (nanoseconds since epoch) of the **first** discovery sample TopicForge observed for this participant. `None` when the adapter does not track lifecycle.",
-            "title": "First Seen Ns"
-          },
-          "guid": {
-            "description": "DDS Global Unique Identifier of the participant: hex string, stable across discovery events within a single deployment.",
-            "title": "Guid",
-            "type": "string"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Hostname announced in discovery (Cyclone `__Hostname` property). `None` when the vendor does not announce it.",
-            "title": "Hostname"
-          },
-          "is_observer": {
-            "default": false,
-            "description": "True for TopicForge's own read-only observer participant, which joins the domain to watch it and appears in this list; false for every other participant.",
-            "title": "Is Observer",
-            "type": "boolean"
-          },
-          "last_seen_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Wall-clock timestamp (nanoseconds since epoch) of the **most recent** discovery sample observed. Used by `participant_events` to distinguish currently-active participants from those that left the bus. `None` when the adapter does not track lifecycle.",
-            "title": "Last Seen Ns"
-          },
-          "lost_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Nanoseconds since epoch of the moment the participant left, once `status` is `left`; `None` while it is active. How precise it is depends on `lost_time_source`. It is an upper bound of when the participant died: after a clean shutdown it is the exact leave time, after a crash it is when the lease expired, and the two cannot be told apart. The process died at or before `lost_ns`, and at most one lease earlier (10 s Cyclone default, 20 s Fast, 100 s RTI).",
-            "title": "Lost Ns"
-          },
-          "lost_time_source": {
-            "anyOf": [
-              {
-                "enum": [
-                  "dds_source_timestamp",
-                  "observed_local"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Where `lost_ns` comes from: `dds_source_timestamp` (timestamp carried by the discovery dispose) or `observed_local` (the moment TopicForge noticed, the weakest). `None` while active.",
-            "title": "Lost Time Source"
-          },
-          "mode_effective": {
-            "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
-            "enum": [
-              "mock",
-              "live"
-            ],
-            "title": "Mode Effective",
-            "type": "string"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Participant name the application announced through the standard DDS EntityName QoS (PID_ENTITY_NAME in RTPS discovery), for example `lidar_driver`. `None` when the application did not set one (Dust DDS cannot) or the backend does not expose it.",
-            "title": "Name"
-          },
-          "seen_count": {
-            "default": 1,
-            "description": "Number of distinct discovery samples observed for this participant across all calls to `list_participants` during this server's lifetime. Starts at 1 and increments on each observation.",
-            "minimum": 1,
-            "title": "Seen Count",
-            "type": "integer"
-          },
-          "status": {
-            "default": "unknown",
-            "description": "Lifecycle status. `active` means TopicForge has a recent discovery sample for this GUID and the bus has not signalled removal. `left` means the participant was observed earlier but has since disappeared (a Fast DDS `REMOVED` callback or a Cyclone polling delta). `unknown` when the adapter does not track lifecycle.",
-            "enum": [
-              "active",
-              "left",
-              "unknown"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "vendor": {
-            "description": "DDS implementation that announced this participant, decoded from the OMG-RTPS `vendor_id` field on the discovery sample. `cyclone` (Eclipse Cyclone DDS), `fast` (eProsima Fast DDS), `rti` (RTI Connext), `rti_micro` (RTI Connext Micro), `opensplice` (ADLink OpenSplice), `opendds` (OCI OpenDDS), `coredx` (Twin Oaks CoreDX), `intercom` (Kongsberg InterCOM), `dust` (S2E Dust DDS). `mock` is reserved for synthetic fixtures. `unknown` means the vendor could not be determined: TopicForge reads it from the vendor prefix of the participant GUID, and some vendors (for example Dust DDS and RTI Connext) do not put their vendor id there, while the Cyclone Python binding does not expose the RTPS header vendor id. The participant is still reported; see `vendor_source`. Any conformant DDS-RTPS participant should appear through standard discovery; Cyclone DDS and Dust DDS have been observed on a live bus. See `docs/dds-interop-matrix.md`.",
-            "enum": [
-              "cyclone",
-              "fast",
-              "rti",
-              "rti_micro",
-              "opensplice",
-              "opendds",
-              "coredx",
-              "intercom",
-              "dust",
-              "mock",
-              "unknown"
-            ],
-            "title": "Vendor",
-            "type": "string"
-          },
-          "vendor_source": {
-            "default": "none",
-            "description": "Where `vendor` came from: `guid_prefix` when it was read from the vendor prefix of the participant GUID, `none` when the vendor is unknown (or synthetic in mock mode).",
-            "enum": [
-              "guid_prefix",
-              "none"
-            ],
-            "title": "Vendor Source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "guid",
-          "vendor",
-          "domain_id",
-          "mode_effective"
-        ],
-        "title": "ParticipantInfo",
-        "type": "object"
       }
     },
     "additionalProperties": false,
-    "description": "Structured summary of a ROS2 bag.\n\nThe fields `bag_format`, `samples_decoded_count`,\n`recording_duration_ns` and `participants_recorded` are populated only\nwhen the `rosbags`-backed reader runs; the `ros2 bag info` path leaves\nthem at their defaults.",
+    "description": "Structured summary of a ROS2 bag.\n\n`bag_format` is populated only when the `rosbags`-backed reader runs; the\n`ros2 bag info` path leaves it `None`.",
     "properties": {
       "anomalies": {
         "description": "Human-readable notes about gaps, clock jumps, or other oddities. Populated in mock mode only; live mode does not detect anomalies.",
@@ -343,10 +168,10 @@
         "description": "Concrete bag container format detected by the reader: `mcap` (Foxglove MCAP), `db3` (ROS2 rosbag2 SQLite), `bag` (ROS1 legacy chunked), or `unknown` when the reader could not classify. `None` when the bag was summarized from `ros2 bag info` text, which carries no format information.",
         "title": "Bag Format"
       },
-      "duration_seconds": {
+      "duration_s": {
         "description": "Total bag duration, in seconds (wall clock between first and last message).",
         "minimum": 0,
-        "title": "Duration Seconds",
+        "title": "Duration S",
         "type": "number"
       },
       "message_count": {
@@ -377,39 +202,10 @@
         "description": "Why the result is less detailed than usual, for example per-topic rates computed over the whole bag duration because the bag was too large to read per-topic message times. `None` when there is nothing to add.",
         "title": "Note"
       },
-      "participants_recorded": {
-        "description": "DDS participants recorded in the bag when the container format embeds participant metadata. MCAP can carry it via channel metadata records; ROS2 `.db3` and ROS1 `.bag` generally do not. Empty list when not available, which is the common case.",
-        "items": {
-          "$ref": "#/$defs/ParticipantInfo"
-        },
-        "title": "Participants Recorded",
-        "type": "array"
-      },
       "path": {
         "description": "Path to the analyzed bag, as supplied by the caller. May point to a file (`.mcap`, `.db3`, or ROS 1 `.bag` for `peek_bag_samples`) or to a `rosbag2_*` directory.",
         "title": "Path",
         "type": "string"
-      },
-      "recording_duration_ns": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Recording duration in nanoseconds when readable from the bag's index. `None` when only `ros2 bag info` text was parsed; `duration_seconds` (float) is the always-populated fallback that downstream LLM consumers should prefer when this is `None`.",
-        "title": "Recording Duration Ns"
-      },
-      "samples_decoded_count": {
-        "default": 0,
-        "description": "Total decoded sample count across all topics produced by the bag reader. `0` when the reader only parsed metadata or when `rosbags` is not installed on the host. Use `peek_bag_samples` to pull the actual sample payloads for a specific topic.",
-        "minimum": 0,
-        "title": "Samples Decoded Count",
-        "type": "integer"
       },
       "storage_format": {
         "anyOf": [
@@ -435,7 +231,7 @@
     },
     "required": [
       "path",
-      "duration_seconds",
+      "duration_s",
       "message_count",
       "topics",
       "mode_effective"

@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List DDS endpoints"
   },
-  "description": "List every DDS endpoint (writer and reader) announced on the bus, one `EndpointInfo` per endpoint with `role`, `topic`, `type_name`, `type_id`, the owning `participant_guid` joined with its `participant_name`, and a structured `qos` (reliability, durability, history, deadline, liveliness kind and lease, ownership kind and strength, partitions, latency budget, destination order, data representation). Use it instead of parsing `peek_dds_samples` output and joining GUID prefixes. **Spotting orphans**: `by_topic` rolls the endpoints up per topic with `writer_count`, `reader_count` and `orphan` (`\"no_reader\"` = a writer nobody subscribes to, `\"no_writer\"` = a reader nobody publishes to), plus the union of partitions. **Reading `qos`**: a duration of `None` (`deadline_ns`, `liveliness_lease_ns`, `latency_budget_ns`) means infinite or not set; a policy field of `None` means the endpoint did not announce it. **Ownership**: among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers to a reader; which writer currently owns an instance is reader-side runtime state TopicForge cannot observe. **Departed endpoints**: when a participant leaves, its endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (participant name and `gone_ns`), so a topic that lost its only writer is explained in one call; they are listed in `endpoints` only with `include_departed`. **Topic filter**: `rt/scan` and `scan` match each other (exact name first; `note` says which form matched), and a filter that matches nothing returns a `note` with the closest known topics. `announced_ns` is the discovery announcement's source timestamp on the announcing side's clock, which can differ from this host's clock. **This lists discovery facts, not data flow**: it shows which endpoints exist and how they are configured, not whether samples move. `activity` is always `None` (see `activity_note`): TopicForge holds no reader on user topics and cannot tell a silent or hung writer from a healthy one. Pair it with `detect_qos_mismatches` to see which pairs cannot match. TopicForge's own observer participant is excluded unless `include_observer` is true. Output is capped at 500 endpoints (`truncated`, `total_discovered`); `by_topic` still covers all matches. Read-only. **Raises an MCP error** when no DDS module is active. Mock mode returns a fixture matching the other mock DDS tools.",
+  "description": "List every DDS endpoint (writer and reader) announced on the bus, one `EndpointInfo` per endpoint with `role`, `dds_topic` (raw name such as `rt/scan`), `ros_topic` (`/scan`, `null` with `ros_topic_note` when it is not a ROS 2 topic), `type_name`, `type_id`, the owning `participant_guid` joined with its `participant_name`, and a structured `qos` (reliability, durability, history, deadline, liveliness kind and lease, ownership kind and strength, partitions, latency budget, destination order, data representation). Use it instead of parsing `peek_dds_samples` output and joining GUID prefixes. **Spotting orphans**: `by_topic` rolls the endpoints up per topic with `writer_count`, `reader_count` and `orphan` (`\"no_reader\"` = a writer nobody subscribes to, `\"no_writer\"` = a reader nobody publishes to), plus the union of partitions. **Reading `qos`**: a duration of `None` (`deadline_ns`, `liveliness_lease_ns`, `latency_budget_ns`) means infinite or not set; a policy field of `None` means the endpoint did not announce it. **Ownership**: among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers to a reader; which writer currently owns an instance is reader-side runtime state TopicForge cannot observe. **Departed endpoints**: when a participant leaves, its endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (participant name and `gone_ns`), so a topic that lost its only writer is explained in one call; they are listed in `endpoints` only with `include_departed`. **Topic filter**: `rt/scan` and `scan` match each other (exact name first; `note` says which form matched), and a filter that matches nothing returns a `note` with the closest known topics. `announced_ns` is the discovery announcement's source timestamp on the announcing side's clock, which can differ from this host's clock. **This lists discovery facts, not data flow**: it shows which endpoints exist and how they are configured, not whether samples move (`hints` says so once): TopicForge holds no reader on user topics and cannot tell a silent or hung writer from a healthy one. Pair it with `detect_qos_mismatches` to see which pairs cannot match. TopicForge's own observer participant is excluded unless `include_observer` is true. ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) are left out unless `include_internal` is true (`hidden_internal_endpoint_count`). Output is capped at 500 endpoints (`truncated`, `total`); `by_topic` still covers all matches. Read-only. **Raises an MCP error** when no DDS module is active. Mock mode returns a fixture matching the other mock DDS tools.",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -21,6 +21,12 @@
         "default": false,
         "description": "Also list endpoints whose participant left the bus (flagged with `gone_ns`). Defaults to false; `by_topic` reports them as `departed_writers` / `departed_readers` either way.",
         "title": "Include Departed",
+        "type": "boolean"
+      },
+      "include_internal": {
+        "default": false,
+        "description": "Also list the ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/` and `ros_discovery_info`). Defaults to false: they are most of a small robot's endpoints.",
+        "title": "Include Internal",
         "type": "boolean"
       },
       "include_observer": {
@@ -114,18 +120,6 @@
         "additionalProperties": false,
         "description": "One DDS endpoint (writer or reader) announced through discovery.",
         "properties": {
-          "activity": {
-            "default": null,
-            "description": "Reserved for a future liveness signal. Always `None` today.",
-            "title": "Activity",
-            "type": "null"
-          },
-          "activity_note": {
-            "default": "not observed: TopicForge holds no reader on user topics, so it cannot tell a silent or hung writer from a healthy one",
-            "description": "Why `activity` is not populated.",
-            "title": "Activity Note",
-            "type": "string"
-          },
           "announced_ns": {
             "anyOf": [
               {
@@ -139,12 +133,10 @@
             "description": "Source timestamp of the discovery announcement, ns since epoch, read on the announcing side's clock (it can differ from this host's clock). `None` when not available.",
             "title": "Announced Ns"
           },
-          "domain_id": {
-            "description": "DDS domain the endpoint was observed on.",
-            "maximum": 232,
-            "minimum": 0,
-            "title": "Domain Id",
-            "type": "integer"
+          "dds_topic": {
+            "description": "Raw DDS topic name as announced, for example `rt/scan`.",
+            "title": "Dds Topic",
+            "type": "string"
           },
           "gone_ns": {
             "anyOf": [
@@ -168,15 +160,6 @@
             "description": "True when the endpoint belongs to TopicForge's own observer participant.",
             "title": "Is Observer",
             "type": "boolean"
-          },
-          "mode_effective": {
-            "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
-            "enum": [
-              "mock",
-              "live"
-            ],
-            "title": "Mode Effective",
-            "type": "string"
           },
           "participant_guid": {
             "description": "GUID of the owning participant, same format as `list_participants`.",
@@ -236,10 +219,31 @@
             "title": "Role",
             "type": "string"
           },
-          "topic": {
-            "description": "DDS topic name.",
-            "title": "Topic",
-            "type": "string"
+          "ros_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ROS 2 name of the topic, for example `/scan`. `None` when the endpoint is not a ROS 2 topic: see `ros_topic_note`.",
+            "title": "Ros Topic"
+          },
+          "ros_topic_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why `ros_topic` is `None`. `None` when it is set.",
+            "title": "Ros Topic Note"
           },
           "type_id": {
             "anyOf": [
@@ -272,10 +276,8 @@
           "guid",
           "role",
           "participant_guid",
-          "topic",
-          "is_observer",
-          "domain_id",
-          "mode_effective"
+          "dds_topic",
+          "is_observer"
         ],
         "title": "EndpointInfo",
         "type": "object"
@@ -515,6 +517,11 @@
         "additionalProperties": false,
         "description": "Per-topic roll-up of the listed endpoints, for spotting orphans.",
         "properties": {
+          "dds_topic": {
+            "description": "Raw DDS topic name as announced, for example `rt/scan`.",
+            "title": "Dds Topic",
+            "type": "string"
+          },
           "departed_readers": {
             "description": "Readers on this topic whose participant left, newest first.",
             "items": {
@@ -562,10 +569,18 @@
             "title": "Reader Count",
             "type": "integer"
           },
-          "topic": {
-            "description": "DDS topic name.",
-            "title": "Topic",
-            "type": "string"
+          "ros_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ROS 2 name of the topic, for example `/scan`. `None` for a DDS topic that is not a ROS 2 topic.",
+            "title": "Ros Topic"
           },
           "type_names": {
             "description": "Distinct type names announced on this topic.",
@@ -583,7 +598,7 @@
           }
         },
         "required": [
-          "topic",
+          "dds_topic",
           "type_names",
           "writer_count",
           "reader_count",
@@ -604,11 +619,11 @@
         "title": "By Topic",
         "type": "array"
       },
-      "departed_endpoints": {
+      "departed_endpoint_count": {
         "default": 0,
         "description": "Departed endpoints (their participant left) matching the filters. They are in `endpoints` only with `include_departed`; `by_topic` always carries them as `departed_writers` / `departed_readers`.",
         "minimum": 0,
-        "title": "Departed Endpoints",
+        "title": "Departed Endpoint Count",
         "type": "integer"
       },
       "domain_id": {
@@ -626,12 +641,27 @@
         "title": "Endpoints",
         "type": "array"
       },
-      "excluded_observer_endpoints": {
+      "excluded_observer_endpoint_count": {
         "default": 0,
-        "description": "Endpoints of TopicForge's own observer participant left out of `endpoints` (they are counted in `total_discovered`). Explains `total_discovered` vs `returned` together with the filters.",
+        "description": "Endpoints of TopicForge's own observer participant left out of `endpoints` (they are counted in `total`). Explains `total` vs `returned` together with the filters.",
         "minimum": 0,
-        "title": "Excluded Observer Endpoints",
+        "title": "Excluded Observer Endpoint Count",
         "type": "integer"
+      },
+      "hidden_internal_endpoint_count": {
+        "default": 0,
+        "description": "ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/` and `ros_discovery_info`) left out because `include_internal` is false; they are counted in `total`.",
+        "minimum": 0,
+        "title": "Hidden Internal Endpoint Count",
+        "type": "integer"
+      },
+      "hints": {
+        "description": "Facts that apply to every endpoint of the listing, stated once, for example that liveness is not observed.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Hints",
+        "type": "array"
       },
       "mode_effective": {
         "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
@@ -679,10 +709,10 @@
         "title": "Snapshot Ns",
         "type": "integer"
       },
-      "total_discovered": {
+      "total": {
         "description": "Endpoints in the discovery cache before any filter.",
         "minimum": 0,
-        "title": "Total Discovered",
+        "title": "Total",
         "type": "integer"
       },
       "truncated": {
@@ -696,7 +726,7 @@
       "snapshot_ns",
       "endpoints",
       "by_topic",
-      "total_discovered",
+      "total",
       "returned",
       "truncated",
       "mode_effective"

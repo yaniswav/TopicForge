@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Breaking
+
+Output contract 2 (`health_check.contract_version` is 2; 0.6.x is implicitly 1). The tool
+list and the input defaults are unchanged except where noted. `docs/CONTRACT.md` is the
+specification and `docs/MIGRATION-0.7.md` expands this list.
+
+One object per tool, never a bare list:
+
+- `list_topics`: `list[TopicInfo]` -> `TopicListing {topics, returned, total, truncated,
+  mode_effective, note}`.
+- `list_participants`: `list[ParticipantInfo]` -> `ParticipantListing {participants, returned,
+  total, truncated, domain_id, mode_effective, note}`.
+- `participant_events`: `list[ParticipantEvent]` -> `ParticipantEventListing {events,
+  returned, total, truncated, domain_id, mode_effective, note}`. The silent 200-event cap is
+  now `truncated` plus a `note`.
+
+Topic models:
+
+- `TopicInfo` splits: `list_topics` returns `TopicListItem` (`name`, `message_type`,
+  `publisher_count`, `subscriber_count`, no QoS, no `mode_effective`); `get_topic_info`
+  returns `TopicInfo`.
+- `TopicInfo.qos_reliability` and `qos_durability` (publishers only) -> `publisher_qos` and
+  `subscription_qos` (`{reliability, durability, endpoint_count}`, `mixed` when the endpoints
+  of a side disagree), each with a `_note` when it is `null`. A topic with subscribers only
+  no longer reports nothing.
+- `TopicInfo` gains `publisher_nodes` and `subscriber_nodes` (fully qualified node names read
+  from `ros2 topic info --verbose`) and a `note`.
+- Removed because no adapter ever filled them: `TopicInfo.reader_count`, `writer_count` and
+  `qos_profile`; `BagAnalysis.samples_decoded_count`, `participants_recorded` and
+  `recording_duration_ns`.
+
+Renames (unit suffixes, `_reason` -> `_note`):
+
+- `BagAnalysis.duration_seconds` -> `duration_s`.
+- `TopicMetrics.window_seconds` -> `window_s`, `window_seconds_actual` -> `window_actual_s`,
+  `frequency_hz_observed` -> `observed_frequency_hz`, `frequency_hz_declared` ->
+  `declared_frequency_hz`.
+- Tool inputs: `topic_metrics.window_seconds` -> `window_s`, `participant_events.lookback_seconds`
+  -> `lookback_s`.
+- `EndpointListing.departed_endpoints` -> `departed_endpoint_count`,
+  `excluded_observer_endpoints` -> `excluded_observer_endpoint_count`, `total_discovered` ->
+  `total`.
+- `HealthReport.dds_inactive_reason` -> `dds_inactive_note`, `payload_decoding_reason` ->
+  `payload_decoding_note`.
+
+`list_endpoints`:
+
+- `EndpointInfo.topic` -> `dds_topic` (raw name, `rt/scan`) plus `ros_topic` (`/scan`, `null`
+  with `ros_topic_note` for a DDS topic that is not a ROS 2 topic). `TopicSummary.topic` ->
+  `dds_topic` plus `ros_topic`.
+- New input `include_internal` (default false): the ROS 2 service and action endpoints
+  (`rq/`, `rr/`, `rs/`, `rp/`, `ra/` and `ros_discovery_info`) are hidden unless it is true;
+  `hidden_internal_endpoint_count` says how many were left out.
+- `EndpointInfo.activity` (always `null`) and `activity_note` (the same sentence on every
+  endpoint) are removed; the sentence is stated once in the new root-level `hints`.
+- `EndpointInfo.domain_id` and `mode_effective` are removed (the listing carries them once).
+
+Nested items no longer repeat the envelope: `mode_effective` is removed from
+`ParticipantInfo`, `ParticipantEvent`, `EndpointInfo` and `MismatchReport`.
+
+`stamp_source` (every `MessageSample`) is required and has five values: `header`, `payload`,
+`recorded`, `dds_source`, `none`. It was nullable with four. `peek_dds_samples` now says
+`dds_source` (builtin discovery topics, from the announcement timestamp) or `none`.
+
+`sample_messages.timeout_s` accepts 1..40 (see Changed).
+
+### Added (contract 2)
+
+- `health_check`: `contract_version` (2), `rmw_implementation` and `rmw_source` (`env`,
+  `distro_default` or `none`; `ros2_cli` is reserved), and a `note`. The RMW comes from
+  `RMW_IMPLEMENTATION` or the default of `ROS_DISTRO`, never from the running graph.
+- A `note` on `get_topic_info`, `detect_qos_mismatches`, `topic_metrics` and `health_check`.
+- `analyze_bag` topics gain `kind`: `user`, `rosbag2_internal` (`/events/write_split`) or
+  `ros_builtin` (`/parameter_events`, `/rosout`).
+- Reserved optional fields: `ParticipantInfo.node_names` and `node_names_source` (empty and
+  `none` until a tool fills them), `MismatchReport.suggested_fixes` (empty).
+- `tests/test_contract_shape.py` (every tool returns one object and one text block),
+  `tests/test_field_names.py` (no `_seconds`, `_sec`, `_ms`, `_hertz`, `_reason` and similar
+  suffixes in any input or output field).
+
 ### Added
 
 - Optional local HTTP transport: `topicforge --transport streamable-http --port N` serves the

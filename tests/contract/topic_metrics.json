@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Topic metrics"
   },
-  "description": "Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent time window. Returns a `TopicMetrics` payload carrying `status`, `samples_observed`, `frequency_hz_observed`, `frequency_hz_declared`, `sequence_gaps_count`, `latency_ns_p50/p95/p99`, and boolean availability flags. **Read `status` first**: `unsupported_user_topic` means the topic is a user topic, whose payload is not decoded, so there are no metrics: every number is null or 0 and none of it is a measurement. `no_samples_yet` means a builtin topic with nothing buffered in the window. `ok` means metrics were computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `frequency_hz_observed` reflects how often it was called, not the real publish rate: treat it as a coarse presence signal. `frequency_hz_declared` is declared, not measured: `1 / deadline` of the shortest QoS Deadline a writer on the topic announced in discovery, null when none announced one. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_seconds` is out of range (1..3600). Right after server start the call waits up to 3 s for discovery to warm up.",
+  "description": "Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent time window. Returns a `TopicMetrics` payload carrying `status`, `samples_observed`, `observed_frequency_hz`, `declared_frequency_hz`, `sequence_gaps_count`, `latency_ns_p50/p95/p99`, and boolean availability flags. **Read `status` first**: `unsupported_user_topic` means the topic is a user topic, whose payload is not decoded, so there are no metrics: every number is null or 0 and none of it is a measurement. `no_samples_yet` means a builtin topic with nothing buffered in the window. `ok` means metrics were computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how often it was called, not the real publish rate: treat it as a coarse presence signal. `declared_frequency_hz` is declared, not measured: `1 / deadline` of the shortest QoS Deadline a writer on the topic announced in discovery, null when none announced one. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is out of range (1..3600). Right after server start the call waits up to 3 s for discovery to warm up.",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -22,12 +22,12 @@
         "title": "Topic",
         "type": "string"
       },
-      "window_seconds": {
+      "window_s": {
         "default": 60,
         "description": "Window in seconds over which to compute metrics (1..3600). Defaults to 60 seconds. Smaller windows reflect more recent state; larger windows smooth transient anomalies.",
         "maximum": 3600,
         "minimum": 1,
-        "title": "Window Seconds",
+        "title": "Window S",
         "type": "integer"
       }
     },
@@ -42,7 +42,7 @@
     "additionalProperties": false,
     "description": "Temporal metrics for a single DDS topic over a recent window.\n\nBuilt from samples that pass through `peek_dds_samples`. The buffer is\nfilled on demand because neither the `cyclonedds` nor the `fastdds`\nPython binding has a reliable per-sample callback, so a burst between two\ncalls is not seen.\n\nNumeric fields are `None` (`0` for `sequence_gaps_count`) when the data is\nmissing: no samples, no source timestamps, no sequence number in the\npayload. `samples_observed=0` is a valid result, not an error.",
     "properties": {
-      "frequency_hz_declared": {
+      "declared_frequency_hz": {
         "anyOf": [
           {
             "type": "number"
@@ -53,20 +53,7 @@
         ],
         "default": null,
         "description": "Declared, not measured: `1 / deadline` for the shortest QoS Deadline period announced by a writer on this topic in discovery. `None` when no writer announced a finite Deadline or the topic is not announced. It is the rate the application promised, not the rate observed.",
-        "title": "Frequency Hz Declared"
-      },
-      "frequency_hz_observed": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "`samples_observed / window_seconds_actual`. `None` when fewer than 2 samples were observed (a single sample does not define a frequency).",
-        "title": "Frequency Hz Observed"
+        "title": "Declared Frequency Hz"
       },
       "latency_available": {
         "default": false,
@@ -125,6 +112,32 @@
         "title": "Mode Effective",
         "type": "string"
       },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "observed_frequency_hz": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "`samples_observed / window_actual_s`. `None` when fewer than 2 samples were observed (a single sample does not define a frequency).",
+        "title": "Observed Frequency Hz"
+      },
       "samples_observed": {
         "description": "Number of samples in the buffer matching `topic` within the window. `0` means TopicForge has not seen any sample on this topic recently: it does NOT mean the topic has no publisher, only that no `peek_dds_samples` call captured one in the window.",
         "minimum": 0,
@@ -160,24 +173,24 @@
         "title": "Topic",
         "type": "string"
       },
-      "window_seconds": {
+      "window_actual_s": {
+        "description": "Actual elapsed seconds within the window. May be smaller than `window_s` when the adapter buffered samples for less time than the requested window (e.g., the server just started). `0.0` when `samples_observed=0`.",
+        "minimum": 0,
+        "title": "Window Actual S",
+        "type": "number"
+      },
+      "window_s": {
         "description": "Requested window in seconds (1..3600). Echoed back from the tool call so the LLM can correlate the request.",
         "maximum": 3600,
         "minimum": 1,
-        "title": "Window Seconds",
+        "title": "Window S",
         "type": "integer"
-      },
-      "window_seconds_actual": {
-        "description": "Actual elapsed seconds within the window. May be smaller than `window_seconds` when the adapter buffered samples for less time than the requested window (e.g., the server just started). `0.0` when `samples_observed=0`.",
-        "minimum": 0,
-        "title": "Window Seconds Actual",
-        "type": "number"
       }
     },
     "required": [
       "topic",
-      "window_seconds",
-      "window_seconds_actual",
+      "window_s",
+      "window_actual_s",
       "samples_observed",
       "mode_effective"
     ],

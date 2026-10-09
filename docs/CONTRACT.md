@@ -47,7 +47,7 @@ block per element in `content`. From 0.7.0:
 cap still carries `returned` and `total` (equal).
 
 Every result is exactly one `structuredContent` object plus one `TextContent` block that
-carries the same JSON. `tests/test_contract_shape.py` (planned, section 6) asserts
+carries the same JSON. `tests/test_contract_shape.py` (section 6) asserts
 `len(result.content) == 1` for every tool in mock mode.
 
 ### 1.2 One envelope, one `note`
@@ -72,6 +72,9 @@ is removed from `ParticipantInfo`, `ParticipantEvent`, `EndpointInfo` and `Misma
  "returned": 1, "total": 1, "truncated": false,
  "domain_id": 0, "mode_effective": "live", "note": null}
 ```
+
+`ParticipantInfo` and `ParticipantEvent` keep their own `domain_id`: G0 removed `domain_id`
+from `EndpointInfo` only, and the lifecycle buffers filter on it.
 
 `health_check` is the one result that has no `mode_effective`: it reports `mode` and
 `requested_mode` instead.
@@ -320,7 +323,9 @@ publisher-only `qos_reliability` and `qos_durability`. Each describes one side a
 ```
 
 `reliability` and `durability` use the ROS casing (1.5) and the value `mixed` when the
-endpoints of that side disagree. A topic with subscribers only now reports its
+endpoints of that side disagree. A side is `null` when it has no endpoint ("The topic has no
+publisher...") or when one of the two policies is reported by none of its endpoints (the CLI
+printed `UNKNOWN` or `SYSTEM_DEFAULT`), never half filled. A topic with subscribers only now reports its
 subscription side instead of `null`.
 
 `TopicInfo` also gains `publisher_nodes` and `subscriber_nodes`: lists of fully qualified
@@ -412,7 +417,7 @@ other tool returns binary content.
 `health_check.contract_version` (integer, 2 for 0.7) is the only place a client reads the
 version of this contract. It is not repeated in other results.
 
-Planned tests (M6; none exists yet):
+Tests (all three exist since M6):
 
 | File | Asserts |
 | --- | --- |
@@ -493,7 +498,15 @@ payloads are `_decode_status`, `_decode_note`, `_truncated_fields`, `_raw_text`,
   `EndpointInfo.activity_note` (identical on all entries) are removed, and the sentence
   moves once to `hints`.
 - The listing gains `returned`, `total` and `truncated` names consistent with 1.1: the
-  existing `total_discovered` becomes `total`.
+  existing `total_discovered` becomes `total`. It keeps its meaning (every endpoint in the
+  discovery cache before any filter), so `returned < total` is explained by the filters and
+  the observer exclusion as well as by the cap; `truncated` is only the cap. Two counts say
+  what a default call left out: `excluded_observer_endpoint_count` and the new
+  `hidden_internal_endpoint_count` (the `include_internal` filter).
+- `ros_topic` is `null` with a one-sentence `ros_topic_note` on the endpoint when the DDS
+  name is not a ROS 2 topic (no `rt/` prefix: `rq/`, `rr/`, `rs/`, `rp/`, `ra/`,
+  `ros_discovery_info` and DDS-native names). `TopicSummary` carries `dds_topic` and
+  `ros_topic` only.
 
 ### 7.6 Envelope and `health_check`
 

@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List DDS participants"
   },
-  "description": "List DDS participants observed on the bus. Returns `list[ParticipantInfo]`: each entry carries `guid`, `vendor` (`cyclone`/`fast`/`rti`/`rti_micro`/`opensplice`/`opendds`/`coredx`/`intercom`/`dust`/`mock`/`unknown`) with `vendor_source`, optional `name` (announced EntityName QoS, e.g. `lidar_driver`), optional `hostname`, `domain_id`, `is_observer` and `mode_effective` (`live`/`mock`). **Why `vendor` can be `unknown`**: the vendor is read from the participant GUID prefix (`vendor_source` `guid_prefix`; `none` when unknown). Some vendors, e.g. Dust DDS and RTI Connext, do not put their vendor id there, and the Cyclone Python binding does not expose the RTPS header vendor id, so those participants are listed as `unknown`. **`is_observer`** is true for TopicForge's own read-only participant, which is listed like any other. Lifecycle fields: `status` (`active`/`left`), `first_seen_ns` / `last_seen_ns` (TopicForge's local clock), `seen_count`, `announced_ns` (DDS source timestamp of the announcement), and once left `lost_ns` + `lost_time_source`. `lost_ns` is an upper bound of when the participant died: exact after a clean shutdown, the lease expiry after a crash (the two cannot be told apart), so a crashed process died up to one lease before it (10 s Cyclone default, 20 s Fast DDS, 100 s RTI; the dead participant's lease, not ours). Cyclone tracks discovery continuously in the background, so these stay correct between calls; right after server start the call waits up to 3 s for discovery to warm up. **Only the domain joined at startup is observed** (see `health_check` `dds_domain_id`): a participant on another DDS domain is INVISIBLE here, so a missing participant may be on a different domain; `domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS layer beneath ROS, so it also sees non-ROS participants. **Read-only by architecture**: it cannot publish, modify QoS, or alter the bus. **Raises an MCP error** when no DDS module is active (install `pip install topicforge[dds]` and set `TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend returns fixtures.",
+  "description": "List DDS participants observed on the bus. Returns a `ParticipantListing` `{participants, returned, total, truncated, domain_id, mode_effective, note}`: each participant carries `guid`, `vendor` (`cyclone`/`fast`/`rti`/`rti_micro`/`opensplice`/`opendds`/`coredx`/`intercom`/`dust`/`mock`/`unknown`) with `vendor_source`, optional `name` (announced EntityName QoS, e.g. `lidar_driver`), optional `hostname`, `domain_id`, and `is_observer`. **Why `vendor` can be `unknown`**: the vendor is read from the participant GUID prefix (`vendor_source` `guid_prefix`; `none` when unknown). Some vendors, e.g. Dust DDS and RTI Connext, do not put their vendor id there, and the Cyclone Python binding does not expose the RTPS header vendor id, so those participants are listed as `unknown`. **`is_observer`** is true for TopicForge's own read-only participant, which is listed like any other. Lifecycle fields: `status` (`active`/`left`), `first_seen_ns` / `last_seen_ns` (TopicForge's local clock), `seen_count`, `announced_ns` (DDS source timestamp of the announcement), and once left `lost_ns` + `lost_time_source`. `lost_ns` is an upper bound of when the participant died: exact after a clean shutdown, the lease expiry after a crash (the two cannot be told apart), so a crashed process died up to one lease before it (10 s Cyclone default, 20 s Fast DDS, 100 s RTI; the dead participant's lease, not ours). Cyclone tracks discovery continuously in the background, so these stay correct between calls; right after server start the call waits up to 3 s for discovery to warm up. **Only the domain joined at startup is observed** (see `health_check` `dds_domain_id`): a participant on another DDS domain is INVISIBLE here, so a missing participant may be on a different domain; `domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS layer beneath ROS, so it also sees non-ROS participants. **Read-only by architecture**: it cannot publish, modify QoS, or alter the bus. **Raises an MCP error** when no DDS module is active (install `pip install topicforge[dds]` and set `TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend returns fixtures.",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -132,15 +132,6 @@
             "description": "Where `lost_ns` comes from: `dds_source_timestamp` (timestamp carried by the discovery dispose) or `observed_local` (the moment TopicForge noticed, the weakest). `None` while active.",
             "title": "Lost Time Source"
           },
-          "mode_effective": {
-            "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
-            "enum": [
-              "mock",
-              "live"
-            ],
-            "title": "Mode Effective",
-            "type": "string"
-          },
           "name": {
             "anyOf": [
               {
@@ -153,6 +144,25 @@
             "default": null,
             "description": "Participant name the application announced through the standard DDS EntityName QoS (PID_ENTITY_NAME in RTPS discovery), for example `lidar_driver`. `None` when the application did not set one (Dust DDS cannot) or the backend does not expose it.",
             "title": "Name"
+          },
+          "node_names": {
+            "description": "Fully qualified names of the ROS 2 nodes that share this participant. Empty when `node_names_source` is `none`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Node Names",
+            "type": "array"
+          },
+          "node_names_source": {
+            "default": "none",
+            "description": "Where `node_names` came from: `ros_discovery_info` (read from that topic), `ros2_cli` (derived from the `ros2` CLI) or `none` (no link could be made, `node_names` is empty).",
+            "enum": [
+              "ros_discovery_info",
+              "ros2_cli",
+              "none"
+            ],
+            "title": "Node Names Source",
+            "type": "string"
           },
           "seen_count": {
             "default": 1,
@@ -204,26 +214,79 @@
         "required": [
           "guid",
           "vendor",
-          "domain_id",
-          "mode_effective"
+          "domain_id"
         ],
         "title": "ParticipantInfo",
         "type": "object"
       }
     },
+    "additionalProperties": false,
+    "description": "Envelope returned by `list_participants`.",
     "properties": {
-      "result": {
+      "domain_id": {
+        "description": "DDS domain observed.",
+        "maximum": 232,
+        "minimum": 0,
+        "title": "Domain Id",
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "participants": {
+        "description": "Participants observed on the bus.",
         "items": {
           "$ref": "#/$defs/ParticipantInfo"
         },
-        "title": "Result",
+        "title": "Participants",
         "type": "array"
+      },
+      "returned": {
+        "description": "Length of `participants`.",
+        "minimum": 0,
+        "title": "Returned",
+        "type": "integer"
+      },
+      "total": {
+        "description": "Participants observed before any cap.",
+        "minimum": 0,
+        "title": "Total",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "True when `returned` is less than `total` because of a cap.",
+        "title": "Truncated",
+        "type": "boolean"
       }
     },
     "required": [
-      "result"
+      "participants",
+      "returned",
+      "total",
+      "truncated",
+      "domain_id",
+      "mode_effective"
     ],
-    "title": "list_participantsOutput",
+    "title": "ParticipantListing",
     "type": "object"
   },
   "title": "List DDS participants"

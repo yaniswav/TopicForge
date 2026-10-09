@@ -73,23 +73,16 @@
             "title": "Recorded Ns"
           },
           "stamp_source": {
-            "anyOf": [
-              {
-                "enum": [
-                  "header",
-                  "payload",
-                  "none",
-                  "recorded"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "Where `timestamp_ns` comes from: `header` (the message's `header.stamp`), `payload` (no header, but the time is in the body of a `Clock`, `TFMessage` or `Log` message), `recorded` (no time in a bag message, `timestamp_ns` is the bag record time), `dds_source` (the DDS source timestamp of the sample) or `none` (no time anywhere, `timestamp_ns` is 0). Never `None`. `sample_messages` gives `header`, `payload` or `none`; `peek_bag_samples` gives `header`, `payload` or `recorded`; `peek_dds_samples` gives `dds_source` or `none`.",
+            "enum": [
+              "header",
+              "payload",
+              "recorded",
+              "dds_source",
+              "none"
             ],
-            "default": null,
-            "description": "Where `timestamp_ns` comes from: `header` (the message's `header.stamp`), `payload` (no header, but the time is in the body of a `Clock`, `TFMessage` or `Log` message), `none` (no time in the live message, `timestamp_ns` is 0) or `recorded` (no time in a message from a bag, `timestamp_ns` is the bag record time). `None` when the backend does not say.",
-            "title": "Stamp Source"
+            "title": "Stamp Source",
+            "type": "string"
           },
           "timestamp_ns": {
             "description": "Nanoseconds from the message's own top-level `header.stamp` (`stamp_source` `header`); else the time kept in the body of `rosgraph_msgs/Clock` (`clock`), `tf2_msgs/TFMessage` (`transforms[0].header.stamp`, when not empty) or `rcl_interfaces/Log` (`stamp`) (`stamp_source` `payload`); else 0 (`stamp_source` `none`, e.g. `std_msgs/String`, `geometry_msgs/Twist`). It is the publisher's clock, not the arrival time: on simulated time it is sim time since the simulation started (a few seconds, not a date) and 0 is a valid value. From `peek_bag_samples` a message without a header gets the bag record time instead (`stamp_source` `recorded`), also given in `recorded_ns`. Use `received_ns` for when the CLI printed the message. Mock samples with a header carry synthetic increasing values.",
@@ -105,7 +98,8 @@
         "required": [
           "topic",
           "message_type",
-          "timestamp_ns"
+          "timestamp_ns",
+          "stamp_source"
         ],
         "title": "MessageSample",
         "type": "object"

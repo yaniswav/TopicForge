@@ -147,15 +147,6 @@
             "title": "Incompatible Policies",
             "type": "array"
           },
-          "mode_effective": {
-            "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
-            "enum": [
-              "mock",
-              "live"
-            ],
-            "title": "Mode Effective",
-            "type": "string"
-          },
           "reader_guid": {
             "anyOf": [
               {
@@ -216,6 +207,14 @@
             ],
             "title": "Severity",
             "type": "string"
+          },
+          "suggested_fixes": {
+            "description": "Fixes proposed as text for a human to apply; TopicForge never applies them. Empty when it proposes none for this finding.",
+            "items": {
+              "$ref": "#/$defs/SuggestedFix"
+            },
+            "title": "Suggested Fixes",
+            "type": "array"
           },
           "topic": {
             "description": "Topic name where the mismatch was detected.",
@@ -286,8 +285,7 @@
         "required": [
           "topic",
           "incompatible_policies",
-          "severity",
-          "mode_effective"
+          "severity"
         ],
         "title": "MismatchReport",
         "type": "object"
@@ -415,6 +413,52 @@
         ],
         "title": "PolicyMismatch",
         "type": "object"
+      },
+      "SuggestedFix": {
+        "additionalProperties": false,
+        "description": "A fix proposed as text for a human to apply. TopicForge never applies it.",
+        "properties": {
+          "kind": {
+            "description": "Form of `text`: a CLI command, a ROS 2 QoS override, a DDS profile or a launch parameter.",
+            "enum": [
+              "cli",
+              "qos_override",
+              "dds_profile",
+              "launch_param"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "description": "Which node or side to change, writer or reader.",
+            "title": "Target",
+            "type": "string"
+          },
+          "text": {
+            "description": "The exact command, YAML or XML to apply.",
+            "title": "Text",
+            "type": "string"
+          },
+          "tradeoff": {
+            "description": "What is lost by applying it.",
+            "title": "Tradeoff",
+            "type": "string"
+          },
+          "verify_with": {
+            "description": "The TopicForge tool to run again to confirm the repair.",
+            "title": "Verify With",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "text",
+          "tradeoff",
+          "verify_with"
+        ],
+        "title": "SuggestedFix",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -466,6 +510,19 @@
         "minimum": 0,
         "title": "Not Matched Total",
         "type": "integer"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
       },
       "pairs_checked": {
         "description": "Same-topic (reader, writer) pairs examined, including those reported in `not_matched`.",
