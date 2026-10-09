@@ -281,16 +281,20 @@ def test_cut_payload_records_nested_paths_once() -> None:
 
 
 class _FakeProc:
-    """A finished process whose stdout is `text`."""
+    """A finished process whose stdout is `text`.
 
-    pid = 1
+    It reports itself as exited, and its pid is never a real process group:
+    the stream's tree kill must not signal anything on the host.
+    """
+
+    pid = -1
 
     def __init__(self, text: str) -> None:
         self.stdout = io.StringIO(text)
         self.stderr = io.StringIO("")
 
     def poll(self) -> int | None:
-        return None
+        return 0
 
     def wait(self, timeout: float | None = None) -> int:
         return 0

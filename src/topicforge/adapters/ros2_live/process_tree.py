@@ -185,6 +185,11 @@ def _stop_posix_group(proc: Killable) -> None:
     when the launcher is gone, since its children may not be.
     """
     pgid = proc.pid
+    if pgid <= 1 or pgid == os.getpgrp():
+        # Never signal init's group or our own: only a child started with
+        # `start_new_session` leads a group we may stop.
+        log.warning("refusing to signal process group %s", pgid)
+        return
     try:
         os.killpg(pgid, signal.SIGINT)
     except ProcessLookupError:

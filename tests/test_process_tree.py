@@ -207,3 +207,38 @@ def test_the_count_stops_an_orphaned_child_early(tmp_path: Path) -> None:
     assert time.monotonic() - started < 10
     assert len(run.documents) == 3
     assert _wait_dead(yaml.safe_load(run.documents[0].text)["pid"])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+@pytest.mark.parametrize("pid", [-1, 0, 1])
+def test_posix_group_stop_never_signals_init_or_an_invalid_group(
+    monkeypatch: pytest.MonkeyPatch, pid: int
+) -> None:
+    def forbidden(*_args: object) -> None:
+        raise AssertionError("killpg must not be called")
+
+    monkeypatch.setattr(process_tree.os, "killpg", forbidden)
+
+    class _Proc:
+        def poll(self) -> int | None:
+            return 0
+
+    proc = _Proc()
+    proc.pid = pid  # type: ignore[attr-defined]
+    process_tree._stop_posix_group(proc)  # type: ignore[arg-type]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_posix_group_stop_never_signals_its_own_group(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(*_args: object) -> None:
+        raise AssertionError("killpg must not be called")
+
+    monkeypatch.setattr(process_tree.os, "killpg", forbidden)
+
+    class _Proc:
+        pid = os.getpgrp()
+
+        def poll(self) -> int | None:
+            return 0
+
+    process_tree._stop_posix_group(_Proc())  # type: ignore[arg-type]
