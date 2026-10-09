@@ -119,7 +119,7 @@ A name that carries a unit or a kind ends with exactly one of these suffixes:
 | `_basis` | what a value was computed from (closed set of strings) | `frequency_basis` |
 | `_note` | one sentence of explanation for a neighbouring field | `observed_domain_note` |
 
-A new field uses one of these or no suffix. `_reason` is not in the vocabulary and is
+A new field uses one of these or no suffix. A physical quantity (distance, angle, speed, acceleration) carries no suffix: REP 103 fixes its unit (meters, radians, meters per second, meters per second squared), the description states it, and the name mirrors the ROS field where one exists. The time suffixes exist because nanosecond integers and float seconds are both in use; a meter or a radian has no second representation to tell apart. `_reason` is not in the vocabulary and is
 removed (section 7). Adding a suffix is a contract change.
 
 ### 1.5 Enum casing follows the layer
@@ -398,18 +398,12 @@ order, first match wins:
 | 6 | `erratic` | `interval_cv >= 0.5` |
 
 The tool description recommends `count >= 10` and warns that topics with several
-publishers, such as `/tf`, come out `erratic` without being broken. The thresholds are
-confirmed on the bench in M8: if a healthy sensor lands between 0.2 and 0.3, the
-`stable` threshold moves to 0.3.
+publishers, such as `/tf`, come out `erratic` without being broken.
 
 A verdict is a description of what was observed in the window, not a diagnosis: a
 `silent` topic may be latched.
 
-Measured on the OmniSim fixture bag (M8, `recorded_ns`, 50 messages): `/odom` cv 0.04,
-`/imu/data` 0.11, `/clock` 0.14, but `/scan` 0.26 and `/gps/local` 0.28, which would read
-`jittery` although the sensors are healthy. That is the case the paragraph above names, so the
-`stable` threshold may have to move to 0.3. It is left at 0.2 until the Docker bench, which has
-a fixed-rate publisher, confirms it (`STABLE_CV` in `services/summaries/rate.py`).
+Thresholds confirmed 2026-10-09 under delegation and kept at 0.2 and 0.5, the same on both bases. Measured on the OmniSim fixture bag (`recorded_ns`, sliding windows of 10 to 50 messages): `/odom` cv 0.03-0.11 and `/imu/data` 0.03-0.17, `/scan` 0.16-0.40 and `/gps/local` 0.19-0.41, whose intervals alternate between about 0.16 and 0.25 s at 5 Hz. The same recorder and path give 0.05 on `/odom`, so the spread is the emitter's, not the transport's or the basis's; `jittery` describes it correctly, and the note gives the longest gap as a multiple of the median. 0.3 was rejected: with `count` 10 or 20, 7 to 12 percent of the windows on those two topics stay above 0.3, so the verdict would flap between calls, and a periodic loss of one message in 8 (cv 0.29) or 10 (0.27) would read `stable`; periodic loss never exceeds cv 0.35. The threshold moves to 0.3 only if the Docker bench, a fixed-rate publisher read through `ros2 topic echo`, itself lands at or above 0.2 on `received_ns`: that would mean the measuring path, not the sensor, is that noisy.
 
 ### Message summaries
 
@@ -425,7 +419,7 @@ Resolutions recorded here:
   fields carry no unit suffix. Units follow REP 103 (meters, radians, meters per second,
   radians per second) and each description says so; names mirror the ROS fields
   (`angle_min`, `range_max`) or are plain (`range`, `bearing`, `linear_speed`, `yaw`).
-  Adding `_m` and `_rad` is a contract change for the owner to decide.
+  Decided 2026-10-09 under delegation: no unit suffix on physical quantities, now a rule of 1.4. `_rad_s` would end in `_s` and read as seconds, `_mps` and `_mps2` are spellings nobody else uses, and `angle_min_rad` would stop mirroring the ROS field.
 - Counts use `_count` (`beam_count`, `point_count`), not `n_*`.
 - `inf_count` is `+inf` only; `-inf` is `neg_inf_count`; `nan_count` is `nan`. A finite range
   outside `range_min`..`range_max` is counted in `out_of_range_count` and is not a valid return.

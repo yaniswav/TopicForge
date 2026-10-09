@@ -64,10 +64,20 @@ class ScanSectors(BaseModel):
 
     model_config = _CONFIG
 
-    front: ScanSector = Field(description="Bearings within +-45 degrees of the sensor's +x axis.")
-    left: ScanSector = Field(description="Bearings above 45 and up to 135 degrees.")
-    right: ScanSector = Field(description="Bearings from -135 up to -45 degrees.")
-    rear: ScanSector = Field(description="Bearings beyond +-135 degrees (the sensor's -x side).")
+    front: ScanSector = Field(
+        description="Bearings within +-45 degrees (+-0.785 rad) of the sensor's +x axis."
+    )
+    left: ScanSector = Field(
+        description="Bearings above 45 and up to 135 degrees (0.785 to 2.356 rad)."
+    )
+    right: ScanSector = Field(
+        description="Bearings from -135 up to -45 degrees (-2.356 to -0.785 rad)."
+    )
+    rear: ScanSector = Field(
+        description=(
+            "Bearings beyond +-135 degrees (|bearing| above 2.356 rad, the sensor's -x side)."
+        )
+    )
 
 
 class LaserScanSummary(BaseModel):
@@ -292,8 +302,10 @@ class TopicRate(BaseModel):
             "`intermittent` (an interval, trailing one included, longer than 3 times the "
             "median), `stable` (`interval_cv` < 0.2), `jittery` (0.2 to 0.5), `erratic` (0.5 "
             "or more). It describes what was observed in this window, not a diagnosis: a "
-            "`silent` topic may be latched, and a topic with several publishers such as `/tf` "
-            "reads `erratic` without being broken."
+            "`silent` topic may be latched, a topic with several publishers such as `/tf` "
+            "reads `erratic` without being broken, and a simulated or bridged sensor whose "
+            "intervals alternate reads `jittery` while healthy: compare `max_gap_s` with "
+            "`interval_median_s` before suspecting a lost message."
         )
     )
     verdict_note: str = Field(description="One sentence that states the verdict in plain words.")

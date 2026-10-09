@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Peek bag samples"
   },
-  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed. **Summary**: a `LaserScan`, `Odometry`, `Imu`, `Image` or `PointCloud2` sample has a `summary` computed on the whole message even when `payload` is cut (closest obstacle and front/left/right/rear minima in the sensor frame for a scan, speed and yaw for odometry, roll/pitch/yaw for an IMU, size and encoding for an image, point count for a cloud; distances in meters, angles in radians); any other type has a null `summary`. **Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a `verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) measured on `recorded_ns` (the bag record time of the returned messages). Ask for `count` >= 10 for a meaningful verdict; a topic with several publishers, such as `/tf`, reads `erratic` without being broken. **Duration**: takes no lock (it reads the file in-process, so it can run while a ROS 2 or DDS call is busy); it stops after `count` samples, so the time follows the bag's size and how far into it the first samples are.",
+  "description": "Peek up to `count` samples from a recorded bag file. Unlike `peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 graph), this reads **offline bag content** for post-mortem analysis. Supported formats: MCAP (`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked binary (`.bag`), detected from the file extension. Returns the **first** `count` messages of the topic in recording order, not the last ones. **Clocks**: `timestamp_ns` is the message's own `header.stamp` (`stamp_source` `header`) when it has a top-level header, else the time in the body of `Clock`, `TFMessage` or `Log` (`stamp_source` `payload`), else the bag record time (`stamp_source` `recorded`); `recorded_ns` is always the bag record time. Returns a `SampleResult` in the same shape as `peek_dds_samples`: each sample's `payload` carries a `_decode_status` annotation (`full` / `partial` / `raw`). `count` defaults to 5 and is silently clamped to 50. **Uses the `rosbags` library** (installed with topicforge) and needs the ROS 2 side of the runtime: on a DDS-only setup it raises an error. The mock backend returns fixture samples on canned bag paths. Bags that embed no message definitions (rosbag2 `.db3` from Humble) are decoded with the type definitions of the bag's recorded distro, or Humble when it records none; `note` says which. Arrays over 4096 elements are cut and `note` lists the fields. **Read-only by architecture**: nothing writes to the bag file. **Raises an MCP error** when the bag path does not exist, the topic is not present in the bag, or `rosbags` is not installed. **Summary**: a `LaserScan`, `Odometry`, `Imu`, `Image` or `PointCloud2` sample has a `summary` computed on the whole message even when `payload` is cut (closest obstacle and front/left/right/rear minima in the sensor frame for a scan, speed and yaw for odometry, roll/pitch/yaw for an IMU, size and encoding for an image, point count for a cloud; distances in meters, angles in radians); any other type has a null `summary`. **Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a `verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) measured on `recorded_ns` (the bag record time of the returned messages). Ask for `count` >= 10 for a meaningful verdict; a topic with several publishers, such as `/tf`, reads `erratic` without being broken, and a simulated or bridged sensor can read `jittery` while healthy. **Duration**: takes no lock (it reads the file in-process, so it can run while a ROS 2 or DDS call is busy); it stops after `count` samples, so the time follows the bag's size and how far into it the first samples are.",
   "inputSchema": {
     "properties": {
       "count": {
@@ -953,19 +953,19 @@
         "properties": {
           "front": {
             "$ref": "#/$defs/ScanSector",
-            "description": "Bearings within +-45 degrees of the sensor's +x axis."
+            "description": "Bearings within +-45 degrees (+-0.785 rad) of the sensor's +x axis."
           },
           "left": {
             "$ref": "#/$defs/ScanSector",
-            "description": "Bearings above 45 and up to 135 degrees."
+            "description": "Bearings above 45 and up to 135 degrees (0.785 to 2.356 rad)."
           },
           "rear": {
             "$ref": "#/$defs/ScanSector",
-            "description": "Bearings beyond +-135 degrees (the sensor's -x side)."
+            "description": "Bearings beyond +-135 degrees (|bearing| above 2.356 rad, the sensor's -x side)."
           },
           "right": {
             "$ref": "#/$defs/ScanSector",
-            "description": "Bearings from -135 up to -45 degrees."
+            "description": "Bearings from -135 up to -45 degrees (-2.356 to -0.785 rad)."
           }
         },
         "required": [
@@ -1081,7 +1081,7 @@
             "title": "Trailing Gap S"
           },
           "verdict": {
-            "description": "First match of: `silent` (no message), `insufficient` (fewer than 5), `intermittent` (an interval, trailing one included, longer than 3 times the median), `stable` (`interval_cv` < 0.2), `jittery` (0.2 to 0.5), `erratic` (0.5 or more). It describes what was observed in this window, not a diagnosis: a `silent` topic may be latched, and a topic with several publishers such as `/tf` reads `erratic` without being broken.",
+            "description": "First match of: `silent` (no message), `insufficient` (fewer than 5), `intermittent` (an interval, trailing one included, longer than 3 times the median), `stable` (`interval_cv` < 0.2), `jittery` (0.2 to 0.5), `erratic` (0.5 or more). It describes what was observed in this window, not a diagnosis: a `silent` topic may be latched, a topic with several publishers such as `/tf` reads `erratic` without being broken, and a simulated or bridged sensor whose intervals alternate reads `jittery` while healthy: compare `max_gap_s` with `interval_median_s` before suspecting a lost message.",
             "enum": [
               "silent",
               "insufficient",

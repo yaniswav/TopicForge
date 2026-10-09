@@ -1,7 +1,8 @@
 """No field name carries a unit or a kind the locked vocabulary does not allow.
 
 docs/CONTRACT.md section 1.4: durations end in `_s` or `_ns`, rates in `_hz`, explanations in
-`_note`. A name ending in `_seconds`, `_sec`, `_ms`, `_hertz`, `_reason` and the like is a
+`_note`; a physical quantity (distance, angle, speed) carries no unit suffix at all, so
+`_m`, `_rad`, `_deg`, `_mps` and their spelled-out forms fail too. A name ending in `_seconds`, `_sec`, `_ms`, `_hertz`, `_reason` and the like is a
 second spelling of the same thing and fails here. Reads the output and input schemas as served
 by `list_tools`, nested models included.
 """
@@ -19,6 +20,13 @@ from topicforge.config import Settings
 from topicforge.server import build_app
 
 _FORBIDDEN_SUFFIXES = (
+    "_m",
+    "_rad",
+    "_deg",
+    "_mps",
+    "_meters",
+    "_radians",
+    "_degrees",
     "_seconds",
     "_sec",
     "_secs",

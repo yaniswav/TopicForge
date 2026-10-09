@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -353,10 +354,14 @@ def test_scan_rate_is_close_to_the_publish_rate(adapter: Ros2CliAdapter) -> None
     rate = adapter.sample_messages("/scan", 20).rate
     assert rate is not None and rate.basis == "received_ns" and rate.message_count == 20
     assert rate.observed_frequency_hz == pytest.approx(10.0, rel=0.1)
-    # docs/CONTRACT.md section 4: a healthy sensor should read `stable`; `jittery` here would
-    # mean the 0.2 threshold needs to move to 0.3.
+    # CONTRACT 4: STABLE_CV moves to 0.3 only if this fixed-rate publisher itself reads >= 0.2.
     assert rate.verdict in ("stable", "jittery")
     assert rate.interval_cv is not None and rate.interval_cv < 0.3
+    if rate.interval_cv >= 0.2:
+        warnings.warn(
+            f"measuring path cv {rate.interval_cv}: CONTRACT 4 says move STABLE_CV to 0.3",
+            stacklevel=1,
+        )
     assert rate.trailing_gap_s is None  # stopped on count
     # Sim time runs on the wall clock in the bench, so the two rates agree.
     assert rate.sim_frequency_hz == pytest.approx(rate.observed_frequency_hz, rel=0.1)

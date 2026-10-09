@@ -114,6 +114,8 @@ Configuration and Python API:
     `interval_cv`, `observed_frequency_hz` (wall clock: `received_ns`, or `recorded_ns` for a
     bag), `sim_frequency_hz` (from the messages' own stamps), `trailing_gap_s` and a
     `verdict`: `silent`, `insufficient`, `intermittent`, `stable`, `jittery` or `erratic`.
+    Thresholds confirmed at 0.2 and 0.5 on both bases; the `jittery` note gives the longest
+    gap as a multiple of the median. Physical quantities carry no unit suffix (CONTRACT 1.4).
   - `peek_bag_samples` now returns non-finite floats as the strings `nan`, `inf`, `-inf`
     (they could not be written as JSON numbers).
   - Mock mode: `/scan` is a 720-beam scan in a walled room, and `/imu/data` is a new mock

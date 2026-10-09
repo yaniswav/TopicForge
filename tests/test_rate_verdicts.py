@@ -172,6 +172,11 @@ def test_erratic_note_mentions_multiple_publishers() -> None:
     assert "several publishers" in note and "/tf" in note
 
 
+def test_jittery_note_states_the_gap_ratio() -> None:
+    note = compute_rate(_series(_alternating(300)), basis="received_ns").verdict_note
+    assert "1.3 times the median" in note and "healthy" in note
+
+
 # ---- the numbers ------------------------------------------------------------
 
 

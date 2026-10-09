@@ -111,7 +111,12 @@ def _verdict(
     if cv < STABLE_CV:
         return "stable", f"Steady delivery at {hz:.1f} Hz (interval variation {cv:.2f})."
     if cv < JITTERY_CV:
-        return "jittery", f"Delivery at about {hz:.1f} Hz with uneven spacing (variation {cv:.2f})."
+        ratio = gap / median_ns if median_ns else 0.0
+        return "jittery", (
+            f"Delivery at about {hz:.1f} Hz with uneven spacing (variation {cv:.2f}); the "
+            f"longest gap is {ratio:.1f} times the median interval, and a simulated or "
+            "bridged sensor can read this way while healthy."
+        )
     return "erratic", (
         f"Very irregular spacing (variation {cv:.2f}); a topic with several publishers, "
         "such as /tf, reads this way without being broken."

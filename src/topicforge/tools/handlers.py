@@ -122,7 +122,8 @@ _SUMMARY_RATE_NOTE = (
     "**Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a "
     "`verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) "
     "measured on %s. Ask for `count` >= 10 for a meaningful verdict; a topic with several "
-    "publishers, such as `/tf`, reads `erratic` without being broken."
+    "publishers, such as `/tf`, reads `erratic` without being broken, and a simulated or bridged sensor can read "
+    "`jittery` while healthy."
 )
 
 _ROS_LANE_NOTE = (
