@@ -120,9 +120,7 @@ class _StubDdsAdapter:
     ) -> list[ParticipantEvent]:
         return []
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         return TopicMetrics(
             topic=topic,
             window_s=window_s,

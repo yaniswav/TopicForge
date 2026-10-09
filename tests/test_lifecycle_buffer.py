@@ -161,12 +161,8 @@ def test_events_since_filters_by_domain() -> None:
     buf.record_seen(guid="g1", vendor="cyclone", hostname=None, domain_id=0, now_ns=100)
     buf.record_seen(guid="g2", vendor="cyclone", hostname=None, domain_id=42, now_ns=200)
 
-    assert [e.guid for e in buf.events_since(lookback_s=10, domain_id=0, now_ns=300)] == [
-        "g1"
-    ]
-    assert [e.guid for e in buf.events_since(lookback_s=10, domain_id=42, now_ns=300)] == [
-        "g2"
-    ]
+    assert [e.guid for e in buf.events_since(lookback_s=10, domain_id=0, now_ns=300)] == ["g1"]
+    assert [e.guid for e in buf.events_since(lookback_s=10, domain_id=42, now_ns=300)] == ["g2"]
 
 
 def test_ring_buffer_drops_oldest_at_overflow() -> None:

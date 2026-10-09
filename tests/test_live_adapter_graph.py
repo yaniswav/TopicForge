@@ -63,9 +63,7 @@ def test_endpoint_qos_reads_every_endpoint_of_a_busy_topic() -> None:
 
 
 def test_latched_topic_reports_transient_local() -> None:
-    qos, note = summarize_side_qos(
-        parse_topic_endpoint_qos(_fixture("tf_static")), "PUBLISHER", 2
-    )
+    qos, note = summarize_side_qos(parse_topic_endpoint_qos(_fixture("tf_static")), "PUBLISHER", 2)
     assert note is None
     assert qos is not None and (qos.reliability, qos.durability) == ("reliable", "transient_local")
 
@@ -134,7 +132,9 @@ def test_parse_topic_info_fills_qos_fields() -> None:
     )
     assert info.publisher_qos_note is None
     assert info.subscription_qos is None
-    assert info.subscription_qos_note == "The topic has no subscriber, so there is no QoS to report."
+    assert (
+        info.subscription_qos_note == "The topic has no subscriber, so there is no QoS to report."
+    )
 
 
 def test_parse_topic_info_without_verbose_block_leaves_qos_empty() -> None:

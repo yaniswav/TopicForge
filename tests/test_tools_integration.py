@@ -152,7 +152,13 @@ def test_tool_responses_expose_mode_effective_field() -> None:
         assert "mode_effective" in properties, f"{tool_name}: must declare mode_effective"
         assert "mode_effective" in required, f"{tool_name}: mode_effective must be required"
 
-    nested = ("ParticipantInfo", "ParticipantEvent", "EndpointInfo", "MismatchReport", "TopicListItem")
+    nested = (
+        "ParticipantInfo",
+        "ParticipantEvent",
+        "EndpointInfo",
+        "MismatchReport",
+        "TopicListItem",
+    )
     for tool_name in ("list_participants", "participant_events", "list_endpoints", "list_topics"):
         schema = tools[tool_name].output_schema
         assert schema is not None

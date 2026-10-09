@@ -104,9 +104,7 @@ class _StubRosAdapter:
         self.calls.append(("participant_events", (domain_id, lookback_s)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         self.calls.append(("topic_metrics", (topic, window_s, domain_id)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
@@ -179,9 +177,7 @@ class _StubDdsAdapter:
         self.calls.append(("participant_events", (domain_id, lookback_s)))
         return []
 
-    def topic_metrics(
-        self, topic: str, window_s: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         self.calls.append(("topic_metrics", (topic, window_s, domain_id)))
         return TopicMetrics(
             topic=topic,
