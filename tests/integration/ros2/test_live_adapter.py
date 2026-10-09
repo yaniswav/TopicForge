@@ -308,3 +308,71 @@ def test_health_reports_the_sim_clock_publisher(adapter: Ros2CliAdapter) -> None
         mode="live", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False
     )
     assert HealthService(settings, adapter).report().sim_clock_published is True
+
+
+# ---- summaries and rate (bench publisher: /scan 10 Hz, /cmd_vel_out 5 Hz, edge 2 Hz) ----
+
+
+def test_scan_summary_reads_all_beams_while_the_payload_is_cut(adapter: Ros2CliAdapter) -> None:
+    sample = adapter.sample_messages("/scan", 1).samples[0]
+    assert len(_ranges(sample.payload)) == 128  # the default cut, as before
+    summary = sample.summary
+    assert summary is not None and summary.summary_type == "laser_scan"
+    assert summary.beam_count == N_BEAMS and summary.frame_id == "base_laser"
+    assert summary.finite_count == N_BEAMS and summary.inf_count == 0
+    # ranges are 1.0 + i * 0.001. Index 0 (bearing -135 deg) is inside the 128 beams that the
+    # payload keeps; the front sector minimum, at index 180, is past the cut.
+    assert summary.closest_obstacle is not None
+    assert summary.closest_obstacle.range == pytest.approx(1.0, abs=1e-4)
+    assert summary.closest_obstacle.beam_index == 0
+    front = summary.sectors.front.closest
+    assert front is not None and front.beam_index == 180
+    assert front.range == pytest.approx(1.18, abs=1e-4)
+    assert summary.sectors.rear.beam_count == 0  # the scan spans exactly +-135 degrees
+
+
+def test_scan_edge_summary_counts_nan_and_inf(adapter: Ros2CliAdapter) -> None:
+    sample = adapter.sample_messages("/scan_edge", 1).samples[0]
+    assert sample.payload["ranges"] == ["inf", "nan", "-inf", 1.5]
+    summary = sample.summary
+    assert summary is not None and summary.summary_type == "laser_scan"
+    assert (summary.finite_count, summary.inf_count) == (1, 1)
+    assert (summary.neg_inf_count, summary.nan_count) == (1, 1)
+    # The publisher sets no angle geometry: counts only, and the summary says so.
+    assert summary.closest_obstacle is None and summary.note is not None
+
+
+def test_image_summary_never_needs_the_pixels(adapter: Ros2CliAdapter) -> None:
+    summary = adapter.sample_messages("/camera/image_raw", 1).samples[0].summary
+    assert summary is not None and summary.summary_type == "image"
+    assert (summary.width, summary.height, summary.encoding) == (640, 480, "rgb8")
+    assert (summary.data_length, summary.data_length_basis) == (921600, "step_x_height")
+
+
+def test_scan_rate_is_close_to_the_publish_rate(adapter: Ros2CliAdapter) -> None:
+    rate = adapter.sample_messages("/scan", 20).rate
+    assert rate is not None and rate.basis == "received_ns" and rate.message_count == 20
+    assert rate.observed_frequency_hz == pytest.approx(10.0, rel=0.1)
+    # docs/CONTRACT.md section 4: a healthy sensor should read `stable`; `jittery` here would
+    # mean the 0.2 threshold needs to move to 0.3.
+    assert rate.verdict in ("stable", "jittery")
+    assert rate.interval_cv is not None and rate.interval_cv < 0.3
+    assert rate.trailing_gap_s is None  # stopped on count
+    # Sim time runs on the wall clock in the bench, so the two rates agree.
+    assert rate.sim_frequency_hz == pytest.approx(rate.observed_frequency_hz, rel=0.1)
+
+
+def test_twist_rate_is_stable_at_five_hertz(adapter: Ros2CliAdapter) -> None:
+    rate = adapter.sample_messages("/cmd_vel_out", 20).rate
+    assert rate is not None
+    assert rate.observed_frequency_hz == pytest.approx(5.0, rel=0.1)
+    assert rate.verdict == "stable"
+    assert rate.sim_frequency_hz is None  # a Twist has no stamp
+
+
+def test_slow_topic_stopped_by_the_deadline_has_a_trailing_gap(adapter: Ros2CliAdapter) -> None:
+    # The camera publishes at 2 Hz: 50 messages cannot arrive in 3 s.
+    rate = adapter.sample_messages("/camera/image_raw", 50, timeout_s=3).rate
+    assert rate is not None and rate.message_count < 50
+    if rate.message_count:  # the camera may not have started yet
+        assert rate.trailing_gap_s is not None and rate.trailing_gap_s < 1.5

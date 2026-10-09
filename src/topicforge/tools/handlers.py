@@ -91,7 +91,7 @@ _MAX_ARRAY_LENGTH_PARAM_DESC = (
     "longer ones are cut after their first N elements or characters and the "
     "field's dotted path is listed in the sample's `_truncated_fields`. "
     "Defaults to 128, the `ros2 topic echo` default, which cuts a 541-beam "
-    "`LaserScan` after 128 ranges. Pass null to return everything in full "
+    "`LaserScan` after 128 ranges (its `summary` still covers all 541). Pass null to return everything in full "
     "(large for images and point clouds; a message over the server's size "
     "cap, 1 MiB by default, is dropped with a note, and a very large message "
     "may not print before the deadline)."
@@ -111,6 +111,18 @@ _PATH_PARAM_DESC = (
     "bytes and otherwise malformed filesystem paths are rejected. Existence "
     "and bag format are validated by the live adapter (mock mode accepts "
     "any well-formed path)."
+)
+
+_SUMMARY_RATE_NOTE = (
+    " **Summary**: a `LaserScan`, `Odometry`, `Imu`, `Image` or `PointCloud2` sample has a "
+    "`summary` computed on the whole message even when `payload` is cut (closest obstacle "
+    "and front/left/right/rear minima in the sensor frame for a scan, speed and yaw for "
+    "odometry, roll/pitch/yaw for an IMU, size and encoding for an image, point count for "
+    "a cloud; distances in meters, angles in radians); any other type has a null `summary`. "
+    "**Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a "
+    "`verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) "
+    "measured on %s. Ask for `count` >= 10 for a meaningful verdict; a topic with several "
+    "publishers, such as `/tf`, reads `erratic` without being broken."
 )
 
 _ROS_LANE_NOTE = (
@@ -234,7 +246,7 @@ def register_tools(
             " and wiring) or `peek_dds_samples` on `DCPSPublication` / "
             "`DCPSSubscription` (raw discovery records). Collect up to `count` "
             "live messages from a ROS 2 `topic`, waiting at most `timeout_s` "
-            "seconds. Returns a `SampleResult` `{topic, count, samples, "
+            "seconds. Returns a `SampleResult` `{topic, count, samples, rate, "
             "mode_effective, note}`. **Live mode** streams `ros2 topic echo`, "
             "matching the publishers' QoS so latched (transient_local) topics "
             "work, and returns whatever arrived by the deadline: `count` is the "
@@ -262,11 +274,14 @@ def register_tools(
             "`ros2` CLI is available, the topic is unknown, or the CLI fails. "
             "Read-only; never publishes. Distinct from `peek_dds_samples`, "
             "which reads the raw DDS layer."
-            " **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at "
-            "a time. It returns within `timeout_s` (at most 40) plus about 3 s to stop "
-            "the CLI and decode, and the whole call, lock wait included, ends within 45 s: "
-            "a call that cannot get the lock fails at once with a `busy` error (retry), and "
-            "one that waited for the lock has that much less time to collect messages."
+            + (_SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
+            + (
+                " **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at "
+                "a time. It returns within `timeout_s` (at most 40) plus about 3 s to stop "
+                "the CLI and decode, and the whole call, lock wait included, ends within 45 s: "
+                "a call that cannot get the lock fails at once with a `busy` error (retry), and "
+                "one that waited for the lock has that much less time to collect messages."
+            )
         ),
     )
     @guarded("ros")
@@ -630,7 +645,9 @@ def register_tools(
             "cut and `note` lists the fields. **Read-only by "
             "architecture**: nothing writes to the bag file. **Raises an MCP "
             "error** when the bag path does not exist, the topic is not present"
-            " in the bag, or `rosbags` is not installed." + _BAG_NOTE
+            " in the bag, or `rosbags` is not installed."
+            + (_SUMMARY_RATE_NOTE % "`recorded_ns` (the bag record time of the returned messages)")
+            + _BAG_NOTE
         ),
     )
     @guarded(None)

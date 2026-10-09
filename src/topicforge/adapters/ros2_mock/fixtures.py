@@ -7,6 +7,8 @@ tree. Tests assert on exact values, so changing one here means updating
 
 from __future__ import annotations
 
+import math
+
 from topicforge.adapters.common.endpoints import build_endpoint_listing
 from topicforge.adapters.common.metrics_buffer import MetricsBuffer
 from topicforge.adapters.common.qos_scan import scan_endpoints
@@ -26,6 +28,7 @@ from topicforge.models import (
     TopicInfo,
     TopicListItem,
     TopicMetrics,
+    TopicRate,
 )
 
 
@@ -81,6 +84,13 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         ("/nav_planner",),
     ),
     _topic(
+        "/imu/data",
+        "sensor_msgs/msg/Imu",
+        "best_effort",
+        ("/imu_driver",),
+        ("/nav_planner",),
+    ),
+    _topic(
         "/tf",
         "tf2_msgs/msg/TFMessage",
         "reliable",
@@ -115,6 +125,45 @@ def _stamp(ts_ns: int) -> dict[str, int]:
     return {"sec": ts_ns // 1_000_000_000, "nanosec": ts_ns % 1_000_000_000}
 
 
+# The mock robot publishes /scan, /odom, /imu/data and /cmd_vel at 10 Hz; a mock
+# message "arrives" this long after its stamp.
+_MOCK_PERIOD_NS = 100_000_000
+_MOCK_LATENCY_NS = 3_000_000
+
+
+def _arrival(i: int) -> int:
+    return _BASE_TS_NS + i * _MOCK_PERIOD_NS + _MOCK_LATENCY_NS
+
+
+def _mock_scan_ranges() -> list[object]:
+    """720 beams over -pi..pi (sensor frame, +x forward) in a walled room, with an open door.
+
+    The robot stands 3.0 m from the front wall, 2.0 m from the left wall, 1.5 m from the
+    right wall and 2.5 m from the rear wall. Beams between 100 and 110 degrees pass through
+    a doorway and read `inf` (the string, as in a live payload).
+    """
+    ranges: list[object] = []
+    for i in range(720):
+        theta = -math.pi + i * (2 * math.pi / 720)
+        dx, dy = math.cos(theta), math.sin(theta)
+        distances = []
+        if dx > 1e-9:
+            distances.append(3.0 / dx)
+        elif dx < -1e-9:
+            distances.append(-2.5 / dx)
+        if dy > 1e-9:
+            distances.append(2.0 / dy)
+        elif dy < -1e-9:
+            distances.append(-1.5 / dy)
+        through_door = 100.0 <= math.degrees(theta) <= 110.0
+        ranges.append("inf" if through_door else round(min(distances), 4))
+    return ranges
+
+
+def _quaternion(yaw: float) -> dict[str, float]:
+    return {"x": 0.0, "y": 0.0, "z": round(math.sin(yaw / 2), 6), "w": round(math.cos(yaw / 2), 6)}
+
+
 _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
     "/cmd_vel": [
         MessageSample(
@@ -122,6 +171,7 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             message_type="geometry_msgs/msg/Twist",
             timestamp_ns=0,
             stamp_source="none",
+            received_ns=_arrival(i),
             payload={
                 "linear": {"x": 0.20 + i * 0.01, "y": 0.0, "z": 0.0},
                 "angular": {"x": 0.0, "y": 0.0, "z": 0.05 * i},
@@ -133,43 +183,83 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
         MessageSample(
             topic="/odom",
             message_type="nav_msgs/msg/Odometry",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_PERIOD_NS,
             stamp_source="header",
+            received_ns=_arrival(i),
             payload={
-                "header": {"stamp": _stamp(_BASE_TS_NS + i * 100_000_000), "frame_id": "odom"},
-                "pose": {"position": {"x": 0.1 * i, "y": 0.0, "z": 0.0}},
-                "twist": {"linear": {"x": 0.2}, "angular": {"z": 0.0}},
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * _MOCK_PERIOD_NS), "frame_id": "odom"},
+                "child_frame_id": "base_link",
+                "pose": {
+                    "pose": {
+                        "position": {"x": 0.02 * i, "y": 0.0, "z": 0.0},
+                        "orientation": _quaternion(0.0),
+                    },
+                },
+                "twist": {
+                    "twist": {
+                        "linear": {"x": 0.2, "y": 0.0, "z": 0.0},
+                        "angular": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    },
+                },
             },
         )
         for i in range(5)
     ],
+    # The payload holds the whole scan; `mock_samples_for` summarizes it and cuts it.
     "/scan": [
         MessageSample(
             topic="/scan",
             message_type="sensor_msgs/msg/LaserScan",
-            timestamp_ns=_BASE_TS_NS + i * 50_000_000,
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_PERIOD_NS,
             stamp_source="header",
+            received_ns=_arrival(i),
             payload={
-                "header": {"stamp": _stamp(_BASE_TS_NS + i * 50_000_000), "frame_id": "laser"},
-                "angle_min": -3.14,
-                "angle_max": 3.14,
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * _MOCK_PERIOD_NS), "frame_id": "laser"},
+                "angle_min": -math.pi,
+                "angle_max": math.pi - 2 * math.pi / 720,
+                "angle_increment": 2 * math.pi / 720,
+                "time_increment": 0.0,
+                "scan_time": 0.1,
                 "range_min": 0.05,
                 "range_max": 12.0,
-                "ranges": "<sequence type: float, length: 720>",
+                "ranges": _mock_scan_ranges(),
             },
         )
-        for i in range(3)
+        for i in range(5)
+    ],
+    "/imu/data": [
+        MessageSample(
+            topic="/imu/data",
+            message_type="sensor_msgs/msg/Imu",
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_PERIOD_NS,
+            stamp_source="header",
+            received_ns=_arrival(i),
+            payload={
+                "header": {"stamp": _stamp(_BASE_TS_NS + i * _MOCK_PERIOD_NS), "frame_id": "imu"},
+                "orientation": _quaternion(0.0),
+                "orientation_covariance": [0.0] * 9,
+                "angular_velocity": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "angular_velocity_covariance": [0.0] * 9,
+                "linear_acceleration": {"x": 0.0, "y": 0.0, "z": 9.81},
+                "linear_acceleration_covariance": [0.0] * 9,
+            },
+        )
+        for i in range(5)
     ],
     "/tf": [
         MessageSample(
             topic="/tf",
             message_type="tf2_msgs/msg/TFMessage",
-            timestamp_ns=_BASE_TS_NS + i * 100_000_000,
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_PERIOD_NS,
             stamp_source="payload",
+            received_ns=_arrival(i),
             payload={
                 "transforms": [
                     {
-                        "header": {"stamp": _stamp(_BASE_TS_NS + i * 100_000_000), "frame_id": a},
+                        "header": {
+                            "stamp": _stamp(_BASE_TS_NS + i * _MOCK_PERIOD_NS),
+                            "frame_id": a,
+                        },
                         "child_frame_id": b,
                     }
                     for a, b in (("odom", "base_link"), ("base_link", "laser"))
@@ -184,11 +274,14 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             message_type="sensor_msgs/msg/Image",
             timestamp_ns=_BASE_TS_NS,
             stamp_source="header",
+            received_ns=_arrival(0),
             payload={
                 "header": {"stamp": _stamp(_BASE_TS_NS), "frame_id": "camera"},
                 "width": 640,
                 "height": 480,
                 "encoding": "rgb8",
+                "is_bigendian": 0,
+                "step": 1920,
                 "data": "<sequence type: uint8, length: 921600>",
             },
         )
@@ -196,9 +289,58 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
 }
 
 
-def mock_samples_for(topic: str, count: int) -> list[MessageSample]:
-    """Return up to `count` deterministic samples for `topic`. Empty if unknown."""
-    return list(_MOCK_SAMPLES.get(topic, [])[:count])
+def mock_samples_for(
+    topic: str,
+    count: int,
+    *,
+    max_array_length: int | None = 128,
+    arrays_summary_only: bool = False,
+) -> list[MessageSample]:
+    """Up to `count` deterministic samples for `topic`, as live mode would return them.
+
+    The summary is computed on the whole message, then the payload is cut at
+    `max_array_length` (or its long arrays shown as text with `arrays_summary_only`).
+    Empty if the topic is unknown.
+    """
+    # Imported here: loading `topicforge.services` imports the adapters.
+    from topicforge.adapters.ros2_live.echo_parser import cut_payload
+    from topicforge.services.summaries import summarize_message
+
+    out: list[MessageSample] = []
+    for sample in _MOCK_SAMPLES.get(topic, [])[:count]:
+        if arrays_summary_only:
+            payload = _arrays_as_text(sample.payload)
+            summary = summarize_message(sample.message_type, payload)
+        else:
+            summary = summarize_message(sample.message_type, sample.payload)
+            payload = cut_payload(dict(sample.payload), max_array_length)
+        out.append(sample.model_copy(update={"payload": payload, "summary": summary}))
+    return out
+
+
+def mock_sample_rate(samples: list[MessageSample]) -> TopicRate | None:
+    """Rate block of mock samples, on their synthetic arrival times; `None` without any."""
+    from topicforge.services.summaries import compute_rate
+
+    arrivals = [s.received_ns for s in samples if s.received_ns is not None]
+    if not arrivals:
+        return None
+    stamped = all(s.stamp_source in ("header", "payload") for s in samples)
+    return compute_rate(
+        arrivals,
+        basis="received_ns",
+        stamps_ns=[s.timestamp_ns for s in samples] if stamped else None,
+    )
+
+
+def _arrays_as_text(payload: dict[str, object]) -> dict[str, object]:
+    """Show every array of more than 9 elements as the CLI's `<sequence ...>` text."""
+    return {
+        key: f"<sequence type: float, length: {len(value)}>"
+        if isinstance(value, list) and len(value) > 9
+        else value
+        for key, value in payload.items()
+    }
 
 
 # DDS fixtures: participants on one domain, one well-matched topic and one
@@ -676,14 +818,39 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
                     },
                     "frame_id": "odom",
                 },
-                "pose": {"position": {"x": 0.1 * i, "y": 0.0, "z": 0.0}},
+                "child_frame_id": "base_link",
+                "pose": {
+                    "pose": {
+                        "position": {"x": 0.02 * i, "y": 0.0, "z": 0.0},
+                        "orientation": _quaternion(0.0),
+                    },
+                },
+                "twist": {
+                    "twist": {
+                        "linear": {"x": 0.2, "y": 0.0, "z": 0.0},
+                        "angular": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    },
+                },
             },
         )
-        for i in range(3)
+        for i in range(5)
     ],
 }
 
 
 def mock_bag_samples_for(topic: str, count: int) -> list[MessageSample]:
-    """Up to `count` mock samples for `topic`; empty for an unknown topic."""
-    return list(MOCK_BAG_SAMPLES.get(topic, [])[:count])
+    """Up to `count` mock samples for `topic`, with their summaries; empty for an unknown topic."""
+    from topicforge.services.summaries import summarize_message
+
+    return [
+        s.model_copy(update={"summary": summarize_message(s.message_type, s.payload)})
+        for s in MOCK_BAG_SAMPLES.get(topic, [])[:count]
+    ]
+
+
+def mock_bag_rate(samples: list[MessageSample]) -> TopicRate | None:
+    """Rate block of mock bag samples on their record time; `None` without samples."""
+    from topicforge.services.summaries import compute_rate
+
+    recorded = [s.recorded_ns for s in samples if s.recorded_ns is not None]
+    return compute_rate(recorded, basis="recorded_ns") if recorded else None

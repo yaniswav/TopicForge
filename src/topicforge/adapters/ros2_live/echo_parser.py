@@ -105,6 +105,43 @@ def parse_echo_document(document: str, *, truncate_length: int | None = None) ->
     return EchoMessage(payload, found[0], found[1])
 
 
+def cut_payload(payload: dict[str, object], max_length: int | None) -> dict[str, object]:
+    """Cut a whole payload the way `--truncate-length` would have, listing the cut fields.
+
+    Arrays longer than `max_length` keep their first `max_length` elements; strings
+    keep their first `max_length` characters plus `...`. The dotted path of each
+    cut field goes under `_truncated_fields`. `None` returns the payload as is.
+    """
+    if max_length is None:
+        return payload
+    cut: list[str] = []
+    out = _cut_mapping(payload, "", max_length, cut)
+    if cut:
+        out[TRUNCATED_FIELDS_KEY] = cut
+    return out
+
+
+def _cut_mapping(
+    data: dict[str, object], path: str, max_length: int, cut: list[str]
+) -> dict[str, object]:
+    return {k: _cut(v, f"{path}{k}", max_length, cut) for k, v in data.items()}
+
+
+def _cut(value: object, path: str, max_length: int, cut: list[str]) -> object:
+    if isinstance(value, dict):
+        return _cut_mapping(value, f"{path}.", max_length, cut)
+    if isinstance(value, list):
+        items = value
+        if len(items) > max_length:
+            items = items[:max_length]
+            _record(cut, path)
+        return [_cut(v, path, max_length, cut) for v in items]
+    if isinstance(value, str) and len(value) > max_length:
+        _record(cut, path)
+        return value[:max_length] + TRUNCATION_MARK
+    return value
+
+
 def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 

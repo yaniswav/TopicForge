@@ -340,7 +340,7 @@ def _echo_command(
     cli = _Cli(
         {
             "topic info": info
-            or "Type: sensor_msgs/msg/LaserScan\nPublisher count: 1\nSubscription count: 0\n"
+            or "Type: geometry_msgs/msg/Twist\nPublisher count: 1\nSubscription count: 0\n"
         }
     )
     _install(monkeypatch, cli)
@@ -357,7 +357,7 @@ def _echo_command(
 
 def _info(reliability: str, durability: str, count: int = 1) -> str:
     block = (
-        "Type: sensor_msgs/msg/LaserScan\nPublisher count: {n}\nSubscription count: 0\n\n"
+        "Type: geometry_msgs/msg/Twist\nPublisher count: {n}\nSubscription count: 0\n\n"
         "Node name: talker\nEndpoint type: PUBLISHER\n"
         "Reliability: {r}\nDurability: {d}\n"
     )

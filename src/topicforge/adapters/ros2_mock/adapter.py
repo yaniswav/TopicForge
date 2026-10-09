@@ -59,14 +59,24 @@ class MockAdapter:
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
     ) -> SampleResult:
-        # Mock payloads are small structured dicts and never wait: the array and
-        # timeout options do not apply.
+        # Mock samples never wait, so `timeout_s` does not apply.
         if count < 0:
             raise AdapterError("count must be >= 0")
         # Validate the topic exists first so the error is the same as `get_topic_info`.
         self.get_topic_info(topic)
-        samples = fixtures.mock_samples_for(topic, count)
-        return SampleResult(topic=topic, count=len(samples), samples=samples, mode_effective="mock")
+        samples = fixtures.mock_samples_for(
+            topic,
+            count,
+            max_array_length=max_array_length,
+            arrays_summary_only=arrays_summary_only,
+        )
+        return SampleResult(
+            topic=topic,
+            count=len(samples),
+            samples=samples,
+            mode_effective="mock",
+            rate=fixtures.mock_sample_rate(samples),
+        )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         _reject_non_bag_path(path)
@@ -85,6 +95,7 @@ class MockAdapter:
             count=len(samples),
             samples=samples,
             mode_effective="mock",
+            rate=fixtures.mock_bag_rate(samples),
         )
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:

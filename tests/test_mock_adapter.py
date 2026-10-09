@@ -108,12 +108,40 @@ def test_headerless_mock_samples_match_the_live_shape(mock_adapter: MockAdapter)
         assert sample.stamp_source == "header" and sample.timestamp_ns > 0
 
 
-def test_mock_summaries_use_the_live_summary_format(mock_adapter: MockAdapter) -> None:
-    scan = mock_adapter.sample_messages("/scan", 1).samples[0].payload
-    image = mock_adapter.sample_messages("/camera/image_raw", 1).samples[0].payload
-    assert scan["ranges"] == "<sequence type: float, length: 720>"
-    assert image["data"] == "<sequence type: uint8, length: 921600>"
-    assert "ranges_summary" not in scan and "data_summary" not in image
+def test_mock_arrays_are_cut_like_live_and_summarized_on_the_whole_message(
+    mock_adapter: MockAdapter,
+) -> None:
+    scan = mock_adapter.sample_messages("/scan", 1).samples[0]
+    assert len(scan.payload["ranges"]) == 128
+    assert scan.payload["_truncated_fields"] == ["ranges"]
+    assert scan.summary is not None and scan.summary.beam_count == 720
+    whole = mock_adapter.sample_messages("/scan", 1, max_array_length=None).samples[0]
+    assert len(whole.payload["ranges"]) == 720 and "_truncated_fields" not in whole.payload
+
+
+def test_mock_arrays_summary_only_uses_the_live_text_format(mock_adapter: MockAdapter) -> None:
+    scan = mock_adapter.sample_messages("/scan", 1, arrays_summary_only=True).samples[0]
+    image = mock_adapter.sample_messages("/camera/image_raw", 1).samples[0]
+    assert scan.payload["ranges"] == "<sequence type: float, length: 720>"
+    assert scan.summary is None
+    assert image.payload["data"] == "<sequence type: uint8, length: 921600>"
+    assert image.summary is not None and image.summary.data_length == 921600
+
+
+def test_mock_scan_summary_and_rate_match_the_scenario(mock_adapter: MockAdapter) -> None:
+    result = mock_adapter.sample_messages("/scan", 5)
+    summary = result.samples[0].summary
+    assert summary is not None and summary.summary_type == "laser_scan"
+    # The front wall is 3.0 m away; the sector minimum is at its -45 degree edge (right wall).
+    assert summary.sectors.front.closest.range == pytest.approx(1.5 / 0.7071, abs=0.01)
+    assert summary.closest_obstacle.range == pytest.approx(1.5, abs=0.01)
+    assert summary.sectors.right.closest.range == pytest.approx(1.5, abs=0.01)
+    assert summary.sectors.left.closest.range == pytest.approx(2.0, abs=0.01)
+    assert summary.sectors.rear.closest.range == pytest.approx(1.5 / 0.7071, abs=0.03)
+    assert summary.inf_count > 0
+    assert result.rate is not None
+    assert result.rate.verdict == "stable"
+    assert result.rate.observed_frequency_hz == pytest.approx(10.0)
 
 
 # ---------------------- fixture-coherence regression -----------------------

@@ -22,7 +22,6 @@ from pathlib import Path
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common.bag_kind import classify_bag_topic
-from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
 from topicforge.adapters.ros2_live.parsers import (
     parse_topic_endpoint_qos,
@@ -31,6 +30,12 @@ from topicforge.adapters.ros2_live.parsers import (
     summarize_side_qos,
 )
 from topicforge.adapters.ros2_live.process_runner import run_process
+from topicforge.adapters.ros2_live.sample_extras import (
+    WHOLE_ARRAY_STREAM_MAX_CHARS,
+    decode_with_summary,
+    rate_of_run,
+    wants_whole_arrays,
+)
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
@@ -48,6 +53,7 @@ from topicforge.models import (
     TopicInfo,
     TopicListItem,
     TopicMetrics,
+    TopicRate,
 )
 
 log = logging.getLogger(__name__)
@@ -219,14 +225,24 @@ class Ros2CliAdapter:
         has_publisher = info.publisher_count > 0
         budget = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
         remaining = max(budget - (time.monotonic() - started), _MIN_ECHO_SEC)
+        # A summary that reads an array (a scan's ranges) needs it whole: stream
+        # uncut, summarize, then cut the returned payload as the CLI would have.
+        whole = wants_whole_arrays(info.message_type, max_array_length, arrays_summary_only)
         cmd = self._echo_command(
-            topic, info, max_array_length=max_array_length, arrays_summary_only=arrays_summary_only
+            topic,
+            info,
+            max_array_length=None if whole else max_array_length,
+            arrays_summary_only=arrays_summary_only,
         )
         run = stream_echo(
             cmd,
             count=count,
             deadline_s=remaining,
-            max_document_chars=self._max_message_chars,
+            max_document_chars=(
+                max(self._max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS)
+                if whole
+                else self._max_message_chars
+            ),
         )
         if not run.documents and run.exit_code not in (None, 0):
             raise AdapterError(
@@ -235,7 +251,7 @@ class Ros2CliAdapter:
             )
 
         parse_until = started + budget + _PARSE_GRACE_SEC
-        samples, skipped = self._decode(run, topic, info, max_array_length, parse_until)
+        samples, skipped = self._decode(run, topic, info, max_array_length, whole, parse_until)
         note = " ".join(
             part
             for part in (
@@ -251,7 +267,9 @@ class Ros2CliAdapter:
             )
             if part
         )
-        return self._sample_result(topic, samples, note or None)
+        return self._sample_result(
+            topic, samples, note or None, _rate(run, count, samples, skipped)
+        )
 
     def _decode(
         self,
@@ -259,6 +277,7 @@ class Ros2CliAdapter:
         topic: str,
         info: TopicInfo,
         max_array_length: int | None,
+        whole_arrays: bool,
         parse_until: float,
     ) -> tuple[list[MessageSample], int]:
         """Decode the run's documents until `parse_until` (monotonic); returns the rest as a count."""
@@ -266,7 +285,12 @@ class Ros2CliAdapter:
         for index, doc in enumerate(run.documents):
             if time.monotonic() > parse_until:
                 return samples, len(run.documents) - index
-            message = parse_echo_document(doc.text, truncate_length=max_array_length)
+            message, summary = decode_with_summary(
+                doc.text,
+                info.message_type,
+                max_array_length=max_array_length,
+                whole_arrays=whole_arrays,
+            )
             samples.append(
                 MessageSample(
                     topic=topic,
@@ -275,12 +299,17 @@ class Ros2CliAdapter:
                     stamp_source=message.stamp_source,
                     received_ns=doc.received_ns,
                     payload=message.payload,
+                    summary=summary,
                 )
             )
         return samples, 0
 
     def _sample_result(
-        self, topic: str, samples: list[MessageSample], note: str | None
+        self,
+        topic: str,
+        samples: list[MessageSample],
+        note: str | None,
+        rate: TopicRate | None = None,
     ) -> SampleResult:
         return SampleResult(
             topic=topic,
@@ -288,6 +317,7 @@ class Ros2CliAdapter:
             samples=samples,
             mode_effective=self.effective_mode,
             note=note,
+            rate=rate,
         )
 
     def _echo_command(
@@ -399,6 +429,14 @@ class Ros2CliAdapter:
                 f"`{' '.join(cmd)}` failed (exit {result.returncode}): {stderr_tail or 'no stderr'}"
             )
         return result.stdout
+
+
+def _rate(run: EchoRun, count: int, samples: list[MessageSample], skipped: int) -> TopicRate:
+    """Rate block of the run; the sim rate needs every message decoded and stamped."""
+    stamped = all(s.stamp_source in ("header", "payload") for s in samples)
+    complete = not run.oversized and not skipped
+    stamps = [s.timestamp_ns for s in samples] if samples and stamped and complete else None
+    return rate_of_run(run, count, stamps)
 
 
 def _echo_array_args(max_array_length: int | None, arrays_summary_only: bool) -> list[str]:
