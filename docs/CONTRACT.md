@@ -368,10 +368,19 @@ the time the messages were received (`received_ns`), so it measures the delivery
 caller actually gets; `stamp_source` says which clock the message stamps use.
 
 ```json
-{"rate": {"rate_hz": 9.97, "interval_median_s": 0.1, "interval_cv": 0.04,
-          "max_gap_s": 0.13, "trailing_gap_s": null, "samples_count": 50,
-          "window_s": 5.0, "stamp_source": "header", "verdict": "stable"}}
+{"rate": {"basis": "received_ns", "message_count": 50, "window_s": 5.0,
+          "mean_interval_s": 0.1003, "interval_median_s": 0.1, "max_gap_s": 0.13,
+          "interval_cv": 0.04, "observed_frequency_hz": 9.97, "sim_frequency_hz": 9.95,
+          "trailing_gap_s": null, "verdict": "stable",
+          "verdict_note": "Steady delivery at 10.0 Hz (interval variation 0.04)."}}
 ```
+
+The block is `SampleResult.rate` (`sample_messages` and `peek_bag_samples`). Names as built in
+M8: `message_count` (suffix `_count`) replaces `samples_count`, `observed_frequency_hz`
+replaces `rate_hz`, `sim_frequency_hz` is the same computation on the messages' own stamps
+(`null` without stamps), and `basis` is `received_ns` for a live call or `recorded_ns` for a
+bag, where there is no end of window and so `trailing_gap_s` is always `null`. Messages
+dropped for size still count. `interval_cv` uses the population standard deviation.
 
 `interval_cv` is the coefficient of variation of the intervals between consecutive
 messages (standard deviation divided by mean). `trailing_gap_s` is the interval between
@@ -395,6 +404,35 @@ confirmed on the bench in M8: if a healthy sensor lands between 0.2 and 0.3, the
 
 A verdict is a description of what was observed in the window, not a diagnosis: a
 `silent` topic may be latched.
+
+Measured on the OmniSim fixture bag (M8, `recorded_ns`, 50 messages): `/odom` cv 0.04,
+`/imu/data` 0.11, `/clock` 0.14, but `/scan` 0.26 and `/gps/local` 0.28, which would read
+`jittery` although the sensors are healthy. That is the case the paragraph above names, so the
+`stable` threshold may have to move to 0.3. It is left at 0.2 until the Docker bench, which has
+a fixed-rate publisher, confirms it (`STABLE_CV` in `services/summaries/rate.py`).
+
+### Message summaries
+
+`MessageSample.summary` (null for any other type, for DDS peeks, and for a scan whose arrays
+were replaced by `arrays_summary_only`) is one of five objects told apart by `summary_type`:
+`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`. It is always computed on the whole
+message, even when `payload` is cut at `max_array_length`. There is no `summarize` input: a
+summary is small and always on.
+
+Resolutions recorded here:
+
+- The unit suffixes `_m`, `_rad`, `_mps` are not in the locked vocabulary (1.4), so summary
+  fields carry no unit suffix. Units follow REP 103 (meters, radians, meters per second,
+  radians per second) and each description says so; names mirror the ROS fields
+  (`angle_min`, `range_max`) or are plain (`range`, `bearing`, `linear_speed`, `yaw`).
+  Adding `_m` and `_rad` is a contract change for the owner to decide.
+- Counts use `_count` (`beam_count`, `point_count`), not `n_*`.
+- `inf_count` is `+inf` only; `-inf` is `neg_inf_count`; `nan_count` is `nan`. A finite range
+  outside `range_min`..`range_max` is counted in `out_of_range_count` and is not a valid return.
+- Sectors are defined on the bearing in the sensor frame: front within +-45 degrees, left
+  above 45 up to 135, right from -135 up to -45, rear beyond +-135; an edge beam belongs to the
+  narrower sector, with a tolerance of 0.006 degrees for float32 angles. A sector with no beam
+  has `closest` null and a `note`.
 
 ## 5. Reserved multimodal exception
 

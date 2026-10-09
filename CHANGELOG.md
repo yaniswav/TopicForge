@@ -97,6 +97,27 @@ Configuration and Python API:
 
 ### Added
 
+- Per-type message summaries and an observed rate with a verdict on `sample_messages` and
+  `peek_bag_samples` (additive; no new input, no new tool).
+  - `MessageSample.summary`: `laser_scan` (beam count, angle geometry, finite / `inf` /
+    `-inf` / `nan` counts, closest obstacle, front / left / right / rear sector minima by
+    bearing in the sensor frame), `odometry` (speed, angular z, position, yaw), `imu` (roll,
+    pitch, yaw, angular velocity and acceleration norms, orientation validity), `image`
+    (size, encoding, step, buffer length) and `point_cloud2` (point count, layout). `null`
+    for any other type. Units are meters, radians and seconds with no unit suffix
+    (docs/CONTRACT.md section 4).
+  - The summary is computed on the whole message even when `payload` is cut: a scan is
+    streamed uncut (`--full-length`, up to 4 MiB per message while streaming), summarized,
+    then cut to `max_array_length` as before; `Image` and `PointCloud2` never read their
+    buffers; a bag scan is decoded whole.
+  - `SampleResult.rate`: `message_count`, `window_s`, mean / median / max interval,
+    `interval_cv`, `observed_frequency_hz` (wall clock: `received_ns`, or `recorded_ns` for a
+    bag), `sim_frequency_hz` (from the messages' own stamps), `trailing_gap_s` and a
+    `verdict`: `silent`, `insufficient`, `intermittent`, `stable`, `jittery` or `erratic`.
+  - `peek_bag_samples` now returns non-finite floats as the strings `nan`, `inf`, `-inf`
+    (they could not be written as JSON numbers).
+  - Mock mode: `/scan` is a 720-beam scan in a walled room, and `/imu/data` is a new mock
+    topic.
 - MCP prompts `diagnose-dds-bus` (optional `topic`, `symptom`) and `inspect-ros2-robot`
   (optional `topic`, `bag_path`), the plugin skills in client-neutral wording, and server
   `instructions` in the `initialize` result (read-only guarantee, which tool first,
