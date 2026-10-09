@@ -200,7 +200,9 @@ def test_ros_calls_never_overlap_and_the_waiter_has_less_time_left() -> None:
     first_left, second_left = adapter.seen_remaining
     assert first_left is not None and second_left is not None
     assert second_left < first_left - 0.3, "waiting for the lock must shorten the deadline"
-    assert first_left <= guard.TOOL_BUDGET_S
+    # Windows' coarse monotonic clock can return the same tick on both reads, so
+    # deadline - now rounds to a hair above the budget.
+    assert first_left <= guard.TOOL_BUDGET_S + 1e-6
 
 
 def test_a_mixed_burst_finishes_without_deadlock() -> None:
