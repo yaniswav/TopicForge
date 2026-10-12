@@ -216,6 +216,8 @@ Configuration and Python API:
 
 ### Fixed
 
+- `rosbags` 0.11.6 is excluded: it builds message definitions with `PosixPath` and fails
+  on Windows for types with nested arrays, which broke opening some bags there.
 - The server can no longer freeze on a hung `ros2` CLI. Every `ros2` call now goes through one
   process runner (`adapters/ros2_live/process_runner.py`) instead of `subprocess.run`: the
   process starts in its own kill unit (Windows Job Object with a `taskkill /T` fallback, POSIX

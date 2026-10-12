@@ -32,7 +32,9 @@ dependencies = [
     # (py3-none-any wheel); its dependencies apsw, lz4, numpy, zstandard and ruamel.yaml
     # all ship wheels for linux-aarch64 and CPython 3.14 (checked on PyPI 2026-10-08), so
     # no platform marker is needed.
-    "rosbags>=0.11.3",
+    # 0.11.6 builds message definitions with PosixPath and fails on Windows
+    # (rosbags.typesys.msg.denormalize_msgtype, nested array types).
+    "rosbags>=0.11.3,!=0.11.6",
     # Cyclone DDS binding, core since 0.6.3 so that `uvx topicforge` (no extra) can join a
     # DDS bus. The marker lists exactly the platforms where cyclonedds 11.0.1 ships wheels
     # (checked on PyPI 2026-10-07): CPython 3.10-3.13 on Linux x86_64, Windows AMD64 and
