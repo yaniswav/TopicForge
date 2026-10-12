@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-12
+
+Breaking release: output contract 2 (see `docs/MIGRATION-0.7.md`), the move to the MCP SDK
+2.x, and a tool surface of 14 tools (`list_nodes` and `get_node_info` are new).
+
 ### Breaking
 
 Output contract 2 (`health_check.contract_version` is 2; 0.6.x is implicitly 1). The tool
@@ -1608,7 +1613,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/yaniswav/TopicForge/compare/v0.6.1...v0.6.2
