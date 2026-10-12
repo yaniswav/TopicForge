@@ -2,7 +2,7 @@
 
 TopicForge does not implement the DDS-RTPS wire protocol from scratch. It joins a DDS domain as a read-only participant (via the [Eclipse CycloneDDS](https://cyclonedds.io) Python binding, or [eProsima Fast DDS](https://fast-dds.docs.eprosima.com/) with a binding built from source) and reports what it sees on the bus.
 
-The OMG-DDS-RTPS standard guarantees that all conformant implementations interoperate. In principle TopicForge therefore sees publishers and subscribers from any vendor on the same DDS domain, whatever language they are written in. The author has so far observed Cyclone DDS and Dust DDS participants only; see the last section of this page.
+The OMG-DDS-RTPS standard guarantees that all conformant implementations interoperate. In principle TopicForge therefore sees publishers and subscribers from any vendor on the same DDS domain, whatever language they are written in. The project has so far observed Cyclone DDS, Fast DDS and Dust DDS participants only; see the last section of this page.
 
 ## OMG-validated interoperability (May 2025)
 
@@ -35,7 +35,7 @@ The two known interop gaps from the 2025-05 OMG report (Dust DDS <-> OpenDDS, Du
 
 ## Limits of this claim
 
-The claim is about discovery: which participants, readers and writers exist, and what QoS they announce. It does not extend to user-topic payloads: `peek_dds_samples` on a user topic returns count 0 and a note, and does not decode contents, for any vendor; `list_endpoints` shows the topic's writers, readers and QoS. The project's own real-bus runs cover Cyclone and Dust DDS participants only (see [`../scripts/integration/README.md`](../scripts/integration/README.md)); RTI, OpenDDS, CoreDX, OpenSplice and Fast DDS have not been observed. For the rest the claim follows from the RTPS standard and from the OMG's published results above. Vendors that do not follow the RTPS vendor-id convention in the GUID prefix (Dust DDS, RTI by default) are reported with vendor `unknown` on Cyclone. Domains that use DDS Security are not observable at all, because TopicForge joins without credentials.
+The claim is about discovery: which participants, readers and writers exist, and what QoS they announce. It does not extend to user-topic payloads: `peek_dds_samples` on a user topic returns count 0 and a note, and does not decode contents, for any vendor; `list_endpoints` shows the topic's writers, readers and QoS. The project's own real-bus runs cover Cyclone, Fast DDS and Dust DDS participants only (see [`../scripts/integration/README.md`](../scripts/integration/README.md) and the ROS 2 test bench in `tests/integration/ros2/`, which runs Humble and Jazzy on `rmw_fastrtps_cpp` and `rmw_cyclonedds_cpp` in CI); RTI, OpenDDS, CoreDX and OpenSplice have not been observed. For the rest the claim follows from the RTPS standard and from the OMG's published results above. Vendors that do not follow the RTPS vendor-id convention in the GUID prefix (Dust DDS, RTI by default) are reported with vendor `unknown` on Cyclone. Domains that use DDS Security are not observable at all, because TopicForge joins without credentials.
 
 ## What TopicForge is not
 
