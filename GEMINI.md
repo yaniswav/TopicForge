@@ -3,10 +3,11 @@
 TopicForge is a read-only MCP server for ROS 2 and DDS. It observes a robot stack;
 it cannot publish, command or change anything. There is no write path in the code.
 
-## Tools (twelve, all read-only)
+## Tools (fourteen, all read-only)
 
 - `health_check`: environment and mode introspection. Call it first; it always succeeds.
 - `list_topics`, `get_topic_info`, `sample_messages`: discover and peek the ROS 2 graph.
+- `list_nodes`, `get_node_info`: the ROS 2 nodes, and one node's topics, services, actions and parameters.
 - `analyze_bag`, `peek_bag_samples`: summarize and read recorded `.mcap`, `.db3`, `.bag` files.
 - `list_participants`, `participant_events`: who is on the DDS domain, and when they appeared or vanished.
 - `list_endpoints`: DDS writers and readers with their QoS, plus per-topic orphans.

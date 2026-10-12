@@ -5,7 +5,6 @@ from topicforge.adapters.base import (
     AdapterName,
     EffectiveMode,
     MiddlewareAdapter,
-    RosAdapter,
 )
 
 __all__ = [
@@ -13,5 +12,4 @@ __all__ = [
     "AdapterName",
     "EffectiveMode",
     "MiddlewareAdapter",
-    "RosAdapter",
 ]

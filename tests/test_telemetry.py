@@ -181,7 +181,7 @@ def test_instrument_records_failure_and_reraises() -> None:
 
 
 def test_instrument_preserves_function_signature() -> None:
-    """FastMCP introspects handler signatures to derive the input schema.
+    """The MCP SDK introspects handler signatures to derive the input schema.
 
     If `instrument` ever drops the signature, MCP clients lose all
     parameter descriptions. This pins the contract.
@@ -245,7 +245,7 @@ def test_build_app_off_makes_no_transport_calls() -> None:
     transport = _SpyTransport()
     app = build_app(_settings(telemetry=False), telemetry_transport=transport)
     tools = {t.name: t for t in asyncio.run(app.list_tools())}
-    # Touch two tools through FastMCP's call_tool path.
+    # Touch two tools through the SDK call_tool path.
     for name in ("health_check", "list_topics"):
         asyncio.run(app.call_tool(name, {}))
     asyncio.run(app.call_tool("get_topic_info", {"topic": "/cmd_vel"}))

@@ -1,0 +1,24 @@
+/nav_planner
+  Subscribers:
+    /odom: nav_msgs/msg/Odometry
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /scan: sensor_msgs/msg/LaserScan
+    /tf: tf2_msgs/msg/TFMessage
+  Publishers:
+    /cmd_vel: geometry_msgs/msg/Twist
+    /parameter_events: rcl_interfaces/msg/ParameterEvent
+    /rosout: rcl_interfaces/msg/Log
+  Service Servers:
+    /nav_planner/describe_parameters: rcl_interfaces/srv/DescribeParameters
+    /nav_planner/get_parameter_types: rcl_interfaces/srv/GetParameterTypes
+    /nav_planner/get_parameters: rcl_interfaces/srv/GetParameters
+    /nav_planner/list_parameters: rcl_interfaces/srv/ListParameters
+    /nav_planner/set_parameters: rcl_interfaces/srv/SetParameters
+    /nav_planner/set_parameters_atomically: rcl_interfaces/srv/SetParametersAtomically
+  Service Clients:
+    /map_server/load_map: nav2_msgs/srv/LoadMap
+
+  Action Servers:
+    /navigate_to_pose: nav2_msgs/action/NavigateToPose
+  Action Clients:
+

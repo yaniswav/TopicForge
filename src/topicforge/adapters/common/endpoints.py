@@ -23,6 +23,7 @@ from topicforge.adapters.common.dds_introspection import (
     vendor_id_from_guid,
 )
 from topicforge.adapters.common.qos_normalize import apply_history_policy, cyclone_qos_to_profile
+from topicforge.adapters.common.ros_names import is_internal_dds_topic, ros_topic_of
 from topicforge.adapters.common.topic_filter import no_match_note, resolve_topic_filter
 from topicforge.models import (
     DepartedEndpoint,
@@ -31,6 +32,12 @@ from topicforge.models import (
     QosProfile,
     TopicSummary,
 )
+
+LIVENESS_HINT = (
+    "Liveness is not observed: TopicForge holds no reader on user topics, so it cannot "
+    "tell a silent or hung writer from a healthy one."
+)
+"""Stated once in `EndpointListing.hints` instead of on every endpoint."""
 
 MAX_LISTED_ENDPOINTS = 500
 """Hard cap on `EndpointListing.endpoints` (the roll-up still covers all matches)."""
@@ -100,13 +107,17 @@ def endpoint_record(
     participant_guid = format_participant_key(getattr(sample, "participant_key", None))
     vendor = (vendors_by_guid or {}).get(participant_guid) or _vendor_from_participant_key(sample)
     is_observer = observer_guid is not None and participant_guid == observer_guid
+    dds_topic = cyclone_extract_topic_name(sample) or "unknown"
+    ros_topic, ros_topic_note = ros_topic_of(dds_topic)
     return {
         "guid": format_guid(cyclone_extract_guid(sample)),
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": participants_by_guid.get(participant_guid),
         "participant_vendor": vendor,
-        "topic": cyclone_extract_topic_name(sample) or "unknown",
+        "dds_topic": dds_topic,
+        "ros_topic": ros_topic,
+        "ros_topic_note": ros_topic_note,
         "type_name": cyclone_extract_type_name(sample),
         "type_id": type_id_text(sample),
         "qos": apply_history_policy(qos_to_profile(sample), vendor=vendor, is_observer=is_observer),
@@ -141,12 +152,12 @@ def summarize_by_topic(
     """Group live endpoints by topic, flag topics with only one side, list departed ones."""
     groups: dict[str, list[EndpointInfo]] = {}
     for ep in endpoints:
-        groups.setdefault(ep.topic, [])
-        groups[ep.topic].append(ep)
+        groups.setdefault(ep.dds_topic, [])
+        groups[ep.dds_topic].append(ep)
     gone: dict[str, list[EndpointInfo]] = {}
     for ep in departed:
-        gone.setdefault(ep.topic, []).append(ep)
-        groups.setdefault(ep.topic, [])
+        gone.setdefault(ep.dds_topic, []).append(ep)
+        groups.setdefault(ep.dds_topic, [])
     summaries = []
     for topic in sorted(groups):
         eps = groups[topic]
@@ -160,7 +171,8 @@ def summarize_by_topic(
             orphan = "no_writer"
         summaries.append(
             TopicSummary(
-                topic=topic,
+                dds_topic=topic,
+                ros_topic=ros_topic_of(topic)[0],
                 type_names=sorted({e.type_name for e in [*eps, *gone_eps] if e.type_name}),
                 writer_count=writers,
                 reader_count=readers,
@@ -185,36 +197,39 @@ def build_endpoint_listing(
     snapshot_ns: int | None = None,
     departed_records: Iterable[Mapping[str, Any]] = (),
     include_departed: bool = False,
+    include_internal: bool = False,
 ) -> EndpointListing:
     """Apply the filters to `endpoint_record` dicts and assemble the envelope.
 
-    The observer's own endpoints are dropped unless `include_observer`.
-    `total_discovered` counts every record before any filter; the roll-up
-    covers every match, while `endpoints` is capped at `MAX_LISTED_ENDPOINTS`.
+    The observer's own endpoints are dropped unless `include_observer`, and the
+    ROS 2 service and action endpoints unless `include_internal`. `total` counts
+    every record before any filter; the roll-up covers every match, while
+    `endpoints` is capped at `MAX_LISTED_ENDPOINTS`.
     """
     all_records = list(records)
     gone_records = list(departed_records)
     wanted_participant = participant_guid.lower() if participant_guid else None
     visible = [r for r in all_records if include_observer or not r["is_observer"]]
-    known = {r["topic"] for r in visible} | {r["topic"] for r in gone_records}
+    hidden_internal = 0
+    if not include_internal:
+        hidden_internal = sum(1 for r in visible if is_internal_dds_topic(r["dds_topic"]))
+        visible = [r for r in visible if not is_internal_dds_topic(r["dds_topic"])]
+        gone_records = [r for r in gone_records if not is_internal_dds_topic(r["dds_topic"])]
+    known = {r["dds_topic"] for r in visible} | {r["dds_topic"] for r in gone_records}
     resolved: str | None = topic
     note = None
     if topic is not None:
         resolved, note = resolve_topic_filter(topic, known)
 
     def selected(rec: Mapping[str, Any]) -> bool:
-        return (topic is None or rec["topic"] == resolved) and (
+        return (topic is None or rec["dds_topic"] == resolved) and (
             wanted_participant is None or rec["participant_guid"].lower() == wanted_participant
         )
 
-    matched = [
-        EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective)
-        for rec in visible
-        if selected(rec)
-    ]
+    matched = [EndpointInfo(**rec) for rec in visible if selected(rec)]
     live_guids = {r["guid"] for r in all_records}
     gone = [
-        EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective)
+        EndpointInfo(**rec)
         for rec in gone_records
         if selected(rec) and rec["guid"] not in live_guids
     ]
@@ -223,7 +238,7 @@ def build_endpoint_listing(
             f" ({len(all_records)} endpoint(s) discovered on other topics)" if all_records else ""
         )
     shown = matched + gone if include_departed else matched
-    shown.sort(key=lambda e: (e.topic, e.role, e.guid))
+    shown.sort(key=lambda e: (e.dds_topic, e.role, e.guid))
     listed = shown[:MAX_LISTED_ENDPOINTS]
     return EndpointListing(
         domain_id=domain_id,
@@ -231,13 +246,15 @@ def build_endpoint_listing(
         observer_guid=observer_guid,
         endpoints=listed,
         by_topic=summarize_by_topic(matched, gone),
-        total_discovered=len(all_records),
+        total=len(all_records),
         returned=len(listed),
         truncated=len(shown) > len(listed),
-        departed_endpoints=len(gone),
-        excluded_observer_endpoints=(
+        departed_endpoint_count=len(gone),
+        excluded_observer_endpoint_count=(
             0 if include_observer else sum(1 for r in all_records if r["is_observer"])
         ),
+        hidden_internal_endpoint_count=hidden_internal,
+        hints=[LIVENESS_HINT],
         note=note,
         mode_effective=mode_effective,
     )
@@ -277,8 +294,6 @@ def endpoint_infos_from_samples(
     publication_samples: Iterable[Any],
     subscription_samples: Iterable[Any],
     *,
-    domain_id: int,
-    mode_effective: Literal["mock", "live"],
     observer_guid: str | None,
 ) -> list[EndpointInfo]:
     """Raw builtin samples in, every `EndpointInfo` out (no filtering, observer included)."""
@@ -292,9 +307,7 @@ def endpoint_infos_from_samples(
         endpoint_record(s, "reader", names, observer_guid, vendors_by_guid=vendors)
         for s in subscription_samples
     ]
-    return [
-        EndpointInfo(**rec, domain_id=domain_id, mode_effective=mode_effective) for rec in records
-    ]
+    return [EndpointInfo(**rec) for rec in records]
 
 
 def departed_endpoint_records(

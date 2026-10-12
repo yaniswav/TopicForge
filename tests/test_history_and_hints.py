@@ -183,13 +183,11 @@ def _ep(
         role=role,  # type: ignore[arg-type]
         participant_guid=f"p{n}",
         participant_name=name or f"node_{n}",
-        topic=topic,
+        dds_topic=topic,
         type_name="pkg/T",
         qos=qos or _profile(None),
         announced_ns=announced_ns,
         is_observer=False,
-        domain_id=0,
-        mode_effective="live",
     )
 
 

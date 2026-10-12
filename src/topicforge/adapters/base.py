@@ -14,10 +14,13 @@ from topicforge.models import (
     BagAnalysis,
     EndpointListing,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
 )
 
@@ -26,12 +29,8 @@ AdapterName = Literal[
     "ros2_cli",
     "cyclone",
     "fast",
-    "opendds",
-    "dust",
     "ros2_cli+cyclone",
     "ros2_cli+fast",
-    "ros2_cli+opendds",
-    "ros2_cli+dust",
 ]
 """Implementation tag for the active adapter.
 
@@ -53,8 +52,8 @@ keeping its own `name`. Adding a value here breaks the wire contract.
 class AdapterError(RuntimeError):
     """Raised when an adapter cannot fulfill a request.
 
-    Carries a user-safe message. Handlers do not catch it: FastMCP turns it
-    into an `isError: true` tool result.
+    Carries a user-safe message. `guarded` re-raises it as the SDK `ToolError`, which becomes
+    an `isError: true` tool result with this message.
     """
 
 
@@ -84,7 +83,7 @@ class MiddlewareAdapter(Protocol):
     def is_available(self) -> bool: ...
 
     # ROS2 graph methods. DDS-only backends raise AdapterError.
-    def list_topics(self) -> list[TopicInfo]: ...
+    def list_topics(self) -> list[TopicListItem]: ...
 
     def get_topic_info(self, topic: str) -> TopicInfo: ...
 
@@ -100,6 +99,10 @@ class MiddlewareAdapter(Protocol):
 
     def analyze_bag(self, path: str) -> BagAnalysis: ...
 
+    def list_nodes(self) -> NodeListing: ...
+
+    def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo: ...
+
     # DDS methods. The ROS2 CLI backend raises AdapterError when no DDS
     # backend is configured.
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]: ...
@@ -109,12 +112,10 @@ class MiddlewareAdapter(Protocol):
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult: ...
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]: ...
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics: ...
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics: ...
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult: ...
 
@@ -124,8 +125,5 @@ class MiddlewareAdapter(Protocol):
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing: ...
-
-
-# Alias kept for external code that imports the old name.
-RosAdapter = MiddlewareAdapter

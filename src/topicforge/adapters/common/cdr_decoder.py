@@ -7,6 +7,7 @@ shapes and import no DDS or ROS binding.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from topicforge.adapters.common.xtypes import (
@@ -137,6 +138,21 @@ def decode_field_value(
                 nested[field_name] = f"<undecoded {type(value).__name__}.{field_name}>"
         return nested
     return repr(value)
+
+
+def stringify_non_finite(value: Any) -> Any:
+    """`value` with every non-finite float replaced by the string `nan`, `inf` or `-inf`.
+
+    JSON has no such numbers; the contract (docs/CONTRACT.md 2.1) makes them strings
+    in raw payloads. Containers are rebuilt.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return "nan" if math.isnan(value) else ("inf" if value > 0 else "-inf")
+    if isinstance(value, list):
+        return [stringify_non_finite(v) for v in value]
+    if isinstance(value, dict):
+        return {k: stringify_non_finite(v) for k, v in value.items()}
+    return value
 
 
 def dynamic_type_name(type_object: Any) -> str:

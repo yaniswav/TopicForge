@@ -27,7 +27,7 @@ TopicForge is a small project run by one maintainer, so the contribution loop is
 
 - New MCP tools. The tool surface is kept deliberately small. File an issue describing the use case first; the
   maintainer will close, defer, or sponsor the work.
-- New backends. The `RosAdapter` / `MiddlewareAdapter` protocol is
+- New backends. The `MiddlewareAdapter` protocol is
   designed to take new adapters, but each one comes with a long-term
   maintenance cost. File an issue with the use case ; expect a
   conversation before the PR.

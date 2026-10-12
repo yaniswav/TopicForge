@@ -47,9 +47,10 @@ def spawn_options() -> dict[str, Any]:
 class JobObject:
     """A Windows Job Object that kills all its processes when terminated or closed."""
 
-    def __init__(self, handle: int, kernel32: Any) -> None:
+    def __init__(self, handle: int, kernel32: Any, clear_kill_on_close: Any = None) -> None:
         self._handle = handle
         self._k32 = kernel32
+        self._clear_kill_on_close = clear_kill_on_close
 
     @classmethod
     def attach(cls, pid: int) -> JobObject | None:
@@ -66,6 +67,14 @@ class JobObject:
         """Kill every process of the job, then release the job."""
         if self._handle:
             self._k32.TerminateJobObject(self._handle, 1)
+            self._k32.CloseHandle(self._handle)
+            self._handle = 0
+
+    def release(self) -> None:
+        """Close the job without killing its members (a clean exit leaves a daemon alone)."""
+        if self._handle:
+            if self._clear_kill_on_close is not None:
+                self._clear_kill_on_close(self._handle)
             self._k32.CloseHandle(self._handle)
             self._handle = 0
 
@@ -120,7 +129,14 @@ def _create_job(pid: int) -> JobObject | None:
     if not assigned:
         kernel32.CloseHandle(wintypes.HANDLE(job))
         return None
-    return JobObject(job, kernel32)
+
+    def clear_kill_on_close(handle: int) -> None:
+        cleared = _ExtendedLimits()
+        kernel32.SetInformationJobObject(
+            wintypes.HANDLE(handle), 9, ctypes.byref(cleared), ctypes.sizeof(cleared)
+        )
+
+    return JobObject(job, kernel32, clear_kill_on_close)
 
 
 def kill_process_tree(proc: Killable, job: JobObject | None = None) -> None:
@@ -169,6 +185,12 @@ def _stop_posix_group(proc: Killable) -> None:
     when the launcher is gone, since its children may not be.
     """
     pgid = proc.pid
+    own_group = getattr(os, "getpgrp", lambda: None)()  # absent on Windows (tests stub killpg)
+    if pgid <= 1 or pgid == own_group:
+        # Never signal init's group or our own: only a child started with
+        # `start_new_session` leads a group we may stop.
+        log.warning("refusing to signal process group %s", pgid)
+        return
     try:
         os.killpg(pgid, signal.SIGINT)
     except ProcessLookupError:

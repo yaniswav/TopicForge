@@ -1,0 +1,117 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "List ROS 2 topics"
+  },
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List every ROS 2 topic on the current graph (or the mock graph in mock mode). Returns a `TopicListing` `{topics, returned, total, truncated, mode_effective, note}`: each topic carries `name`, `message_type`, `publisher_count` and `subscriber_count`, and `mode_effective` (`live` or `mock`) tells a real graph from fixtures. QoS is not in the listing: call `get_topic_info` for a topic's QoS. **Empty `topics`** when the graph has no topics or when live discovery times out. **Raises an MCP error** when no `ros2` CLI is available (DDS-only setup). Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps the lock it fails at once with a `busy` error (retry).",
+  "inputSchema": {
+    "properties": {},
+    "title": "list_topicsArguments",
+    "type": "object"
+  },
+  "name": "list_topics",
+  "outputSchema": {
+    "$defs": {
+      "TopicListItem": {
+        "additionalProperties": false,
+        "description": "One ROS2 topic as listed by `list_topics`: identity and endpoint counts, no QoS.",
+        "properties": {
+          "message_type": {
+            "description": "ROS2 message type, e.g. `geometry_msgs/msg/Twist`.",
+            "title": "Message Type",
+            "type": "string"
+          },
+          "name": {
+            "description": "Fully qualified topic name, e.g. `/cmd_vel`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "publisher_count": {
+            "description": "Publishers known to the graph.",
+            "minimum": 0,
+            "title": "Publisher Count",
+            "type": "integer"
+          },
+          "subscriber_count": {
+            "description": "Subscribers known to the graph.",
+            "minimum": 0,
+            "title": "Subscriber Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "message_type",
+          "publisher_count",
+          "subscriber_count"
+        ],
+        "title": "TopicListItem",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Envelope returned by `list_topics`.",
+    "properties": {
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "returned": {
+        "description": "Length of `topics`.",
+        "minimum": 0,
+        "title": "Returned",
+        "type": "integer"
+      },
+      "topics": {
+        "description": "Topics on the graph.",
+        "items": {
+          "$ref": "#/$defs/TopicListItem"
+        },
+        "title": "Topics",
+        "type": "array"
+      },
+      "total": {
+        "description": "Topics on the graph before any cap.",
+        "minimum": 0,
+        "title": "Total",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "True when `returned` is less than `total` because of a cap.",
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "topics",
+      "returned",
+      "total",
+      "truncated",
+      "mode_effective"
+    ],
+    "title": "TopicListing",
+    "type": "object"
+  },
+  "title": "List ROS 2 topics"
+}

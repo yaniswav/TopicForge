@@ -1,5 +1,4 @@
-"""The mock bag analysis carries `bag_format`, `samples_decoded_count`,
-`recording_duration_ns` and `participants_recorded`; the fields are optional."""
+"""The mock bag analysis carries `bag_format` and per-topic `kind`; `bag_format` is optional."""
 
 from __future__ import annotations
 
@@ -12,12 +11,13 @@ def test_mock_analyze_bag_returns_enriched_fields() -> None:
     # Original fields.
     assert result.path == "/tmp/demo.mcap"
     assert result.storage_format == "mcap"
-    assert result.message_count == 1287
+    assert result.message_count == 1288
     # Added fields.
     assert result.bag_format == "mcap"
-    assert result.recording_duration_ns == 42_500_000_000
-    assert result.samples_decoded_count == 0
-    assert result.participants_recorded == []
+    assert result.duration_s == 42.5
+    kinds = {t.name: t.kind for t in result.topics}
+    assert kinds["/events/write_split"] == "rosbag2_internal"
+    assert kinds["/scan"] == "user"
 
 
 def test_mock_analyze_bag_path_echo() -> None:
@@ -34,13 +34,13 @@ def test_mock_analyze_bag_path_echo() -> None:
 
 
 def test_bag_analysis_schema_defaults_when_constructed_minimally() -> None:
-    """Construction without the four added fields succeeds."""
+    """Construction without `bag_format` succeeds."""
     from topicforge.models import BagAnalysis, BagTopicStats
 
     legacy = BagAnalysis(
         path="/tmp/legacy.bag",
         storage_format=None,
-        duration_seconds=10.0,
+        duration_s=10.0,
         message_count=100,
         topics=[
             BagTopicStats(
@@ -53,9 +53,7 @@ def test_bag_analysis_schema_defaults_when_constructed_minimally() -> None:
         mode_effective="live",
     )
     assert legacy.bag_format is None  # safe default
-    assert legacy.samples_decoded_count == 0
-    assert legacy.recording_duration_ns is None
-    assert legacy.participants_recorded == []
+    assert legacy.topics[0].kind == "user"
 
 
 def test_bag_analysis_schema_accepts_db3_format() -> None:
@@ -64,12 +62,11 @@ def test_bag_analysis_schema_accepts_db3_format() -> None:
     analysis = BagAnalysis(
         path="/tmp/x.db3",
         storage_format="sqlite3",
-        duration_seconds=5.0,
+        duration_s=5.0,
         message_count=50,
         topics=[],
         mode_effective="live",
         bag_format="db3",
-        recording_duration_ns=5_000_000_000,
     )
     assert analysis.bag_format == "db3"
 
@@ -80,7 +77,7 @@ def test_bag_analysis_schema_accepts_ros1_bag_format() -> None:
     analysis = BagAnalysis(
         path="/tmp/legacy.bag",
         storage_format="bag",
-        duration_seconds=2.0,
+        duration_s=2.0,
         message_count=20,
         topics=[],
         mode_effective="live",
@@ -96,7 +93,7 @@ def test_bag_analysis_schema_accepts_unknown_format() -> None:
     analysis = BagAnalysis(
         path="/tmp/x.weird",
         storage_format=None,
-        duration_seconds=0.0,
+        duration_s=0.0,
         message_count=0,
         topics=[],
         mode_effective="live",

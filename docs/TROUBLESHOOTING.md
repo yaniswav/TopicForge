@@ -7,7 +7,7 @@ Common errors and what to do about them. Each section is titled with a substring
 The server prints one line to stderr and exits with code 2, so your MCP client reports that it failed to start. One of the `TOPICFORGE_*` variables holds a value the settings loader rejects; it is deliberately strict so a typo cannot silently change behaviour. The common cases:
 
 - `Invalid TOPICFORGE_TELEMETRY=...`: only `on`, `1`, `true`, `yes`, `enabled` turn telemetry on, and only unset, `off`, `0`, `false`, `no`, `disabled` turn it off.
-- `TOPICFORGE_DDS_BACKEND='rti' was removed ...` (also `opensplice`, `coredx`, `intercom`): the retired Pro tier values. Use `cyclone`, `fast` or `auto`; a Cyclone participant still discovers RTI, CoreDX and OpenSplice participants through standard RTPS discovery.
+- `Invalid TOPICFORGE_DDS_BACKEND='rti'; expected one of ('mock', 'cyclone', 'fast', 'auto'). Use `cyclone`: ...` (also `opensplice`, `coredx`, `intercom`, `opendds`, `dust`): these identifiers are rejected, the retired Pro tier values and the two permanent stubs. Use `cyclone`, `fast` or `auto`; a Cyclone participant still discovers RTI, CoreDX, OpenDDS, OpenSplice and Dust participants through standard RTPS discovery.
 - `Invalid TOPICFORGE_MODE`, `TOPICFORGE_LOG_LEVEL`, `TOPICFORGE_DDS_DOMAIN_ID` (an integer in `0..232`).
 
 Fix the variable in the `env` block of your MCP client configuration (or in the shell that spawns the server) and restart the client. Desktop clients show the stderr line in their MCP log.
@@ -31,7 +31,7 @@ You called a ROS2 graph or bag tool (`list_topics`, `get_topic_info`, `sample_me
 2. Re-run with `TOPICFORGE_MODE=live` and your existing `TOPICFORGE_DDS_BACKEND`.
 3. Check `health_check`: `ros_backend` should be `"ros2_cli"` and `dds_backend` your vendor.
 
-If you want a DDS-only deployment, the message is expected: you use the seven DDS tools and the two bag tools raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active: ...", ends with the cause: the backend was not selected (`TOPICFORGE_DDS_BACKEND` is `mock`, the default, which means no DDS backend; set it to `cyclone` even when the binding is installed), the binding is not installed, or it is installed but the adapter failed to start (the server log has the error). `health_check` shows the same text as `dds_inactive_reason`.
+If you want a DDS-only deployment, the message is expected: you use the six DDS tools and `peek_bag_samples` (it reads bags without the CLI), and the six ros2-CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active: ...", ends with the cause: the backend was not selected (`TOPICFORGE_DDS_BACKEND` is `mock`, the default, which means no DDS backend; set it to `cyclone` even when the binding is installed), the binding is not installed, or it is installed but the adapter failed to start (the server log has the error). `health_check` shows the same text as `dds_inactive_note`.
 
 ## "rosbags"
 
@@ -60,8 +60,8 @@ The adapter was written against the 2.6.x binding and has never run against a bu
 ## Argument errors
 
 - `domain_id must be in 0..232`: DDS spec range; `0` is the ROS2 default.
-- `lookback_seconds must be in 1..86400` (`participant_events`): default 300. The lifecycle buffer keeps at most 200 events, newest first, regardless of window.
-- `window_seconds must be in 1..3600` (`topic_metrics`): default 60. The buffer holds 1000 samples per topic, drop-oldest, so frequency is computed from buffered samples, not a true rolling window.
+- `lookback_s must be in 1..86400` (`participant_events`): default 300. The lifecycle buffer keeps at most 200 events, newest first, regardless of window.
+- `window_s must be in 1..3600` (`topic_metrics`): default 60. The buffer holds 1000 samples per topic, drop-oldest, so frequency is computed from buffered samples, not a true rolling window.
 - `DDS topic name is malformed`: DDS names match `^[A-Za-z_/][A-Za-z0-9_/:]*$` (builtin names like `DCPSParticipant` and `::` separators are allowed; whitespace and dashes are not). ROS2 names start with `/` and use `_`, so `my-topic` becomes `/my_topic`.
 - `sample_messages` caps `count` at 50 and says so in `note`; `peek_*` clamp silently. The `count` field of the result is what was actually returned.
 

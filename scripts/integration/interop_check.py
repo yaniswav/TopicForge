@@ -41,8 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 
 REPO = Path(__file__).resolve().parents[2]
 PUB = REPO / "scripts" / "integration" / "publishers"
@@ -317,14 +316,13 @@ def _stop_tree(proc: subprocess.Popen[bytes]) -> None:
 # ---------------------------------------------------------------- MCP calls
 
 
-async def _call(session: ClientSession, tool: str, **args: Any) -> Any:
+async def _call(session: Client, tool: str, **args: Any) -> Any:
     result = await session.call_tool(tool, args)
-    if result.isError:
+    if result.is_error:
         text = " ".join(getattr(c, "text", "") for c in result.content)
         raise RuntimeError(f"{tool} failed: {text}")
-    if result.structuredContent is not None:
-        data = result.structuredContent
-        return data.get("result", data) if isinstance(data, dict) else data
+    if result.structured_content is not None:
+        return result.structured_content
     return [json.loads(c.text) for c in result.content if getattr(c, "text", None)]
 
 
@@ -345,9 +343,7 @@ async def _scenario(domain: str, running: list[Running]) -> int:
     names = {r.spec.name for r in running}
     failures: list[str] = []
 
-    async with stdio_client(server) as (read, write), ClientSession(read, write) as session:
-        await session.initialize()
-
+    async with Client(server) as session:
         health = await _call(session, "health_check")
         print(
             f"\n[health_check] mode={health.get('mode')} "
@@ -355,7 +351,7 @@ async def _scenario(domain: str, running: list[Running]) -> int:
         )
 
         print("\n[1] list_participants: who is on the bus?")
-        parts = await _call(session, "list_participants", domain_id=int(domain))
+        parts = (await _call(session, "list_participants", domain_id=int(domain)))["participants"]
         _print_participants(parts)
         expected = len(running) + 1  # every started program plus TopicForge itself
         if len(parts) < expected:
@@ -396,7 +392,8 @@ async def _scenario(domain: str, running: list[Running]) -> int:
             left = False
             while time.monotonic() - started < LEASE_WAIT_S:
                 await asyncio.sleep(3)
-                parts = await _call(session, "list_participants", domain_id=int(domain))
+                listing = await _call(session, "list_participants", domain_id=int(domain))
+                parts = listing["participants"]
                 if any(p.get("status") == "left" for p in parts):
                     left = True
                     print(f"    detected after {time.monotonic() - started:.0f} s:")
@@ -405,9 +402,8 @@ async def _scenario(domain: str, running: list[Running]) -> int:
             if not left:
                 failures.append(f"no participant reported as left within {LEASE_WAIT_S} s")
 
-        events = await _call(
-            session, "participant_events", domain_id=int(domain), lookback_seconds=600
-        )
+        listing = await _call(session, "participant_events", domain_id=int(domain), lookback_s=600)
+        events = listing["events"]
         print("\n[4] participant_events: the timeline an agent would read")
         for e in events:
             print(f"    {e['event_type']:<10} {e.get('vendor', '?'):<11} {e['guid']}")

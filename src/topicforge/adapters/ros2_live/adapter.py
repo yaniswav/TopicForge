@@ -16,17 +16,38 @@ from __future__ import annotations
 import logging
 import re
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
+from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
-from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
+from topicforge.adapters.common.bag_kind import classify_bag_topic
+from topicforge.adapters.common.nodes import (
+    build_node_info,
+    build_node_listing,
+    build_parameters,
+    offers_parameter_services,
+    unknown_node_error,
+)
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
+from topicforge.adapters.ros2_live.node_parsers import (
+    is_node_not_found,
+    parse_node_info,
+    parse_node_list,
+    parse_param_dump,
+)
 from topicforge.adapters.ros2_live.parsers import (
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
-    summarize_publisher_qos,
+    side_nodes,
+    summarize_side_qos,
+)
+from topicforge.adapters.ros2_live.process_runner import ProcessResult, run_process
+from topicforge.adapters.ros2_live.sample_extras import (
+    WHOLE_ARRAY_STREAM_MAX_CHARS,
+    decode_with_summary,
+    rate_of_run,
+    wants_whole_arrays,
 )
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
@@ -39,11 +60,16 @@ from topicforge.models import (
     EndpointListing,
     MessageSample,
     MismatchScan,
+    NodeInfo,
+    NodeListing,
+    NodeParameter,
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
     TopicInfo,
+    TopicListItem,
     TopicMetrics,
+    TopicRate,
 )
 
 log = logging.getLogger(__name__)
@@ -55,6 +81,15 @@ _NO_PUBLISHER_WAIT_SEC = 3.0
 # takes up to ~2 s, and decoding may run until 1 s past the deadline.
 _PARSE_GRACE_SEC = 1.0
 _MIN_ECHO_SEC = 0.5
+# Time `sample_messages` keeps back from the call budget for stopping the CLI
+# (about 2 s) and decoding (until 1 s past the deadline).
+_STOP_RESERVE_SEC = 3.0
+# Longest `ros2 param dump` output kept (1 MiB): a robot description can be that large.
+_PARAM_DUMP_MAX_BYTES = 1024 * 1024
+# Time `get_node_info` keeps back from the call budget for killing a stuck `ros2 param`.
+_PARAM_STOP_RESERVE_SEC = 2.0
+# A `/clock` publisher hint older than this is reported as unknown.
+_CLOCK_HINT_TTL_SEC = 120.0
 
 _DEFAULT_DDS_INACTIVE_REASON = (
     "install the Cyclone binding and select it: "
@@ -82,6 +117,9 @@ class Ros2CliAdapter:
         self._max_message_chars = max_message_chars
         # Why no DDS backend serves next to this adapter; set by the factory.
         self.dds_inactive_reason = dds_inactive_reason
+        # `/clock` has a publisher: (value, monotonic time), refreshed by the
+        # calls that already read the graph so `health_check` never runs the CLI.
+        self._clock_hint: tuple[bool, float] | None = None
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -110,13 +148,11 @@ class Ros2CliAdapter:
         raise self._dds_inactive_error()
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
         raise self._dds_inactive_error()
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         raise self._dds_inactive_error()
 
     def list_endpoints(
@@ -125,6 +161,7 @@ class Ros2CliAdapter:
         participant_guid: str | None = None,
         include_observer: bool = False,
         include_departed: bool = False,
+        include_internal: bool = False,
     ) -> EndpointListing:
         raise self._dds_inactive_error()
 
@@ -138,7 +175,87 @@ class Ros2CliAdapter:
 
         return BagService().peek_samples(path, topic, count)
 
-    def list_topics(self) -> list[TopicInfo]:
+    def list_nodes(self) -> NodeListing:
+        """Nodes on the graph from one `ros2 node list` call: names, namespaces, duplicates."""
+        return build_node_listing(self._node_names(), self.effective_mode)
+
+    def get_node_info(self, node: str, timeout_s: float = _DEFAULT_TIMEOUT_SEC) -> NodeInfo:
+        """Interfaces and parameters of one node.
+
+        Three steps: `ros2 node list` (the node must exist; duplicates are counted),
+        `ros2 node info` (a graph query that never waits for the node), then
+        `ros2 param dump` bounded by `timeout_s` and the call budget. The dump prints
+        YAML on stdout and is never given an output option, so nothing is written to
+        disk. A node that does not answer in time yields `parameters` `None` with a
+        note: a diagnosis (its executor is probably blocked), not an error.
+        """
+        names = self._node_names()
+        if node not in names:
+            raise unknown_node_error(node, sorted(set(names)))
+        out = self._run([self._exe, "node", "info", node])
+        if is_node_not_found(out):
+            raise unknown_node_error(node, sorted(set(names)))
+        interfaces = parse_node_info(out)
+        if interfaces is None:
+            raise AdapterError(
+                f"Could not read the interfaces of node {node!r}: unrecognized "
+                "`ros2 node info` output."
+            )
+        parameters, parameters_note = None, None
+        if offers_parameter_services(node, interfaces["service_servers"]):
+            parameters, parameters_note = self._read_parameters(node, timeout_s)
+        else:
+            parameters_note = (
+                "The node does not offer parameter services (no "
+                f"{node}/list_parameters), so its parameters cannot be read."
+            )
+        return build_node_info(
+            node,
+            interfaces,
+            parameters=parameters,
+            parameters_note=parameters_note,
+            duplicate_count=names.count(node),
+            mode=self.effective_mode,
+        )
+
+    def _node_names(self) -> list[str]:
+        """Every node name `ros2 node list` prints, duplicates kept."""
+        return parse_node_list(self._run([self._exe, "node", "list"]))
+
+    def _read_parameters(
+        self, node: str, timeout_s: float
+    ) -> tuple[list[NodeParameter] | None, str | None]:
+        """`(parameters, note)` from `ros2 param dump <node>`; `(None, why)` when unreadable."""
+        wait = call_budget.clamp(timeout_s, _PARAM_STOP_RESERVE_SEC)
+        if wait <= 0:
+            return None, (
+                "No time was left in this call's budget to read the parameters (the call "
+                "waited for the ROS lock or for the graph queries): retry."
+            )
+        result, shown = self._exec(
+            [self._exe, "param", "dump", node],
+            wait,
+            max_output_bytes=_PARAM_DUMP_MAX_BYTES,
+        )
+        if result.timed_out:
+            return None, (
+                "The node announced its parameter services but did not answer within "
+                f"{shown:g} s: its executor is probably blocked."
+            )
+        if result.returncode != 0:
+            tail = [ln for ln in result.stderr.strip().splitlines() if ln][-1:]
+            return None, (
+                f"`ros2 param dump` failed (exit {result.returncode}): "
+                f"{tail[0] if tail else 'no stderr'}"
+            )
+        if result.truncated:
+            return None, "The parameter dump is larger than 1 MiB and was not read."
+        raw = parse_param_dump(result.stdout)
+        if raw is None:
+            return None, "`ros2 param dump` printed something that is not a parameter document."
+        return build_parameters(raw)
+
+    def list_topics(self) -> list[TopicListItem]:
         """Topics with types and publisher/subscriber counts; QoS is not read here.
 
         Counts come from one `ros2 topic list -v` call. If that output cannot
@@ -146,17 +263,19 @@ class Ros2CliAdapter:
         """
         out = self._run([self._exe, "topic", "list", "-t"])
         graph_counts = self._graph_counts()
-        topics: list[TopicInfo] = []
-        for name, msg_type in parse_topic_list(out):
+        listed = parse_topic_list(out)
+        if graph_counts is not None:
+            self._clock_hint = (graph_counts.get("/clock", (0, 0))[0] > 0, time.monotonic())
+        topics: list[TopicListItem] = []
+        for name, msg_type in listed:
             counts = graph_counts.get(name) if graph_counts is not None else None
             pub_count, sub_count = counts if counts is not None else self._safe_counts(name)
             topics.append(
-                TopicInfo(
+                TopicListItem(
                     name=name,
                     message_type=msg_type,
                     publisher_count=pub_count,
                     subscriber_count=sub_count,
-                    mode_effective=self.effective_mode,
                 )
             )
         return topics
@@ -167,6 +286,8 @@ class Ros2CliAdapter:
     def _topic_info(self, topic: str, timeout: float) -> TopicInfo:
         out = self._run([self._exe, "topic", "info", topic, "--verbose"], timeout)
         info = parse_topic_info(out, fallback_name=topic, mode_effective=self.effective_mode)
+        if info is not None and topic == "/clock":
+            self._clock_hint = (info.publisher_count > 0, time.monotonic())
         if info is None:
             raise AdapterError(f"Topic not found or empty info: {topic!r}")
         return info
@@ -193,6 +314,10 @@ class Ros2CliAdapter:
         receive timestamps.
         """
         started = time.monotonic()
+        # Whatever the call waited for the lock is already gone from the budget.
+        timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
+        if timeout_s <= 0:
+            raise AdapterError("busy: no time left in this call's budget for sampling, retry")
         info = self._topic_info(topic, min(_DEFAULT_TIMEOUT_SEC, timeout_s))
         if count <= 0:
             return self._sample_result(topic, [], None)
@@ -200,14 +325,24 @@ class Ros2CliAdapter:
         has_publisher = info.publisher_count > 0
         budget = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
         remaining = max(budget - (time.monotonic() - started), _MIN_ECHO_SEC)
+        # A summary that reads an array (a scan's ranges) needs it whole: stream
+        # uncut, summarize, then cut the returned payload as the CLI would have.
+        whole = wants_whole_arrays(info.message_type, max_array_length, arrays_summary_only)
         cmd = self._echo_command(
-            topic, info, max_array_length=max_array_length, arrays_summary_only=arrays_summary_only
+            topic,
+            info,
+            max_array_length=None if whole else max_array_length,
+            arrays_summary_only=arrays_summary_only,
         )
         run = stream_echo(
             cmd,
             count=count,
             deadline_s=remaining,
-            max_document_chars=self._max_message_chars,
+            max_document_chars=(
+                max(self._max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS)
+                if whole
+                else self._max_message_chars
+            ),
         )
         if not run.documents and run.exit_code not in (None, 0):
             raise AdapterError(
@@ -216,18 +351,25 @@ class Ros2CliAdapter:
             )
 
         parse_until = started + budget + _PARSE_GRACE_SEC
-        samples, skipped = self._decode(run, topic, info, max_array_length, parse_until)
+        samples, skipped = self._decode(run, topic, info, max_array_length, whole, parse_until)
         note = " ".join(
             part
             for part in (
                 _short_result_note(
-                    run, len(samples) + skipped, count, budget, has_publisher, info.qos_durability
+                    run,
+                    len(samples) + skipped,
+                    count,
+                    budget,
+                    has_publisher,
+                    _publisher_durability(info),
                 ),
                 _dropped_note(run.oversized, skipped, self._max_message_chars),
             )
             if part
         )
-        return self._sample_result(topic, samples, note or None)
+        return self._sample_result(
+            topic, samples, note or None, _rate(run, count, samples, skipped)
+        )
 
     def _decode(
         self,
@@ -235,6 +377,7 @@ class Ros2CliAdapter:
         topic: str,
         info: TopicInfo,
         max_array_length: int | None,
+        whole_arrays: bool,
         parse_until: float,
     ) -> tuple[list[MessageSample], int]:
         """Decode the run's documents until `parse_until` (monotonic); returns the rest as a count."""
@@ -242,7 +385,12 @@ class Ros2CliAdapter:
         for index, doc in enumerate(run.documents):
             if time.monotonic() > parse_until:
                 return samples, len(run.documents) - index
-            message = parse_echo_document(doc.text, truncate_length=max_array_length)
+            message, summary = decode_with_summary(
+                doc.text,
+                info.message_type,
+                max_array_length=max_array_length,
+                whole_arrays=whole_arrays,
+            )
             samples.append(
                 MessageSample(
                     topic=topic,
@@ -251,12 +399,17 @@ class Ros2CliAdapter:
                     stamp_source=message.stamp_source,
                     received_ns=doc.received_ns,
                     payload=message.payload,
+                    summary=summary,
                 )
             )
         return samples, 0
 
     def _sample_result(
-        self, topic: str, samples: list[MessageSample], note: str | None
+        self,
+        topic: str,
+        samples: list[MessageSample],
+        note: str | None,
+        rate: TopicRate | None = None,
     ) -> SampleResult:
         return SampleResult(
             topic=topic,
@@ -264,6 +417,7 @@ class Ros2CliAdapter:
             samples=samples,
             mode_effective=self.effective_mode,
             note=note,
+            rate=rate,
         )
 
     def _echo_command(
@@ -310,14 +464,17 @@ class Ros2CliAdapter:
         return analysis
 
     def sim_clock_published(self) -> bool | None:
-        """Whether `/clock` has a publisher on the graph; `None` when the CLI cannot tell."""
-        try:
-            text = self._run([self._exe, "topic", "info", "/clock"])
-        except AdapterError as exc:
-            return False if "unknown topic" in str(exc).lower() else None
-        if "unknown topic" in text.lower():
-            return False
-        return parse_pub_sub_counts(text)[0] > 0
+        """Whether `/clock` had a publisher at the last graph read; `None` when unknown.
+
+        Never runs the CLI: `health_check` calls it and must answer at once
+        while a slow `ros2` call holds the ROS lock. The value is refreshed by
+        `list_topics` and by `get_topic_info` on `/clock`, and expires after
+        two minutes.
+        """
+        hint = self._clock_hint
+        if hint is None or time.monotonic() - hint[1] > _CLOCK_HINT_TTL_SEC:
+            return None
+        return hint[0]
 
     def _graph_counts(self) -> dict[str, tuple[int, int]] | None:
         """`{topic: (pubs, subs)}` from `ros2 topic list -v`, or `None` when unavailable."""
@@ -335,30 +492,48 @@ class Ros2CliAdapter:
             return (0, 0)
         return parse_pub_sub_counts(text)
 
-    def _run(self, cmd: list[str], timeout: float = _DEFAULT_TIMEOUT_SEC) -> str:
+    def _exec(
+        self,
+        cmd: list[str],
+        timeout: float,
+        *,
+        max_output_bytes: int | None = None,
+    ) -> tuple[ProcessResult, float]:
+        """Run `cmd` within `timeout` or the call budget; `(result, seconds allowed)`.
+
+        Raises only when the process cannot start. A deadline or a non-zero exit is
+        left in the result for the caller to read.
+        """
         # Resolve to a full path so Windows .cmd/.bat shims work without shell=True.
         resolved = shutil.which(cmd[0]) if cmd[0] == self._exe else cmd[0]
         if resolved is None:
             raise AdapterError(f"`{self._exe}` not found on PATH. Source your ROS2 setup file.")
         full_cmd = [resolved, *cmd[1:]]
 
+        # A call that waited for the lock has less time left: shrink to the budget.
+        effective = max(call_budget.clamp(timeout), 0.0)
         log.debug("ros2 cmd: %s", " ".join(full_cmd))
+        shown = timeout if effective >= timeout else round(effective, 1)
+        if effective <= 0:
+            return ProcessResult(None, "", "", timed_out=True, truncated=False), shown
+        options = {} if max_output_bytes is None else {"max_output_bytes": max_output_bytes}
         try:
-            result = subprocess.run(
-                full_cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout,
-                check=False,
-            )
+            result = run_process(full_cmd, deadline_s=effective, **options)
         except FileNotFoundError as exc:
             raise AdapterError(
                 f"`{self._exe}` not found on PATH. Source your ROS2 setup file."
             ) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise AdapterError(f"`{' '.join(cmd)}` timed out after {timeout}s") from exc
+        except OSError as exc:
+            raise AdapterError(
+                f"could not start `{self._exe}`: {exc.strerror or type(exc).__name__}"
+            ) from exc
+        return result, shown
+
+    def _run(self, cmd: list[str], timeout: float = _DEFAULT_TIMEOUT_SEC) -> str:
+        """Run a `ros2` command and return its stdout, within `timeout` or the call budget."""
+        result, shown = self._exec(cmd, timeout)
+        if result.timed_out:
+            raise AdapterError(f"`{' '.join(cmd)}` timed out after {shown}s")
 
         if result.returncode != 0:
             stderr_tail = ""
@@ -370,6 +545,14 @@ class Ros2CliAdapter:
                 f"`{' '.join(cmd)}` failed (exit {result.returncode}): {stderr_tail or 'no stderr'}"
             )
         return result.stdout
+
+
+def _rate(run: EchoRun, count: int, samples: list[MessageSample], skipped: int) -> TopicRate:
+    """Rate block of the run; the sim rate needs every message decoded and stamped."""
+    stamped = all(s.stamp_source in ("header", "payload") for s in samples)
+    complete = not run.oversized and not skipped
+    stamps = [s.timestamp_ns for s in samples] if samples and stamped and complete else None
+    return rate_of_run(run, count, stamps)
 
 
 def _echo_array_args(max_array_length: int | None, arrays_summary_only: bool) -> list[str]:
@@ -395,9 +578,17 @@ def _echo_qos_args(info: TopicInfo) -> list[str]:
     permissive `best_effort` / `volatile` otherwise (and when there is no
     publisher to read), which connects to any publisher.
     """
-    reliability = "reliable" if info.qos_reliability == "reliable" else "best_effort"
-    durability = "transient_local" if info.qos_durability == "transient_local" else "volatile"
+    qos = info.publisher_qos
+    reliability = "reliable" if qos is not None and qos.reliability == "reliable" else "best_effort"
+    durability = (
+        "transient_local" if qos is not None and qos.durability == "transient_local" else "volatile"
+    )
     return ["--qos-reliability", reliability, "--qos-durability", durability]
+
+
+def _publisher_durability(info: TopicInfo) -> str | None:
+    """Durability of the topic's publishers, `None` when unknown."""
+    return info.publisher_qos.durability if info.publisher_qos is not None else None
 
 
 def _short_result_note(
@@ -497,8 +688,9 @@ def parse_topic_info(
 
     Returns None when no message type is found (the adapter reports the topic
     as not found). `fallback_name` and `mode_effective` come from the caller,
-    not from the output. `qos_reliability` and `qos_durability` summarize the
-    publishers' QoS blocks (see `summarize_publisher_qos`).
+    not from the output. `publisher_qos` and `subscription_qos` summarize the QoS block
+    of each side (see `summarize_side_qos`); `publisher_nodes` and `subscriber_nodes` come
+    from the `Node name:` / `Node namespace:` lines.
     """
     msg_type: str | None = None
     pub = sub = 0
@@ -511,14 +703,20 @@ def parse_topic_info(
             sub = int(m.group(1))
     if msg_type is None:
         return None
-    reliability, durability = summarize_publisher_qos(parse_topic_endpoint_qos(stdout))
+    endpoints = parse_topic_endpoint_qos(stdout)
+    publisher_qos, publisher_note = summarize_side_qos(endpoints, "PUBLISHER", pub)
+    subscription_qos, subscription_note = summarize_side_qos(endpoints, "SUBSCRIPTION", sub)
     return TopicInfo(
         name=fallback_name,
         message_type=msg_type,
         publisher_count=pub,
         subscriber_count=sub,
-        qos_reliability=reliability,
-        qos_durability=durability,
+        publisher_qos=publisher_qos,
+        publisher_qos_note=publisher_note,
+        subscription_qos=subscription_qos,
+        subscription_qos_note=subscription_note,
+        publisher_nodes=side_nodes(endpoints, "PUBLISHER"),
+        subscriber_nodes=side_nodes(endpoints, "SUBSCRIPTION"),
         mode_effective=mode_effective,
     )
 
@@ -547,6 +745,7 @@ def parse_bag_info(
                     name=name,
                     message_type=msg_type,
                     message_count=count,
+                    kind=classify_bag_topic(name),
                     frequency_hz=freq,
                     frequency_basis="bag_duration" if freq is not None else None,
                 )
@@ -555,7 +754,7 @@ def parse_bag_info(
     return BagAnalysis(
         path=fallback_path,
         storage_format=storage,
-        duration_seconds=duration,
+        duration_s=duration,
         message_count=msg_count,
         topics=topics,
         anomalies=[],

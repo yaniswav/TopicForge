@@ -24,7 +24,9 @@ from topicforge.services.sample_budget import apply_sample_budget, sample_size_b
 
 
 def _sample(payload: dict[str, object]) -> MessageSample:
-    return MessageSample(topic="/t", message_type="p/msg/T", timestamp_ns=0, payload=payload)
+    return MessageSample(
+        topic="/t", message_type="p/msg/T", timestamp_ns=0, stamp_source="none", payload=payload
+    )
 
 
 class _Recorder(MockAdapter):
@@ -185,12 +187,12 @@ def _app() -> Any:
 
 def test_tool_schema_exposes_the_options() -> None:
     tools = {t.name: t for t in asyncio.run(_app().list_tools())}
-    props = tools["sample_messages"].inputSchema["properties"]
+    props = tools["sample_messages"].input_schema["properties"]
     assert props["max_array_length"]["default"] == 128
     assert props["arrays_summary_only"]["default"] is False
     assert props["count"]["maximum"] == MAX_SAMPLE_COUNT
     assert props["timeout_s"]["default"] == DEFAULT_SAMPLE_TIMEOUT_S
-    assert props["timeout_s"]["minimum"] == 1 and props["timeout_s"]["maximum"] == 45
+    assert props["timeout_s"]["minimum"] == 1 and props["timeout_s"]["maximum"] == 40
 
 
 def test_tool_call_over_the_cap_is_capped_not_rejected() -> None:
@@ -210,7 +212,7 @@ def test_tool_call_with_options_succeeds_in_mock_mode() -> None:
 
 
 def test_tool_call_rejects_an_out_of_range_length() -> None:
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError):
         asyncio.run(
@@ -256,13 +258,13 @@ def test_a_count_at_the_cap_has_no_cap_note() -> None:
     assert Inspector(_Recorder([])).sample_messages("/scan", MAX_SAMPLE_COUNT).note is None
 
 
-@pytest.mark.parametrize("bad", [0.5, 45.5, 60, -1, True, "10"])
+@pytest.mark.parametrize("bad", [0.5, 40.5, 45, 60, -1, True, "10"])
 def test_invalid_timeout_is_rejected(bad: Any) -> None:
     with pytest.raises(AdapterError, match="timeout_s"):
         Inspector(_Recorder([])).sample_messages("/scan", 1, timeout_s=bad)
 
 
-@pytest.mark.parametrize("ok", [1, 10, 45.0])
+@pytest.mark.parametrize("ok", [1, 10, 40.0])
 def test_timeout_bounds_are_accepted_and_forwarded(ok: float) -> None:
     adapter = _Recorder([])
     Inspector(adapter).sample_messages("/scan", 1, timeout_s=ok)

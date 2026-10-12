@@ -31,6 +31,9 @@ its feedback on the tools: the call sequence, what misled it, how often it had
 to parse free text or join GUIDs by hand. Stop a scenario by creating
 `stop_<scenario>` in this directory.
 
+`run_external.py` runs one scenario against an external agent CLI (Codex, Gemini)
+headless and saves the transcript; results are in `docs/EVAL.md`.
+
 `RESULTS_2026-10-02.md` records the three rounds that shaped 0.5.5, run with LLM
 agents on the author's 16 test scenarios (the author wrote them and knows the
 answers). On 0.5.4 the agents reached 10 of 11 correct diagnoses, mostly by

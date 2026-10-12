@@ -69,7 +69,7 @@ def test_analyze_counts_match_ros2_bag_info(bag_path: str) -> None:
     assert counts["/tf_static"] == 2
     assert counts["/rosout"] == 13
     assert len(counts) == 11
-    assert analysis.duration_seconds == pytest.approx(35.358876725, abs=1e-6)
+    assert analysis.duration_s == pytest.approx(35.358876725, abs=1e-6)
 
 
 def test_analyze_rates_use_each_topics_own_span(bag_path: str) -> None:

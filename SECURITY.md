@@ -45,13 +45,16 @@ adapter. A search of `src/` for `create_publisher`, `call_service`,
 `set_parameters`, `DataWriter` and `Publisher(` finds nothing; the only
 `publish` matches are field names and comments (`publish_ns`, "publisher
 count", log text). The ros2 adapter only runs `ros2 topic list`,
-`topic info`, `topic echo` and `bag info`; it never runs `topic pub`,
-`service call`, `param set`, `action send_goal` or `bag record`. The
+`topic info`, `topic echo`, `bag info`, `node list`, `node info` and
+`param dump`; it never runs `topic pub`, `service call`, `param set`,
+`action send_goal` or `bag record`. The
 Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
 the DDS adapters or in `adapters/common`.
 
-**Declaration.** All twelve tools carry MCP `ToolAnnotations`:
+**The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no other service call, no parameter set, no lifecycle transition, no action goal.
+
+**Declaration.** All fourteen tools carry MCP `ToolAnnotations`:
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, a
 `title`, and an honest `openWorldHint` (true for tools that observe a
 live ROS 2 graph or DDS bus, false for `health_check`, `analyze_bag` and
@@ -64,10 +67,10 @@ architecture.
 
 **Proof.** `tests/test_tool_annotations.py` builds the app in mock mode,
 lists the tools through the MCP layer as a client would, and fails if the
-tool count is not twelve, if any tool lacks annotations, is not read-only,
+tool count is not fourteen, if any tool lacks annotations, is not read-only,
 non-destructive and idempotent, has no title or a non-boolean
 `openWorldHint`, or if the set of closed-world tools differs from the
-three above. Adding a thirteenth tool without annotations fails the suite.
+three above. Adding a fifteenth tool without annotations fails the suite.
 
 **What read-only does not mean: not perfectly passive.**
 
@@ -93,7 +96,10 @@ would. Telemetry is off by default and a verified no-op when off
 **Remote access.** TopicForge has no rosbridge client and no ssh targets,
 by design: it never reaches out to a robot. Run it on the robot (or a
 machine on its network) and reach it through a local transport or a
-tunnel you control. An HTTP transport is planned, not available.
+tunnel you control. A loopback streamable-http
+transport ships in 0.7.0 (127.0.0.1 only, no authentication); reach a remote
+robot through an SSH tunnel (see the "Local HTTP transport" section of
+docs/CLIENTS.md).
 
 ## Reporting a vulnerability
 
@@ -125,7 +131,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest release receives security patches: `0.5.5` at the
+Only the latest release receives security patches: `0.7.0` at the
 time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure

@@ -10,6 +10,7 @@ import pytest
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_live import adapter as adapter_module
+from topicforge.adapters.ros2_live import sample_extras
 from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
 from topicforge.adapters.ros2_live.echo_stream import EchoDocument, EchoRun
 
@@ -34,9 +35,9 @@ def _stub_info(monkeypatch: pytest.MonkeyPatch, info: str = _INFO, delay_s: floa
 
     def run(*_a: object, **_k: object) -> SimpleNamespace:
         time.sleep(delay_s)
-        return SimpleNamespace(returncode=0, stdout=info, stderr="")
+        return SimpleNamespace(timed_out=False, returncode=0, stdout=info, stderr="")
 
-    monkeypatch.setattr(f"{_MODULE}.subprocess.run", run)
+    monkeypatch.setattr(f"{_MODULE}.run_process", run)
 
 
 def _stub_echo(monkeypatch: pytest.MonkeyPatch, run: EchoRun) -> list[dict[str, Any]]:
@@ -66,10 +67,10 @@ def test_the_topic_lookup_never_waits_longer_than_timeout_s(
     timeouts: list[float] = []
 
     def run(*_a: object, **kw: Any) -> SimpleNamespace:
-        timeouts.append(float(kw["timeout"]))
-        return SimpleNamespace(returncode=0, stdout=_INFO, stderr="")
+        timeouts.append(float(kw["deadline_s"]))
+        return SimpleNamespace(timed_out=False, returncode=0, stdout=_INFO, stderr="")
 
-    monkeypatch.setattr(f"{_MODULE}.subprocess.run", run)
+    monkeypatch.setattr(f"{_MODULE}.run_process", run)
     _stub_echo(monkeypatch, EchoRun(documents=[_doc()]))
     Ros2CliAdapter().sample_messages("/imu", count=1, timeout_s=2)
     assert timeouts == [2.0]
@@ -128,13 +129,13 @@ def test_decoding_stops_when_the_time_budget_is_exhausted(
 ) -> None:
     _stub_info(monkeypatch)
     _stub_echo(monkeypatch, EchoRun(documents=[_doc(), _doc(), _doc()]))
-    real = adapter_module.parse_echo_document
+    real = sample_extras.parse_echo_document
 
     def slow_parse(text: str, **kw: Any) -> Any:
         time.sleep(0.6)
         return real(text, **kw)
 
-    monkeypatch.setattr(adapter_module, "parse_echo_document", slow_parse)
+    monkeypatch.setattr(sample_extras, "parse_echo_document", slow_parse)
     monkeypatch.setattr(adapter_module, "_PARSE_GRACE_SEC", 0.0)
     result = Ros2CliAdapter().sample_messages("/imu", count=3, timeout_s=1)
     assert result.count == 2

@@ -71,7 +71,7 @@ def _not_matched(
     latent = analyze_pair(reader.qos, writer.qos).incompatible if reader.qos and writer.qos else []
     return NotMatchedPair(
         latent_incompatible_policies=latent,
-        topic=reader.topic,
+        topic=reader.dds_topic,
         reader_guid=reader.guid,
         reader_participant_guid=reader.participant_guid,
         reader_participant_name=reader.participant_name,
@@ -102,7 +102,7 @@ def _separation(reader: EndpointInfo, writer: EndpointInfo) -> NotMatchedPair | 
 
 
 def _report(
-    reader: EndpointInfo, writer: EndpointInfo, mode: Literal["mock", "live"]
+    reader: EndpointInfo, writer: EndpointInfo
 ) -> tuple[MismatchReport | None, PairAnalysis]:
     """RxO analysis of a pair that DDS would match: the report (if any) and the analysis."""
     assert reader.qos and writer.qos
@@ -111,7 +111,7 @@ def _report(
         return None, analysis
     return (
         MismatchReport(
-            topic=reader.topic,
+            topic=reader.dds_topic,
             reader_guid=reader.guid,
             writer_guid=writer.guid,
             reader_participant_guid=reader.participant_guid,
@@ -124,7 +124,6 @@ def _report(
             severity="incompatible" if analysis.incompatible else "risky",
             details=analysis.details,
             unchecked=analysis.unchecked,
-            mode_effective=mode,
         ),
         analysis,
     )
@@ -171,7 +170,7 @@ def _matched(
     return MatchedPair(
         late_joiner=note is not None,
         late_joiner_note=note,
-        topic=reader.topic,
+        topic=reader.dds_topic,
         type_name=reader.type_name or writer.type_name,
         reader_guid=reader.guid,
         reader_participant_guid=reader.participant_guid,
@@ -307,7 +306,7 @@ def _type_id_hints(pairs: list[tuple[EndpointInfo, EndpointInfo]]) -> list[str]:
     for reader, writer in pairs:
         if reader.type_id and writer.type_id and reader.type_id != writer.type_id:
             hints.append(
-                f"Topic {reader.topic!r}: type ids differ between reader {reader.guid} and "
+                f"Topic {reader.dds_topic!r}: type ids differ between reader {reader.guid} and "
                 f"writer {writer.guid} for type {reader.type_name!r}; they may still be "
                 "assignable under XTypes, TopicForge cannot confirm."
             )
@@ -351,8 +350,8 @@ def scan_endpoints(
     hostnames = hostnames or {}
     by_topic: dict[str, list[EndpointInfo]] = {}
     for ep in endpoints:
-        if not ep.is_observer and not _is_builtin(ep.topic):
-            by_topic.setdefault(ep.topic, []).append(ep)
+        if not ep.is_observer and not _is_builtin(ep.dds_topic):
+            by_topic.setdefault(ep.dds_topic, []).append(ep)
     scope_hints: list[str] = []
     wanted = topic
     if topic is not None:
@@ -384,7 +383,7 @@ def scan_endpoints(
                     not_matched.append(apart)
                     continue
                 matched_pairs.append((reader, writer))
-                report, analysis = _report(reader, writer, mode_effective)
+                report, analysis = _report(reader, writer)
                 for name in analysis.unchecked:
                     unchecked_counts[name] = unchecked_counts.get(name, 0) + 1
                 history_unknown += analysis.history_unknown

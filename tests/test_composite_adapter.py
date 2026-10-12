@@ -78,7 +78,7 @@ class _StubRosAdapter:
         return BagAnalysis(
             path=path,
             storage_format="mcap",
-            duration_seconds=0.0,
+            duration_s=0.0,
             message_count=0,
             topics=[],
             mode_effective=self._mode,
@@ -99,15 +99,13 @@ class _StubRosAdapter:
         raise AdapterError("ROS adapter should not receive DDS calls")
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
-        self.calls.append(("participant_events", (domain_id, lookback_seconds)))
+        self.calls.append(("participant_events", (domain_id, lookback_s)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
-        self.calls.append(("topic_metrics", (topic, window_seconds, domain_id)))
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
+        self.calls.append(("topic_metrics", (topic, window_s, domain_id)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
     def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
@@ -162,7 +160,6 @@ class _StubDdsAdapter:
                 vendor="cyclone",
                 hostname="host",
                 domain_id=domain_id,
-                mode_effective=self._mode,
             )
         ]
 
@@ -175,19 +172,17 @@ class _StubDdsAdapter:
         return SampleResult(topic=topic, count=0, samples=[], mode_effective=self._mode)
 
     def participant_events(
-        self, domain_id: int = 0, lookback_seconds: int = 300
+        self, domain_id: int = 0, lookback_s: int = 300
     ) -> list[ParticipantEvent]:
-        self.calls.append(("participant_events", (domain_id, lookback_seconds)))
+        self.calls.append(("participant_events", (domain_id, lookback_s)))
         return []
 
-    def topic_metrics(
-        self, topic: str, window_seconds: int = 60, domain_id: int = 0
-    ) -> TopicMetrics:
-        self.calls.append(("topic_metrics", (topic, window_seconds, domain_id)))
+    def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
+        self.calls.append(("topic_metrics", (topic, window_s, domain_id)))
         return TopicMetrics(
             topic=topic,
-            window_seconds=window_seconds,
-            window_seconds_actual=0.0,
+            window_s=window_s,
+            window_actual_s=0.0,
             samples_observed=0,
             sequence_gaps_count=0,
             sequence_numbers_available=False,
@@ -237,8 +232,8 @@ def test_dds_methods_route_to_dds_half() -> None:
     composite.list_participants(domain_id=42)
     composite.detect_qos_mismatches(topic="/x")
     composite.peek_dds_samples("/x", 5)
-    composite.participant_events(domain_id=42, lookback_seconds=60)
-    composite.topic_metrics(topic="/x", window_seconds=30, domain_id=42)
+    composite.participant_events(domain_id=42, lookback_s=60)
+    composite.topic_metrics(topic="/x", window_s=30, domain_id=42)
 
     assert [c[0] for c in dds.calls] == [
         "list_participants",

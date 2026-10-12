@@ -121,10 +121,10 @@ def _record_burst(
 
 def test_empty_buffer_returns_zero_samples_observed() -> None:
     buf = MetricsBuffer()
-    m = buf.compute_metrics(topic="/nope", window_seconds=60, now_ns=1_000_000_000)
+    m = buf.compute_metrics(topic="/nope", window_s=60, now_ns=1_000_000_000)
     assert m.samples_observed == 0
-    assert m.frequency_hz_observed is None
-    assert m.window_seconds_actual == 0.0
+    assert m.observed_frequency_hz is None
+    assert m.window_actual_s == 0.0
     assert m.sequence_gaps_count == 0
     assert m.sequence_numbers_available is False
     assert m.latency_available is False
@@ -141,11 +141,11 @@ def test_record_then_compute_basic_frequency() -> None:
         interval_ns=100_000_000,
     )
     # now_ns = last sample receive (9_900_000_000)
-    m = buf.compute_metrics(topic="/x", window_seconds=60, now_ns=9_900_000_000)
+    m = buf.compute_metrics(topic="/x", window_s=60, now_ns=9_900_000_000)
     assert m.samples_observed == 100
     # Elapsed = last - first = 9_900_000_000 ns = 9.9 s ; 100/9.9 ~= 10.10
-    assert m.frequency_hz_observed is not None
-    assert 9.5 < m.frequency_hz_observed < 10.5
+    assert m.observed_frequency_hz is not None
+    assert 9.5 < m.observed_frequency_hz < 10.5
 
 
 def test_window_filter_drops_old_samples() -> None:
@@ -159,7 +159,7 @@ def test_window_filter_drops_old_samples() -> None:
         interval_ns=1_000_000_000,
     )
     # Window = 10 s, now = 60 s -> only last 10 samples survive
-    m = buf.compute_metrics(topic="/y", window_seconds=10, now_ns=60_000_000_000)
+    m = buf.compute_metrics(topic="/y", window_s=10, now_ns=60_000_000_000)
     # Samples with receive_ns >= now - 10s = 50e9: that's samples
     # with index >= 50, so 10 samples (50..59).
     assert m.samples_observed == 10
@@ -170,9 +170,9 @@ def test_single_sample_returns_none_frequency() -> None:
     buf.record(
         topic="/y", receive_ns=1_000_000_000, sequence_number=0, publish_ns=None, domain_id=0
     )
-    m = buf.compute_metrics(topic="/y", window_seconds=10, now_ns=2_000_000_000)
+    m = buf.compute_metrics(topic="/y", window_s=10, now_ns=2_000_000_000)
     assert m.samples_observed == 1
-    assert m.frequency_hz_observed is None  # cannot define freq from 1 sample
+    assert m.observed_frequency_hz is None  # cannot define freq from 1 sample
 
 
 def test_sequence_numbers_unavailable_when_all_none() -> None:
@@ -185,7 +185,7 @@ def test_sequence_numbers_unavailable_when_all_none() -> None:
             publish_ns=None,
             domain_id=0,
         )
-    m = buf.compute_metrics(topic="/z", window_seconds=60, now_ns=5_000_000_000)
+    m = buf.compute_metrics(topic="/z", window_s=60, now_ns=5_000_000_000)
     assert m.sequence_numbers_available is False
     assert m.sequence_gaps_count == 0
 
@@ -202,9 +202,9 @@ def test_frequency_uses_n_minus_1_intervals_not_now() -> None:
             publish_ns=None,
             domain_id=0,
         )
-    m = buf.compute_metrics(topic="/f", window_seconds=60, now_ns=5_000_000_000)
+    m = buf.compute_metrics(topic="/f", window_s=60, now_ns=5_000_000_000)
     assert m.samples_observed == 3
-    assert m.frequency_hz_observed == 1.0
+    assert m.observed_frequency_hz == 1.0
 
 
 def test_snapshot_same_timestamp_yields_no_frequency() -> None:
@@ -219,9 +219,9 @@ def test_snapshot_same_timestamp_yields_no_frequency() -> None:
             publish_ns=None,
             domain_id=0,
         )
-    m = buf.compute_metrics(topic="/snap", window_seconds=60, now_ns=3_000_000_000)
+    m = buf.compute_metrics(topic="/snap", window_s=60, now_ns=3_000_000_000)
     assert m.samples_observed == 5
-    assert m.frequency_hz_observed is None
+    assert m.observed_frequency_hz is None
 
 
 def test_sequence_gaps_grouped_by_writer() -> None:
@@ -241,7 +241,7 @@ def test_sequence_gaps_grouped_by_writer() -> None:
     buf.record(
         topic="/w", receive_ns=3, sequence_number=1, publish_ns=None, domain_id=0, writer_guid="B"
     )
-    m = buf.compute_metrics(topic="/w", window_seconds=60, now_ns=1_000_000_000)
+    m = buf.compute_metrics(topic="/w", window_s=60, now_ns=1_000_000_000)
     assert m.sequence_numbers_available is True
     assert m.sequence_gaps_count == 0
 
@@ -257,7 +257,7 @@ def test_sequence_gaps_detected_in_window() -> None:
             publish_ns=None,
             domain_id=0,
         )
-    m = buf.compute_metrics(topic="/seq", window_seconds=60, now_ns=1_000_000_000)
+    m = buf.compute_metrics(topic="/seq", window_s=60, now_ns=1_000_000_000)
     assert m.sequence_numbers_available is True
     assert m.sequence_gaps_count == 2
 
@@ -273,7 +273,7 @@ def test_latency_percentiles_when_publish_ns_available() -> None:
         interval_ns=100_000_000,
         publish_offset_ns=50_000_000,
     )
-    m = buf.compute_metrics(topic="/lat", window_seconds=60, now_ns=1_000_000_000)
+    m = buf.compute_metrics(topic="/lat", window_s=60, now_ns=1_000_000_000)
     assert m.latency_available is True
     # All latencies are exactly 50 ms ; every percentile equals 50_000_000
     assert m.latency_ns_p50 == 50_000_000
@@ -284,7 +284,7 @@ def test_latency_percentiles_when_publish_ns_available() -> None:
 def test_latency_skipped_when_no_publish_ns() -> None:
     buf = MetricsBuffer()
     _record_burst(buf, topic="/no_lat", count=10, start_ns=0, interval_ns=100_000_000)
-    m = buf.compute_metrics(topic="/no_lat", window_seconds=60, now_ns=1_000_000_000)
+    m = buf.compute_metrics(topic="/no_lat", window_s=60, now_ns=1_000_000_000)
     assert m.latency_available is False
     assert m.latency_ns_p50 is None
     assert m.latency_ns_p95 is None
@@ -296,7 +296,7 @@ def test_ring_buffer_cap_enforced() -> None:
     _record_burst(buf, topic="/cap", count=20, start_ns=0, interval_ns=100_000_000)
     # Cap is 5 ; oldest 15 were evicted
     assert buf.sample_count("/cap") == 5
-    m = buf.compute_metrics(topic="/cap", window_seconds=60, now_ns=2_000_000_000)
+    m = buf.compute_metrics(topic="/cap", window_s=60, now_ns=2_000_000_000)
     assert m.samples_observed == 5
 
 
@@ -311,8 +311,8 @@ def test_multi_topic_isolation() -> None:
     _record_burst(buf, topic="/b", count=20, start_ns=0, interval_ns=100_000_000)
     assert buf.sample_count("/a") == 10
     assert buf.sample_count("/b") == 20
-    m_a = buf.compute_metrics(topic="/a", window_seconds=60, now_ns=1_000_000_000)
-    m_b = buf.compute_metrics(topic="/b", window_seconds=60, now_ns=2_000_000_000)
+    m_a = buf.compute_metrics(topic="/a", window_s=60, now_ns=1_000_000_000)
+    m_b = buf.compute_metrics(topic="/b", window_s=60, now_ns=2_000_000_000)
     assert m_a.samples_observed == 10
     assert m_b.samples_observed == 20
 
@@ -335,8 +335,8 @@ def test_domain_filtering() -> None:
             publish_ns=None,
             domain_id=42,
         )
-    m0 = buf.compute_metrics(topic="/d", window_seconds=60, now_ns=1_000_000_000, domain_id=0)
-    m42 = buf.compute_metrics(topic="/d", window_seconds=60, now_ns=1_000_000_000, domain_id=42)
+    m0 = buf.compute_metrics(topic="/d", window_s=60, now_ns=1_000_000_000, domain_id=0)
+    m42 = buf.compute_metrics(topic="/d", window_s=60, now_ns=1_000_000_000, domain_id=42)
     assert m0.samples_observed == 5
     assert m42.samples_observed == 5
     # The two metrics should be independent: confirm one was filtered.
@@ -353,8 +353,8 @@ def test_snapshot_topics_lists_recorded_topics() -> None:
 def test_declared_hz_is_echoed_through() -> None:
     buf = MetricsBuffer()
     buf.record(topic="/d", receive_ns=0, sequence_number=0, publish_ns=None, domain_id=0)
-    m = buf.compute_metrics(topic="/d", window_seconds=60, now_ns=1_000_000_000, declared_hz=10.0)
-    assert m.frequency_hz_declared == 10.0
+    m = buf.compute_metrics(topic="/d", window_s=60, now_ns=1_000_000_000, declared_hz=10.0)
+    assert m.declared_frequency_hz == 10.0
 
 
 def test_thread_safety_smoke() -> None:

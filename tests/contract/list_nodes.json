@@ -1,0 +1,125 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "List ROS 2 nodes"
+  },
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the current ROS 2 graph (or the mock graph in mock mode) from one `ros2 node list` call. Returns a `NodeListing` `{nodes, returned, total, truncated, duplicates, mode_effective, note}`: each node has `name`, `namespace`, `full_name` and `duplicate_count`. `duplicates` lists the full names used by more than one node (the ROS 2 CLI answers for one of them without saying which, so any per-node tool is ambiguous there). Nodes whose name starts with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has no node. Call `get_node_info` for the topics, services and parameters of one node. **Raises an MCP error** when no `ros2` CLI is available (DDS-only setup). Read-only; no side effects. It is cheap: one CLI call. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps the lock it fails at once with a `busy` error (retry).",
+  "inputSchema": {
+    "properties": {},
+    "title": "list_nodesArguments",
+    "type": "object"
+  },
+  "name": "list_nodes",
+  "outputSchema": {
+    "$defs": {
+      "NodeListItem": {
+        "additionalProperties": false,
+        "description": "One node name on the ROS 2 graph.",
+        "properties": {
+          "duplicate_count": {
+            "description": "How many nodes on the graph use this exact full name. 1 is normal; more than 1 means several processes share the name, and any tool that addresses the node by name answers for one of them.",
+            "minimum": 1,
+            "title": "Duplicate Count",
+            "type": "integer"
+          },
+          "full_name": {
+            "description": "Fully qualified node name, e.g. `/lidar_driver` or `/robot1/lidar_driver`.",
+            "title": "Full Name",
+            "type": "string"
+          },
+          "name": {
+            "description": "Node name without its namespace, e.g. `lidar_driver`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "Namespace of the node: `/` for the root namespace, else e.g. `/robot1`.",
+            "title": "Namespace",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "full_name",
+          "duplicate_count"
+        ],
+        "title": "NodeListItem",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Envelope returned by `list_nodes`.",
+    "properties": {
+      "duplicates": {
+        "description": "Full names that appear more than once on the graph. Empty when every name is unique.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Duplicates",
+        "type": "array"
+      },
+      "mode_effective": {
+        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "title": "Mode Effective",
+        "type": "string"
+      },
+      "nodes": {
+        "description": "Nodes on the graph, one entry per distinct full name, sorted by name.",
+        "items": {
+          "$ref": "#/$defs/NodeListItem"
+        },
+        "title": "Nodes",
+        "type": "array"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "returned": {
+        "description": "Length of `nodes`.",
+        "minimum": 0,
+        "title": "Returned",
+        "type": "integer"
+      },
+      "total": {
+        "description": "Distinct node names on the graph (no cap applies).",
+        "minimum": 0,
+        "title": "Total",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "True when `returned` is less than `total` because of a cap.",
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "nodes",
+      "returned",
+      "total",
+      "truncated",
+      "duplicates",
+      "mode_effective"
+    ],
+    "title": "NodeListing",
+    "type": "object"
+  },
+  "title": "List ROS 2 nodes"
+}

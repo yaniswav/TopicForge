@@ -23,9 +23,9 @@ You:
 
 Claude calls: `health_check()` -> confirms `mode="mock"`,
 `requested_mode="mock"`, `ros_backend="mock"`. Then `list_topics()` ->
-returns 5 `TopicInfo`: `/cmd_vel`, `/odom`, `/scan`, `/tf`,
-`/camera/image_raw` with publisher/subscriber counts, message types and
-`qos_reliability`.
+returns a `TopicListing` of 5 topics: `/cmd_vel`, `/odom`, `/scan`, `/tf`,
+`/camera/image_raw` with publisher/subscriber counts and message types
+(`returned` 5, `total` 5, `truncated` false). QoS is not in the listing.
 
 You:
 
@@ -33,7 +33,8 @@ You:
 
 Claude calls: `get_topic_info(topic="/scan")` -> returns
 `message_type="sensor_msgs/msg/LaserScan"`, `publisher_count=1`,
-`subscriber_count=1`, `qos_reliability="best_effort"`. Then
+`subscriber_count=1`, `publisher_qos.reliability="best_effort"`,
+`publisher_nodes=["/lidar_driver"]`, `subscriber_nodes=["/nav_planner"]`. Then
 `sample_messages(topic="/scan", count=2)` -> returns 2 deterministic
 `MessageSample` objects (the fixture holds 3, so `count` of 3 or more
 returns 3).
@@ -49,7 +50,7 @@ Claude answers along these lines:
 > `/tf` for transforms), one odometry feedback (`/odom`), and one
 > command input (`/cmd_vel`). All five are mocked from
 > deterministic fixtures: `health_check` reports `mode="mock"` and
-> every `TopicInfo` carries `mode_effective="mock"`. None of this
+> every result carries `mode_effective="mock"`. None of this
 > comes from a real graph.
 
 ## Going live

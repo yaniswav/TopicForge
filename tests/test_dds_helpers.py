@@ -179,7 +179,7 @@ def test_every_canonical_vendor_tag_is_valid_participant_literal() -> None:
 
     tags = set(_VENDOR_ID_MAP.values()) | set(get_args(VendorTag))
     for tag in tags:
-        info = ParticipantInfo(guid="g", vendor=tag, domain_id=0, mode_effective="mock")
+        info = ParticipantInfo(guid="g", vendor=tag, domain_id=0)
         assert info.vendor == tag
         event = ParticipantEvent(
             guid="g",
@@ -187,7 +187,6 @@ def test_every_canonical_vendor_tag_is_valid_participant_literal() -> None:
             vendor=tag,
             timestamp_ns=0,
             domain_id=0,
-            mode_effective="mock",
         )
         assert event.vendor == tag
 

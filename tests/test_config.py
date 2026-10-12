@@ -90,26 +90,23 @@ def test_invalid_dds_backend_rejected() -> None:
         load_settings(env={"TOPICFORGE_DDS_BACKEND": "nonexistent_vendor"})
 
 
-@pytest.mark.parametrize("vendor", ["rti", "opensplice", "coredx", "intercom", "RTI"])
-def test_removed_pro_vendors_rejected_with_explicit_message(vendor: str) -> None:
-    """Removed vendor names are rejected with a message that points at the cyclone backend."""
+@pytest.mark.parametrize(
+    "backend", ["rti", "opensplice", "coredx", "intercom", "opendds", "dust", "RTI", "nope"]
+)
+def test_unusable_dds_backends_rejected_naming_the_valid_values(backend: str) -> None:
+    """Identifiers without a working adapter are rejected, and the error lists what is valid."""
     with pytest.raises(ValueError) as excinfo:
-        load_settings(env={"TOPICFORGE_DDS_BACKEND": vendor, "TOPICFORGE_MODE": "live"})
+        load_settings(env={"TOPICFORGE_DDS_BACKEND": backend, "TOPICFORGE_MODE": "live"})
     message = str(excinfo.value)
     assert "TOPICFORGE_DDS_BACKEND" in message
-    assert "removed in 0.5.3" in message
-    assert "cyclone" in message
+    for valid in ("mock", "cyclone", "fast", "auto"):
+        assert valid in message
 
 
-def test_explicit_dds_backend_opendds_accepted() -> None:
-    """Stub adapter: still selectable explicitly."""
-    s = load_settings(env={"TOPICFORGE_DDS_BACKEND": "opendds", "TOPICFORGE_MODE": "live"})
-    assert s.effective_dds_backend == "opendds"
-
-
-def test_explicit_dds_backend_dust_accepted() -> None:
-    s = load_settings(env={"TOPICFORGE_DDS_BACKEND": "dust", "TOPICFORGE_MODE": "live"})
-    assert s.effective_dds_backend == "dust"
+@pytest.mark.parametrize("backend", ["rti", "opendds", "dust"])
+def test_retired_dds_backends_hint_at_cyclone(backend: str) -> None:
+    with pytest.raises(ValueError, match="Use `cyclone`"):
+        load_settings(env={"TOPICFORGE_DDS_BACKEND": backend})
 
 
 def test_dds_backend_mock_global_forces_dds_mock() -> None:
@@ -160,12 +157,7 @@ def test_dds_auto_falls_back_to_mock_when_neither_importable(
     import importlib.util
 
     real_find_spec = importlib.util.find_spec
-    _AUTO_DETECT_MODULES = {
-        "fastdds",
-        "cyclonedds",
-        "pyopendds",
-        "dust_dds_python",
-    }
+    _AUTO_DETECT_MODULES = {"fastdds", "cyclonedds"}
 
     def fake(name: str, *args: object, **kwargs: object) -> object | None:
         if name in _AUTO_DETECT_MODULES:
@@ -178,8 +170,7 @@ def test_dds_auto_falls_back_to_mock_when_neither_importable(
 
 
 # ---------------------------------------------------------------------------
-# Auto-detect priority chain: fast > cyclone > mock. The opendds and dust
-# stubs are never auto-selected (their is_available() is always False).
+# Auto-detect priority chain: fast > cyclone > mock.
 # ---------------------------------------------------------------------------
 
 
@@ -188,7 +179,7 @@ def _patch_find_spec(monkeypatch: pytest.MonkeyPatch, present: set[str]) -> None
     import importlib.util
 
     real_find_spec = importlib.util.find_spec
-    _AUTO_DETECT_MODULES = {"fastdds", "cyclonedds", "pyopendds", "dust_dds_python"}
+    _AUTO_DETECT_MODULES = {"fastdds", "cyclonedds"}
 
     def fake(name: str, *args: object, **kwargs: object) -> object | None:
         if name in _AUTO_DETECT_MODULES:
@@ -203,21 +194,6 @@ def test_dds_auto_picks_fast_over_cyclone(monkeypatch: pytest.MonkeyPatch) -> No
     _patch_find_spec(monkeypatch, present={"fastdds", "cyclonedds"})
     s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
     assert s.effective_dds_backend == "fast"
-
-
-def test_dds_auto_skips_opendds_stub_when_cyclone_present(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """`pyopendds` exists on PyPI but the adapter is a stub: auto must reach Cyclone."""
-    _patch_find_spec(monkeypatch, present={"pyopendds", "cyclonedds"})
-    s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
-    assert s.effective_dds_backend == "cyclone"
-
-
-def test_dds_auto_never_picks_stubs_alone(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_find_spec(monkeypatch, present={"pyopendds", "dust_dds_python"})
-    s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
-    assert s.effective_dds_backend == "mock"
 
 
 # ---------------------------------------------------------------------------

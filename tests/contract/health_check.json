@@ -1,0 +1,332 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "readOnlyHint": true,
+    "title": "Health check"
+  },
+  "description": "Report TopicForge environment state as a `HealthReport`: effective runtime `mode` (`live` or `mock`), `ros_backend` and `dds_backend`, `ros_tools_available`, `ros2_available`, `ros2_distro` (fed by the `ROS_DISTRO` env var), `dds_domain_id` and `observed_domain_note` (only the DDS domain joined at startup is observed; programs on other domains are invisible), the server version and the server-side sample cap. **Reading `mode`**: `live` with `ros_backend` `none` means the DDS tools are live and the ROS 2 tools are not available (a DDS-only setup: use `list_endpoints` for topics and wiring). With `dds_backend` `none`, `dds_inactive_note` says why: backend not selected, binding not installed, or adapter failed to start. `payload_decoding` is `disabled`: DDS user-topic payloads are not decoded. `dds_security` is `not_supported`: on a secured domain participants show up but protected endpoints and data do not. For a live DDS backend it also reports `dds_domain_id`, `observer_started_ns` and `now_ns` (how long TopicForge has been watching: nothing before `observer_started_ns` was observed) and the discovery tracker status `tracker_running` / `tracker_passes` / `tracker_errors` / `tracker_last_pass_ns` / `tracker_cache_evictions` (errors or evictions above 0, or a stale last pass, mean the discovery data has gaps). **Always succeeds**: call it first when something looks wrong. Read-only; no side effects. **Duration**: never waits for a lock and never runs the `ros2` CLI, so it answers at once even while another call is running.",
+  "inputSchema": {
+    "properties": {},
+    "title": "health_checkArguments",
+    "type": "object"
+  },
+  "name": "health_check",
+  "outputSchema": {
+    "additionalProperties": false,
+    "description": "Result of `health_check`. Always succeeds, even when the host is unhealthy.",
+    "properties": {
+      "contract_version": {
+        "default": 2,
+        "description": "Version of the output contract: the shape and the vocabulary of every tool result. It changes only when a field is renamed, removed or retyped. This is the only place it is reported.",
+        "minimum": 1,
+        "title": "Contract Version",
+        "type": "integer"
+      },
+      "dds_backend": {
+        "default": "none",
+        "description": "DDS backend of the adapter actually serving requests. `none` when the DDS module is not active (default for ROS2-only installs). `mock` for synthetic fixtures. `cyclone` requires `pip install \"topicforge[dds-cyclone]\"` (Eclipse CycloneDDS); `fast` requires a Fast DDS Python binding built from eProsima sources (not on PyPI).",
+        "enum": [
+          "mock",
+          "cyclone",
+          "fast",
+          "none"
+        ],
+        "title": "Dds Backend",
+        "type": "string"
+      },
+      "dds_domain_id": {
+        "anyOf": [
+          {
+            "maximum": 232,
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "DDS domain id observed when the DDS module is active.",
+        "title": "Dds Domain Id"
+      },
+      "dds_inactive_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why `dds_backend` is `none` while the ROS 2 CLI serves: the backend was not selected (`TOPICFORGE_DDS_BACKEND` unset or `mock`), its Python binding is not installed, or the binding is installed but the adapter failed to start. `null` when a DDS backend is serving or the cause is not known.",
+        "title": "Dds Inactive Note"
+      },
+      "dds_security": {
+        "const": "not_supported",
+        "default": "not_supported",
+        "description": "DDS Security is not handled. On a secured domain TopicForge can show participants but not protected endpoints or data.",
+        "title": "Dds Security",
+        "type": "string"
+      },
+      "max_sample_count": {
+        "description": "Server-side cap on the number of samples returned per `sample_messages` call. Requests above this limit are silently clamped; the value is exposed here so a client can size its requests proactively. Constant within a given server version.",
+        "minimum": 0,
+        "title": "Max Sample Count",
+        "type": "integer"
+      },
+      "middleware_available": {
+        "default": false,
+        "description": "True when a DDS backend is serving (`dds_backend` is not `none`). When the DDS module is inactive (`dds_backend == 'none'`), whether the *configured* backend's Python bindings are importable, so a missing binding is visible.",
+        "title": "Middleware Available",
+        "type": "boolean"
+      },
+      "mode": {
+        "description": "Runtime mode of the adapter actually serving requests: `mock` or `live`. `live` with `ros_backend` `none` means the DDS tools are live and the ROS 2 tools are not available. Can differ from `requested_mode` when a live backend could not start (e.g. `live` requested without `ros2` installed falls back to `mock`).",
+        "title": "Mode",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context for the result. `None` means nothing to add.",
+        "title": "Note"
+      },
+      "now_ns": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Server wall-clock time (ns since epoch) when this report was built.",
+        "title": "Now Ns"
+      },
+      "observed_domain_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Plain statement of which DDS domain is observed, set when a DDS module is active: only the domain joined at startup is visible, a program on another domain is invisible.",
+        "title": "Observed Domain Note"
+      },
+      "observer_started_ns": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Wall-clock time (ns since epoch) when the DDS observer joined the bus. Nothing earlier than this was watched: `now_ns` minus this is how long TopicForge has been observing. `None` without a live DDS observer.",
+        "title": "Observer Started Ns"
+      },
+      "payload_decoding": {
+        "default": "disabled",
+        "description": "Whether DDS user-topic payloads are decoded. `disabled` today: `peek_dds_samples` and `topic_metrics` do not return message content for user topics.",
+        "enum": [
+          "disabled",
+          "enabled"
+        ],
+        "title": "Payload Decoding",
+        "type": "string"
+      },
+      "payload_decoding_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": "user-topic payload decoding is switched off until it is validated on a real bus; builtin discovery topics are still readable",
+        "description": "One-line reason for `payload_decoding`.",
+        "title": "Payload Decoding Note"
+      },
+      "requested_mode": {
+        "description": "Mode requested via configuration (may be `auto`).",
+        "title": "Requested Mode",
+        "type": "string"
+      },
+      "rmw_implementation": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "ROS 2 middleware (RMW) implementation, for example `rmw_fastrtps_cpp`. `None` when `rmw_source` is `none`.",
+        "title": "Rmw Implementation"
+      },
+      "rmw_source": {
+        "default": "none",
+        "description": "Where `rmw_implementation` came from: `env` (the `RMW_IMPLEMENTATION` variable is set), `ros2_cli` (read from the `ros2` CLI), `distro_default` (not set: the default of `ros2_distro` is reported and was not verified on the running graph) or `none` (no ROS 2 available).",
+        "enum": [
+          "env",
+          "ros2_cli",
+          "distro_default",
+          "none"
+        ],
+        "title": "Rmw Source",
+        "type": "string"
+      },
+      "ros2_available": {
+        "description": "Whether a `ros2` CLI is on PATH.",
+        "title": "Ros2 Available",
+        "type": "boolean"
+      },
+      "ros2_distro": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Value of `ROS_DISTRO` if set in the environment. **Env disclosure, by design**: under the local-trust threat model (see README 'Security model'), the MCP client is a trusted agent on a machine the user controls, and exposing the ROS2 distro lets it adapt to e.g. `humble`/`jazzy` differences. For a hosted multi-tenant TopicForge endpoint this field would be scrubbed .",
+        "title": "Ros2 Distro"
+      },
+      "ros_backend": {
+        "default": "none",
+        "description": "Active ROS2 backend. `ros2_cli` when the `ros2` CLI is on PATH and live mode resolves to a Ros2CliAdapter (alone or as the ROS half of a composite). `mock` when MockAdapter serves the ROS surface. `none` when no ROS2 backend is active (e.g. DDS-only live install with no `ros2` CLI). Together with `dds_backend` it tells the ROS2 and DDS halves of the runtime apart.",
+        "enum": [
+          "mock",
+          "ros2_cli",
+          "none"
+        ],
+        "title": "Ros Backend",
+        "type": "string"
+      },
+      "ros_tools_available": {
+        "default": false,
+        "description": "True when the ROS 2 tools (`list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`) can run, i.e. `ros_backend` is not `none`. False on a DDS-only setup: use `list_endpoints` for topics and wiring there.",
+        "title": "Ros Tools Available",
+        "type": "boolean"
+      },
+      "server_version": {
+        "description": "TopicForge server version (matches the PyPI release of the `topicforge` package).",
+        "title": "Server Version",
+        "type": "string"
+      },
+      "sim_clock_published": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Whether `/clock` has at least one publisher on the ROS 2 graph. True suggests nodes may run on simulated time (`use_sim_time`), so `header.stamp` values are sim time, not wall time (compare with `received_ns`). It is a hint: a publisher on `/clock` does not prove a given node follows it. `None` in mock mode or when no `list_topics` call (or `get_topic_info` on `/clock`) has read the graph in the last two minutes: `health_check` never runs the `ros2` CLI itself, it reports what the last graph read saw.",
+        "title": "Sim Clock Published"
+      },
+      "tracker_cache_evictions": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Discovery entries dropped because a tracker cache was full (4096 per cache). Non-zero means the bus is bigger than what is listed.",
+        "title": "Tracker Cache Evictions"
+      },
+      "tracker_errors": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Discovery tracker passes that raised (swallowed and logged). Non-zero means gaps.",
+        "title": "Tracker Errors"
+      },
+      "tracker_last_pass_ns": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Wall-clock time (ns since epoch) of the last completed tracker pass. A value far older than `now_ns` means lifecycle is stale.",
+        "title": "Tracker Last Pass Ns"
+      },
+      "tracker_passes": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Completed discovery tracker passes since start.",
+        "title": "Tracker Passes"
+      },
+      "tracker_running": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Whether the continuous discovery tracker thread is alive (Cyclone). `None` when the backend has no tracker.",
+        "title": "Tracker Running"
+      }
+    },
+    "required": [
+      "mode",
+      "requested_mode",
+      "ros2_available",
+      "server_version",
+      "max_sample_count"
+    ],
+    "title": "HealthReport",
+    "type": "object"
+  },
+  "title": "Health check"
+}

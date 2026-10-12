@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from topicforge.models.summaries import MessageSummary, TopicRate
+
 _CONFIG = ConfigDict(extra="forbid", frozen=True)
 
 _MODE_EFFECTIVE_DESC = (
@@ -18,9 +20,11 @@ _MODE_EFFECTIVE_DESC = (
     "real graph from a demo one without calling `health_check`."
 )
 
-# `mode_effective` is on every top-level response model except `HealthReport`
-# (it has `mode` / `requested_mode`) and `MessageSample` (nested in
-# `SampleResult`, which carries it). Do not add it to those two.
+# `mode_effective` is on every top-level result model once, in the envelope,
+# except `HealthReport` (it has `mode` / `requested_mode`). Items nested in a
+# listing (`ParticipantInfo`, `ParticipantEvent`, `EndpointInfo`,
+# `MismatchReport`, `MessageSample`, `TopicListItem`) do not repeat it, and
+# `EndpointInfo` does not repeat `domain_id` either: see docs/CONTRACT.md 1.2.
 
 
 class QosProfile(BaseModel):
@@ -243,7 +247,6 @@ class ParticipantInfo(BaseModel):
         le=232,
         description="DDS domain id the participant is bound to.",
     )
-    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     first_seen_ns: int | None = Field(
         default=None,
         ge=0,
@@ -317,6 +320,40 @@ class ParticipantInfo(BaseModel):
             "moment TopicForge noticed, the weakest). `None` while active."
         ),
     )
+    node_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Fully qualified names of the ROS 2 nodes that share this participant. "
+            "Empty when `node_names_source` is `none`."
+        ),
+    )
+    node_names_source: Literal["ros_discovery_info", "ros2_cli", "none"] = Field(
+        default="none",
+        description=(
+            "Where `node_names` came from: `ros_discovery_info` (read from that "
+            "topic), `ros2_cli` (derived from the `ros2` CLI) or `none` (no link "
+            "could be made, `node_names` is empty)."
+        ),
+    )
+
+
+class ParticipantListing(BaseModel):
+    """Envelope returned by `list_participants`."""
+
+    model_config = _CONFIG
+
+    participants: list[ParticipantInfo] = Field(description="Participants observed on the bus.")
+    returned: int = Field(ge=0, description="Length of `participants`.")
+    total: int = Field(ge=0, description="Participants observed before any cap.")
+    truncated: bool = Field(
+        description="True when `returned` is less than `total` because of a cap."
+    )
+    domain_id: int = Field(ge=0, le=232, description="DDS domain observed.")
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
+    )
 
 
 class ParticipantEvent(BaseModel):
@@ -367,7 +404,6 @@ class ParticipantEvent(BaseModel):
         le=232,
         description="DDS domain id the event occurred on.",
     )
-    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     time_source: TimeSource = Field(
         default="observed_local",
         description=(
@@ -391,6 +427,27 @@ class ParticipantEvent(BaseModel):
     )
 
 
+class ParticipantEventListing(BaseModel):
+    """Envelope returned by `participant_events`."""
+
+    model_config = _CONFIG
+
+    events: list[ParticipantEvent] = Field(
+        description="Lifecycle events inside the window, newest first."
+    )
+    returned: int = Field(ge=0, description="Length of `events`.")
+    total: int = Field(ge=0, description="Events inside the window before the cap.")
+    truncated: bool = Field(
+        description="True when `returned` is less than `total` because of the 200-event cap."
+    )
+    domain_id: int = Field(ge=0, le=232, description="DDS domain observed.")
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
+    )
+
+
 class TopicMetrics(BaseModel):
     """Temporal metrics for a single DDS topic over a recent window.
 
@@ -407,7 +464,7 @@ class TopicMetrics(BaseModel):
     model_config = _CONFIG
 
     topic: str = Field(description="Topic the metrics were computed for.")
-    window_seconds: int = Field(
+    window_s: int = Field(
         ge=1,
         le=3600,
         description=(
@@ -415,11 +472,11 @@ class TopicMetrics(BaseModel):
             "the tool call so the LLM can correlate the request."
         ),
     )
-    window_seconds_actual: float = Field(
+    window_actual_s: float = Field(
         ge=0,
         description=(
             "Actual elapsed seconds within the window. May be smaller "
-            "than `window_seconds` when the adapter buffered samples "
+            "than `window_s` when the adapter buffered samples "
             "for less time than the requested window (e.g., the server "
             "just started). `0.0` when `samples_observed=0`."
         ),
@@ -434,15 +491,15 @@ class TopicMetrics(BaseModel):
             "captured one in the window."
         ),
     )
-    frequency_hz_observed: float | None = Field(
+    observed_frequency_hz: float | None = Field(
         default=None,
         description=(
-            "`samples_observed / window_seconds_actual`. `None` when "
+            "`samples_observed / window_actual_s`. `None` when "
             "fewer than 2 samples were observed (a single sample does "
             "not define a frequency)."
         ),
     )
-    frequency_hz_declared: float | None = Field(
+    declared_frequency_hz: float | None = Field(
         default=None,
         description=(
             "Declared, not measured: `1 / deadline` for the shortest QoS "
@@ -512,6 +569,10 @@ class TopicMetrics(BaseModel):
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
+    )
 
 
 class PolicyMismatch(BaseModel):
@@ -531,6 +592,20 @@ class PolicyMismatch(BaseModel):
     )
     offered: str = Field(description="What the writer offers, same format as `requested`.")
     rule: str = Field(description="The compatibility rule that failed, one sentence.")
+
+
+class SuggestedFix(BaseModel):
+    """A fix proposed as text for a human to apply. TopicForge never applies it."""
+
+    model_config = _CONFIG
+
+    kind: Literal["cli", "qos_override", "dds_profile", "launch_param"] = Field(
+        description="Form of `text`: a CLI command, a ROS 2 QoS override, a DDS profile or a launch parameter."
+    )
+    target: str = Field(description="Which node or side to change, writer or reader.")
+    text: str = Field(description="The exact command, YAML or XML to apply.")
+    tradeoff: str = Field(description="What is lost by applying it.")
+    verify_with: str = Field(description="The TopicForge tool to run again to confirm the repair.")
 
 
 class MismatchReport(BaseModel):
@@ -593,7 +668,13 @@ class MismatchReport(BaseModel):
             "did not announce a value."
         ),
     )
-    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    suggested_fixes: list[SuggestedFix] = Field(
+        default_factory=list,
+        description=(
+            "Fixes proposed as text for a human to apply; TopicForge never applies them. "
+            "Empty when it proposes none for this finding."
+        ),
+    )
 
 
 class NotMatchedPair(BaseModel):
@@ -717,15 +798,14 @@ class MismatchScan(BaseModel):
         )
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
+    )
 
 
-class TopicInfo(BaseModel):
-    """Description of a single ROS2 topic.
-
-    Carries optional DDS-side enrichment fields when the active middleware
-    backend can resolve them (CycloneDDS / Fast DDS). The ROS2 CLI adapter and
-    the mock ROS2 path leave them `None`.
-    """
+class TopicListItem(BaseModel):
+    """One ROS2 topic as listed by `list_topics`: identity and endpoint counts, no QoS."""
 
     model_config = _CONFIG
 
@@ -733,53 +813,87 @@ class TopicInfo(BaseModel):
     message_type: str = Field(description="ROS2 message type, e.g. `geometry_msgs/msg/Twist`.")
     publisher_count: int = Field(ge=0, description="Publishers known to the graph.")
     subscriber_count: int = Field(ge=0, description="Subscribers known to the graph.")
-    qos_reliability: str | None = Field(
+
+
+class TopicListing(BaseModel):
+    """Envelope returned by `list_topics`."""
+
+    model_config = _CONFIG
+
+    topics: list[TopicListItem] = Field(description="Topics on the graph.")
+    returned: int = Field(ge=0, description="Length of `topics`.")
+    total: int = Field(ge=0, description="Topics on the graph before any cap.")
+    truncated: bool = Field(
+        description="True when `returned` is less than `total` because of a cap."
+    )
+    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
         default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
+    )
+
+
+class SideQos(BaseModel):
+    """QoS of one side (publishers or subscriptions) of a ROS2 topic, as the `ros2` CLI reports it."""
+
+    model_config = _CONFIG
+
+    reliability: Literal["reliable", "best_effort", "mixed"] = Field(
+        description="Reliability shared by the endpoints of this side, or `mixed` when they disagree."
+    )
+    durability: Literal["volatile", "transient_local", "mixed"] = Field(
         description=(
-            "Reliability announced by the topic's publishers: `reliable`, "
-            "`best_effort`, or `mixed` when publishers disagree. `null` when "
-            "unknown: the topic has no publisher, or the value was not read "
-            "(`list_topics` does not read QoS; `get_topic_info` does)."
+            "Durability shared by the endpoints of this side, or `mixed` when they disagree. "
+            "`transient_local` marks a latched topic such as `/tf_static`."
+        )
+    )
+    endpoint_count: int = Field(
+        ge=1, description="Endpoints of this side the values were read from."
+    )
+
+
+class TopicInfo(BaseModel):
+    """Detail of a single ROS2 topic: counts, QoS per side and the nodes on each side."""
+
+    model_config = _CONFIG
+
+    name: str = Field(description="Fully qualified topic name, e.g. `/cmd_vel`.")
+    message_type: str = Field(description="ROS2 message type, e.g. `geometry_msgs/msg/Twist`.")
+    publisher_count: int = Field(ge=0, description="Publishers known to the graph.")
+    subscriber_count: int = Field(ge=0, description="Subscribers known to the graph.")
+    publisher_qos: SideQos | None = Field(
+        default=None,
+        description="QoS of the publishers. `None` when it was not read: see `publisher_qos_note`.",
+    )
+    publisher_qos_note: str | None = Field(
+        default=None, description="Why `publisher_qos` is `None`. `None` when it is set."
+    )
+    subscription_qos: SideQos | None = Field(
+        default=None,
+        description="QoS of the subscriptions. `None` when it was not read: see `subscription_qos_note`.",
+    )
+    subscription_qos_note: str | None = Field(
+        default=None, description="Why `subscription_qos` is `None`. `None` when it is set."
+    )
+    publisher_nodes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Fully qualified names of the nodes that publish the topic, from `ros2 topic info "
+            "--verbose`. Empty when none is known."
         ),
     )
-    qos_durability: str | None = Field(
-        default=None,
+    subscriber_nodes: list[str] = Field(
+        default_factory=list,
         description=(
-            "Durability announced by the topic's publishers: `volatile`, "
-            "`transient_local` (late subscribers receive the last samples; "
-            "typical of latched topics such as `/tf_static`), or `mixed` when "
-            "publishers disagree. `null` when unknown, with the same rules as "
-            "`qos_reliability`."
-        ),
-    )
-    reader_count: int | None = Field(
-        default=None,
-        ge=0,
-        description=(
-            "DDS reader-endpoint count when the active backend can resolve "
-            "endpoint-level info (Cyclone / Fast DDS). `None` from the ROS2 CLI "
-            "adapter or when the DDS module is inactive."
-        ),
-    )
-    writer_count: int | None = Field(
-        default=None,
-        ge=0,
-        description=(
-            "DDS writer-endpoint count when the active backend can resolve "
-            "endpoint-level info. `None` from the ROS2 CLI adapter or when "
-            "the DDS module is inactive."
-        ),
-    )
-    qos_profile: QosProfile | None = Field(
-        default=None,
-        description=(
-            "Effective DDS QoS profile for this topic when resolvable. "
-            "`None` from the ROS2 CLI adapter or when the DDS module is "
-            "inactive. The DDS module populates this on a best-effort basis "
-            "(picks one representative endpoint if reader/writer QoS differ)."
+            "Fully qualified names of the nodes that subscribe to the topic, same source. "
+            "Empty when none is known."
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
+    note: str | None = Field(
+        default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
+    )
 
 
 class MessageSample(BaseModel):
@@ -811,15 +925,15 @@ class MessageSample(BaseModel):
             "increasing values."
         )
     )
-    stamp_source: Literal["header", "payload", "none", "recorded"] | None = Field(
-        default=None,
+    stamp_source: Literal["header", "payload", "recorded", "dds_source", "none"] = Field(
         description=(
-            "Where `timestamp_ns` comes from: `header` (the message's "
-            "`header.stamp`), `payload` (no header, but the time is in the body of a "
-            "`Clock`, `TFMessage` or `Log` message), `none` (no time in the live "
-            "message, `timestamp_ns` is 0) or `recorded` (no time in a message "
-            "from a bag, `timestamp_ns` is the bag record time). `None` when the backend "
-            "does not say."
+            "Where `timestamp_ns` comes from: `header` (the message's `header.stamp`), "
+            "`payload` (no header, but the time is in the body of a `Clock`, `TFMessage` "
+            "or `Log` message), `recorded` (no time in a bag message, `timestamp_ns` is the "
+            "bag record time), `dds_source` (the DDS source timestamp of the sample) or "
+            "`none` (no time anywhere, `timestamp_ns` is 0). Never `None`. "
+            "`sample_messages` gives `header`, `payload` or `none`; `peek_bag_samples` gives "
+            "`header`, `payload` or `recorded`; `peek_dds_samples` gives `dds_source` or `none`."
         ),
     )
     recorded_ns: int | None = Field(
@@ -857,6 +971,18 @@ class MessageSample(BaseModel):
             "dropped to keep tool output bounded."
         ),
     )
+    summary: MessageSummary | None = Field(
+        default=None,
+        description=(
+            "Condensed reading of this message, computed on the whole message even when "
+            "`payload` is cut at `max_array_length`: `laser_scan` (closest obstacle, sector "
+            "minima, finite/inf/nan counts), `odometry` (speed, position, yaw), `imu` "
+            "(roll, pitch, yaw, norms), `image` (size and encoding, never pixels) or "
+            "`point_cloud2` (point count and layout), told apart by `summary_type`. `null` "
+            "for any other message type, for DDS peeks, and for a scan whose arrays were "
+            "replaced by `arrays_summary_only`."
+        ),
+    )
 
 
 class BagTopicStats(BaseModel):
@@ -868,6 +994,14 @@ class BagTopicStats(BaseModel):
     message_type: str = Field(description="ROS2 message type recorded for this topic.")
     message_count: int = Field(
         ge=0, description="Number of messages recorded on this topic across the bag."
+    )
+    kind: Literal["user", "rosbag2_internal", "ros_builtin"] = Field(
+        default="user",
+        description=(
+            "What the topic is: `user` (data, including `/tf`, `/tf_static` and `/clock`), "
+            "`rosbag2_internal` (written by rosbag2 itself, such as `/events/write_split`) or "
+            "`ros_builtin` (ROS 2 infrastructure such as `/parameter_events` and `/rosout`)."
+        ),
     )
     frequency_hz: float | None = Field(
         default=None,
@@ -925,10 +1059,8 @@ class BagTopicStats(BaseModel):
 class BagAnalysis(BaseModel):
     """Structured summary of a ROS2 bag.
 
-    The fields `bag_format`, `samples_decoded_count`,
-    `recording_duration_ns` and `participants_recorded` are populated only
-    when the `rosbags`-backed reader runs; the `ros2 bag info` path leaves
-    them at their defaults.
+    `bag_format` is populated only when the `rosbags`-backed reader runs; the
+    `ros2 bag info` path leaves it `None`.
     """
 
     model_config = _CONFIG
@@ -944,7 +1076,7 @@ class BagAnalysis(BaseModel):
         default=None,
         description="`mcap`, `sqlite3`, or other storage identifier when known.",
     )
-    duration_seconds: float = Field(
+    duration_s: float = Field(
         ge=0,
         description="Total bag duration, in seconds (wall clock between first and last message).",
     )
@@ -981,41 +1113,10 @@ class BagAnalysis(BaseModel):
             "`ros2 bag info` text, which carries no format information."
         ),
     )
-    samples_decoded_count: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Total decoded sample count across all topics produced by the "
-            "bag reader. `0` when the reader only parsed metadata or when `rosbags` is not installed "
-            "on the host. Use `peek_bag_samples` to pull the actual "
-            "sample payloads for a specific topic."
-        ),
-    )
-    recording_duration_ns: int | None = Field(
-        default=None,
-        ge=0,
-        description=(
-            "Recording duration in nanoseconds when readable from the "
-            "bag's index. `None` when only `ros2 bag info` text was parsed; "
-            "`duration_seconds` (float) is the always-populated fallback "
-            "that downstream LLM consumers should prefer when this is "
-            "`None`."
-        ),
-    )
-    participants_recorded: list[ParticipantInfo] = Field(
-        default_factory=list,
-        description=(
-            "DDS participants recorded in the bag when the container "
-            "format embeds participant metadata. MCAP can carry it via "
-            "channel metadata records; ROS2 `.db3` and ROS1 `.bag` "
-            "generally do not. Empty list when not available, which "
-            "is the common case."
-        ),
-    )
 
 
 class SampleResult(BaseModel):
-    """Envelope returned by the `sample_messages` tool."""
+    """Samples returned by `sample_messages`, `peek_dds_samples` and `peek_bag_samples`."""
 
     model_config = _CONFIG
 
@@ -1023,15 +1124,24 @@ class SampleResult(BaseModel):
     count: int = Field(
         ge=0,
         description=(
-            "Number of samples actually returned. May be 0 (no publisher active "
-            "in live mode, or empty mock fixture), less than the requested count "
-            "(topic yielded fewer messages within the timeout), or capped by the "
-            "the silent maximum of 50: request `count > 50` and you will "
-            "receive at most 50 without warning."
+            "Number of samples in `samples`. May be 0 (no publisher active, an "
+            "empty topic or an empty fixture) or less than requested (the topic "
+            "gave fewer messages before the deadline). Never more than 50 "
+            "(`health_check.max_sample_count`): a larger request is capped to 50."
         ),
     )
     samples: list[MessageSample] = Field(
         description="The sampled messages, ordered as received from the backend."
+    )
+    rate: TopicRate | None = Field(
+        default=None,
+        description=(
+            "How the topic delivered these messages (frequency, interval spread, trailing gap) "
+            "and a verdict, computed from all messages collected, also those dropped for size. "
+            "`sample_messages` and `peek_bag_samples` only; `null` for `peek_dds_samples` and "
+            "for a result that holds no timing (a mock sample set without arrival times). "
+            "Collect at least 10 messages (`count` >= 10) for a meaningful verdict."
+        ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     note: str | None = Field(
@@ -1075,6 +1185,15 @@ class HealthReport(BaseModel):
     server_version: str = Field(
         description="TopicForge server version (matches the PyPI release of the `topicforge` package)."
     )
+    contract_version: int = Field(
+        default=2,
+        ge=1,
+        description=(
+            "Version of the output contract: the shape and the vocabulary of every "
+            "tool result. It changes only when a field is renamed, removed or "
+            "retyped. This is the only place it is reported."
+        ),
+    )
     max_sample_count: int = Field(
         ge=0,
         description=(
@@ -1088,8 +1207,6 @@ class HealthReport(BaseModel):
         "mock",
         "cyclone",
         "fast",
-        "opendds",
-        "dust",
         "none",
     ] = Field(
         default="none",
@@ -1099,11 +1216,10 @@ class HealthReport(BaseModel):
             "installs). `mock` for synthetic fixtures. `cyclone` requires "
             '`pip install "topicforge[dds-cyclone]"` (Eclipse CycloneDDS); '
             "`fast` requires a Fast DDS Python binding built from eProsima "
-            "sources (not on PyPI); `opendds` and `dust` are permanent stub "
-            "adapters that never serve."
+            "sources (not on PyPI)."
         ),
     )
-    dds_inactive_reason: str | None = Field(
+    dds_inactive_note: str | None = Field(
         default=None,
         description=(
             "Why `dds_backend` is `none` while the ROS 2 CLI serves: the "
@@ -1199,7 +1315,9 @@ class HealthReport(BaseModel):
             "so `header.stamp` values are sim time, not wall time (compare "
             "with `received_ns`). It is a hint: a publisher on `/clock` does "
             "not prove a given node follows it. `None` in mock mode or when "
-            "the `ros2` CLI could not answer."
+            "no `list_topics` call (or `get_topic_info` on `/clock`) has read the "
+            "graph in the last two minutes: `health_check` never runs the `ros2` "
+            "CLI itself, it reports what the last graph read saw."
         ),
     )
     payload_decoding: Literal["disabled", "enabled"] = Field(
@@ -1210,7 +1328,7 @@ class HealthReport(BaseModel):
             "content for user topics."
         ),
     )
-    payload_decoding_reason: str | None = Field(
+    payload_decoding_note: str | None = Field(
         default=(
             "user-topic payload decoding is switched off until it is validated "
             "on a real bus; builtin discovery topics are still readable"
@@ -1224,6 +1342,22 @@ class HealthReport(BaseModel):
             "show participants but not protected endpoints or data."
         ),
     )
+    rmw_implementation: str | None = Field(
+        default=None,
+        description=(
+            "ROS 2 middleware (RMW) implementation, for example `rmw_fastrtps_cpp`. "
+            "`None` when `rmw_source` is `none`."
+        ),
+    )
+    rmw_source: Literal["env", "ros2_cli", "distro_default", "none"] = Field(
+        default="none",
+        description=(
+            "Where `rmw_implementation` came from: `env` (the `RMW_IMPLEMENTATION` "
+            "variable is set), `ros2_cli` (read from the `ros2` CLI), `distro_default` "
+            "(not set: the default of `ros2_distro` is reported and was not verified on the "
+            "running graph) or `none` (no ROS 2 available)."
+        ),
+    )
     ros_backend: Literal["mock", "ros2_cli", "none"] = Field(
         default="none",
         description=(
@@ -1235,6 +1369,10 @@ class HealthReport(BaseModel):
             "Together with `dds_backend` it tells the ROS2 and DDS halves "
             "of the runtime apart."
         ),
+    )
+    note: str | None = Field(
+        default=None,
+        description="One sentence of context for the result. `None` means nothing to add.",
     )
 
 
@@ -1261,7 +1399,17 @@ class EndpointInfo(BaseModel):
             "(`unknown` when it cannot be determined)."
         ),
     )
-    topic: str = Field(description="DDS topic name.")
+    dds_topic: str = Field(description="Raw DDS topic name as announced, for example `rt/scan`.")
+    ros_topic: str | None = Field(
+        default=None,
+        description=(
+            "ROS 2 name of the topic, for example `/scan`. `None` when the endpoint is not "
+            "a ROS 2 topic: see `ros_topic_note`."
+        ),
+    )
+    ros_topic_note: str | None = Field(
+        default=None, description="Why `ros_topic` is `None`. `None` when it is set."
+    )
     type_name: str | None = Field(default=None, description="Announced data type name.")
     type_id: str | None = Field(
         default=None,
@@ -1295,19 +1443,6 @@ class EndpointInfo(BaseModel):
             "`lost_ns`, an upper bound of the death)."
         ),
     )
-    activity: None = Field(
-        default=None,
-        description="Reserved for a future liveness signal. Always `None` today.",
-    )
-    activity_note: str = Field(
-        default=(
-            "not observed: TopicForge holds no reader on user topics, so it cannot "
-            "tell a silent or hung writer from a healthy one"
-        ),
-        description="Why `activity` is not populated.",
-    )
-    domain_id: int = Field(ge=0, le=232, description="DDS domain the endpoint was observed on.")
-    mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
 
 
 class DepartedEndpoint(BaseModel):
@@ -1330,7 +1465,11 @@ class TopicSummary(BaseModel):
 
     model_config = _CONFIG
 
-    topic: str = Field(description="DDS topic name.")
+    dds_topic: str = Field(description="Raw DDS topic name as announced, for example `rt/scan`.")
+    ros_topic: str | None = Field(
+        default=None,
+        description="ROS 2 name of the topic, for example `/scan`. `None` for a DDS topic that is not a ROS 2 topic.",
+    )
     type_names: list[str] = Field(description="Distinct type names announced on this topic.")
     writer_count: int = Field(ge=0, description="Number of listed writers.")
     reader_count: int = Field(ge=0, description="Number of listed readers.")
@@ -1372,12 +1511,10 @@ class EndpointListing(BaseModel):
         description="Matching endpoints, capped (see `truncated`)."
     )
     by_topic: list[TopicSummary] = Field(description="Roll-up over every matching endpoint.")
-    total_discovered: int = Field(
-        ge=0, description="Endpoints in the discovery cache before any filter."
-    )
+    total: int = Field(ge=0, description="Endpoints in the discovery cache before any filter.")
     returned: int = Field(ge=0, description="Length of `endpoints`.")
     truncated: bool = Field(description="True when matching endpoints exceeded the cap.")
-    departed_endpoints: int = Field(
+    departed_endpoint_count: int = Field(
         default=0,
         ge=0,
         description=(
@@ -1386,13 +1523,29 @@ class EndpointListing(BaseModel):
             "carries them as `departed_writers` / `departed_readers`."
         ),
     )
-    excluded_observer_endpoints: int = Field(
+    excluded_observer_endpoint_count: int = Field(
         default=0,
         ge=0,
         description=(
             "Endpoints of TopicForge's own observer participant left out of "
-            "`endpoints` (they are counted in `total_discovered`). Explains "
-            "`total_discovered` vs `returned` together with the filters."
+            "`endpoints` (they are counted in `total`). Explains `total` vs "
+            "`returned` together with the filters."
+        ),
+    )
+    hidden_internal_endpoint_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/` and "
+            "`ros_discovery_info`) left out because `include_internal` is false; they "
+            "are counted in `total`."
+        ),
+    )
+    hints: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Facts that apply to every endpoint of the listing, stated once, for example "
+            "that liveness is not observed."
         ),
     )
     note: str | None = Field(

@@ -48,13 +48,11 @@ def _ep(
         role=role,  # type: ignore[arg-type]
         participant_guid=f"p{n}",
         participant_name=name or f"node_{n}",
-        topic=topic,
+        dds_topic=topic,
         type_name=type_name,
         type_id=type_id,
         qos=qos if qos is not None else _qos(**qos_extra),
         is_observer=observer,
-        domain_id=0,
-        mode_effective="live",
     )
 
 
