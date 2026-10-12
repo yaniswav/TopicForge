@@ -7,10 +7,12 @@ CLI adapter spawns processes. `guarded(lane)` therefore does three things.
 
 Lanes. A handler names the backend it uses and runs behind that lane's lock:
 
-- `"ros"`: calls that run the `ros2` CLI (`list_topics`, `get_topic_info`,
-  `sample_messages`, `analyze_bag`);
-- `"dds"`: calls that use the DDS binding (the seven DDS and observability
-  tools);
+- `"ros"`: calls that run the `ros2` CLI, six tools (`list_topics`,
+  `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`,
+  `analyze_bag`);
+- `"dds"`: calls that use the DDS binding, six tools (`list_participants`,
+  `detect_qos_mismatches`, `peek_dds_samples`, `participant_events`,
+  `topic_metrics`, `list_endpoints`);
 - `None`: no lock. `health_check` (it must always answer, so it never waits
   for a lane and never runs a CLI) and `peek_bag_samples` (a pure-Python file
   read that shares no state with either backend).

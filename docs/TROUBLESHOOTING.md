@@ -7,7 +7,7 @@ Common errors and what to do about them. Each section is titled with a substring
 The server prints one line to stderr and exits with code 2, so your MCP client reports that it failed to start. One of the `TOPICFORGE_*` variables holds a value the settings loader rejects; it is deliberately strict so a typo cannot silently change behaviour. The common cases:
 
 - `Invalid TOPICFORGE_TELEMETRY=...`: only `on`, `1`, `true`, `yes`, `enabled` turn telemetry on, and only unset, `off`, `0`, `false`, `no`, `disabled` turn it off.
-- `TOPICFORGE_DDS_BACKEND='rti' was removed ...` (also `opensplice`, `coredx`, `intercom`): the retired Pro tier values. Use `cyclone`, `fast` or `auto`; a Cyclone participant still discovers RTI, CoreDX and OpenSplice participants through standard RTPS discovery.
+- `Invalid TOPICFORGE_DDS_BACKEND='rti'; expected one of ('mock', 'cyclone', 'fast', 'auto'). Use `cyclone`: ...` (also `opensplice`, `coredx`, `intercom`, `opendds`, `dust`): these identifiers are rejected, the retired Pro tier values and the two permanent stubs. Use `cyclone`, `fast` or `auto`; a Cyclone participant still discovers RTI, CoreDX, OpenDDS, OpenSplice and Dust participants through standard RTPS discovery.
 - `Invalid TOPICFORGE_MODE`, `TOPICFORGE_LOG_LEVEL`, `TOPICFORGE_DDS_DOMAIN_ID` (an integer in `0..232`).
 
 Fix the variable in the `env` block of your MCP client configuration (or in the shell that spawns the server) and restart the client. Desktop clients show the stderr line in their MCP log.

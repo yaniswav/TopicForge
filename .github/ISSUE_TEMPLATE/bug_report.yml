@@ -15,7 +15,7 @@ body:
     attributes:
       label: TopicForge version
       description: "Output of `python -m topicforge --version` or `pip show topicforge`."
-      placeholder: "topicforge 0.5.3"
+      placeholder: "topicforge 0.7.0"
     validations:
       required: true
 

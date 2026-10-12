@@ -76,7 +76,7 @@ Order of checks per reader/writer pair: Partition first (wildcards `*` and `?` o
 
 ## 4. Composite adapter and backend selection
 
-When `ros2` is on PATH and a DDS backend starts, TopicForge builds both a `Ros2CliAdapter` and the DDS adapter behind a `CompositeAdapter`: the five ROS2 graph and bag tools go to the CLI, the seven DDS tools to the DDS backend. An explicit DDS backend (`cyclone`, `fast`, `auto`) is honoured in every mode except `mock`, including on a host without `ros2`.
+When `ros2` is on PATH and a DDS backend starts, TopicForge builds both a `Ros2CliAdapter` and the DDS adapter behind a `CompositeAdapter`: the six `ros2` CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) go to the CLI and the six DDS tools to the DDS backend; `peek_bag_samples` reads bags without the CLI. An explicit DDS backend (`cyclone`, `fast`, `auto`) is honoured in every mode except `mock`, including on a host without `ros2`.
 
 | `TOPICFORGE_MODE` | `TOPICFORGE_DDS_BACKEND` | `ros2` on PATH | Active adapter | ROS2 graph and bag tools | DDS tools |
 | --- | --- | --- | --- | --- | --- |

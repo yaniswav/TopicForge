@@ -124,7 +124,7 @@ Configuration and Python API:
     A name used by several nodes is flagged in `duplicate_count` and `note`. An unknown node
     raises an error that lists close matches.
   - Both run the `ros2` CLI in the ROS lane; DDS-only setups raise a clear error. The only
-    request TopicForge ever sends to a node is a parameter read (SECURITY.md).
+    request TopicForge ever sends is a parameter read (list/get) (SECURITY.md).
   - The `inspect-ros2-robot` prompt and plugin skill gain the node step.
 - Per-type message summaries and an observed rate with a verdict on `sample_messages` and
   `peek_bag_samples` (additive; no new input, no new tool).
@@ -171,6 +171,7 @@ Configuration and Python API:
   `scripts/contract/snapshot_tools.py`, and `tests/test_contract_snapshots.py`, which fails
   with a diff on any change to a description, schema or annotation and when `TOOLS.md` is
   stale.
+
 ### Removed
 
 - The `opendds` and `dust` stub adapters (`topicforge.adapters.dds_opendds`,
@@ -192,9 +193,10 @@ Configuration and Python API:
   differ only where the SDK serializes differently (see the golden snapshot commit).
 - Tool calls are serialized per backend (`topicforge.tools.guard`): the 2.x SDK runs
   synchronous handlers in worker threads, and neither the Cyclone binding nor the `ros2` CLI
-  adapter can take overlapping calls. There are two locks: a ROS lane (`list_topics`,
-  `get_topic_info`, `sample_messages`, `analyze_bag`) and a DDS lane (the six DDS and
-  observability tools), so a slow `sample_messages` no longer delays a DDS call.
+  adapter can take overlapping calls. There are two locks: a ROS lane (six tools: `list_topics`,
+  `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) and a
+  DDS lane (six tools: `list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
+  `participant_events`, `topic_metrics`, `list_endpoints`), so a slow `sample_messages` no longer delays a DDS call.
   `health_check` and `peek_bag_samples` take no lock.
 - A tool call has a wall budget of 45 s, lock wait included. A call that waited for its lane
   runs with the time that is left (the `ros2` timeouts shrink accordingly), and one that cannot

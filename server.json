@@ -28,7 +28,7 @@
         },
         {
           "name": "TOPICFORGE_DDS_BACKEND",
-          "description": "DDS backend: mock, cyclone, fast, or auto. Requires the matching extra, e.g. pip install topicforge[dds].",
+          "description": "DDS backend: mock, cyclone, fast, or auto. cyclonedds is a core dependency on platforms with wheels (Linux x86_64, Windows x64, macOS; Python 3.10-3.13); the [dds] extra remains an alias.",
           "isRequired": false,
           "isSecret": false,
           "format": "string",

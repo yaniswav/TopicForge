@@ -1,8 +1,6 @@
 # TopicForge output contract
 
-Status: validated at G0, 2026-10-09 (the owner delegated the decisions to the project's
-advisor). Nothing in this file changes the
-behaviour of 0.6.4. The baseline it starts from is recorded in
+Status: contract 2, shipped in 0.7.0. The baseline it started from (0.6.4) is recorded in
 [`tests/contract/`](../tests/contract) (one JSON file per tool: description, input
 schema, output schema, annotations) and rendered in [TOOLS.md](TOOLS.md).
 
@@ -74,7 +72,7 @@ is removed from `ParticipantInfo`, `ParticipantEvent`, `EndpointInfo` and `Misma
  "domain_id": 0, "mode_effective": "live", "note": null}
 ```
 
-`ParticipantInfo` and `ParticipantEvent` keep their own `domain_id`: G0 removed `domain_id`
+`ParticipantInfo` and `ParticipantEvent` keep their own `domain_id`: the 0.7.0 contract removed `domain_id`
 from `EndpointInfo` only, and the lifecycle buffers filter on it.
 
 `health_check` is the one result that has no `mode_effective`: it reports `mode` and
@@ -165,7 +163,7 @@ caveats a caller needs (empty-result behaviour, mock versus live, caps) and the 
 duration, which stays under 45 s for every tool. The 45 s are wall time, from the request
 to the response, lock wait included. A regex test fails on history words from 0.7.0 rc1.
 
-Requirement for M5: `health_check` never takes the lock, and a handler that waited for the
+Requirement: `health_check` never takes the lock, and a handler that waited for the
 lock shortens its own deadline by the time it waited.
 
 The 45 s are wall time from the request to the response, lock wait included. The server
@@ -307,7 +305,7 @@ rather than absent). There is no `participant_name` value: since Foxy the partic
 carries the name of the enclave, not of a node. The field exists because Fast DDS
 participants all announce the name `/`.
 
-Risk for M9: `ros_discovery_info` is a user topic whose `Gid.data` is 24 bytes on Humble
+Risk: `ros_discovery_info` is a user topic whose `Gid.data` is 24 bytes on Humble
 and 16 bytes from Iron. Fallback: `ros2_cli`, through the GID prefixes printed by
 `ros2 topic info -v /parameter_events` and `/rosout`.
 
@@ -347,7 +345,7 @@ On `health_check`: `rmw_implementation` and `rmw_source`.
 
 `rmw_source` is `env` (the `RMW_IMPLEMENTATION` variable is set), `ros2_cli` (reserved:
 read from the `ros2` CLI), `distro_default` (not set; the distro default is reported and
-was not verified on the running graph) or `none` (no ROS 2 available). M6 implements
+was not verified on the running graph) or `none` (no ROS 2 available). The server implements
 `env`, `distro_default` and `none`; `ros2_cli` is reserved. When `rmw_source` is `none`,
 `rmw_implementation` is `null`.
 
@@ -377,7 +375,7 @@ caller actually gets; `stamp_source` says which clock the message stamps use.
 ```
 
 The block is `SampleResult.rate` (`sample_messages` and `peek_bag_samples`). Names as built in
-M8: `message_count` (suffix `_count`) replaces `samples_count`, `observed_frequency_hz`
+`message_count` (suffix `_count`) replaces `samples_count`, `observed_frequency_hz`
 replaces `rate_hz`, `sim_frequency_hz` is the same computation on the messages' own stamps
 (`null` without stamps), and `basis` is `received_ns` for a live call or `recorded_ns` for a
 bag, where there is no end of window and so `trailing_gap_s` is always `null`. Messages
@@ -433,9 +431,9 @@ Resolutions recorded here:
 
 ## 5. Reserved multimodal exception
 
-Section 1.1 says a tool returns one object. A future `get_image` (0.8) is the single
-planned exception: it returns that object (topic, size, encoding, `stamp_source`,
-`note`) and, next to it, one MCP image content block carrying the picture. The object is
+Section 1.1 says a tool returns one object. A future contract version may add a
+multimodal exception: a tool that returns that object and, next to it, one MCP image
+content block carrying the picture. The object is
 still the contract; the image block is an attachment that a text-only client may ignore.
 The image is size-bounded (under 300 KB) and only a compressed image type is accepted. No
 other tool returns binary content.
@@ -452,7 +450,7 @@ other tool returns binary content.
 `health_check.contract_version` (integer, 2 for 0.7) is the only place a client reads the
 version of this contract. It is not repeated in other results.
 
-Tests (all three exist since M6):
+Tests (all three exist):
 
 | File | Asserts |
 | --- | --- |
@@ -465,7 +463,7 @@ Tests (all three exist since M6):
 This is the complete list of renames, splits and removals that make 0.7.0 a break. It was
 produced by reading `tools/handlers.py`, `models/schemas.py` and the adapters of 0.6.4.
 After rc1, no rename is added. Section 7.7 records the decision taken for each item the
-audit found, and section 7.8 collects what G0 added.
+audit found, and section 7.8 collects what the contract added.
 
 ### 7.1 Tools that return a bare list today
 
@@ -557,7 +555,7 @@ payloads are `_decode_status`, `_decode_note`, `_truncated_fields`, `_raw_text`,
 ### 7.7 Decided by audit
 
 These are consequences of the principles that the brief did not list. Each line carries
-the decision taken at G0 (2026-10-09).
+the decision taken for contract 2 (2026-10-09).
 
 | Item | Observation | Decision |
 | --- | --- | --- |
@@ -571,7 +569,7 @@ the decision taken at G0 (2026-10-09).
 | `sample_messages.timeout_s` maximum | allows 45 s and returns within about `timeout_s` + 2 s, so the worst case is 47 s, above the 45 s of 1.7 | maximum lowered from 45 to 40 (the default stays 10) |
 | `HealthReport.mode` / `requested_mode` | `health_check` has no `mode_effective` | kept, documented in 1.2 |
 
-### 7.8 Added at G0
+### 7.8 Added by the contract
 
 Everything below goes into the migration list and into `docs/MIGRATION.md`.
 
@@ -590,17 +588,15 @@ Everything below goes into the migration list and into `docs/MIGRATION.md`.
   (section 4).
 - `TopicInfo` gains `publisher_nodes` and `subscriber_nodes` (3.3).
 - `list_nodes` (tool 13) is limited to one `ros2 node list` call: names, namespaces and
-  duplicates. Per-node interfaces stay in `get_node_info` (tool 14). Parameter reads
-  (list/get) are the only request TopicForge ever sends. Both are implemented (M9), in the
-  ROS lane, and are additive: see section 8.
+  duplicates. Per-node interfaces stay in `get_node_info` (tool 14). The only
+  request TopicForge ever sends is a parameter read (list/get). Both tools ship in 0.7.0,
+  in the ROS lane, and are additive: see section 8.
 - External callers to update with the renames: `examples/dds/harness.py`,
   `scripts/integration/interop_check.py` (and the kit's `compare.py`).
-- Pending description fix (E13, for M7): the description of `SampleResult.count` has a
-  duplicated "the" and contradicts itself on the maximum of 50.
 
 ## 8. Node tools
 
-Tools 13 and 14, implemented in M9. Both are additive, run in the ROS lane and are open-world.
+Tools 13 and 14, shipped in 0.7.0. Both are additive, run in the ROS lane and are open-world.
 
 `list_nodes` returns `NodeListing {nodes, returned, total, truncated, duplicates,
 mode_effective, note}` from one `ros2 node list` call. A node is `{name, namespace,
@@ -627,8 +623,8 @@ Rules:
   cut and flagged `truncated`; `parameters_note` says how many were masked or cut.
 - Non-finite floats are the strings `inf`, `-inf` and `nan` (2.1).
 - The command is `ros2 param dump <node>` with no output option: it prints YAML on stdout and
-  nothing is written to disk. The only request TopicForge ever sends to a node is a parameter
-  read (list/get).
+  nothing is written to disk. The only request TopicForge ever sends is a parameter read
+  (list/get).
 - A name used by several nodes is flagged: `duplicate_count` above 1 and a `note`, because the
   CLI answers for one of them without saying which.
 - An unknown node is an `isError` result naming close matches (1.6).

@@ -41,9 +41,11 @@ independent benchmark.
 
 ## Results
 
-TopicForge: branch `feat/v0.7.0` at `1929d8f` (contract 2, 14 tools). Windows 11,
-one machine. Two runs per scenario for Codex, plus one extra healthy-bus run
-after a description edit.
+TopicForge: branch `feat/v0.7.0` (contract 2, 14 tools). Windows 11, one machine.
+The runs were made on `1929d8f`. One description edit (`list_participants`, unnamed
+participants) landed after it, in `84b11ef`, and the healthy-bus run was repeated after
+that edit. Codex: 9 runs (two per scenario plus one extra healthy-bus run after the
+edit), 9/9 correct.
 
 | Agent | crash_live | restart_loop | partition_split | healthy_bus |
 |---|---|---|---|---|

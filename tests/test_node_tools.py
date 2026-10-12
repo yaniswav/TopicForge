@@ -378,6 +378,6 @@ def test_both_tools_use_the_ros_lane_and_are_open_world() -> None:
     for name in ("list_nodes", "get_node_info"):
         assert tools[name].annotations.open_world_hint is True
         assert "ROS lock" in tools[name].description
-    assert "the only request TopicForge ever sends to a node is a parameter read" in (
+    assert "the only request TopicForge ever sends is a parameter read" in (
         tools["get_node_info"].description
     )
