@@ -20,6 +20,7 @@ Sections:
 6. Change policy and tests
 7. 0.7.0 migration list
 8. Node tools
+9. 0.7.x additions
 
 ## 1. Principles
 
@@ -646,3 +647,130 @@ Rules:
 - A name used by several nodes is flagged: `duplicate_count` above 1 and a `note`, because the
   CLI answers for one of them without saying which.
 - An unknown node is an `isError` result naming close matches (1.6).
+
+## 9. 0.7.x additions
+
+Everything here is additive (1.9): a new optional field or input with a backward-compatible
+default, or a description that says the same thing in fewer words. No property was renamed,
+removed or retyped; `scripts/contract/snapshot_tools.py` regenerates the snapshots and the diff
+shows only added properties.
+
+### 9.1 Listing size
+
+`tools/list` carries the description, input schema and output schema of every tool, and some
+clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.1 serves about 113 KB.
+How:
+
+- Pydantic's generated `title` is dropped from every property and nested model, and the
+  docstring of a nested model is dropped (the model name stays). The output type name stays as
+  the `title` of each `outputSchema`. Done by `tools/schema_compact.py`.
+- Field descriptions are one sentence, and self-explanatory ones (`reader_guid`, `returned`)
+  have none. The longer explanations are in this section and in section 4; the rules a client
+  needs stay in the tool description.
+- `tests/test_friction_fixes.py` fails if the listing grows back over 120 KB.
+
+Rule for new fields: one sentence, no history, no restating the name.
+
+### 9.2 `restarts_by_name`
+
+A restarted ROS 2 node is a new DDS participant with a new GUID and the same name, so
+`seen_count` (observations of one GUID) stays at 1 and an agent had to count GUIDs by hand.
+`list_participants` and `participant_events` now carry:
+
+- `restarts_by_name: {name: {lives, departures}}`. `lives` is the number of distinct GUIDs
+  that carried the name (restarts = `lives` - 1); `departures` is the number of times a
+  participant with that name was lost.
+- Only names with `lives` > 1 or `departures` > 0 are listed, so a healthy bus adds nothing. A
+  name that is absent ran once and stayed.
+- `list_participants` counts the participants it lists (`status` `left` is a departure), bounded
+  by the lifecycle buffer. `participant_events` counts the events in the `lookback_s` window
+  only: a participant discovered before the window and still active does not appear, and one
+  that left inside it counts one life and one departure.
+- Participants and events without a `name` are excluded and `restarts_note` says how many.
+  Dust DDS announces no name, and every Fast DDS participant of a ROS 2 setup is named `/`, so
+  those cannot be separated by name.
+
+### 9.3 `domain_id` is ignored, and says so
+
+`domain_id` on `list_participants`, `participant_events`, `topic_metrics` and `list_endpoints`
+never selected a domain: the adapter reports the one it joined at startup
+(`TOPICFORGE_DDS_DOMAIN_ID`, `health_check.dds_domain_id`). The parameter stays (removing it
+is a break). Its description now starts with "Ignored" and the response `domain_id` is the
+domain actually observed.
+
+When a non-zero `domain_id` differs from the joined domain, the response `note` says
+`domain_id N was ignored: this server observes domain M ...`. Chosen over raising an
+`AdapterError` because a note is additive and cannot break a client that always passed the
+wrong value, while an error would; the envelope already carries the real domain. The default
+`0` cannot be told from "not given", so an explicit `0` is never flagged, and an omitted
+argument never produces a note when the joined domain is not 0. The mock adapter does not
+report a joined domain and gives no note.
+
+### 9.4 `list_endpoints` `fields`
+
+New optional input `fields`: `"full"` (default, unchanged output) or `"compact"`. Compact
+keeps every endpoint and the `by_topic` roll-up, sets `qos` to `null` and fills the new
+`qos_summary` with a one-line reading (`RELIABLE VOLATILE KEEP_LAST(10) deadline=100ms
+partitions=a`, defaults left out), and drops `type_id`, `announced_ns` and `ros_topic_note`.
+The response echoes the level in `fields`. Use `full` on one topic or participant to read a
+complete QoS. In compact mode `qos_summary` is `qos unresolved` when the QoS could not be
+resolved.
+
+### 9.5 `MismatchScan.summary`
+
+One line stating the counts: `0 incompatible, 0 risky QoS pair(s); 3 pairs will never match
+(3 by partition): no data flows between them, see `not_matched`; 5 pairs will match given the
+announced QoS.` An empty `reports` next to a non-empty `not_matched` can no longer be read as
+an all-clear from the summary alone. The counts are over the whole scan, before the 200-entry
+cap. Built in `adapters/common/qos_scan.py`, so every backend and the mock carry it.
+
+### 9.6 `ParticipantEvent.age_s`
+
+Seconds between `timestamp_ns` and the moment the response was built (never negative, three
+decimals), next to the `*_ns` fields that are hard to read. `null` in mock mode, whose timeline
+is a fixed 2024 anchor. Only the events got it: the other `*_ns` stamps of the listing
+(`first_seen_ns`, `last_seen_ns`) would add a field to every participant for little reading
+value; compare against `health_check.now_ns` when needed.
+
+### 9.7 Explanations moved out of the schema
+
+- `TopicRate.startup_burst_count`: on a live call the fresh `ros2 topic echo` prints the
+  messages its reader queued before the first callback (up to 5) in one go. A leading run of
+  intervals under a quarter of the median interval is that drain; those messages are set aside
+  before the intervals, `observed_frequency_hz` and the verdict, are still counted in
+  `message_count`, and still feed `sim_frequency_hz`. Always 0 on `recorded_ns`.
+- `TopicRate.observed_frequency_hz` is coarse when the messages span under about a second (one
+  late message moves it by several percent): compare `sim_frequency_hz` when present and ask
+  for `count` 50 on a topic above 20 Hz. `sim_frequency_hz` is `null` when the messages carry no
+  stamp (`stamp_source` `none` or `recorded`) or the stamps do not advance.
+- `TopicRate.verdict`: a `silent` topic may be latched; a topic with several publishers such as
+  `/tf` reads `erratic` without being broken; a simulated or bridged sensor whose intervals
+  alternate reads `jittery` while healthy: compare `max_gap_s` with `interval_median_s` before
+  suspecting a lost message.
+- `MessageSample.timestamp_ns` on simulated time is sim time since the simulation started (a
+  few seconds, not a date) and 0 is a valid value. `peek_bag_samples` gives a message without a
+  header the bag record time (`stamp_source` `recorded`), also in `recorded_ns`. Mock samples
+  with a header carry synthetic increasing values. `stamp_source`: `sample_messages` gives
+  `header`, `payload` or `none`; `peek_bag_samples` `header`, `payload` or `recorded`;
+  `peek_dds_samples` `dds_source` or `none`.
+- `MessageSample.payload`: `_truncated_fields` lists the dotted paths of arrays, strings or bytes
+  cut at `max_array_length` (a string of exactly that length plus `...` that was not cut is
+  listed too); `_raw_text` holds the unparsed output only when a message could not be parsed;
+  with `arrays_summary_only` an array is a string such as `<sequence type: float, length: 541>`.
+  A message over the size cap may be dropped with a `note`.
+- `MessageSample.summary` is computed on the whole message even when `payload` is cut, and is
+  `null` for a scan whose arrays were replaced by `arrays_summary_only`.
+- `ParticipantInfo.lost_ns` and `ParticipantEvent.time_source` for `lost`: an upper bound of when
+  the participant died. After a clean shutdown it is the exact leave time; after a crash it is
+  when the lease expired, and the two cannot be told apart. The process died at or before it,
+  and at most one lease earlier (10 s Cyclone default, 20 s Fast DDS, 100 s RTI).
+- `ParticipantInfo.vendor` is read from the vendor prefix of the participant GUID. Dust DDS and
+  RTI Connext do not put their vendor id there, and the Cyclone Python binding does not expose
+  the RTPS header vendor id, so those are `unknown` (the participant is still reported). See
+  `docs/dds-interop-matrix.md`.
+- `QosProfile.partitions`: no Partition policy is the default partition, reported as `[""]`,
+  never `[]`; `null` only when the backend cannot read partitions at all. `history` is reported
+  only for TopicForge's own endpoints and for Cyclone peers that set it (see `history_note`);
+  a reader `deadline_ns` tighter than the writer's is incompatible.
+- `HealthReport.ros2_distro` discloses `ROS_DISTRO` by design under the local-trust threat model
+  (README "Security model"); a hosted multi-tenant endpoint would scrub it.

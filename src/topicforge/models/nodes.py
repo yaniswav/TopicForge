@@ -14,12 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 _CONFIG = ConfigDict(extra="forbid", frozen=True)
 
-_MODE_EFFECTIVE_DESC = (
-    "Runtime mode the adapter served this response in: `live` (real ROS2 "
-    "introspection) or `mock` (deterministic fixtures). Lets a caller tell a "
-    "real graph from a demo one without calling `health_check`."
-)
-_NOTE_DESC = "One sentence of context for the result. `None` means nothing to add."
+_MODE_EFFECTIVE_DESC = "`live` or `mock` (fixtures)."
+_NOTE_DESC = "One sentence of context, or `None`."
 
 
 class NodeListItem(BaseModel):
@@ -37,9 +33,7 @@ class NodeListItem(BaseModel):
     duplicate_count: int = Field(
         ge=1,
         description=(
-            "How many nodes on the graph use this exact full name. 1 is normal; more than 1 "
-            "means several processes share the name, and any tool that addresses the node by "
-            "name answers for one of them."
+            "Nodes using this exact full name; above 1, name-based tools answer for one of them."
         ),
     )
 
@@ -92,15 +86,14 @@ class NodeParameter(BaseModel):
     )
     value: JsonValue = Field(
         description=(
-            "Parameter value: boolean, integer, float, string or a list of those. A masked "
-            "value is the string `<masked>`; a cut value holds its first elements or "
-            "characters (see `truncated`)."
+            "Boolean, integer, float, string or a list of those; `<masked>` when "
+            "masked; the first elements when cut."
         )
     )
     masked: bool = Field(
         description=(
-            "True when the name looks like a secret (it contains password, secret, token, "
-            "api_key or credential) and the value was replaced by `<masked>`."
+            "True when the name looks like a secret (password, secret, token, api_key, "
+            "credential) and the value is `<masked>`."
         )
     )
     truncated: bool = Field(
@@ -132,16 +125,14 @@ class NodeInfo(BaseModel):
     parameters: list[NodeParameter] | None = Field(
         default=None,
         description=(
-            "Parameters of the node, sorted by name. `None` when they could not be read: see "
-            "`parameters_note`. An empty list means the node answered and has no parameter."
+            "Parameters sorted by name; `None` when unreadable (see `parameters_note`);"
+            " an empty list means none."
         ),
     )
     parameters_note: str | None = Field(
         default=None,
         description=(
-            "Why `parameters` is `None` (the node did not answer in time, or offers no "
-            "parameter service), or what was masked or cut when it is set. `None` when "
-            "the list is complete."
+            "Why `parameters` is `None`, or what was masked or cut; `None` when complete."
         ),
     )
     use_sim_time: bool | None = Field(
@@ -157,8 +148,7 @@ class NodeInfo(BaseModel):
     duplicate_count: int = Field(
         ge=1,
         description=(
-            "How many nodes on the graph use this exact full name. More than 1 means the "
-            "interfaces and parameters above belong to one of them, unidentified."
+            "Nodes using this exact full name; above 1, the data above belongs to one of them."
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)

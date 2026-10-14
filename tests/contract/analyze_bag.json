@@ -6,20 +6,18 @@
     "readOnlyHint": true,
     "title": "Analyze bag"
   },
-  "description": "Summarize a ROS 2 bag at `path`. Returns a `BagAnalysis` with storage format, duration, message count, per-topic stats, detected anomalies and `mode_effective` (`live` or `mock`). Per topic, `frequency_hz` is `(n - 1) / (last - first message time)` of that topic (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a `latched` topic whose messages all fall within 1 second (e.g. `/tf_static`, a start-up burst) has a null `frequency_hz`, while a latched topic published over a longer span keeps its rate. When the bag cannot be read locally, or is a large `.mcap` (over 200 MiB), the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` and accepts `.mcap` and `.db3` files plus `rosbag2_*` directories (ROS 1 `.bag` files are not readable by `ros2 bag info`; use `peek_bag_samples` for those); **mock mode** returns fixture data for any path suffix except clearly non-bag ones. **Raises an MCP error** if the path is malformed, missing in live mode, or unparseable, or if no `ros2` CLI is available. Anomaly detection is available in mock mode only. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps the lock it fails at once with a `busy` error (retry).",
+  "description": "Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like path, and only mock detects anomalies. **Raises an MCP error** for a malformed or missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
   "inputSchema": {
     "properties": {
       "path": {
-        "description": "Path to a bag: a file ending in `.mcap` or `.db3`, or a `rosbag2_*` directory. `peek_bag_samples` also reads ROS 1 `.bag` files; `analyze_bag` does not (`ros2 bag info` cannot open them). Leading/trailing whitespace is stripped. Null bytes and otherwise malformed filesystem paths are rejected. Existence and bag format are validated by the live adapter (mock mode accepts any well-formed path).",
+        "description": "Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked live; mock accepts any well-formed path.",
         "minLength": 1,
-        "title": "Path",
         "type": "string"
       }
     },
     "required": [
       "path"
     ],
-    "title": "analyze_bagArguments",
     "type": "object"
   },
   "name": "analyze_bag",
@@ -27,7 +25,6 @@
     "$defs": {
       "BagTopicStats": {
         "additionalProperties": false,
-        "description": "Per-topic statistics inside a bag analysis result.",
         "properties": {
           "first_timestamp_ns": {
             "anyOf": [
@@ -40,8 +37,7 @@
               }
             ],
             "default": null,
-            "description": "Recorded time of the first message on this topic, in nanoseconds (bag receive time, normally epoch). `null` when the bag was summarized from `ros2 bag info` text only, or the topic has no messages.",
-            "title": "First Timestamp Ns"
+            "description": "Recorded ns of the first message; `null` for text-only summaries or no messages."
           },
           "frequency_basis": {
             "anyOf": [
@@ -57,8 +53,7 @@
               }
             ],
             "default": null,
-            "description": "How `frequency_hz` was computed: `topic_span` (per-topic first and last message times, the accurate one) or `bag_duration` (count divided by whole-bag duration, used when per-topic times could not be read). `null` when there is no rate.",
-            "title": "Frequency Basis"
+            "description": "`topic_span` (accurate) or `bag_duration` (count over the whole bag, understates late topics); `null` without a rate."
           },
           "frequency_hz": {
             "anyOf": [
@@ -71,18 +66,16 @@
               }
             ],
             "default": null,
-            "description": "Average publish rate in Hz. With `frequency_basis` `topic_span` it is `(message_count - 1) / (last - first message time)` for this topic; with `bag_duration` it is `message_count / bag duration`, which understates the rate of a topic that started late or stopped early. `null` when fewer than 2 messages, a zero time span, or the topic is `latched` and all its messages fall within 1 second (a start-up burst, not a rate). A latched topic published over a longer span keeps its rate. Not a periodic rate for event-driven topics such as `/parameter_events`.",
-            "title": "Frequency Hz"
+            "description": "Average Hz: (count - 1) over the topic's own time span (see `frequency_basis`); `null` under 2 messages, a zero span, or a latched start-up burst (all within 1 s)."
           },
           "kind": {
             "default": "user",
-            "description": "What the topic is: `user` (data, including `/tf`, `/tf_static` and `/clock`), `rosbag2_internal` (written by rosbag2 itself, such as `/events/write_split`) or `ros_builtin` (ROS 2 infrastructure such as `/parameter_events` and `/rosout`).",
+            "description": "`user` (data, incl. `/tf` and `/clock`), `rosbag2_internal` or `ros_builtin` (e.g. `/rosout`).",
             "enum": [
               "user",
               "rosbag2_internal",
               "ros_builtin"
             ],
-            "title": "Kind",
             "type": "string"
           },
           "last_timestamp_ns": {
@@ -96,8 +89,7 @@
               }
             ],
             "default": null,
-            "description": "Recorded time of the last message on this topic; same rules as `first_timestamp_ns`.",
-            "title": "Last Timestamp Ns"
+            "description": "Recorded ns of the last message; same rules."
           },
           "latched": {
             "anyOf": [
@@ -109,23 +101,17 @@
               }
             ],
             "default": null,
-            "description": "True when a publisher recorded this topic with transient_local durability (late joiners get the last samples, e.g. `/tf_static`, `/rosout`). Such a topic often publishes a start-up burst; when all its messages fall within 1 second `frequency_hz` is `null`. `false` when every recorded publisher was volatile; `null` when the bag carries no QoS information (ROS 1 bags report their latching flag).",
-            "title": "Latched"
+            "description": "True if recorded with transient_local durability, false if volatile, `null` without QoS information."
           },
           "message_count": {
             "description": "Number of messages recorded on this topic across the bag.",
             "minimum": 0,
-            "title": "Message Count",
             "type": "integer"
           },
           "message_type": {
-            "description": "ROS2 message type recorded for this topic.",
-            "title": "Message Type",
             "type": "string"
           },
           "name": {
-            "description": "Fully qualified topic name as recorded in the bag.",
-            "title": "Name",
             "type": "string"
           }
         },
@@ -134,19 +120,17 @@
           "message_type",
           "message_count"
         ],
-        "title": "BagTopicStats",
         "type": "object"
       }
     },
     "additionalProperties": false,
-    "description": "Structured summary of a ROS2 bag.\n\n`bag_format` is populated only when the `rosbags`-backed reader runs; the\n`ros2 bag info` path leaves it `None`.",
+    "description": "Structured summary of a ROS2 bag.",
     "properties": {
       "anomalies": {
-        "description": "Human-readable notes about gaps, clock jumps, or other oddities. Populated in mock mode only; live mode does not detect anomalies.",
+        "description": "Notes on gaps or clock jumps; mock mode only.",
         "items": {
           "type": "string"
         },
-        "title": "Anomalies",
         "type": "array"
       },
       "bag_format": {
@@ -165,28 +149,24 @@
           }
         ],
         "default": null,
-        "description": "Concrete bag container format detected by the reader: `mcap` (Foxglove MCAP), `db3` (ROS2 rosbag2 SQLite), `bag` (ROS1 legacy chunked), or `unknown` when the reader could not classify. `None` when the bag was summarized from `ros2 bag info` text, which carries no format information.",
-        "title": "Bag Format"
+        "description": "Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 bag info` text."
       },
       "duration_s": {
-        "description": "Total bag duration, in seconds (wall clock between first and last message).",
+        "description": "Bag duration in seconds.",
         "minimum": 0,
-        "title": "Duration S",
         "type": "number"
       },
       "message_count": {
         "description": "Total number of messages across all recorded topics.",
         "minimum": 0,
-        "title": "Message Count",
         "type": "integer"
       },
       "mode_effective": {
-        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "description": "`live` or `mock` (fixtures).",
         "enum": [
           "mock",
           "live"
         ],
-        "title": "Mode Effective",
         "type": "string"
       },
       "note": {
@@ -199,12 +179,10 @@
           }
         ],
         "default": null,
-        "description": "Why the result is less detailed than usual, for example per-topic rates computed over the whole bag duration because the bag was too large to read per-topic message times. `None` when there is nothing to add.",
-        "title": "Note"
+        "description": "Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`."
       },
       "path": {
-        "description": "Path to the analyzed bag, as supplied by the caller. May point to a file (`.mcap`, `.db3`, or ROS 1 `.bag` for `peek_bag_samples`) or to a `rosbag2_*` directory.",
-        "title": "Path",
+        "description": "Bag path as supplied.",
         "type": "string"
       },
       "storage_format": {
@@ -217,15 +195,13 @@
           }
         ],
         "default": null,
-        "description": "`mcap`, `sqlite3`, or other storage identifier when known.",
-        "title": "Storage Format"
+        "description": "`mcap`, `sqlite3`, or other storage identifier when known."
       },
       "topics": {
         "description": "Per-topic statistics for every topic present in the bag.",
         "items": {
           "$ref": "#/$defs/BagTopicStats"
         },
-        "title": "Topics",
         "type": "array"
       }
     },

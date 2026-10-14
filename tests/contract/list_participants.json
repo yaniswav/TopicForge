@@ -6,27 +6,44 @@
     "readOnlyHint": true,
     "title": "List DDS participants"
   },
-  "description": "List DDS participants observed on the bus. Returns a `ParticipantListing` `{participants, returned, total, truncated, domain_id, mode_effective, note}`: each participant carries `guid`, `vendor` (`cyclone`/`fast`/`rti`/`rti_micro`/`opensplice`/`opendds`/`coredx`/`intercom`/`dust`/`mock`/`unknown`) with `vendor_source`, optional `name` (announced EntityName QoS, e.g. `lidar_driver`), optional `hostname`, `domain_id`, and `is_observer`. **Why `vendor` can be `unknown`**: the vendor is read from the participant GUID prefix (`vendor_source` `guid_prefix`; `none` when unknown). Some vendors, e.g. Dust DDS and RTI Connext, do not put their vendor id there, and the Cyclone Python binding does not expose the RTPS header vendor id, so those participants are listed as `unknown`. **`is_observer`** is true for TopicForge's own read-only participant, which is listed like any other. **A participant with no `name`** (Dust DDS announces none) **is normal, not a fault**: identify it by its topics. Lifecycle fields: `status` (`active`/`left`), `first_seen_ns` / `last_seen_ns` (TopicForge's local clock), `seen_count`, `announced_ns` (DDS source timestamp of the announcement), and once left `lost_ns` + `lost_time_source`. `lost_ns` is an upper bound of when the participant died: exact after a clean shutdown, the lease expiry after a crash (the two cannot be told apart), so a crashed process died up to one lease before it (10 s Cyclone default, 20 s Fast DDS, 100 s RTI; the dead participant's lease, not ours). Cyclone tracks discovery continuously in the background, so these stay correct between calls; right after server start the call waits up to 3 s for discovery to warm up. **Only the domain joined at startup is observed** (see `health_check` `dds_domain_id`): a participant on another DDS domain is INVISIBLE here, so a missing participant may be on a different domain; `domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS layer beneath ROS, so it also sees non-ROS participants. **Read-only by architecture**: it cannot publish, modify QoS, or alter the bus. **Raises an MCP error** when no DDS module is active (install `pip install topicforge[dds]` and set `TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend returns fixtures. **Duration**: uses the DDS binding behind the DDS lock, one DDS call at a time. The whole call, lock wait included, ends within 45 s; if another DDS call keeps the lock it fails at once with a `busy` error (retry).",
+  "description": "List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `vendor` (read from the GUID prefix, `unknown` for vendors that do not put theirs there, e.g. Dust DDS and RTI Connext; see `vendor_source`), optional `name` (the announced EntityName, e.g. `lidar_driver`; a participant with none is normal, not a fault: identify it by its topics), `hostname`, `domain_id` and `is_observer` (TopicForge's own read-only participant, listed like any other). Lifecycle: `status` (`active` / `left`), `first_seen_ns` / `last_seen_ns` (TopicForge's clock), `announced_ns` (DDS source timestamp) and, once left, `lost_ns` + `lost_time_source`: an upper bound of the death (exact after a clean shutdown; after a crash the lease expiry, so up to one lease earlier: 10 s Cyclone, 20 s Fast DDS, 100 s RTI). **Restarts**: a restarted node is a new GUID with the same name; `restarts_by_name` gives `lives` (GUIDs) and `departures` per name, so do not count GUIDs by hand (`seen_count` is not a restart count). Cyclone tracks discovery in the background; right after start the call waits up to 3 s for it. **Only the domain joined at startup is observed** (`health_check` `dds_domain_id`): a participant on another domain is INVISIBLE here, and `domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS layer, so non-ROS participants appear too. **Read-only by architecture**: it cannot publish, modify QoS or alter the bus. **Raises an MCP error** when no DDS module is active (install `topicforge[dds]`, set `TOPICFORGE_DDS_BACKEND=cyclone`); the mock backend returns fixtures. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).",
   "inputSchema": {
     "properties": {
       "domain_id": {
         "default": 0,
-        "description": "Accepted for compatibility (0..232). TopicForge observes the domain it joined at startup (TOPICFORGE_DDS_DOMAIN_ID); this argument does not switch domains, and the response `domain_id` says which one was observed.",
+        "description": "Ignored: it does not switch domains and is only range-checked (0..232). The domain observed is the one joined at startup (`TOPICFORGE_DDS_DOMAIN_ID`), reported in the response `domain_id`; `note` flags a different non-zero value.",
         "maximum": 232,
         "minimum": 0,
-        "title": "Domain Id",
         "type": "integer"
       }
     },
-    "title": "list_participantsArguments",
     "type": "object"
   },
   "name": "list_participants",
   "outputSchema": {
     "$defs": {
+      "NameLifecycle": {
+        "additionalProperties": false,
+        "properties": {
+          "departures": {
+            "description": "Times a participant with this name was lost.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lives": {
+            "description": "Distinct GUIDs that carried this name; restarts = `lives` - 1.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lives",
+          "departures"
+        ],
+        "type": "object"
+      },
       "ParticipantInfo": {
         "additionalProperties": false,
-        "description": "DDS participant discovered on the configured domain.\n\nCarries identity (`guid`, `name`, `vendor`) plus lifecycle fields\n(`first_seen_ns`, `last_seen_ns`, `status`, `seen_count`).",
         "properties": {
           "announced_ns": {
             "anyOf": [
@@ -39,14 +56,11 @@
               }
             ],
             "default": null,
-            "description": "Nanoseconds since epoch (DDS source timestamp of the participant's most recent announcement, taken from the announcing side's clock; the local clock when the announcer sent none). `None` when the backend does not expose it. Distinct from `first_seen_ns` / `last_seen_ns`, which are TopicForge's own local clock.",
-            "title": "Announced Ns"
+            "description": "Source timestamp of the latest announcement, on the announcer's clock; `None` if unavailable."
           },
           "domain_id": {
-            "description": "DDS domain id the participant is bound to.",
             "maximum": 232,
             "minimum": 0,
-            "title": "Domain Id",
             "type": "integer"
           },
           "first_seen_ns": {
@@ -60,12 +74,9 @@
               }
             ],
             "default": null,
-            "description": "Wall-clock timestamp (nanoseconds since epoch) of the **first** discovery sample TopicForge observed for this participant. `None` when the adapter does not track lifecycle.",
-            "title": "First Seen Ns"
+            "description": "Wall-clock ns of the first discovery sample seen; `None` without lifecycle tracking."
           },
           "guid": {
-            "description": "DDS Global Unique Identifier of the participant: hex string, stable across discovery events within a single deployment.",
-            "title": "Guid",
             "type": "string"
           },
           "hostname": {
@@ -77,14 +88,11 @@
                 "type": "null"
               }
             ],
-            "default": null,
-            "description": "Hostname announced in discovery (Cyclone `__Hostname` property). `None` when the vendor does not announce it.",
-            "title": "Hostname"
+            "default": null
           },
           "is_observer": {
             "default": false,
-            "description": "True for TopicForge's own read-only observer participant, which joins the domain to watch it and appears in this list; false for every other participant.",
-            "title": "Is Observer",
+            "description": "True for TopicForge's own read-only observer participant.",
             "type": "boolean"
           },
           "last_seen_ns": {
@@ -98,8 +106,7 @@
               }
             ],
             "default": null,
-            "description": "Wall-clock timestamp (nanoseconds since epoch) of the **most recent** discovery sample observed. Used by `participant_events` to distinguish currently-active participants from those that left the bus. `None` when the adapter does not track lifecycle.",
-            "title": "Last Seen Ns"
+            "description": "Wall-clock ns of the latest discovery sample; `None` without lifecycle tracking."
           },
           "lost_ns": {
             "anyOf": [
@@ -112,8 +119,7 @@
               }
             ],
             "default": null,
-            "description": "Nanoseconds since epoch of the moment the participant left, once `status` is `left`; `None` while it is active. How precise it is depends on `lost_time_source`. It is an upper bound of when the participant died: after a clean shutdown it is the exact leave time, after a crash it is when the lease expired, and the two cannot be told apart. The process died at or before `lost_ns`, and at most one lease earlier (10 s Cyclone default, 20 s Fast, 100 s RTI).",
-            "title": "Lost Ns"
+            "description": "Once `left`: ns upper bound of the death (exact after a clean shutdown; after a crash the lease expiry, up to one lease earlier: 10 s Cyclone, 20 s Fast, 100 s RTI). `None` while active."
           },
           "lost_time_source": {
             "anyOf": [
@@ -129,8 +135,7 @@
               }
             ],
             "default": null,
-            "description": "Where `lost_ns` comes from: `dds_source_timestamp` (timestamp carried by the discovery dispose) or `observed_local` (the moment TopicForge noticed, the weakest). `None` while active.",
-            "title": "Lost Time Source"
+            "description": "Origin of `lost_ns`: `dds_source_timestamp` or `observed_local` (weakest); `None` while active."
           },
           "name": {
             "anyOf": [
@@ -142,48 +147,43 @@
               }
             ],
             "default": null,
-            "description": "Participant name the application announced through the standard DDS EntityName QoS (PID_ENTITY_NAME in RTPS discovery), for example `lidar_driver`. `None` when the application did not set one (Dust DDS cannot) or the backend does not expose it.",
-            "title": "Name"
+            "description": "Announced EntityName (e.g. `lidar_driver`); `None` when the application set none (Dust DDS cannot)."
           },
           "node_names": {
-            "description": "Fully qualified names of the ROS 2 nodes that share this participant. Empty when `node_names_source` is `none`.",
+            "description": "Fully qualified ROS 2 node names sharing this participant; empty when `node_names_source` is `none`.",
             "items": {
               "type": "string"
             },
-            "title": "Node Names",
             "type": "array"
           },
           "node_names_source": {
             "default": "none",
-            "description": "Where `node_names` came from: `ros_discovery_info` (read from that topic), `ros2_cli` (derived from the `ros2` CLI) or `none` (no link could be made, `node_names` is empty).",
+            "description": "`ros_discovery_info`, `ros2_cli` or `none` (no link made).",
             "enum": [
               "ros_discovery_info",
               "ros2_cli",
               "none"
             ],
-            "title": "Node Names Source",
             "type": "string"
           },
           "seen_count": {
             "default": 1,
-            "description": "Number of distinct discovery samples observed for this participant across all calls to `list_participants` during this server's lifetime. Starts at 1 and increments on each observation.",
+            "description": "Discovery observations of this GUID in this server's lifetime. Not a restart count: a restart is a new GUID (see `restarts_by_name`).",
             "minimum": 1,
-            "title": "Seen Count",
             "type": "integer"
           },
           "status": {
             "default": "unknown",
-            "description": "Lifecycle status. `active` means TopicForge has a recent discovery sample for this GUID and the bus has not signalled removal. `left` means the participant was observed earlier but has since disappeared (a Fast DDS `REMOVED` callback or a Cyclone polling delta). `unknown` when the adapter does not track lifecycle.",
+            "description": "`active`, `left` (seen earlier, since gone) or `unknown` (no lifecycle tracking).",
             "enum": [
               "active",
               "left",
               "unknown"
             ],
-            "title": "Status",
             "type": "string"
           },
           "vendor": {
-            "description": "DDS implementation that announced this participant, decoded from the OMG-RTPS `vendor_id` field on the discovery sample. `cyclone` (Eclipse Cyclone DDS), `fast` (eProsima Fast DDS), `rti` (RTI Connext), `rti_micro` (RTI Connext Micro), `opensplice` (ADLink OpenSplice), `opendds` (OCI OpenDDS), `coredx` (Twin Oaks CoreDX), `intercom` (Kongsberg InterCOM), `dust` (S2E Dust DDS). `mock` is reserved for synthetic fixtures. `unknown` means the vendor could not be determined: TopicForge reads it from the vendor prefix of the participant GUID, and some vendors (for example Dust DDS and RTI Connext) do not put their vendor id there, while the Cyclone Python binding does not expose the RTPS header vendor id. The participant is still reported; see `vendor_source`. Any conformant DDS-RTPS participant should appear through standard discovery; Cyclone DDS and Dust DDS have been observed on a live bus. See `docs/dds-interop-matrix.md`.",
+            "description": "DDS implementation read from the GUID vendor prefix: cyclone, fast, rti, rti_micro, opensplice, opendds, coredx, intercom, dust, mock or `unknown` (Dust DDS and RTI Connext do not put theirs there); see `vendor_source`.",
             "enum": [
               "cyclone",
               "fast",
@@ -197,17 +197,15 @@
               "mock",
               "unknown"
             ],
-            "title": "Vendor",
             "type": "string"
           },
           "vendor_source": {
             "default": "none",
-            "description": "Where `vendor` came from: `guid_prefix` when it was read from the vendor prefix of the participant GUID, `none` when the vendor is unknown (or synthetic in mock mode).",
+            "description": "`guid_prefix` when `vendor` was read from the GUID, else `none`.",
             "enum": [
               "guid_prefix",
               "none"
             ],
-            "title": "Vendor Source",
             "type": "string"
           }
         },
@@ -216,7 +214,6 @@
           "vendor",
           "domain_id"
         ],
-        "title": "ParticipantInfo",
         "type": "object"
       }
     },
@@ -224,19 +221,17 @@
     "description": "Envelope returned by `list_participants`.",
     "properties": {
       "domain_id": {
-        "description": "DDS domain observed.",
+        "description": "DDS domain observed (joined at startup).",
         "maximum": 232,
         "minimum": 0,
-        "title": "Domain Id",
         "type": "integer"
       },
       "mode_effective": {
-        "description": "Runtime mode the adapter served this response in: `live` (real ROS2 introspection) or `mock` (deterministic fixtures). Lets a caller tell a real graph from a demo one without calling `health_check`.",
+        "description": "`live` or `mock` (fixtures).",
         "enum": [
           "mock",
           "live"
         ],
-        "title": "Mode Effective",
         "type": "string"
       },
       "note": {
@@ -249,32 +244,42 @@
           }
         ],
         "default": null,
-        "description": "One sentence of context for the result. `None` means nothing to add.",
-        "title": "Note"
+        "description": "One sentence of context, or `None`."
       },
       "participants": {
-        "description": "Participants observed on the bus.",
         "items": {
           "$ref": "#/$defs/ParticipantInfo"
         },
-        "title": "Participants",
         "type": "array"
       },
+      "restarts_by_name": {
+        "additionalProperties": {
+          "$ref": "#/$defs/NameLifecycle"
+        },
+        "description": "Names seen with several GUIDs or lost at least once (absent: ran once and stayed). A restart is a new GUID with the same name.",
+        "type": "object"
+      },
+      "restarts_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Set when unnamed participants were left out of `restarts_by_name`."
+      },
       "returned": {
-        "description": "Length of `participants`.",
         "minimum": 0,
-        "title": "Returned",
         "type": "integer"
       },
       "total": {
-        "description": "Participants observed before any cap.",
         "minimum": 0,
-        "title": "Total",
         "type": "integer"
       },
       "truncated": {
-        "description": "True when `returned` is less than `total` because of a cap.",
-        "title": "Truncated",
         "type": "boolean"
       }
     },

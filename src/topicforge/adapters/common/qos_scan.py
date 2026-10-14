@@ -226,6 +226,35 @@ def _side_text(side: str) -> str:
     return "has a writer but no reader" if side == "writer" else "has readers but no writer"
 
 
+def _pairs(n: int) -> str:
+    return f"{n} pair" if n == 1 else f"{n} pairs"
+
+
+def scan_summary(
+    reports: Iterable[MismatchReport],
+    not_matched: Iterable[NotMatchedPair],
+    matched_total: int,
+) -> str:
+    """One line that cannot be read as all-clear while `not_matched` is non-empty."""
+    severities = [r.severity for r in reports]
+    incompatible = severities.count("incompatible")
+    risky = severities.count("risky")
+    reasons = [n.reason for n in not_matched]
+    parts = [f"{incompatible} incompatible, {risky} risky QoS pair(s)"]
+    if reasons:
+        by = ", ".join(
+            f"{reasons.count(r)} by {label}"
+            for r, label in (("partition", "partition"), ("type_name", "type name"))
+            if r in reasons
+        )
+        parts.append(
+            f"{_pairs(len(reasons))} will never match ({by}): no data flows between them, "
+            "see `not_matched`"
+        )
+    parts.append(f"{_pairs(matched_total)} will match given the announced QoS")
+    return "; ".join(parts) + "."
+
+
 def _orphan_hints(
     by_topic: dict[str, list[EndpointInfo]], scope: set[str]
 ) -> tuple[list[str], list[str]]:
@@ -411,6 +440,7 @@ def scan_endpoints(
     reports.sort(key=lambda r: r.severity != "incompatible")
     totals = (len(reports), len(matched), len(not_matched))
     return MismatchScan(
+        summary=scan_summary(reports, not_matched, len(matched)),
         reports=reports[:MAX_ITEMS],
         matched=matched[:MAX_ITEMS],
         not_matched=not_matched[:MAX_ITEMS],
@@ -427,4 +457,10 @@ def scan_endpoints(
     )
 
 
-__all__ = ["POLICIES_CHECKED", "POLICIES_UNCHECKED", "levenshtein", "scan_endpoints"]
+__all__ = [
+    "POLICIES_CHECKED",
+    "POLICIES_UNCHECKED",
+    "levenshtein",
+    "scan_endpoints",
+    "scan_summary",
+]
