@@ -269,7 +269,7 @@ verifies. Other tools may fill it later with the same shape.
    "text": "/nav2/controller:
   ros__parameters:
     qos_overrides./scan.subscription.reliability: best_effort",
-   "tradeoff": "The reader stops requesting retransmission, so it can miss samples. Only works if the node enabled QoS overrides (rclcpp/rclpy QosOverridingOptions); pass the file to the node with --params-file when it starts.",
+   "tradeoff": "The reader stops requesting retransmission, so it can miss samples. Only works if the node enabled QoS overrides (rclcpp/rclpy QosOverridingOptions); pass the file when the node starts: --ros-args --params-file <file>.",
    "verify_with": "detect_qos_mismatches(topic='rt/scan')"}
 ]}
 ```

@@ -7,12 +7,52 @@ suggestion contains a verb that stops, removes or changes a running system
 fixes, one per side that can change, with the tradeoff of each:
 
 - a ROS 2 topic whose policies ROS can override (Reliability, Durability) gets a
-  `qos_override` parameter file entry (works only if the node enabled QoS overrides);
+  `qos_override` parameter file entry (works only if the node's code enabled the override
+  for that policy);
 - everything else gets a `dds_profile`: a Fast DDS XML profile plus the equivalent
-  cyclonedds-python code (Cyclone DDS has no XML QoS profile).
+  cyclonedds-python code (Cyclone DDS reads no QoS policy from its configuration file).
 
 Identical findings (same topic, same compared values) share one set of fixes, carried
 by the first report; the others stay empty and a hint says so.
+
+Verified sources (checked 2026-10-14 against primary documents and source code):
+
+- ROS 2 QoS overrides. Names are `qos_overrides.<topic>.<publisher|subscription>[_<id>].<policy>`
+  and every such parameter is declared read-only, so the value is fixed at node start.
+  Only the policies the node author listed are declared (rclcpp default set: history, depth,
+  reliability; durability only if listed). Strings are `reliable`/`best_effort` and
+  `volatile`/`transient_local`. A params file may nest the keys or write the dotted name flat
+  (the dotted name is the parameter name). Durations (deadline, liveliness_lease_duration,
+  lifespan) are integer nanoseconds and exist as overridable kinds, but this module does not
+  emit them.
+  https://design.ros2.org/articles/qos_configurability.html
+  https://github.com/ros2/rclcpp/blob/jazzy/rclcpp/include/rclcpp/detail/qos_parameters.hpp
+  https://github.com/ros2/rclcpp/blob/jazzy/rclcpp/src/rclcpp/qos_overriding_options.cpp
+  https://github.com/ros2/rclpy/blob/jazzy/rclpy/rclpy/qos_overriding_options.py
+  https://github.com/ros2/rmw/blob/jazzy/rmw/src/qos_string_conversions.c
+- Fast DDS XML (2.6 for Humble, 2.14 for Jazzy): `<dds>` root with `<profiles>`, then
+  `<data_writer>` / `<data_reader>` carrying `profile_name` and a `<qos>` child; kinds
+  RELIABLE / BEST_EFFORT, VOLATILE / TRANSIENT_LOCAL, AUTOMATIC / MANUAL_BY_PARTICIPANT /
+  MANUAL_BY_TOPIC, SHARED / EXCLUSIVE; `<deadline><period>`, `<latencyBudget><duration>`,
+  `<liveliness><kind><lease_duration>`, `<partition><names><name>`; a duration is
+  `<sec>`/`<nanosec>` and `<sec>DURATION_INFINITY</sec>` is accepted. The parser ignores the
+  xmlns value; the official example uses the one below. Variable: FASTRTPS_DEFAULT_PROFILES_FILE.
+  https://github.com/eProsima/Fast-DDS/blob/2.14.x/resources/xsd/fastRTPS_profiles.xsd
+  https://github.com/eProsima/Fast-DDS/blob/2.6.x/src/cpp/rtps/xmlparser/XMLElementParser.cpp
+  https://github.com/eProsima/Fast-DDS-docs/blob/2.14.x/code/XMLTesterExample.xml
+- rmw_fastrtps: RMW_FASTRTPS_USE_QOS_FROM_XML=1 is documented for the publishing mode and history
+  memory policy; ROS QoS values other than system default still override XML QoS; profiles
+  are looked up by topic name.
+  https://github.com/ros2/rmw_fastrtps/blob/jazzy/README.md
+  https://github.com/ros2/rmw_fastrtps/blob/jazzy/rmw_fastrtps_shared_cpp/src/qos.cpp
+- cyclonedds-python 11.0.1 (wheel read, not installed): `Qos(*policies)`,
+  `Policy.Reliability.BestEffort`, `Policy.Reliability.Reliable(max_blocking_time=...)`,
+  `Policy.Durability.TransientLocal`, `Policy.Deadline(deadline)`,
+  `Policy.Liveliness.Automatic(lease_duration)`, `Policy.Ownership.Exclusive`,
+  `Policy.LatencyBudget(budget)`, `Policy.Partition(partitions)`,
+  `cyclonedds.util.duration(nanoseconds=..., infinite=True)`.
+  https://github.com/eclipse-cyclonedds/cyclonedds-python (cyclonedds/qos.py, util.py)
+  https://cyclonedds.io/docs/cyclonedds/latest/config/config_file_reference.html
 """
 
 from __future__ import annotations
@@ -52,13 +92,19 @@ _NODE_PLACEHOLDER = "<node_name>"
 
 _FAST_URL = "https://fast-dds.docs.eprosima.com/en/latest/fastdds/xml_configuration/"
 _ROS_NOTE = (
-    "Only works if the node enabled QoS overrides (rclcpp/rclpy QosOverridingOptions); "
-    "pass the file to the node with --params-file when it starts."
+    "Only works if the node's code enabled QoS overrides for this policy "
+    "(rclcpp/rclpy QosOverridingOptions; the default policies are history, depth and "
+    "reliability, not durability). "
+    "The value is read once when the node creates the endpoint, so pass the file when the "
+    "node starts: --ros-args --params-file <file>. If the node gave its endpoint an id, the "
+    "key reads publisher_<id> or subscription_<id>."
 )
 _ROS_XML_NOTE = (
-    " For a ROS 2 node, rmw_fastrtps reads this profile only with "
-    "RMW_FASTRTPS_USE_QOS_FROM_XML=1 and FASTRTPS_DEFAULT_PROFILES_FILE pointing at it; "
-    "rmw_cyclonedds takes QoS from the node's code, so change it there."
+    " For a ROS 2 node this profile may have no effect: rmw_fastrtps looks profiles up by "
+    "topic name, documents RMW_FASTRTPS_USE_QOS_FROM_XML=1 and FASTRTPS_DEFAULT_PROFILES_FILE "
+    "only for the publishing mode and the history memory policy, and QoS values the node code gives "
+    "explicitly still override the XML. rmw_cyclonedds takes QoS from the node's code, so "
+    "change it there."
 )
 
 
@@ -184,7 +230,7 @@ def _profile_text(side: Side, values: _Values, partitions: list[str] | None = No
     return (
         '<?xml version="1.0" encoding="UTF-8" ?>\n'
         f"<!-- Fast DDS profile, see {_FAST_URL} -->\n"
-        '<dds xmlns="http://www.eprosima.com">\n'
+        '<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">\n'
         "  <profiles>\n"
         f'    <{kind} profile_name="topicforge_{side}_fix">\n'
         "      <qos>\n"
@@ -193,7 +239,7 @@ def _profile_text(side: Side, values: _Values, partitions: list[str] | None = No
         f"    </{kind}>\n"
         "  </profiles>\n"
         "</dds>\n"
-        "# Cyclone DDS has no XML QoS profile; with cyclonedds-python the application passes:\n"
+        "# Cyclone DDS takes QoS from the application, not from CYCLONEDDS_URI. cyclonedds-python:\n"
         "from cyclonedds.core import Policy, Qos\n"
         "from cyclonedds.util import duration\n"
         f"qos = Qos(\n    {code},\n)"

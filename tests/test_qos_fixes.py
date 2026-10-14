@@ -305,3 +305,58 @@ def test_every_fix_fills_every_field(field: str) -> None:
     for report in _everything().reports:
         for fix in report.suggested_fixes:
             assert getattr(fix, field)
+
+
+# ---- strings pinned against primary sources (see the qos_fixes module docstring) ---------
+
+
+def test_pinned_fast_dds_xml_wrapper_and_kinds() -> None:
+    """Root, namespace, profile element and kind values of the Fast DDS 2.6 / 2.14 XML."""
+    scan = _pair("/dds/x", {"reliability": "RELIABLE"}, {"reliability": "BEST_EFFORT"})
+    writer, reader = scan.reports[0].suggested_fixes
+    assert '<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">' in writer.text
+    assert '<data_writer profile_name="topicforge_writer_fix">' in writer.text
+    assert "<qos>" in writer.text and "</data_writer>" in writer.text
+    assert "<reliability><kind>RELIABLE</kind></reliability>" in writer.text
+    assert "<reliability><kind>BEST_EFFORT</kind></reliability>" in reader.text
+    assert '<data_reader profile_name="topicforge_reader_fix">' in reader.text
+
+
+def test_pinned_fast_dds_durability_and_deadline() -> None:
+    scan = _pair("/d", {"durability": "TRANSIENT_LOCAL"}, {"durability": "VOLATILE"})
+    reader = scan.reports[0].suggested_fixes[1]
+    assert "<durability><kind>VOLATILE</kind></durability>" in reader.text
+    assert "Policy.Durability.Volatile" in reader.text
+    scan = _pair("/d", {"deadline_ns": 100_000_000}, {"deadline_ns": 1_500_000_000})
+    reader = scan.reports[0].suggested_fixes[0]
+    assert "<deadline><period><sec>1</sec><nanosec>500000000</nanosec></period></deadline>" in (
+        reader.text
+    )
+    assert "Policy.Deadline(duration(nanoseconds=1500000000))" in reader.text
+    assert "from cyclonedds.core import Policy, Qos" in reader.text
+    assert "from cyclonedds.util import duration" in reader.text
+
+
+def test_pinned_partition_and_cyclone_statement() -> None:
+    scan = _pair("/p", {"partitions": ["left"]}, {"partitions": ["right"]})
+    reader = scan.not_matched[0].suggested_fixes[0]
+    assert "<partition><names><name>left</name><name>right</name></names></partition>" in (
+        reader.text
+    )
+    assert "Policy.Partition(['left', 'right'])" in reader.text
+    assert "CYCLONEDDS_URI" in reader.text and "no XML QoS profile" not in reader.text
+
+
+def test_pinned_ros_override_note() -> None:
+    scan = _pair("rt/scan", {"reliability": "RELIABLE"}, {"reliability": "BEST_EFFORT"})
+    writer = scan.reports[0].suggested_fixes[0]
+    assert "--ros-args --params-file" in writer.tradeoff
+    assert "not durability" in writer.tradeoff
+    assert "publisher_<id>" in writer.tradeoff
+
+
+def test_ros_xml_note_does_not_overclaim() -> None:
+    scan = _pair("rt/scan", {"deadline_ns": 100_000_000}, {"deadline_ns": 500_000_000})
+    note = scan.reports[0].suggested_fixes[0].tradeoff
+    assert "may have no effect" in note and "RMW_FASTRTPS_USE_QOS_FROM_XML=1" in note
+    assert "FASTRTPS_DEFAULT_PROFILES_FILE" in note
