@@ -19,6 +19,7 @@ from topicforge.adapters.common.qos_analyzer import (
     effective_partitions,
     partitions_match,
 )
+from topicforge.adapters.common.qos_fixes import attach_partition_fixes, attach_qos_fixes
 from topicforge.adapters.common.topic_filter import (
     levenshtein,
     no_match_note,
@@ -225,6 +226,35 @@ def _side_text(side: str) -> str:
     return "has a writer but no reader" if side == "writer" else "has readers but no writer"
 
 
+def _pairs(n: int) -> str:
+    return f"{n} pair" if n == 1 else f"{n} pairs"
+
+
+def scan_summary(
+    reports: Iterable[MismatchReport],
+    not_matched: Iterable[NotMatchedPair],
+    matched_total: int,
+) -> str:
+    """One line that cannot be read as all-clear while `not_matched` is non-empty."""
+    severities = [r.severity for r in reports]
+    incompatible = severities.count("incompatible")
+    risky = severities.count("risky")
+    reasons = [n.reason for n in not_matched]
+    parts = [f"{incompatible} incompatible, {risky} risky QoS pair(s)"]
+    if reasons:
+        by = ", ".join(
+            f"{reasons.count(r)} by {label}"
+            for r, label in (("partition", "partition"), ("type_name", "type name"))
+            if r in reasons
+        )
+        parts.append(
+            f"{_pairs(len(reasons))} will never match ({by}): no data flows between them, "
+            "see `not_matched`"
+        )
+    parts.append(f"{_pairs(matched_total)} will match given the announced QoS")
+    return "; ".join(parts) + "."
+
+
 def _orphan_hints(
     by_topic: dict[str, list[EndpointInfo]], scope: set[str]
 ) -> tuple[list[str], list[str]]:
@@ -362,8 +392,8 @@ def scan_endpoints(
             scope_hints.append(no_match_note(topic, by_topic))
     scope = {t for t in by_topic if topic is None or t == wanted}
 
-    reports: list[MismatchReport] = []
-    not_matched: list[NotMatchedPair] = []
+    report_entries: list[tuple[MismatchReport, EndpointInfo, EndpointInfo]] = []
+    split_entries: list[tuple[NotMatchedPair, EndpointInfo, EndpointInfo]] = []
     pairs_checked = 0
     skipped = 0
     unchecked_counts: dict[str, int] = {}
@@ -380,7 +410,7 @@ def scan_endpoints(
                 pairs_checked += 1
                 apart = _separation(reader, writer)
                 if apart is not None:
-                    not_matched.append(apart)
+                    split_entries.append((apart, reader, writer))
                     continue
                 matched_pairs.append((reader, writer))
                 report, analysis = _report(reader, writer)
@@ -388,13 +418,20 @@ def scan_endpoints(
                     unchecked_counts[name] = unchecked_counts.get(name, 0) + 1
                 history_unknown += analysis.history_unknown
                 if report is not None:
-                    reports.append(report)
+                    report_entries.append((report, reader, writer))
                 if report is None or report.severity != "incompatible":
                     matched.append(_matched(reader, writer, hostnames))
 
+    reports, fix_hints = attach_qos_fixes(report_entries)
+    not_matched, split_hints = attach_partition_fixes(split_entries)
     near, plain = _orphan_hints(by_topic, scope)
     hints = (
-        scope_hints + near + _unchecked_hints(unchecked_counts, skipped, history_unknown) + plain
+        scope_hints
+        + near
+        + _unchecked_hints(unchecked_counts, skipped, history_unknown)
+        + plain
+        + fix_hints
+        + split_hints
     )
     hints += _type_id_hints(matched_pairs)
     if len(hints) > _MAX_HINTS:
@@ -403,6 +440,7 @@ def scan_endpoints(
     reports.sort(key=lambda r: r.severity != "incompatible")
     totals = (len(reports), len(matched), len(not_matched))
     return MismatchScan(
+        summary=scan_summary(reports, not_matched, len(matched)),
         reports=reports[:MAX_ITEMS],
         matched=matched[:MAX_ITEMS],
         not_matched=not_matched[:MAX_ITEMS],
@@ -419,4 +457,10 @@ def scan_endpoints(
     )
 
 
-__all__ = ["POLICIES_CHECKED", "POLICIES_UNCHECKED", "levenshtein", "scan_endpoints"]
+__all__ = [
+    "POLICIES_CHECKED",
+    "POLICIES_UNCHECKED",
+    "levenshtein",
+    "scan_endpoints",
+    "scan_summary",
+]

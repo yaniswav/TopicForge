@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-14
+
+QoS fix suggestions and agent-friction fixes from the blind evaluation (`docs/EVAL.md`). Additive only: no field or
+input was renamed, removed or retyped (`docs/CONTRACT.md` section 9).
+
+### Added
+
+- `detect_qos_mismatches` fills `suggested_fixes` (output contract 2, additive; see
+  `docs/CONTRACT.md` section 3.1): "diagnose, propose the exact fix, verify". Each QoS
+  mismatch report and each `partition` split gets up to one fix per side that can change
+  (`MismatchReport.suggested_fixes`, and the new `NotMatchedPair.suggested_fixes`), with its
+  tradeoff and a `verify_with` call. A ROS 2 topic with a Reliability or Durability finding
+  gets a `qos_override` parameter-file entry; every other case gets a `dds_profile` (Fast DDS
+  XML plus the cyclonedds-python equivalent, since Cyclone DDS has no XML QoS profile).
+  Covered: Reliability, Durability, Deadline, Liveliness, Ownership, LatencyBudget and
+  Partition; other findings get a hint instead. Identical findings on a topic share the
+  first report's fixes. Text only: TopicForge never applies a fix, and a test fails any
+  suggestion containing a stop, remove or write verb.
+- `list_participants` and `participant_events`: `restarts_by_name` (`{name: {lives,
+  departures}}` for names seen with several GUIDs or lost) and `restarts_note`, so an agent
+  no longer counts GUIDs to find a restart loop.
+- `participant_events`: `age_s` on each event, seconds between the event and the response
+  (`null` in mock mode).
+- `detect_qos_mismatches`: `summary`, a one-line reading of the scan that says when pairs are
+  not matched and no data flows, even with an empty `reports`.
+- `list_endpoints`: optional input `fields` (`full` default, or `compact`) with the output
+  fields `fields` and `qos_summary`; compact replaces each `qos` by a one-line summary and
+  drops `type_id`, `announced_ns` and `ros_topic_note`.
+
+### Changed
+
+- `tools/list` is about 37 percent smaller (about 178 KB to 113 KB compact), because some
+  clients truncated it: tool and field descriptions are shorter, and the generated schema
+  titles and nested-model docstrings are no longer served. Names, types, defaults and
+  constraints are unchanged. The long explanations moved to `docs/CONTRACT.md` section 9.
+- `domain_id` on `list_participants`, `participant_events`, `topic_metrics` and
+  `list_endpoints`: the description now opens with "Ignored", and a non-zero value that
+  differs from the domain joined at startup adds an explicit sentence to the response `note`
+  (the response `domain_id` already named the observed domain).
+
+### Fixed
+
+- `scripts/ground_truth/compare.py` counts only active DDS participants: the `ros2` CLI
+  processes that `get_node_info` starts stay listed with status `left` and inflated the count
+  (found on the OmniSim kit run of 2026-10-14 on 0.7.0: 76 checks passed, 0 failed).
+
 ## [0.7.0] - 2026-10-12
 
 Breaking release: output contract 2 (see `docs/MIGRATION-0.7.md`), the move to the MCP SDK
@@ -1615,7 +1661,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...v0.6.3

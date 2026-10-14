@@ -112,6 +112,20 @@ Claude run reported none.
 - **Unnamed or unknown-vendor participant** read as a possible problem in 2 of
   3 healthy-bus runs.
 
+Addressed in 0.7.1 (changes made after the runs above, not re-measured by a new
+evaluation round):
+
+- Listing size: `tools/list` went from about 178 KB to about 113 KB compact
+  (`docs/CONTRACT.md` section 9.1).
+- Empty `reports` next to `not_matched`: `MismatchScan.summary` states the counts
+  (section 9.5).
+- `domain_id`: the description opens with "Ignored" and the response `note` flags a
+  differing non-zero value (section 9.3).
+- `*_ns` fields: `age_s` on participant events (section 9.6).
+- `seen_count` and restarts: `restarts_by_name` on `list_participants` and
+  `participant_events` (section 9.2).
+- Verbose `list_endpoints`: `fields` `compact` (section 9.4).
+
 ## Description edit made
 
 One, description only, no contract change: `list_participants` now states that

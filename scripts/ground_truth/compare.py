@@ -1081,10 +1081,18 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
         return
     obs = [p for p in parts if p.get("is_observer")]
     if vendor:
-        mine = [p for p in parts if p["vendor"] == vendor and not p.get("is_observer")]
+        # Only participants still on the bus: the `ros2` CLI processes that
+        # get_node_info starts come and go and stay listed with status "left".
+        mine = [
+            p
+            for p in parts
+            if p["vendor"] == vendor
+            and not p.get("is_observer")
+            and p.get("status", "active") == "active"
+        ]
         rep.add(
             "dds",
-            f"{vendor} participants (not the observer)",
+            f"{vendor} active participants (not the observer)",
             f"{nodes} ROS nodes, or +1 with the ros2 daemon",
             len(mine),
             "PASS" if len(mine) in (nodes, nodes + 1) else "WARN",
