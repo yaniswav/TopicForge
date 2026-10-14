@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
@@ -32,6 +34,14 @@ from topicforge.models import (
     TopicInfo,
     TopicListing,
     TopicMetrics,
+)
+from topicforge.services.dds_views import (
+    compact_endpoints,
+    domain_note,
+    join_notes,
+    restarts_from_events,
+    restarts_from_participants,
+    with_event_ages,
 )
 from topicforge.services.sample_budget import apply_sample_budget
 
@@ -70,9 +80,11 @@ class Inspector:
         adapter: MiddlewareAdapter,
         *,
         max_sample_bytes: int = DEFAULT_MAX_SAMPLE_BYTES,
+        clock_ns: Callable[[], int] = time.time_ns,
     ) -> None:
         self._adapter = adapter
         self._max_sample_bytes = max_sample_bytes
+        self._clock_ns = clock_ns
 
     @property
     def backend_name(self) -> AdapterName:
@@ -150,15 +162,24 @@ class Inspector:
         if callable(wait):
             wait()
 
+    def _joined_domain(self) -> int | None:
+        """The domain the adapter joined at startup, `None` when it does not say."""
+        joined = getattr(self._adapter, "observed_domain_id", None)
+        return joined if isinstance(joined, int) else None
+
     def _observed_domain(self, requested: int) -> int:
         """The domain the adapter joined at startup; the requested one when it does not say."""
-        joined = getattr(self._adapter, "observed_domain_id", None)
-        return joined if isinstance(joined, int) else requested
+        joined = self._joined_domain()
+        return requested if joined is None else joined
+
+    def _domain_note(self, requested: int) -> str | None:
+        return domain_note(requested, self._joined_domain())
 
     def list_participants(self, domain_id: int = 0) -> ParticipantListing:
         _validate_dds_domain(domain_id)
         self._await_dds()
         participants = self._adapter.list_participants(domain_id)
+        restarts, restarts_note = restarts_from_participants(participants)
         return ParticipantListing(
             participants=participants,
             returned=len(participants),
@@ -166,6 +187,9 @@ class Inspector:
             truncated=False,
             domain_id=self._observed_domain(domain_id),
             mode_effective=self._adapter.effective_mode,
+            note=self._domain_note(domain_id),
+            restarts_by_name=restarts,
+            restarts_note=restarts_note,
         )
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
@@ -190,6 +214,9 @@ class Inspector:
         _validate_lookback_s(seconds)
         self._await_dds()
         events = self._adapter.participant_events(domain_id, seconds)
+        restarts, restarts_note = restarts_from_events(events)
+        if self._adapter.effective_mode == "live":
+            events = with_event_ages(events, self._clock_ns())
         # The adapters keep a ring of MAX_PARTICIPANT_EVENTS: a full result may have lost older ones.
         full = len(events) >= MAX_PARTICIPANT_EVENTS
         return ParticipantEventListing(
@@ -199,12 +226,17 @@ class Inspector:
             truncated=full,
             domain_id=self._observed_domain(domain_id),
             mode_effective=self._adapter.effective_mode,
-            note=(
-                f"The event log holds the last {MAX_PARTICIPANT_EVENTS} events; older events "
-                "inside the window may have been dropped. Narrow `lookback_s`."
-                if full
-                else None
+            note=join_notes(
+                self._domain_note(domain_id),
+                (
+                    f"The event log holds the last {MAX_PARTICIPANT_EVENTS} events; older events "
+                    "inside the window may have been dropped. Narrow `lookback_s`."
+                    if full
+                    else None
+                ),
             ),
+            restarts_by_name=restarts,
+            restarts_note=restarts_note,
         )
 
     def topic_metrics(
@@ -218,7 +250,9 @@ class Inspector:
         seconds = DEFAULT_WINDOW_SECONDS if window_s is None else window_s
         _validate_window_s(seconds)
         self._await_dds()
-        return self._adapter.topic_metrics(topic, seconds, domain_id)
+        result = self._adapter.topic_metrics(topic, seconds, domain_id)
+        note = join_notes(result.note, self._domain_note(domain_id))
+        return result if note == result.note else result.model_copy(update={"note": note})
 
     def list_endpoints(
         self,
@@ -228,17 +262,24 @@ class Inspector:
         domain_id: int = 0,
         include_departed: bool = False,
         include_internal: bool = False,
+        fields: str = "full",
     ) -> EndpointListing:
         _validate_dds_domain(domain_id)
+        if fields not in ("full", "compact"):
+            raise AdapterError(f"fields must be 'full' or 'compact', got {fields!r}")
         if topic is not None:
             _validate_topic_name_dds(topic)
         guid = participant_guid.strip() if participant_guid else None
         if participant_guid is not None and not guid:
             raise AdapterError("participant_guid must be a non-empty string when given")
         self._await_dds()
-        return self._adapter.list_endpoints(
+        listing = self._adapter.list_endpoints(
             topic, guid, include_observer, include_departed, include_internal
         )
+        note = join_notes(listing.note, self._domain_note(domain_id))
+        if note != listing.note:
+            listing = listing.model_copy(update={"note": note})
+        return compact_endpoints(listing) if fields == "compact" else listing
 
     def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
         clean_path = _validate_bag_path(path)

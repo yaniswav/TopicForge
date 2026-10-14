@@ -6,12 +6,14 @@ re-raises `AdapterError` as the SDK's `ToolError` so its text reaches the
 client). A custom error envelope would report a failure as a successful call.
 
 The `description` strings are read by LLM clients, so they state caveats,
-limits and mock/live differences.
+limits and mock/live differences. They are also sent in full on every
+`tools/list`, which some clients truncate: keep them short and put long
+explanations in docs/CONTRACT.md.
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
@@ -43,129 +45,96 @@ from topicforge.services import HealthService, Inspector
 from topicforge.telemetry import TelemetryClient, instrument
 from topicforge.tools.annotations import read_only_annotations
 from topicforge.tools.guard import guarded
+from topicforge.tools.schema_compact import compact_registered_tools
 
 _TOPIC_PARAM_DESC = (
-    "Fully qualified ROS2 topic name starting with `/`, e.g. `/cmd_vel` or "
-    "`/camera/image_raw`. Each `/`-separated segment must start with a "
-    "letter or underscore and contain only letters, digits, and "
-    "underscores; everything else (whitespace, quotes, shell "
-    "metacharacters, `//`, trailing `/`) is rejected before reaching the "
-    "`ros2` CLI."
+    "Fully qualified ROS 2 topic name starting with `/`, e.g. `/cmd_vel`. Segments are "
+    "letters, digits and underscores (not starting with a digit); anything else is "
+    "rejected before reaching the `ros2` CLI."
 )
 
 _NODE_PARAM_DESC = (
-    "Fully qualified ROS 2 node name, e.g. `/lidar_driver` or `/robot1/lidar_driver` "
-    "(as `list_nodes` gives it; a missing leading `/` is added). Each `/`-separated "
-    "segment must start with a letter or underscore and contain only letters, digits "
-    "and underscores."
+    "Fully qualified node name as `list_nodes` gives it, e.g. `/robot1/lidar_driver` "
+    "(a missing leading `/` is added)."
 )
 
 _NODE_TIMEOUT_PARAM_DESC = (
-    "Seconds to wait for the node to answer its parameter read, 1..20, default 8. The "
-    "graph queries before it have their own limit of 8 s each. A node that does not "
-    "answer in time is reported in `parameters_note`, not as an error."
+    "Seconds to wait for the parameter read, 1..20, default 8. A node that does not "
+    "answer is reported in `parameters_note`, not as an error."
 )
 
 _DDS_TOPIC_PARAM_DESC = (
-    "DDS topic name. Bare DDS names such as `scan` are valid, as are ROS 2 "
-    "mangled names such as `rt/scan` and the builtin discovery topics "
-    "`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`. Letters, "
-    "digits, `_`, `/` and `::` are allowed; anything else is rejected."
+    "DDS topic name: bare (`scan`), ROS 2 mangled (`rt/scan`) or a builtin discovery "
+    "topic (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`). Letters, digits, "
+    "`_`, `/` and `::` only."
 )
 
 _DOMAIN_PARAM_DESC = (
-    "Accepted for compatibility (0..232). TopicForge observes the domain it "
-    "joined at startup (TOPICFORGE_DDS_DOMAIN_ID); this argument does not "
-    "switch domains, and the response `domain_id` says which one was observed."
+    "Ignored: it does not switch domains and is only range-checked (0..232). The domain "
+    "observed is the one joined at startup (`TOPICFORGE_DDS_DOMAIN_ID`), reported in the "
+    "response `domain_id`; `note` flags a different non-zero value."
 )
 
 _COUNT_PARAM_DESC = (
-    "Maximum number of messages to return. Defaults to 5; at most 50 (read it "
-    "from `health_check.max_sample_count`), a larger request is capped to 50. "
-    "Negative values raise an error. The result's `count` is how many were "
-    "returned: fewer than requested when the topic has fewer samples to give."
+    "Messages to return, default 5, at most 50 (`health_check.max_sample_count`): more is "
+    "capped to 50, negative raises an error. The result's `count` may be lower."
 )
 
 _SAMPLE_COUNT_PARAM_DESC = (
-    "Number of messages to wait for. Defaults to 5; at most 50 (a larger "
-    "request is capped to 50 and `note` says so). 0 returns nothing. "
-    "`SampleResult.count` is how many arrived: fewer than requested when the "
-    "topic publishes slowly or the deadline (`timeout_s`) ran out."
+    "Messages to wait for, default 5, at most 50 (more is capped and `note` says so); 0 "
+    "returns nothing. Fewer arrive when the topic is slow or `timeout_s` runs out."
 )
 
 _SAMPLE_TIMEOUT_PARAM_DESC = (
-    "Seconds to wait for the messages, 1..40, default 10. Bounds the whole "
-    "call, topic lookup and the `ros2` CLI start-up (a few seconds on a slow "
-    "machine) included: the call returns within `timeout_s` plus a few "
-    "seconds (stopping the CLI, decoding). Whatever arrived by then is "
-    "returned with a `note`. Raise it for a topic that publishes slower than "
-    "1 Hz. Calls that use the `ros2` CLI run one at a time: a long wait "
-    "delays other `ros2`-backed calls, which fail with a `busy` error if "
-    "they cannot start in time."
+    "Seconds to wait, 1..40, default 10, covering topic lookup and CLI start-up. The call "
+    "returns within `timeout_s` plus a few seconds, with what arrived and a `note`. Raise "
+    "it for a topic slower than 1 Hz."
 )
 
 _MAX_ARRAY_LENGTH_PARAM_DESC = (
-    "Longest array, string or bytes value to return in full, 1..65536; "
-    "longer ones are cut after their first N elements or characters and the "
-    "field's dotted path is listed in the sample's `_truncated_fields`. "
-    "Defaults to 128, the `ros2 topic echo` default, which cuts a 541-beam "
-    "`LaserScan` after 128 ranges (its `summary` still covers all 541). Pass null to return everything in full "
-    "(large for images and point clouds; a message over the server's size "
-    "cap, 1 MiB by default, is dropped with a note, and a very large message "
-    "may not print before the deadline)."
+    "Longest array, string or bytes value returned in full, 1..65536, default 128 (a "
+    "541-beam `LaserScan` is cut to 128 ranges; its `summary` still covers all). Longer "
+    "values are cut and listed in `_truncated_fields`. Null returns everything (large for "
+    "images and clouds; a message over 1 MiB is dropped with a note)."
 )
 
 _ARRAYS_SUMMARY_PARAM_DESC = (
-    "When true, array fields are replaced by a short type and length summary "
-    "instead of their elements. Use it to inspect the non-array fields of "
-    "large messages (images, scans, point clouds). Defaults to false."
+    "When true, arrays become a type-and-length summary: use it to read the non-array "
+    "fields of large messages. Default false."
 )
 
 _PATH_PARAM_DESC = (
-    "Path to a bag: a file ending in `.mcap` or `.db3`, or a `rosbag2_*` "
-    "directory. `peek_bag_samples` also reads ROS 1 `.bag` files; "
-    "`analyze_bag` does not (`ros2 bag info` cannot open them). "
-    "Leading/trailing whitespace is stripped. Null "
-    "bytes and otherwise malformed filesystem paths are rejected. Existence "
-    "and bag format are validated by the live adapter (mock mode accepts "
-    "any well-formed path)."
+    "Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` "
+    "also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked "
+    "live; mock accepts any well-formed path."
 )
 
 _SUMMARY_RATE_NOTE = (
-    " **Summary**: a `LaserScan`, `Odometry`, `Imu`, `Image` or `PointCloud2` sample has a "
-    "`summary` computed on the whole message even when `payload` is cut (closest obstacle "
-    "and front/left/right/rear minima in the sensor frame for a scan, speed and yaw for "
-    "odometry, roll/pitch/yaw for an IMU, size and encoding for an image, point count for "
-    "a cloud; distances in meters, angles in radians); any other type has a null `summary`. "
-    "**Rate**: `rate` gives the observed frequency, interval spread, trailing gap and a "
-    "`verdict` (`silent`, `insufficient`, `intermittent`, `stable`, `jittery`, `erratic`) "
-    "measured on %s. Ask for `count` >= 10 for a meaningful verdict, 50 on a topic above "
-    "20 Hz so the messages span about a second; a topic with several "
-    "publishers, such as `/tf`, reads `erratic` without being broken, and a simulated or bridged sensor can read "
-    "`jittery` while healthy."
+    " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples "
+    "carry a `summary` of the whole message (other types: null); `rate` gives frequency, "
+    "interval spread and a `verdict` measured on %s. Use `count` >= 10 (50 above 20 Hz); a "
+    "multi-publisher topic such as `/tf` reads `erratic` without being broken."
 )
 
 _ROS_LANE_NOTE = (
-    " **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. "
-    "The whole call, lock wait included, ends within 45 s; if another `ros2` call keeps "
-    "the lock it fails at once with a `busy` error (retry)."
+    " **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole "
+    "call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock "
+    "it fails at once with a `busy` error (retry)."
 )
 
 _DDS_LANE_NOTE = (
-    " **Duration**: uses the DDS binding behind the DDS lock, one DDS call at a time. "
-    "The whole call, lock wait included, ends within 45 s; if another DDS call keeps "
-    "the lock it fails at once with a `busy` error (retry)."
+    " **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole "
+    "call, lock wait included, ends within 45 s, and if another DDS call holds the lock it "
+    "fails at once with a `busy` error (retry)."
 )
 
 _NO_LOCK_NOTE = (
-    " **Duration**: never waits for a lock and never runs the `ros2` CLI, so it "
-    "answers at once even while another call is running."
+    " **Duration**: never waits for a lock and never runs the `ros2` CLI; it answers at once."
 )
 
 _BAG_NOTE = (
-    " **Duration**: takes no lock (it reads the file in-process, so it can run "
-    "while a ROS 2 or DDS call is busy); it stops after `count` samples, so the "
-    "time follows the bag's size and how far into it the first samples are."
+    " **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS "
+    "call is busy); the time follows the bag's size and how deep the first samples are."
 )
 
 
@@ -184,29 +153,17 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Health check", open_world=False),
         description=(
-            "Report TopicForge environment state as a `HealthReport`: "
-            "effective runtime `mode` (`live` or `mock`), `ros_backend` and "
-            "`dds_backend`, `ros_tools_available`, `ros2_available`, "
-            "`ros2_distro` (fed by the `ROS_DISTRO` env var), "
-            "`dds_domain_id` and `observed_domain_note` (only the DDS domain "
-            "joined at startup is observed; programs on other domains are "
-            "invisible), the server version and the server-side sample cap. "
-            "**Reading `mode`**: `live` with `ros_backend` `none` means the DDS"
-            " tools are live and the ROS 2 tools are not available (a DDS-only "
-            "setup: use `list_endpoints` for topics and wiring). With "
-            "`dds_backend` `none`, `dds_inactive_note` says why: backend not "
-            "selected, binding not installed, or adapter failed to start. "
-            "`payload_decoding` is `disabled`: DDS user-topic payloads are not "
-            "decoded. `dds_security` is `not_supported`: on a secured domain "
-            "participants show up but protected endpoints and data do not. For "
-            "a live DDS backend it also reports `dds_domain_id`, "
-            "`observer_started_ns` and `now_ns` (how long TopicForge has been "
-            "watching: nothing before `observer_started_ns` was observed) and "
-            "the discovery tracker status `tracker_running` / `tracker_passes` "
-            "/ `tracker_errors` / `tracker_last_pass_ns` / `tracker_cache_evictions` "
-            "(errors or evictions above 0, or a stale last pass, mean the "
-            "discovery data has gaps). **Always succeeds**: call it first when "
-            "something looks wrong. Read-only; no side effects." + _NO_LOCK_NOTE
+            "Report TopicForge environment state as a `HealthReport`: `mode`, `ros_backend`, "
+            "`dds_backend`, `ros_tools_available`, `ros2_distro`, `rmw_implementation`, "
+            "`dds_domain_id` and `observed_domain_note` (only the domain joined at startup is "
+            "observed), server version and sample cap; for a live DDS backend also "
+            "`observer_started_ns` / `now_ns` (nothing earlier was watched) and the discovery "
+            "tracker status `tracker_*` (errors, evictions or a stale pass mean gaps). `live` "
+            "with `ros_backend` `none` is a DDS-only setup: use `list_endpoints`. With "
+            "`dds_backend` `none`, `dds_inactive_note` says why. `payload_decoding` is "
+            "`disabled` (DDS user-topic payloads are not decoded); `dds_security` is "
+            "`not_supported`. **Always succeeds**: call it first when something looks wrong. "
+            "Read-only; no side effects." + _NO_LOCK_NOTE
         ),
     )
     @guarded(None)
@@ -217,17 +174,12 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("List ROS 2 topics", open_world=True),
         description=(
-            "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List "
-            "every ROS 2 topic on the current graph (or the mock graph in mock "
-            "mode). Returns a `TopicListing` `{topics, returned, total, "
-            "truncated, mode_effective, note}`: each topic carries `name`, "
-            "`message_type`, `publisher_count` and `subscriber_count`, and "
-            "`mode_effective` (`live` or `mock`) tells a real graph from "
-            "fixtures. QoS is not in the listing: call `get_topic_info` for a "
-            "topic's QoS. **Empty `topics`** "
-            "when the graph has no topics or when live discovery times out. "
-            "**Raises an MCP error** when no `ros2` CLI is available (DDS-only "
-            "setup). Read-only; no side effects." + _ROS_LANE_NOTE
+            "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on "
+            "the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, "
+            "`message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a "
+            "real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty "
+            "`topics`** when the graph has none or live discovery times out. **Raises an MCP "
+            "error** without a `ros2` CLI. Read-only; no side effects." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -238,18 +190,13 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Get topic info", open_world=True),
         description=(
-            "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Return"
-            " info for a single ROS 2 topic. `topic` must be a fully qualified "
-            "name, e.g. `/cmd_vel`. Returns a `TopicInfo` with `mode_effective` "
-            "(`live` or `mock`) and, in live mode, `publisher_qos` and "
-            "`subscription_qos` (`reliability` `reliable` / `best_effort` / "
-            "`mixed`, `durability` `volatile` / `transient_local` / `mixed`, "
-            "`endpoint_count`; `transient_local` marks a latched topic such as "
-            "`/tf_static`; a side that is `null` says why in its `_note`) and "
-            "`publisher_nodes` / `subscriber_nodes` (fully qualified node names). "
-            "**Raises an MCP error** if the topic name is "
-            "malformed, the topic is unknown to the active graph, or no `ros2` "
-            "CLI is available. Read-only; no side effects." + _ROS_LANE_NOTE
+            "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Describe one ROS 2 "
+            "`topic` (fully qualified, e.g. `/cmd_vel`) as a `TopicInfo`: counts and, in live "
+            "mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where "
+            "`transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a "
+            "`null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. "
+            "**Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. "
+            "Read-only; no side effects." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -263,16 +210,13 @@ def register_tools(
         annotations=read_only_annotations("List ROS 2 nodes", open_world=True),
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on "
-            "the current ROS 2 graph (or the mock graph in mock mode) from one `ros2 node list` "
-            "call. Returns a `NodeListing` `{nodes, returned, total, truncated, duplicates, "
-            "mode_effective, note}`: each node has `name`, `namespace`, `full_name` and "
-            "`duplicate_count`. `duplicates` lists the full names used by more than one node "
-            "(the ROS 2 CLI answers for one of them without saying which, so any per-node "
-            "tool is ambiguous there). Nodes whose name starts with an underscore are hidden "
-            "and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the "
-            "graph has no node. Call `get_node_info` for the topics, services and parameters "
-            "of one node. **Raises an MCP error** when no `ros2` CLI is available (DDS-only "
-            "setup). Read-only; no side effects. It is cheap: one CLI call." + _ROS_LANE_NOTE
+            "the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a "
+            "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`. `duplicates` "
+            "lists full names used by several nodes (a per-node tool then answers for one of "
+            "them, unidentified). Nodes starting with an underscore are hidden and a node on "
+            "another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. "
+            "Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a "
+            "`ros2` CLI. Read-only; cheap (one CLI call)." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -284,32 +228,25 @@ def register_tools(
         annotations=read_only_annotations("Get node info", open_world=True),
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 "
-            "node: the topics it publishes and subscribes to, the services and actions it "
-            "serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Returns "
-            "a `NodeInfo` `{full_name, publishers, subscribers, service_servers, "
-            "service_clients, action_servers, action_clients, parameters, parameters_note, "
-            "use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. The "
-            "interfaces come from the graph (`ros2 node info`), which never waits for the "
-            "node. The parameters come from a parameter read (`ros2 param dump`) bounded by "
+            "node as a `NodeInfo`: the topics it publishes and subscribes to, the services and "
+            "actions it serves or calls (each `{name, type}`), its parameters and "
+            "`use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never "
+            "waits for the node. Parameters come from a read (`ros2 param dump`) bounded by "
             "`timeout_s`: **a node that does not answer in time is a finding, not an error**: "
-            "`parameters` is `null` and `parameters_note` says its executor is probably "
-            "blocked, while the interfaces are still returned. Parameters are sorted; a value "
-            "whose name contains password, secret, token, api_key or credential is replaced "
-            "by `<masked>` (`masked` true) and a long value such as a robot description is "
-            "cut (`truncated` true, `original_size`), both said in `parameters_note`. "
-            "`use_sim_time` is `null` with a `use_sim_time_note` when it cannot be read. If "
-            "several nodes share the name, `duplicate_count` is above 1 and `note` warns that "
-            "the answer belongs to one of them. **Raises an MCP error** when the node is not "
-            "on the graph (the message lists close matches), the name is malformed, or no "
-            "`ros2` CLI is available. **Read-only**: the only request TopicForge ever sends is a "
-            "parameter read (list/get); it sends no other request to a node. "
-            "**Mock mode** returns the fictional demo robot's nodes, instantly. "
-            "**Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at a time. "
-            "It makes up to three CLI calls (node list and node info, 8 s each at most, then "
-            "the parameter read, at most `timeout_s`, 20 s), and the whole call, lock wait "
-            "included, ends within 45 s: if another `ros2` call keeps the lock it fails at "
-            "once with a `busy` error (retry), and a call that waited has that much less "
-            "time for the parameter read."
+            "`parameters` is `null`, `parameters_note` says its executor is probably blocked, "
+            "and the interfaces are still returned. A value whose name contains password, "
+            "secret, token, api_key or credential is replaced by `<masked>` and a long value "
+            "is cut (`truncated`, `original_size`), both said in `parameters_note`. With "
+            "several nodes of that name `duplicate_count` is above 1 and `note` warns. "
+            "**Raises an MCP error** when the node is not on the graph (the message lists close "
+            "matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only "
+            "request TopicForge ever sends is a parameter read (list/get); it sends no other "
+            "request to a node. **Duration**: runs the `ros2` CLI behind the ROS lock, one "
+            "call at a time: up to three CLI calls (node list and node info, 8 s each at most; "
+            "then the parameter read, at most `timeout_s`, 20 s). The whole call, lock wait "
+            "included, ends within 45 s: if another `ros2` call holds the lock it fails at "
+            "once with a `busy` error (retry), and a call that waited has less time for the "
+            "parameter read."
         ),
     )
     @guarded("ros")
@@ -330,45 +267,30 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Sample topic messages", open_world=True),
         description=(
-            "ROS 2 graph only; on a DDS-only setup use `list_endpoints` (topics"
-            " and wiring) or `peek_dds_samples` on `DCPSPublication` / "
-            "`DCPSSubscription` (raw discovery records). Collect up to `count` "
-            "live messages from a ROS 2 `topic`, waiting at most `timeout_s` "
-            "seconds. Returns a `SampleResult` `{topic, count, samples, rate, "
-            "mode_effective, note}`. **Live mode** streams `ros2 topic echo`, "
-            "matching the publishers' QoS so latched (transient_local) topics "
-            "work, and returns whatever arrived by the deadline: `count` is the "
-            "actual number and `note` says `N of M messages` and why it is short "
-            "(no publisher, or a publisher that is silent, slow or too large to "
-            "print in time; a latched topic usually holds only its last "
-            "message, so use `count` 1). It never hides a timeout behind an empty list "
-            "without a `note`. Each sample has the message fields as nested "
-            "named values in `payload` (e.g. `payload.header.stamp.sec`), "
-            "`timestamp_ns` from the message's `header.stamp` (the publisher's "
-            "clock: sim time on a simulation, 0 for a headerless message such "
-            "as `std_msgs/String`) with `stamp_source` `header` or `none`; `/clock`, "
-            "`/tf` and `/rosout` carry it in the body and give `payload`; and "
-            "`received_ns`, the wall clock when the CLI printed it. **Arrays**: "
-            "by default arrays, strings and bytes are cut at 128 elements (a "
-            "541-beam `LaserScan` loses beams 128 and up); the cut fields are "
-            "listed in `payload._truncated_fields` and in `note`. Raise "
-            "`max_array_length` (up to 65536, or null for no cut) to read more, "
-            "or set `arrays_summary_only` to see only the non-array fields. "
-            "`nan` and `inf` floats come back as strings. A message over the "
-            "1 MiB size cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped and "
-            "`note` says so; it is dropped while it streams, so it costs no "
-            "decoding time. **Mock mode** returns structured samples for the "
-            "fictional demo robot, instantly. **Raises an MCP error** when no "
-            "`ros2` CLI is available, the topic is unknown, or the CLI fails. "
-            "Read-only; never publishes. Distinct from `peek_dds_samples`, "
-            "which reads the raw DDS layer."
+            "ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` "
+            "on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages "
+            "from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. "
+            "**Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics "
+            "work) and returns what arrived by the deadline: `count` is the actual number and "
+            "`note` says `N of M messages` and why it is short (no publisher, silent, slow or "
+            "too large to print in time; a latched topic usually holds one message, so use "
+            "`count` 1). Each sample has `payload` (nested named values), `timestamp_ns` (the "
+            "publisher's clock, sim time on a simulation, 0 for a headerless message such as "
+            "`std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock when the CLI "
+            "printed it). **Arrays**: arrays, strings and bytes are cut at 128 elements by "
+            "default (a 541-beam `LaserScan` loses beams 128 and up); cut fields are listed "
+            "in `payload._truncated_fields` and `note`. Raise `max_array_length` (up to "
+            "65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap "
+            "(`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns "
+            "demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for "
+            "an unknown topic, or when the CLI fails. Read-only; never publishes."
             + (_SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
             + (
-                " **Duration**: runs the `ros2` CLI behind the ROS lock, one `ros2` call at "
-                "a time. It returns within `timeout_s` (at most 40) plus about 3 s to stop "
-                "the CLI and decode, and the whole call, lock wait included, ends within 45 s: "
-                "a call that cannot get the lock fails at once with a `busy` error (retry), and "
-                "one that waited for the lock has that much less time to collect messages."
+                " **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time. "
+                "It returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and "
+                "decode; the whole call, lock wait included, ends within 45 s: a call that "
+                "cannot get the lock fails at once with a `busy` error (retry), and one that "
+                "waited has less time to collect."
             )
         ),
     )
@@ -408,26 +330,18 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Analyze bag", open_world=False),
         description=(
-            "Summarize a ROS 2 bag at `path`. Returns a `BagAnalysis` with "
-            "storage format, duration, message count, per-topic stats, "
-            "detected anomalies and `mode_effective` (`live` or `mock`). Per "
-            "topic, `frequency_hz` is `(n - 1) / (last - first message time)` "
-            "of that topic (`frequency_basis` `topic_span`), with "
-            "`first_timestamp_ns`, `last_timestamp_ns` and `latched`; a "
-            "`latched` topic whose messages all fall within 1 second (e.g. "
-            "`/tf_static`, a start-up burst) has a null `frequency_hz`, while "
-            "a latched topic published over a longer span keeps its rate. "
-            "When the bag cannot be read locally, or is a large `.mcap` "
-            "(over 200 MiB), the rate falls back to count / bag duration "
-            "(`bag_duration`) and `note` says why. **Live "
-            "mode** runs `ros2 bag info` and accepts `.mcap` and `.db3` "
-            "files plus `rosbag2_*` directories (ROS 1 `.bag` files are not "
-            "readable by `ros2 bag info`; use `peek_bag_samples` for those); **mock mode** returns fixture "
-            "data for any path suffix except clearly non-bag ones. **Raises an "
-            "MCP error** if the path"
-            " is malformed, missing in live mode, or unparseable, or if no "
-            "`ros2` CLI is available. Anomaly detection is available in mock "
-            "mode only. Read-only; no side effects." + _ROS_LANE_NOTE
+            "Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, "
+            "message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is "
+            "`(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with "
+            "`first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose "
+            "messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When "
+            "the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back "
+            "to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs "
+            "`ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` "
+            "use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like "
+            "path, and only mock detects anomalies. **Raises an MCP error** for a malformed or "
+            "missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no "
+            "side effects." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -443,43 +357,27 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("List DDS participants", open_world=True),
         description=(
-            "List DDS participants observed on the bus. Returns a "
-            "`ParticipantListing` `{participants, returned, total, truncated, "
-            "domain_id, mode_effective, note}`: each participant carries `guid`, `vendor` "
-            "(`cyclone`/`fast`/`rti`/`rti_micro`/`opensplice`/`opendds`/`coredx`/`intercom`/`dust`/`mock`/`unknown`)"
-            " with `vendor_source`, optional `name` (announced EntityName QoS, "
-            "e.g. `lidar_driver`), optional `hostname`, `domain_id`, "
-            "and `is_observer`. **Why `vendor`"
-            " can be `unknown`**: the vendor is read from the participant GUID "
-            "prefix (`vendor_source` `guid_prefix`; `none` when unknown). Some "
-            "vendors, e.g. Dust DDS and RTI Connext, do not put their vendor id "
-            "there, and the Cyclone Python binding does not expose the RTPS "
-            "header vendor id, so those participants are listed as `unknown`. "
-            "**`is_observer`** is true for TopicForge's own read-only "
-            "participant, which is listed like any other. **A participant with no "
-            "`name`** (Dust DDS announces none) **is normal, not a fault**: "
-            "identify it by its topics. Lifecycle fields: `status` (`active`/`left`), "
-            "`first_seen_ns` / `last_seen_ns` (TopicForge's local clock), "
-            "`seen_count`, `announced_ns` (DDS source timestamp of the "
-            "announcement), and once left `lost_ns` + `lost_time_source`. "
-            "`lost_ns` is an upper bound of when the participant died: exact "
-            "after a clean shutdown, the lease expiry after a crash (the two "
-            "cannot be told apart), so a crashed process died up to one lease "
-            "before it (10 s Cyclone default, 20 s Fast DDS, 100 s RTI; the "
-            "dead participant's lease, not ours). Cyclone tracks discovery "
-            "continuously in the background, so these stay correct between "
-            "calls; right after server start the call waits up to 3 s for "
-            "discovery to warm up. **Only the domain joined at startup is "
-            "observed** (see `health_check` `dds_domain_id`): a participant on "
-            "another DDS domain is INVISIBLE here, so a missing participant may "
-            "be on a different domain; `domain_id` does not switch domains "
-            "(restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS "
-            "layer beneath ROS, so it also sees non-ROS participants. "
-            "**Read-only by architecture**: it cannot publish, modify QoS, or "
-            "alter the bus. **Raises an MCP error** when no DDS module is "
-            "active (install `pip install topicforge[dds]` and set "
-            "`TOPICFORGE_DDS_BACKEND=cyclone`). The mock backend returns "
-            "fixtures." + _DDS_LANE_NOTE
+            "List DDS participants observed on the bus as a `ParticipantListing`: `guid`, "
+            "`vendor` (read from the GUID prefix, `unknown` for vendors that do not put theirs "
+            "there, e.g. Dust DDS and RTI Connext; see `vendor_source`), optional `name` (the "
+            "announced EntityName, e.g. `lidar_driver`; a participant with none is normal, not "
+            "a fault: identify it by its topics), `hostname`, `domain_id` and `is_observer` "
+            "(TopicForge's own read-only participant, listed like any other). Lifecycle: "
+            "`status` (`active` / `left`), `first_seen_ns` / `last_seen_ns` (TopicForge's "
+            "clock), `announced_ns` (DDS source timestamp) and, once left, `lost_ns` + "
+            "`lost_time_source`: an upper bound of the death (exact after a clean shutdown; "
+            "after a crash the lease expiry, so up to one lease earlier: 10 s Cyclone, 20 s "
+            "Fast DDS, 100 s RTI). **Restarts**: a restarted node is a new GUID with the same "
+            "name; `restarts_by_name` gives `lives` (GUIDs) and `departures` per name, so do "
+            "not count GUIDs by hand (`seen_count` is not a restart count). Cyclone tracks "
+            "discovery in the background; right after start the call waits up to 3 s for it. "
+            "**Only the domain joined at startup is observed** (`health_check` "
+            "`dds_domain_id`): a participant on another domain is INVISIBLE here, and "
+            "`domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). "
+            "Works at the raw DDS layer, so non-ROS participants appear too. **Read-only by "
+            "architecture**: it cannot publish, modify QoS or alter the bus. **Raises an MCP "
+            "error** when no DDS module is active (install `topicforge[dds]`, set "
+            "`TOPICFORGE_DDS_BACKEND=cyclone`); the mock backend returns fixtures." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -499,39 +397,27 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Detect QoS mismatches", open_world=True),
         description=(
-            "Explain why DDS readers and writers on the same topic do not "
-            "talk, and who will. Pairs every reader with every writer per "
-            "topic and returns a `MismatchScan`: `matched` (pairs DDS will "
-            "connect given the announced QoS; data flow is not observed), "
-            "`reports` (incompatible or risky QoS pairs, each with participant "
-            "names, requested vs offered values and the failed rule in "
-            "`details`), `not_matched` "
-            "(pairs DDS never matches: different partitions or type names; "
-            "the QoS rules are NOT evaluated for them, so a partition split "
-            "is not blamed on Reliability; `latent_incompatible_policies` lists "
-            "the RxO policies that would ALSO be incompatible once the "
-            "partition/type issue is fixed), `hints` (orphan topics with a "
-            "near-identical name, i.e. probable typos, and type id notes), "
-            "plus `pairs_checked`, `topics_scanned`, `policies_checked` and "
-            "`policies_unchecked`. Checked: Partition (with `*` and `?` "
-            "wildcards), type name, Reliability, Durability, Deadline, "
-            "Liveliness, LatencyBudget, Ownership, DestinationOrder, "
-            "DataRepresentation, History (risky only, and only where announced: "
-            "discovery does not carry it). Not checked: see "
-            "`policies_unchecked`. **An empty `reports` with a non-empty "
-            "`not_matched` still means no data flows**, and an all-empty "
-            "result does not prove the bus healthy: discovery shows the QoS "
-            "DECLARED, not runtime behavior (a reader logging 'deadline "
-            "missed' with compatible QoS means the writer's real period "
-            "exceeds the deadline, which TopicForge cannot observe). Pass "
-            "`topic` to scope to one topic; omit to scan all. `reports`, "
-            "`matched` and `not_matched` are capped at 200 entries each "
-            "(`truncated` is true, the `*_total` fields keep the real counts, "
-            "incompatible reports come first). A matched pair flagged "
-            "`late_joiner` is a VOLATILE writer whose reader joined later on "
-            "the same host: normal, not a fault. "
-            "**Read-only by architecture**. **Raises an MCP error** when no "
-            "DDS module is active; the mock backend returns fixtures." + _DDS_LANE_NOTE
+            "Explain why DDS readers and writers on a topic do not talk, and who will. Pairs "
+            "every reader with every writer per topic and returns a `MismatchScan`: `summary` "
+            "(one line, read it first), `matched` (pairs DDS will connect given the announced "
+            "QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with "
+            "participant names, requested vs offered values and the failed rule in `details`), "
+            "`not_matched` (pairs DDS never matches: different partitions or type names; the "
+            "QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists "
+            "what would also break once fixed), `hints` (probable typos in orphan topic names, "
+            "type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and "
+            "`policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, "
+            "Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, "
+            "DestinationOrder, DataRepresentation, History (risky only, where announced). "
+            "**An empty `reports` with a non-empty `not_matched` still means no data flows**, "
+            "and an all-empty result does not prove the bus healthy: discovery shows the QoS "
+            "DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means "
+            "the writer's real period exceeds the deadline, which TopicForge cannot see). "
+            "Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; "
+            "`*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose "
+            "reader joined later on the same host: normal. **Read-only by architecture**. "
+            "**Raises an MCP error** when no DDS module is active; mock returns fixtures."
+            + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -541,9 +427,8 @@ def register_tools(
             str | None,
             Field(
                 description=(
-                    "Optional DDS topic name to scope the scan to: a bare name "
-                    "such as `scan` or a ROS 2 mangled name such as `rt/scan`. "
-                    "Omit to scan all topics."
+                    "Optional DDS topic to scope the scan to: `scan` or `rt/scan`. Omit to "
+                    "scan all topics."
                 ),
                 default=None,
             ),
@@ -554,28 +439,19 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Peek DDS samples", open_world=True),
         description=(
-            "Peek recent samples on a raw DDS topic. Unlike `sample_messages` "
-            "(which uses the `ros2` CLI), this reads the DDS layer directly and "
-            "works without ROS 2. Returns a `SampleResult` `{topic, count, samples, "
-            "mode_effective, note}`, the same shape as `sample_messages`. "
-            "`count` defaults to 5 and is silently clamped to 50. **Topic "
-            "categories**: (a) The 3 builtin discovery topics "
-            "(`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) return "
-            "structured discovery payloads: on Cyclone the CURRENT discovery "
-            "state (one record per live participant or endpoint), not a stream "
-            "of recent events (use `participant_events` for history). "
-            "`DCPSPublication` and `DCPSSubscription` are the raw writers and "
-            "readers behind `list_endpoints`. The topic may be given as `/scan`, "
-            "`scan` or `rt/scan`: all three resolve to the same topic. (b) "
-            "User-defined topics: payload "
-            "decoding is DISABLED on every backend. The call returns `count` 0,"
-            " `samples` empty and a `note` saying so; that does NOT mean the "
-            "topic is silent. Use `list_endpoints` for the topic's presence, "
-            "writers, readers and QoS. A user topic that is not announced on "
-            "the bus raises an error. Right after server start the call waits "
-            "up to 3 s for discovery to warm up. **Read-only by architecture**:"
-            " it cannot publish. **Raises an MCP error** when no DDS module is "
-            "active or the topic is not announced on the bus." + _DDS_LANE_NOTE
+            "Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_messages` "
+            "but read from the DDS layer (works without ROS 2). `count` defaults to 5, clamped "
+            "to 50. (a) The builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, "
+            "`DCPSPublication`) return structured discovery records: on Cyclone the CURRENT "
+            "state (one per live participant or endpoint), not recent events (use "
+            "`participant_events`); `DCPSPublication` / `DCPSSubscription` are the raw data "
+            "behind `list_endpoints`. The topic may be `/scan`, `scan` or `rt/scan`. (b) User "
+            "topics: payload decoding is DISABLED on every backend, so the call returns "
+            "`count` 0, empty `samples` and a `note`; that does NOT mean the topic is silent. "
+            "Use `list_endpoints` for its presence, writers, readers and QoS. A user topic not "
+            "announced on the bus raises an error. Right after start the call waits up to 3 s "
+            "for discovery. **Read-only by architecture**: it cannot publish. **Raises an MCP "
+            "error** when no DDS module is active or the topic is not announced." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -589,40 +465,26 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("DDS participant events", open_world=True),
         description=(
-            "Return DDS participant lifecycle events (`discovered` / `lost`) "
-            "from a recent window, e.g. 'who was on the bus 5 minutes ago and "
-            "left?' or 'when did this participant first appear?'. Returns a "
-            "`ParticipantEventListing` `{events, returned, total, truncated, domain_id, "
-            "mode_effective, note}`: each event carries "
-            "`guid`, `event_type`, `vendor`, `timestamp_ns` (wall-clock ns "
-            "since epoch), `time_source`, `observed_ns`, optional `name` (the "
-            "participant's announced DDS name), optional `hostname` and "
-            "`domain_id`. `time_source` "
-            "says what `timestamp_ns` is: `dds_source_timestamp` (the DDS "
-            "timestamp of the announcement or dispose) or `observed_local` "
-            "(when TopicForge noticed, weakest). `observed_ns` is when "
-            "TopicForge noticed, always at or after a DDS-derived "
-            "`timestamp_ns`. **Crash caveat**: a `lost` timestamp is an upper "
-            "bound of the death. After a clean shutdown it is exact; after a "
-            "crash it is when the lease expired, so the process died between "
-            "`timestamp_ns` minus the dead participant's lease and "
-            "`timestamp_ns` (10 s Cyclone default, 20 s Fast DDS, 100 s RTI), "
-            "and the two cases cannot be told apart. A restarted node is a new "
-            "participant: expect one `lost` and one `discovered` per restart, "
-            "with different `guid`s and the same `name`. Sorted newest-first. "
-            "Capped at 200 events (`truncated` is true and `note` says so; "
-            "reduce `lookback_s` if you hit it). TopicForge only knows what happened since it started "
-            "watching (see `health_check.observer_started_ns`). **Backend "
-            "caveats**: Fast DDS captures arrivals and removals through "
-            "listener callbacks; Cyclone tracks discovery in the background (a "
-            "pass every 0.5 s, independent of tool calls), so restarts and "
-            "crashes are recorded as they happen, but a participant cycle "
-            "faster than the discovery reader's history depth between two "
-            "passes can be missed; mock returns a fixture timeline. Right "
-            "after server start the call waits up to 3 s for discovery to warm "
-            "up. **Read-only by architecture**. **Raises an MCP error** when no"
-            " DDS module is active (install `pip install topicforge[dds]` and "
-            "set `TOPICFORGE_DDS_BACKEND=cyclone|fast`)." + _DDS_LANE_NOTE
+            "Return DDS participant lifecycle events (`discovered` / `lost`) from a recent "
+            "window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, "
+            "newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, "
+            "`observed_ns`, `age_s` (seconds before the response; live only), optional `name` "
+            "(announced name), `hostname` and `domain_id`. `time_source` is "
+            "`dds_source_timestamp` (timestamp of the announcement or dispose) or "
+            "`observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` "
+            "timestamp is an upper bound of the death: exact after a clean shutdown, the "
+            "lease expiry after a crash, so the process died up to one lease earlier (10 s "
+            "Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. "
+            "**Restarts**: a restarted node is a new participant (one `lost` and one "
+            "`discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` "
+            "and `departures` per name over the window, so do not count GUIDs by hand. Capped "
+            "at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows "
+            "what happened since it started watching (`health_check.observer_started_ns`). "
+            "**Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the "
+            "background every 0.5 s, so a participant cycle faster than the reader's history "
+            "depth between two passes can be missed; mock returns a fixture timeline. Right "
+            "after start the call waits up to 3 s for discovery. **Read-only by "
+            "architecture**. **Raises an MCP error** when no DDS module is active." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -640,11 +502,8 @@ def register_tools(
             int,
             Field(
                 description=(
-                    "Window (in seconds) over which to return events. "
-                    "Defaults to 300 (5 minutes). Range: 1..86400 (1 second "
-                    "to 24 hours). Larger windows may hit the 200-event "
-                    "cap: narrow the window or filter on `domain_id` "
-                    "when that happens."
+                    "Window in seconds, 1..86400, default 300. A larger window may hit the "
+                    "200-event cap."
                 ),
                 ge=1,
                 le=86400,
@@ -656,26 +515,19 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Topic metrics", open_world=True),
         description=(
-            "Return temporal metrics (frequency, sequence gaps, latency "
-            "percentiles) for a DDS topic over a recent time window. Returns a "
-            "`TopicMetrics` payload carrying `status`, `samples_observed`, "
-            "`observed_frequency_hz`, `declared_frequency_hz`, "
-            "`sequence_gaps_count`, `latency_ns_p50/p95/p99`, and boolean "
-            "availability flags. **Read `status` first**: "
-            "`unsupported_user_topic` means the topic is a user topic, whose "
-            "payload is not decoded, so there are no metrics: every number is "
-            "null or 0 and none of it is a measurement. `no_samples_yet` means "
-            "a builtin topic with nothing buffered in the window. `ok` means "
-            "metrics were computed. **Limits**: the buffer is filled only when "
-            "`peek_dds_samples` runs on the topic, so `observed_frequency_hz` "
-            "reflects how often it was called, not the real publish rate: "
-            "treat it as a coarse presence signal. `declared_frequency_hz` is "
-            "declared, not measured: `1 / deadline` of the shortest QoS "
-            "Deadline a writer on the topic announced in discovery, null when "
-            "none announced one. **Read-only by architecture**. **Raises an MCP"
-            " error** when no DDS module is active or `window_s` is out "
-            "of range (1..3600). Right after server start the call waits up to "
-            "3 s for discovery to warm up." + _DDS_LANE_NOTE
+            "Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS "
+            "topic over a recent window as a `TopicMetrics`. **Read `status` first**: "
+            "`unsupported_user_topic` means the payload is not decoded, so no metric exists: "
+            "every null or 0 is not a measurement; `no_samples_yet` is a builtin topic with "
+            "nothing buffered; `ok` means computed. **Limits**: the buffer is filled only when "
+            "`peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how "
+            "often it was called, not the publish rate: a coarse presence signal. "
+            "`declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline "
+            "announced in discovery (declared, not measured; null when none). Also "
+            "`sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. "
+            "**Read-only by architecture**. **Raises an MCP error** when no DDS module is "
+            "active or `window_s` is outside 1..3600. Right after start the call waits up to "
+            "3 s for discovery." + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -685,12 +537,7 @@ def register_tools(
         window_s: Annotated[
             int,
             Field(
-                description=(
-                    "Window in seconds over which to compute metrics "
-                    "(1..3600). Defaults to 60 seconds. Smaller windows "
-                    "reflect more recent state; larger windows smooth "
-                    "transient anomalies."
-                ),
+                description="Window in seconds, 1..3600, default 60.",
                 ge=1,
                 le=3600,
             ),
@@ -709,33 +556,21 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("Peek bag samples", open_world=False),
         description=(
-            "Peek up to `count` samples from a recorded bag file. Unlike "
-            "`peek_dds_samples` (live DDS) and `sample_messages` (live ROS 2 "
-            "graph), this reads **offline bag content** for post-mortem "
-            "analysis. Supported formats: MCAP "
-            "(`.mcap`), ROS 2 rosbag2 SQLite (`.db3`), ROS 1 legacy chunked "
-            "binary (`.bag`), detected from the file extension. Returns the "
-            "**first** `count` messages of the topic in recording order, not "
-            "the last ones. **Clocks**: `timestamp_ns` is the message's own "
-            "`header.stamp` (`stamp_source` `header`) when it has a top-level "
-            "header, else the time in the body of `Clock`, `TFMessage` or `Log` "
-            "(`stamp_source` `payload`), else the bag record time "
-            "(`stamp_source` `recorded`); "
-            "`recorded_ns` is always the bag record time. Returns a "
-            "`SampleResult` in the same shape as `peek_dds_samples`: each "
-            "sample's `payload` carries a `_decode_status` annotation (`full` /"
-            " `partial` / `raw`). `count` defaults to 5 and is silently clamped"
-            " to 50. **Uses the `rosbags` library** (installed with "
-            "topicforge) and needs the ROS 2 side of the runtime: on a DDS-"
-            "only setup it raises an error. The mock backend returns fixture "
-            "samples on canned bag paths. Bags that embed no message "
-            "definitions (rosbag2 `.db3` from Humble) are decoded with the "
-            "type definitions of the bag's recorded distro, or Humble when it "
-            "records none; `note` says which. Arrays over 4096 elements are "
-            "cut and `note` lists the fields. **Read-only by "
-            "architecture**: nothing writes to the bag file. **Raises an MCP "
-            "error** when the bag path does not exist, the topic is not present"
-            " in the bag, or `rosbags` is not installed."
+            "Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, "
+            "for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by "
+            "extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the "
+            "**first** `count` messages of the topic in recording order, not the last. "
+            "**Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level "
+            "header (`stamp_source` `header`), else the time in the body of `Clock`, "
+            "`TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); "
+            "`recorded_ns` is always the record time. Each `payload` carries `_decode_status` "
+            "(`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the "
+            "`rosbags` library** and needs the ROS 2 side of the runtime (an error on a "
+            "DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded "
+            "definitions (Humble `.db3`) is decoded with those of its recorded distro, or "
+            "Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists "
+            "them. **Read-only by architecture**. **Raises an MCP error** when the path does "
+            "not exist, the topic is not in the bag, or `rosbags` is missing."
             + (_SUMMARY_RATE_NOTE % "`recorded_ns` (the bag record time of the returned messages)")
             + _BAG_NOTE
         ),
@@ -752,51 +587,33 @@ def register_tools(
     @mcp.tool(
         annotations=read_only_annotations("List DDS endpoints", open_world=True),
         description=(
-            "List every DDS endpoint (writer and reader) announced on the bus, "
-            "one `EndpointInfo` per endpoint with `role`, "
-            "`dds_topic` (raw name such as `rt/scan`), `ros_topic` (`/scan`, "
-            "`null` with `ros_topic_note` when it is not a ROS 2 topic), "
-            "`type_name`, `type_id`, the owning `participant_guid` "
-            "joined with its `participant_name`, and a structured `qos` "
-            "(reliability, durability, history, deadline, liveliness kind and "
-            "lease, ownership kind and strength, partitions, latency budget, "
-            "destination order, data representation). Use it instead of "
-            "parsing `peek_dds_samples` output and joining GUID prefixes. "
-            "**Spotting orphans**: `by_topic` rolls the endpoints up per "
-            "topic with `writer_count`, `reader_count` and `orphan` "
-            '(`"no_reader"` = a writer nobody subscribes to, `"no_writer"` = '
-            "a reader nobody publishes to), plus the union of partitions. "
-            "**Reading `qos`**: a duration of `None` (`deadline_ns`, "
-            "`liveliness_lease_ns`, `latency_budget_ns`) means infinite or "
-            "not set; a policy field of `None` means the endpoint did not "
-            "announce it. **Ownership**: among EXCLUSIVE writers the live one "
-            "with the highest `ownership_strength` delivers to a reader; which "
-            "writer currently owns an instance is reader-side runtime state "
-            "TopicForge cannot observe. **Departed endpoints**: when a participant leaves, "
-            "its endpoints are remembered (last 200, 1 h) and shown in `by_topic` "
-            "as `departed_writers` / `departed_readers` (participant name and "
-            "`gone_ns`), so a topic that lost its only writer is explained in "
-            "one call; they are listed in `endpoints` only with "
-            "`include_departed`. **Topic filter**: `rt/scan` and `scan` match "
-            "each other (exact name first; `note` says which form matched), and "
-            "a filter that matches nothing returns a `note` with the closest "
-            "known topics. `announced_ns` is the discovery announcement's "
-            "source timestamp on the announcing side's clock, which can "
-            "differ from this host's clock. **This lists discovery facts, not "
-            "data flow**: it shows which endpoints exist and how they are "
-            "configured, not whether samples move (`hints` says so once): "
-            "TopicForge holds no reader on user topics "
-            "and cannot tell a silent or hung writer from a healthy one. Pair "
-            "it with `detect_qos_mismatches` to see which pairs cannot match. "
-            "TopicForge's own observer participant is excluded unless "
-            "`include_observer` is true. ROS 2 service and action endpoints "
-            "(`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) are left "
-            "out unless `include_internal` is true "
-            "(`hidden_internal_endpoint_count`). Output is capped at 500 endpoints "
-            "(`truncated`, `total`); `by_topic` still covers all "
-            "matches. Read-only. **Raises an MCP error** when no DDS module "
-            "is active. Mock mode returns a fixture matching the other mock "
-            "DDS tools." + _DDS_LANE_NOTE
+            "List every DDS endpoint (writer and reader) announced on the bus as an "
+            "`EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. "
+            "`rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS "
+            "topic), `type_name`, `type_id`, the owning `participant_guid` with "
+            "`participant_name`, and a structured `qos`. Use it instead of parsing "
+            "`peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` "
+            "`compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, "
+            "`announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with "
+            "`topic` or `participant_guid` to read one topic's full QoS. **Orphans**: "
+            "`by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, "
+            "`orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader "
+            "nobody publishes to) and the union of partitions. In `qos`, a duration or policy "
+            "of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live "
+            "one with the highest `ownership_strength` delivers; which one owns an instance "
+            "is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving "
+            "participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as "
+            "`departed_writers` / `departed_readers` (listed in `endpoints` only with "
+            "`include_departed`), so a topic that lost its only writer is explained in one "
+            "call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching "
+            "nothing returns a `note` with the closest topics. **This lists discovery facts, "
+            "not data flow**: it cannot tell a silent or hung writer from a healthy one; pair "
+            "it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless "
+            "`include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, "
+            "`rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 "
+            "endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. "
+            "**Raises an MCP error** when no DDS module is active; mock returns a fixture."
+            + _DDS_LANE_NOTE
         ),
     )
     @guarded("dds")
@@ -806,10 +623,8 @@ def register_tools(
             str | None,
             Field(
                 description=(
-                    "Only endpoints on this DDS topic name: a bare name such as "
-                    "`scan` or a ROS 2 mangled name such as `rt/scan` (exact "
-                    "name first, then the alternate form). Omit to list every "
-                    "topic."
+                    "Only endpoints on this DDS topic: `scan` or `rt/scan` (exact name first, "
+                    "then the alternate form). Omit for every topic."
                 )
             ),
         ] = None,
@@ -817,19 +632,14 @@ def register_tools(
             str | None,
             Field(
                 description=(
-                    "Only endpoints owned by this participant, as the guid "
-                    "reported by `list_participants` or by an earlier "
-                    "`list_endpoints`. Omit for all participants."
+                    "Only endpoints of this participant (a guid from `list_participants`). "
+                    "Omit for all."
                 )
             ),
         ] = None,
         include_observer: Annotated[
             bool,
-            Field(
-                description=(
-                    "Include TopicForge's own observer participant's endpoints. Defaults to false."
-                )
-            ),
+            Field(description="Include TopicForge's own observer endpoints. Default false."),
         ] = False,
         domain_id: Annotated[
             int,
@@ -843,9 +653,8 @@ def register_tools(
             bool,
             Field(
                 description=(
-                    "Also list endpoints whose participant left the bus (flagged "
-                    "with `gone_ns`). Defaults to false; `by_topic` reports them "
-                    "as `departed_writers` / `departed_readers` either way."
+                    "Also list endpoints whose participant left (flagged with `gone_ns`); "
+                    "`by_topic` reports them either way. Default false."
                 )
             ),
         ] = False,
@@ -853,16 +662,34 @@ def register_tools(
             bool,
             Field(
                 description=(
-                    "Also list the ROS 2 service and action endpoints (`rq/`, "
-                    "`rr/`, `rs/`, `rp/`, `ra/` and `ros_discovery_info`). "
-                    "Defaults to false: they are most of a small robot's endpoints."
+                    "Also list ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, "
+                    "`rp/`, `ra/`, `ros_discovery_info`), most of a small robot's endpoints. "
+                    "Default false."
                 )
             ),
         ] = False,
+        fields: Annotated[
+            Literal["full", "compact"],
+            Field(
+                description=(
+                    "`full` (default) or `compact`: one-line `qos_summary` instead of the "
+                    "full `qos`, no `type_id`, `announced_ns` or `ros_topic_note`. Use "
+                    "`compact` on large buses."
+                )
+            ),
+        ] = "full",
     ) -> EndpointListing:
         return inspector.list_endpoints(
-            topic, participant_guid, include_observer, domain_id, include_departed, include_internal
+            topic,
+            participant_guid,
+            include_observer,
+            domain_id,
+            include_departed,
+            include_internal,
+            fields,
         )
+
+    compact_registered_tools(mcp)
 
     # TODO(roadmap): URDF tools: validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection: clock jumps, frame drops, TF gaps.
