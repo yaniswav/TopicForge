@@ -709,6 +709,14 @@ class NotMatchedPair(BaseModel):
             "QoS of the two endpoints would be compatible, or could not be compared."
         ),
     )
+    suggested_fixes: list[SuggestedFix] = Field(
+        default_factory=list,
+        description=(
+            "Fixes proposed as text for a human to apply; TopicForge never applies them. "
+            "Only for a `partition` split, and only on the first pair of identical splits "
+            "on a topic. Empty when it proposes none for this finding."
+        ),
+    )
 
 
 class MatchedPair(BaseModel):

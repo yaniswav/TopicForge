@@ -14,7 +14,7 @@ Sections:
 
 1. Principles
 2. Decisions
-3. Reserved optional fields
+3. Optional fields
 4. Rate verdicts
 5. Reserved multimodal exception
 6. Change policy and tests
@@ -249,34 +249,50 @@ values a tool can return:
 {"timestamp_ns": 1760000000123456789, "stamp_source": "dds_source"}
 ```
 
-## 3. Reserved optional fields
+## 3. Optional fields
 
-These shapes are fixed now so that they can be added later without a break. Until a
-tool fills them, they do not appear in its output (1.3, mechanism 1). Each is optional
-and additive.
+Some shapes were fixed before any tool filled them, so that they could be added without a
+break. Each is optional and additive; a tool that does not fill one omits its content (1.3,
+mechanism 1).
 
 ### 3.1 `suggested_fixes`
 
-Not a tool: an optional list on a diagnostic finding (first on a QoS mismatch report).
-TopicForge diagnoses, proposes a fix as text, a human applies it, TopicForge verifies.
+Populated by `detect_qos_mismatches` since 0.7.1, on `reports[]` (RxO mismatches) and on
+`not_matched[]` (`partition` splits only). Not a tool: an optional list on a diagnostic
+finding. TopicForge diagnoses, proposes a fix as text, a human applies it, TopicForge
+verifies. Other tools may fill it later with the same shape.
 
 ```json
 {"suggested_fixes": [
   {"kind": "qos_override",
    "target": "reader /nav2/controller on /scan",
-   "text": "qos_overrides./scan.subscription.reliability: best_effort",
-   "tradeoff": "The reader stops requesting retransmission, so it can miss samples.",
-   "verify_with": "detect_qos_mismatches"}
+   "text": "/nav2/controller:
+  ros__parameters:
+    qos_overrides./scan.subscription.reliability: best_effort",
+   "tradeoff": "The reader stops requesting retransmission, so it can miss samples. Only works if the node enabled QoS overrides (rclcpp/rclpy QosOverridingOptions); pass the file to the node with --params-file when it starts.",
+   "verify_with": "detect_qos_mismatches(topic='rt/scan')"}
 ]}
 ```
 
 | Field | Content |
 | --- | --- |
-| `kind` | one of `cli`, `qos_override`, `dds_profile`, `launch_param` (closed set) |
+| `kind` | one of `cli`, `qos_override`, `dds_profile`, `launch_param` (closed set). 0.7.1 emits `qos_override` and `dds_profile` |
 | `target` | which node or which side to change, writer or reader |
 | `text` | the exact command, YAML or XML to apply |
 | `tradeoff` | what is lost by applying it |
-| `verify_with` | the TopicForge tool to run again to confirm the repair |
+| `verify_with` | the TopicForge tool and arguments to run again to confirm the repair |
+
+Behaviour:
+
+- A finding gets one fix per side that can change, most often two (the safer side first,
+  explained in `tradeoff`). A finding with no supported fix (DestinationOrder,
+  DataRepresentation, History) has an empty list and a `hints` entry.
+- `qos_override` is used for a ROS 2 topic (`rt/` prefix) when only Reliability and
+  Durability differ; everything else is a `dds_profile`: a Fast DDS XML profile followed by
+  the cyclonedds-python equivalent.
+- Findings with the same topic and compared values share one set of fixes, carried by the
+  first report; the others have an empty list and a `hints` entry says so. A fix lists at most
+  three nodes.
 
 Rules:
 
@@ -284,7 +300,9 @@ Rules:
   text for a human; TopicForge never applies them". `readOnlyHint` stays true.
 - No destructive verb: nothing that kills a process, shuts down a lifecycle node,
   deletes or unsets a parameter, removes a file. A test fails any suggestion whose
-  `text` contains a forbidden verb; the list lives in that test.
+  `text`, `target` or `tradeoff` contains a forbidden word (kill, pkill, delete, rm,
+  shutdown, deactivate, cleanup, set, publish, call, launch, restart, reset); the list
+  lives in that test.
 - When two sides can fix the problem (the writer or the reader), both are offered as
   separate entries, each with its own `tradeoff`.
 

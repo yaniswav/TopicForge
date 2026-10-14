@@ -530,6 +530,10 @@ def register_tools(
             "incompatible reports come first). A matched pair flagged "
             "`late_joiner` is a VOLATILE writer whose reader joined later on "
             "the same host: normal, not a fault. "
+            "Reports and partition splits carry `suggested_fixes` (up to one per "
+            "side, identical findings share the first one): text for a human, "
+            "TopicForge never applies them; `verify_with` names the call that "
+            "confirms the repair. "
             "**Read-only by architecture**. **Raises an MCP error** when no "
             "DDS module is active; the mock backend returns fixtures." + _DDS_LANE_NOTE
         ),

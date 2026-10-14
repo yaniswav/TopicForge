@@ -19,6 +19,7 @@ from topicforge.adapters.common.qos_analyzer import (
     effective_partitions,
     partitions_match,
 )
+from topicforge.adapters.common.qos_fixes import attach_partition_fixes, attach_qos_fixes
 from topicforge.adapters.common.topic_filter import (
     levenshtein,
     no_match_note,
@@ -362,8 +363,8 @@ def scan_endpoints(
             scope_hints.append(no_match_note(topic, by_topic))
     scope = {t for t in by_topic if topic is None or t == wanted}
 
-    reports: list[MismatchReport] = []
-    not_matched: list[NotMatchedPair] = []
+    report_entries: list[tuple[MismatchReport, EndpointInfo, EndpointInfo]] = []
+    split_entries: list[tuple[NotMatchedPair, EndpointInfo, EndpointInfo]] = []
     pairs_checked = 0
     skipped = 0
     unchecked_counts: dict[str, int] = {}
@@ -380,7 +381,7 @@ def scan_endpoints(
                 pairs_checked += 1
                 apart = _separation(reader, writer)
                 if apart is not None:
-                    not_matched.append(apart)
+                    split_entries.append((apart, reader, writer))
                     continue
                 matched_pairs.append((reader, writer))
                 report, analysis = _report(reader, writer)
@@ -388,13 +389,20 @@ def scan_endpoints(
                     unchecked_counts[name] = unchecked_counts.get(name, 0) + 1
                 history_unknown += analysis.history_unknown
                 if report is not None:
-                    reports.append(report)
+                    report_entries.append((report, reader, writer))
                 if report is None or report.severity != "incompatible":
                     matched.append(_matched(reader, writer, hostnames))
 
+    reports, fix_hints = attach_qos_fixes(report_entries)
+    not_matched, split_hints = attach_partition_fixes(split_entries)
     near, plain = _orphan_hints(by_topic, scope)
     hints = (
-        scope_hints + near + _unchecked_hints(unchecked_counts, skipped, history_unknown) + plain
+        scope_hints
+        + near
+        + _unchecked_hints(unchecked_counts, skipped, history_unknown)
+        + plain
+        + fix_hints
+        + split_hints
     )
     hints += _type_id_hints(matched_pairs)
     if len(hints) > _MAX_HINTS:

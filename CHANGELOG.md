@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `detect_qos_mismatches` fills `suggested_fixes` (output contract 2, additive; see
+  `docs/CONTRACT.md` section 3.1): "diagnose, propose the exact fix, verify". Each QoS
+  mismatch report and each `partition` split gets up to one fix per side that can change
+  (`MismatchReport.suggested_fixes`, and the new `NotMatchedPair.suggested_fixes`), with its
+  tradeoff and a `verify_with` call. A ROS 2 topic with a Reliability or Durability finding
+  gets a `qos_override` parameter-file entry; every other case gets a `dds_profile` (Fast DDS
+  XML plus the cyclonedds-python equivalent, since Cyclone DDS has no XML QoS profile).
+  Covered: Reliability, Durability, Deadline, Liveliness, Ownership, LatencyBudget and
+  Partition; other findings get a hint instead. Identical findings on a topic share the
+  first report's fixes. Text only: TopicForge never applies a fix, and a test fails any
+  suggestion containing a stop, remove or write verb.
+
 ## [0.7.0] - 2026-10-12
 
 Breaking release: output contract 2 (see `docs/MIGRATION-0.7.md`), the move to the MCP SDK
