@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-14
+
 QoS fix suggestions and agent-friction fixes from the blind evaluation (`docs/EVAL.md`). Additive only: no field or
 input was renamed, removed or retyped (`docs/CONTRACT.md` section 9).
 
@@ -44,6 +46,12 @@ input was renamed, removed or retyped (`docs/CONTRACT.md` section 9).
   `list_endpoints`: the description now opens with "Ignored", and a non-zero value that
   differs from the domain joined at startup adds an explicit sentence to the response `note`
   (the response `domain_id` already named the observed domain).
+
+### Fixed
+
+- `scripts/ground_truth/compare.py` counts only active DDS participants: the `ros2` CLI
+  processes that `get_node_info` starts stay listed with status `left` and inflated the count
+  (found on the OmniSim kit run of 2026-10-14 on 0.7.0: 76 checks passed, 0 failed).
 
 ## [0.7.0] - 2026-10-12
 
@@ -1653,7 +1661,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/yaniswav/TopicForge/compare/v0.6.2...v0.6.3
