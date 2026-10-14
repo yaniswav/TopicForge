@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+Agent-friction fixes from the blind evaluation (`docs/EVAL.md`). Additive only: no field or
+input was renamed, removed or retyped (`docs/CONTRACT.md` section 9).
+
+### Added
+
+- `list_participants` and `participant_events`: `restarts_by_name` (`{name: {lives,
+  departures}}` for names seen with several GUIDs or lost) and `restarts_note`, so an agent
+  no longer counts GUIDs to find a restart loop.
+- `participant_events`: `age_s` on each event, seconds between the event and the response
+  (`null` in mock mode).
+- `detect_qos_mismatches`: `summary`, a one-line reading of the scan that says when pairs are
+  not matched and no data flows, even with an empty `reports`.
+- `list_endpoints`: optional input `fields` (`full` default, or `compact`) with the output
+  fields `fields` and `qos_summary`; compact replaces each `qos` by a one-line summary and
+  drops `type_id`, `announced_ns` and `ros_topic_note`.
+
+### Changed
+
+- `tools/list` is about 37 percent smaller (about 178 KB to 113 KB compact), because some
+  clients truncated it: tool and field descriptions are shorter, and the generated schema
+  titles and nested-model docstrings are no longer served. Names, types, defaults and
+  constraints are unchanged. The long explanations moved to `docs/CONTRACT.md` section 9.
+- `domain_id` on `list_participants`, `participant_events`, `topic_metrics` and
+  `list_endpoints`: the description now opens with "Ignored", and a non-zero value that
+  differs from the domain joined at startup adds an explicit sentence to the response `note`
+  (the response `domain_id` already named the observed domain).
+
 ## [0.7.0] - 2026-10-12
 
 Breaking release: output contract 2 (see `docs/MIGRATION-0.7.md`), the move to the MCP SDK
