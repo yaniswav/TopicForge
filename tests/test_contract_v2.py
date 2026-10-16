@@ -92,7 +92,12 @@ def test_participant_listing_carries_the_domain_once(inspector: Inspector) -> No
     listing = inspector.list_participants(0)
     assert listing.domain_id == 0 and listing.mode_effective == "mock"
     assert listing.returned == listing.total == len(listing.participants) == 4
-    assert all(p.node_names == [] and p.node_names_source == "none" for p in listing.participants)
+    for p in listing.participants:
+        if p.name in {"lidar_driver", "nav_planner", "camera_driver"}:
+            assert p.node_names == [f"/{p.name}"] and p.node_names_source == "ros_discovery_info"
+        else:
+            assert p.node_names == [] and p.node_names_source == "none"
+    assert not any(p.is_topicforge_cli for p in listing.participants)
     assert "mode_effective" not in listing.participants[0].model_dump()
 
 

@@ -250,6 +250,10 @@ class ParticipantInfo(BaseModel):
         default="none",
         description="`ros_discovery_info`, `ros2_cli` or `none` (no link made).",
     )
+    is_topicforge_cli: bool = Field(
+        default=False,
+        description="True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
+    )
 
 
 class NameLifecycle(BaseModel):
@@ -293,6 +297,9 @@ class ParticipantListing(BaseModel):
         default_factory=dict, description=_RESTARTS_DESC
     )
     restarts_note: str | None = Field(default=None, description=_RESTARTS_NOTE_DESC)
+    restarts_by_node: dict[str, NameLifecycle] = Field(
+        default_factory=dict, description="`restarts_by_name` keyed by ROS 2 node full name."
+    )
 
 
 class ParticipantEvent(BaseModel):

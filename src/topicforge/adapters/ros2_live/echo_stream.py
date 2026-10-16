@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import IO, Protocol
 
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.spawned_pids import record_spawn
 from topicforge.adapters.ros2_live.echo_parser import ECHO_DOCUMENT_SEPARATOR, join_document_lines
 from topicforge.adapters.ros2_live.process_tree import (
     JobObject,
@@ -114,6 +115,7 @@ def stream_echo(
         raise AdapterError(
             f"could not start `{os.path.basename(cmd[0])}`: {exc.strerror or type(exc).__name__}"
         ) from exc
+    record_spawn(proc.pid)
     job = JobObject.attach(proc.pid)
     lines: queue.Queue[tuple[str, int] | None] = queue.Queue()
     stderr_lines: deque[str] = deque(maxlen=_STDERR_KEPT_LINES)

@@ -115,7 +115,7 @@ class MockAdapter:
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
-        return [p for p in fixtures.MOCK_PARTICIPANTS if p.domain_id == domain_id]
+        return [_with_mock_nodes(p) for p in fixtures.MOCK_PARTICIPANTS if p.domain_id == domain_id]
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None and topic not in fixtures.MOCK_DDS_TOPICS:
@@ -181,3 +181,13 @@ def _reject_non_bag_path(path: str) -> None:
             f"expected one of {sorted(_BAG_EXTENSIONS)} or a "
             "`rosbag2_*` directory"
         )
+
+
+def _with_mock_nodes(participant: ParticipantInfo) -> ParticipantInfo:
+    """Attach the node names the mock robot's participants announce on `ros_discovery_info`."""
+    names = node_fixtures.mock_participant_node_names(participant.name)
+    if not names:
+        return participant
+    return participant.model_copy(
+        update={"node_names": names, "node_names_source": "ros_discovery_info"}
+    )

@@ -324,6 +324,15 @@ rather than absent). There is no `participant_name` value: since Foxy the partic
 carries the name of the enclave, not of a node. The field exists because Fast DDS
 participants all announce the name `/`.
 
+Filled since 0.7.2 on the Cyclone backend (`node_names_source` `ros_discovery_info`) and
+by the mock. A fourth reader on `ros_discovery_info` (type
+`rmw_dds_common::msg::dds_::ParticipantEntitiesInfo_`, RELIABLE, TRANSIENT_LOCAL, KEEP_ALL)
+feeds a cache keyed by the 12-byte GUID prefix; `adapters/common/ros_discovery.py` decodes
+the XCDR1 payload by hand and accepts the gid width (24 or 16) that consumes the buffer
+exactly. Verified on the wire against rmw_fastrtps on Humble (24) and Jazzy (16). A
+participant that has left keeps the last non-empty list it announced. Fast DDS and RTI
+backends leave it `none`.
+
 Risk: `ros_discovery_info` is a user topic whose `Gid.data` is 24 bytes on Humble
 and 16 bytes from Iron. Fallback: `ros2_cli`, through the GID prefixes printed by
 `ros2 topic info -v /parameter_events` and `/rosout`.
@@ -670,6 +679,20 @@ How:
 - `tests/test_friction_fixes.py` fails if the listing grows back over 120 KB.
 
 Rule for new fields: one sentence, no history, no restating the name.
+
+### 9.1b `is_topicforge_cli` and `restarts_by_node` (0.7.2)
+
+Both additive. `ParticipantInfo.is_topicforge_cli` (default `false`) marks the `ros2` CLI
+process that a TopicForge call (`list_nodes`, `get_node_info`, `sample_messages`, ...)
+spawned: it joins the domain as a participant and stays 0.3-2 s after exiting, so a bus
+of 7 looked like 8. A participant is flagged, never removed, when one of these matches a
+pid TopicForge started in the last 30 s: its `/_ros2cli_<pid>` node name; the pid in a
+Fast DDS GUID prefix (bytes 4-5, low 16 bits); a Cyclone `__Pid` property. The listing
+`note` says so, and counts participants that merely appeared within 5 s of a CLI call.
+Only the composite (ROS CLI plus DDS) adapter flags; the pid check is unavailable where the
+launcher is not the process that joins DDS (Windows `ros2.exe`), the note still applies.
+`ParticipantListing.restarts_by_node` is `restarts_by_name` keyed by node full name, over
+the participants that announced node names, the CLI ghosts left out.
 
 ### 9.2 `restarts_by_name`
 

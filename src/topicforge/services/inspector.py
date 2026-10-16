@@ -9,6 +9,7 @@ from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
 from topicforge.adapters.common.tf_tree import build_tf_report
+from topicforge.adapters.common.ros_discovery import cli_ghost_note
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
@@ -36,6 +37,7 @@ from topicforge.models import (
     NodeInfo,
     NodeListing,
     ParticipantEventListing,
+    ParticipantInfo,
     ParticipantListing,
     SampleResult,
     TfReport,
@@ -48,6 +50,7 @@ from topicforge.services.dds_views import (
     domain_note,
     join_notes,
     restarts_from_events,
+    restarts_from_nodes,
     restarts_from_participants,
     with_event_ages,
 )
@@ -215,9 +218,18 @@ class Inspector:
             truncated=False,
             domain_id=self._observed_domain(domain_id),
             mode_effective=self._adapter.effective_mode,
-            note=self._domain_note(domain_id),
+            note=join_notes(self._domain_note(domain_id), self._ghost_note(participants)),
             restarts_by_name=restarts,
             restarts_note=restarts_note,
+            restarts_by_node=restarts_from_nodes(participants),
+        )
+
+    def _ghost_note(self, participants: list[ParticipantInfo]) -> str | None:
+        """Note on the `ros2` CLI processes TopicForge spawned (flagged or probable), else `None`."""
+        probable = getattr(self._adapter, "unflagged_ghost_count", None)
+        return cli_ghost_note(
+            sum(1 for p in participants if p.is_topicforge_cli),
+            probable(participants) if callable(probable) else 0,
         )
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
