@@ -18,7 +18,8 @@ no longer has the expected shape; reported, never a crash), INFO (informative).
 
 Sections: graph (topics, types, counts, QoS per side, nodes, use_sim_time per node), scan
 (geometry, every range, wall and sector minima), stamps (stamp_source per topic), rates
-(verdict and frequency, simulated and wall time), bag, dds. Reads output contract 2 (0.7:
+(verdict and frequency, simulated and wall time), bag, dds, tf (the `inspect_tf` tree; only the
+bench truth has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -1423,8 +1424,163 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
     }
 
 
+# ---------------------------------------------------------------------------- tf
+# Self-contained: the `tf` section of the truth (only the bench writes one) against the
+# `inspect_tf` answer saved as `17_inspect_tf`. No other section reads either.
+TF_CALL_NAME = "17_inspect_tf"
+TF_RTF_TOL = 0.25
+
+
+def _tf_expected_parents(truth: dict) -> dict[str, set[str]]:
+    parents: dict[str, set[str]] = {}
+    for parent, child in [*truth["static_edges"], *truth["dynamic_edges"]]:
+        parents.setdefault(child, set()).add(parent)
+    return parents
+
+
+def _tf_frame_rows(truth: dict, frames: dict[str, dict], rep: Report, wall: float | None) -> None:
+    got_names, want_names = sorted(frames), sorted(truth["frames"])
+    rep.add(
+        "tf",
+        "frame set (inspect_tf)",
+        want_names,
+        got_names,
+        "PASS" if got_names == want_names else "FAIL",
+        "",
+        wall,
+    )
+    static_children = {child for _, child in truth["static_edges"]}
+    for child, parents in sorted(_tf_expected_parents(truth).items()):
+        frame = frames.get(child)
+        if frame is None:
+            continue
+        ok = frame.get("parent") in parents
+        if len(parents) == 1:
+            kind = "static" if child in static_children else "dynamic"
+            ok = ok and frame.get("kind") == kind
+            want = f"{next(iter(parents))} ({kind})"
+        else:
+            want = f"one of {sorted(parents)}"
+        rep.add(
+            "tf",
+            f"{child} parent and kind (inspect_tf)",
+            want,
+            f"{frame.get('parent')} ({frame.get('kind')})",
+            "PASS" if ok else "FAIL",
+            "",
+            wall,
+        )
+
+
+def _tf_finding_rows(truth: dict, report: dict, rep: Report, wall: float | None) -> None:
+    findings = report.get("findings") or []
+    kinds = sorted({f.get("kind") for f in findings})
+    want_kinds = sorted(truth["finding_kinds"])
+    rep.add(
+        "tf",
+        "finding kinds (inspect_tf)",
+        want_kinds,
+        kinds,
+        "PASS" if kinds == want_kinds else "FAIL",
+        "one finding per fault and nothing else",
+        wall,
+    )
+    stale = sorted(f["name"] for f in report.get("frames") or [] if f.get("stale"))
+    rep.add(
+        "tf",
+        "stale frames (inspect_tf)",
+        sorted(truth["stale"]),
+        stale,
+        "PASS" if stale == sorted(truth["stale"]) else "FAIL",
+        "the edge that stopped publishing during the window",
+        wall,
+    )
+    for child, parents in truth["two_parents"].items():
+        want = [child, *parents]
+        got = [f.get("frames") for f in findings if f.get("kind") == "two_parents"]
+        rep.add(
+            "tf",
+            f"two_parents {child} (inspect_tf)",
+            want,
+            got,
+            "PASS" if [want] == got else "FAIL",
+            "",
+            wall,
+        )
+
+
+def _tf_rate_rows(truth: dict, report: dict, rep: Report, wall: float | None) -> None:
+    steady = next((f for f in report.get("frames") or [] if f.get("name") == "base_link"), {})
+    for field, label in (("observed_frequency_hz", "wall"), ("sim_frequency_hz", "sim")):
+        got, want = steady.get(field), truth["steady_hz"]
+        if got is None:
+            rep.add("tf", f"base_link {label} frequency", want, got, "INFO", "not comparable", wall)
+            continue
+        err = abs(got - want) / want
+        rep.add(
+            "tf",
+            f"base_link {label} frequency (Hz)",
+            fmt(want),
+            fmt(got),
+            "PASS" if err <= RATE_PASS else "WARN",
+            f"relative error {err:.3f}; `echo` can drop messages: WARN at most",
+            wall,
+        )
+    rtf = report.get("real_time_factor")
+    ok = rtf is not None and abs(rtf - truth["real_time_factor"]) <= TF_RTF_TOL
+    rep.add(
+        "tf",
+        "real_time_factor (inspect_tf)",
+        f"{truth['real_time_factor']} +- {TF_RTF_TOL}",
+        rtf,
+        "PASS" if ok else "WARN",
+        "machine dependent: never FAIL",
+        wall,
+    )
+
+
+@guard("tf")
+def check_tf(gt: dict, res: Results, rep: Report) -> None:
+    truth = gt.get("tf")
+    if not truth:
+        return
+    data = res.load(TF_CALL_NAME)
+    wall = res.times.get(TF_CALL_NAME)
+    err = tool_err(data)
+    if err == "missing":
+        rep.add("tf", "inspect_tf", "present (0.7.2)", "absent", "WARN", "older server", wall)
+        return
+    if err:
+        rep.add("tf", "inspect_tf", "a report", err, "FAIL", "", wall)
+        return
+    report = objs(data)[0]
+    frames = {f["name"]: f for f in report["frames"]}
+    _tf_frame_rows(truth, frames, rep, wall)
+    roots = sorted(report["roots"])
+    rep.add(
+        "tf",
+        "roots (inspect_tf)",
+        sorted(truth["roots"]),
+        roots,
+        "PASS" if roots == sorted(truth["roots"]) else "FAIL",
+        "",
+        wall,
+    )
+    _tf_finding_rows(truth, report, rep, wall)
+    rep.add(
+        "tf",
+        "path source to target (inspect_tf)",
+        truth["path"],
+        report.get("path"),
+        "PASS" if report.get("path") == truth["path"] else "FAIL",
+        "",
+        wall,
+    )
+    _tf_rate_rows(truth, report, rep, wall)
+
+
 # ---------------------------------------------------------------------------- report
-SECTIONS = (check_graph, check_scan, check_stamps, check_rates, check_bag, check_dds)
+SECTIONS = (check_graph, check_scan, check_stamps, check_rates, check_bag, check_dds, check_tf)
 
 
 def compare(gt: dict[str, Any], results: Path) -> tuple[Report, Results]:
