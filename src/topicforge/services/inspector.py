@@ -8,8 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
-from topicforge.adapters.common.tf_tree import build_tf_report
 from topicforge.adapters.common.ros_discovery import cli_ghost_note
+from topicforge.adapters.common.tf_tree import build_tf_report
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
