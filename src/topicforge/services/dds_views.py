@@ -65,6 +65,17 @@ def restarts_from_participants(
     return table, _unnamed_note(unnamed, "participant(s) are")
 
 
+def restarts_from_nodes(participants: Iterable[ParticipantInfo]) -> dict[str, NameLifecycle]:
+    """`restarts_by_node`: the same tally keyed by ROS 2 node name, TopicForge's own CLI left out."""
+    rows = (
+        (node, p.guid, p.status == "left")
+        for p in participants
+        if not p.is_topicforge_cli
+        for node in p.node_names
+    )
+    return _tally(rows)[0]
+
+
 def restarts_from_events(
     events: Iterable[ParticipantEvent],
 ) -> tuple[dict[str, NameLifecycle], str | None]:

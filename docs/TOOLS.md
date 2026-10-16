@@ -287,6 +287,7 @@ List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `ve
 | `note` | `str \| null` | no | One sentence of context, or `None`. |
 | `restarts_by_name` | `dict[str, NameLifecycle]` | no | Names seen with several GUIDs or lost at least once (absent: ran once and stayed). A restart is a new GUID with the same name. |
 | `restarts_note` | `str \| null` | no | Set when unnamed participants were left out of `restarts_by_name`. |
+| `restarts_by_node` | `dict[str, NameLifecycle]` | no | `restarts_by_name` keyed by ROS 2 node full name. |
 
 ## `list_topics`
 

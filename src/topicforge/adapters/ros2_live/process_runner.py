@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 from typing import IO
 
+from topicforge.adapters.common.spawned_pids import record_spawn
 from topicforge.adapters.ros2_live.process_tree import (
     JobObject,
     kill_process_tree,
@@ -102,6 +103,7 @@ def run_process(
         env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
         **spawn_options(),
     )
+    record_spawn(proc.pid)
     job = JobObject.attach(proc.pid)
     out = _Capture(proc.stdout, max_output_bytes)
     err = _Capture(proc.stderr, max_output_bytes)

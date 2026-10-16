@@ -63,6 +63,10 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
 )
+from topicforge.adapters.common.dds_helpers import format_guid
+from topicforge.adapters.common.dds_introspection import cyclone_extract_guid, cyclone_extract_pid
+from topicforge.adapters.common.ros_discovery import with_node_names
+from topicforge.adapters.dds_cyclone.ros_info import make_ros_info_reader, take_raw
 from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
 from topicforge.models import (
     BagAnalysis,
@@ -264,6 +268,7 @@ class CycloneDdsAdapter:
                 BuiltinTopicDcpsSubscription,
             ):
                 self._builtin_reader(topic_class)
+            self._ros_info = self._open_ros_info_reader()
         self._tracker = DiscoveryTracker(self._build_take_all(), self._caches, domain_id=domain_id)
         self._tracker.start()
         # Stop the tracker before teardown: a pass still reading the builtin
@@ -295,12 +300,33 @@ class CycloneDdsAdapter:
             if len(batch) < limit:
                 return
 
+    def _open_ros_info_reader(self) -> Any | None:
+        """The `ros_discovery_info` reader (node names), `None` if the binding refuses it."""
+        try:
+            return make_ros_info_reader(self._dp)
+        except Exception:
+            log.warning("ros_discovery_info reader unavailable: no node names", exc_info=True)
+            return None
+
+    def _take_ros_info(self, sink: list[Any]) -> None:
+        """Take every new `ros_discovery_info` payload into `sink` (tracker thread only)."""
+        reader = self._ros_info
+        if reader is None:
+            return
+        while True:
+            with _BINDING_LOCK:
+                batch = take_raw(reader, _MAX_PARTICIPANTS)
+            sink.extend(batch)
+            if len(batch) < _MAX_PARTICIPANTS:
+                return
+
     def _build_take_all(self) -> BufferedTake:
-        """The tracker's take function: participants, publications, subscriptions."""
+        """The tracker's take function: participants, publications, subscriptions, node info."""
         return BufferedTake(
             lambda sink: self._take_new(BuiltinTopicDcpsParticipant, _MAX_PARTICIPANTS, sink),
             lambda sink: self._take_new(BuiltinTopicDcpsPublication, _MAX_ENDPOINTS, sink),
             lambda sink: self._take_new(BuiltinTopicDcpsSubscription, _MAX_ENDPOINTS, sink),
+            self._take_ros_info if self._ros_info is not None else None,
         )
 
     def close(self) -> None:
@@ -372,10 +398,21 @@ class CycloneDdsAdapter:
         participant recorded but not yet cached read as lost).
         """
         observer = self._observer_guid()
-        return [
+        snap = self._caches.snapshot(self._domain_id)
+        infos = [
             p.model_copy(update={"is_observer": True}) if p.guid == observer else p
-            for p in self._caches.snapshot(self._domain_id).participant_infos
+            for p in snap.participant_infos
         ]
+        return with_node_names(infos, snap.node_names, snap.node_names_last)
+
+    def participant_pids(self) -> dict[str, int]:
+        """Pid announced by each cached participant (`__Pid` property), keyed by guid."""
+        pids = {}
+        for sample in self._caches.snapshot(self._domain_id).participants:
+            pid = cyclone_extract_pid(sample)
+            if pid is not None:
+                pids[format_guid(cyclone_extract_guid(sample))] = pid
+        return pids
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         """Pair cached readers and writers per topic and scan them.
