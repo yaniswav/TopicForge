@@ -31,7 +31,7 @@ You called a ROS2 graph or bag tool (`list_topics`, `get_topic_info`, `sample_me
 2. Re-run with `TOPICFORGE_MODE=live` and your existing `TOPICFORGE_DDS_BACKEND`.
 3. Check `health_check`: `ros_backend` should be `"ros2_cli"` and `dds_backend` your vendor.
 
-If you want a DDS-only deployment, the message is expected: you use the six DDS tools and `peek_bag_samples` (it reads bags without the CLI), and the six ros2-CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active: ...", ends with the cause: the backend was not selected (`TOPICFORGE_DDS_BACKEND` is `mock`, the default, which means no DDS backend; set it to `cyclone` even when the binding is installed), the binding is not installed, or it is installed but the adapter failed to start (the server log has the error). `health_check` shows the same text as `dds_inactive_note`.
+If you want a DDS-only deployment, the message is expected: you use the six DDS tools and `peek_bag_samples` (it reads bags without the CLI), and the seven ros2-CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `sample_messages`, `analyze_bag`) raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active: ...", ends with the cause: the backend was not selected (`TOPICFORGE_DDS_BACKEND` is `mock`, the default, which means no DDS backend; set it to `cyclone` even when the binding is installed), the binding is not installed, or it is installed but the adapter failed to start (the server log has the error). `health_check` shows the same text as `dds_inactive_note`.
 
 ## "rosbags"
 

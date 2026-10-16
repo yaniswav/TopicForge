@@ -44,6 +44,7 @@ from topicforge.models.summaries import (
     PointCloud2Summary,
     TopicRate,
 )
+from topicforge.models.tf import TfCapture, TfFinding, TfFrame, TfReport, TfSample
 
 __all__ = [
     "BagAnalysis",
@@ -78,6 +79,11 @@ __all__ = [
     "SampleResult",
     "SideQos",
     "SuggestedFix",
+    "TfCapture",
+    "TfFinding",
+    "TfFrame",
+    "TfReport",
+    "TfSample",
     "TopicInfo",
     "TopicListItem",
     "TopicListing",

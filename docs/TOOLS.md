@@ -5,7 +5,7 @@ served in mock mode. Do not edit by hand: `tests/test_contract_snapshots.py`
 fails when this file is out of date. The rules behind the shapes are in
 [CONTRACT.md](CONTRACT.md).
 
-14 tools, all read-only.
+15 tools, all read-only.
 
 | Tool | Title | World |
 | --- | --- | --- |
@@ -14,6 +14,7 @@ fails when this file is out of date. The rules behind the shapes are in
 | [`get_node_info`](#get_node_info) | Get node info | open |
 | [`get_topic_info`](#get_topic_info) | Get topic info | open |
 | [`health_check`](#health_check) | Health check | closed |
+| [`inspect_tf`](#inspect_tf) | Inspect TF tree | open |
 | [`list_endpoints`](#list_endpoints) | List DDS endpoints | open |
 | [`list_nodes`](#list_nodes) | List ROS 2 nodes | open |
 | [`list_participants`](#list_participants) | List DDS participants | open |
@@ -194,6 +195,48 @@ None.
 | `rmw_implementation` | `str \| null` | no | ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`. |
 | `rmw_source` | `"env" \| "ros2_cli" \| "distro_default" \| "none"` | no | `env`, `ros2_cli`, `distro_default` (not verified on the graph) or `none`. |
 | `ros_backend` | `"mock" \| "ros2_cli" \| "none"` | no | ROS 2 backend: `ros2_cli`, `mock` or `none`. |
+| `note` | `str \| null` | no | One sentence of context, or `None`. |
+
+## `inspect_tf`
+
+**Inspect TF tree**
+
+Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
+
+ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+
+### Input parameters
+
+| Name | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `window_s` | `float` | no | `5.0` | >= 1.0, <= 20.0 | Seconds to listen to `/tf`, 1..20, default 5. |
+| `stale_after_s` | `float` | no | `2.0` | >= 0.1, <= 3600.0 | A frame is stale past this many seconds of stamp time, default 2. |
+| `source_frame` | `str \| null` | no | `null` | - | Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get the chain between them in `path`. |
+| `target_frame` | `str \| null` | no | `null` | - | See `source_frame`. |
+
+### Output (top-level fields)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `frames` | `list[TfFrame]` | yes | Sorted by name. |
+| `roots` | `list[str]` | yes | Frames with no parent; one in a sound tree. |
+| `frame_count` | `int` | yes | - |
+| `static_count` | `int` | yes | Frames with a static transform. |
+| `dynamic_count` | `int` | yes | Frames with a dynamic transform. |
+| `stale_count` | `int` | yes | - |
+| `transform_count` | `int` | yes | Distinct parent-child pairs. |
+| `message_count` | `int` | yes | Transforms captured, repeats included. |
+| `findings` | `list[TfFinding]` | yes | Empty when the tree is sound. |
+| `hints` | `list[str]` | yes | - |
+| `path` | `list[str] \| null` | no | Frames from `source_frame` to `target_frame`. |
+| `path_note` | `str \| null` | no | Why `path` is `None`, or context. |
+| `reference_ns` | `int \| null` | yes | Newest `/tf` stamp: the clock for `age_s`. |
+| `window_s` | `float` | yes | - |
+| `window_actual_s` | `float` | yes | - |
+| `stamp_span_s` | `float \| null` | yes | - |
+| `real_time_factor` | `float \| null` | yes | Stamp time over wall time: about 1 on a real robot, other on sim. |
+| `truncated` | `bool` | yes | Messages were dropped or the cap was hit. |
+| `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `str \| null` | no | One sentence of context, or `None`. |
 
 ## `list_endpoints`

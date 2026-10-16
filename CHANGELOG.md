@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `inspect_tf`, the 15th tool (additive, `docs/CONTRACT.md` section 9.8): rebuilds the TF tree
+  from `/tf_static` (latched, read once) and `/tf` (listened to for `window_s`, 1 to 20 s) and
+  returns `TfReport`: every frame with its parent, `kind` (static, dynamic, both), `age_s`,
+  `stale`, and two rates (`observed_frequency_hz` on wall time, `sim_frequency_hz` on header
+  stamps), the `roots`, and `findings` (`stale`, `two_parents`, `disconnected`,
+  `static_and_dynamic`, `cycle`, `no_path`). Ages are measured on the stamps against the newest
+  `/tf` stamp, so they hold on sim time; `real_time_factor` says when the robot runs on
+  `/clock`. `source_frame` and `target_frame` give the chain between two frames in `path`.
+  ROS lane, `ros2` CLI only (a DDS-only setup raises the usual error); the mock serves a fixed
+  tree with one stale frame. The mock `/tf` sample no longer carries `base_link -> laser`,
+  which moved to the new mock topic `/tf_static`.
+
 ## [0.7.1] - 2026-10-14
 
 QoS fix suggestions and agent-friction fixes from the blind evaluation (`docs/EVAL.md`). Additive only: no field or

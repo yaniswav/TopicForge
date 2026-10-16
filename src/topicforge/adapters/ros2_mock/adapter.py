@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
-from topicforge.adapters.ros2_mock import fixtures, node_fixtures
+from topicforge.adapters.ros2_mock import fixtures, node_fixtures, tf_fixtures
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_SAMPLE_TIMEOUT_S,
@@ -20,6 +20,7 @@ from topicforge.models import (
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
+    TfCapture,
     TopicInfo,
     TopicListItem,
     TopicMetrics,
@@ -58,6 +59,10 @@ class MockAdapter:
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         # Mock parameters are read instantly, so `timeout_s` does not apply.
         return node_fixtures.mock_node_info(node)
+
+    def capture_tf(self, window_s: float) -> TfCapture:
+        # The mock capture is fixed: `window_s` does not apply.
+        return tf_fixtures.mock_tf_capture()
 
     def sample_messages(
         self,

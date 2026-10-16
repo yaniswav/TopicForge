@@ -46,15 +46,16 @@ def _topic(
     reliability: str,
     publishers: tuple[str, ...],
     subscribers: tuple[str, ...],
+    durability: str = "volatile",
 ) -> TopicInfo:
-    """A mock topic whose both sides use `reliability` (volatile), one endpoint per node."""
+    """A mock topic whose both sides use `reliability` and `durability`, one endpoint per node."""
     return TopicInfo(
         name=name,
         message_type=message_type,
         publisher_count=len(publishers),
         subscriber_count=len(subscribers),
-        publisher_qos=_side(reliability, len(publishers)),
-        subscription_qos=_side(reliability, len(subscribers)),
+        publisher_qos=_side(reliability, len(publishers), durability),
+        subscription_qos=_side(reliability, len(subscribers), durability),
         publisher_nodes=list(publishers),
         subscriber_nodes=list(subscribers),
         mode_effective="mock",
@@ -98,6 +99,14 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         ("/nav_planner", "/camera_driver"),
     ),
     _topic(
+        "/tf_static",
+        "tf2_msgs/msg/TFMessage",
+        "reliable",
+        ("/robot_state_publisher",),
+        ("/nav_planner", "/camera_driver"),
+        durability="transient_local",
+    ),
+    _topic(
         "/camera/image_raw",
         "sensor_msgs/msg/Image",
         "best_effort",
@@ -118,12 +127,21 @@ MOCK_TOPIC_ITEMS: tuple[TopicListItem, ...] = tuple(
 
 
 _BASE_TS_NS = 1_700_000_000_000_000_000
+MOCK_BASE_TS_NS = _BASE_TS_NS
 
 
 def _stamp(ts_ns: int) -> dict[str, int]:
     """A `builtin_interfaces/Time` payload, as `ros2 topic echo` prints it."""
     return {"sec": ts_ns // 1_000_000_000, "nanosec": ts_ns % 1_000_000_000}
 
+
+# The robot's fixed frames, on /tf_static (parent, child); `tf_fixtures` adds the moving ones.
+MOCK_STATIC_EDGES: tuple[tuple[str, str], ...] = (
+    ("base_link", "laser"),
+    ("base_link", "camera_link"),
+    ("base_link", "imu_link"),
+    ("camera_link", "camera_optical_frame"),
+)
 
 # The mock robot publishes /scan, /odom, /imu/data and /cmd_vel at 10 Hz; a mock
 # message "arrives" this long after its stamp.
@@ -262,11 +280,29 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
                         },
                         "child_frame_id": b,
                     }
-                    for a, b in (("odom", "base_link"), ("base_link", "laser"))
+                    for a, b in (("odom", "base_link"), ("map", "odom"))
                 ]
             },
         )
         for i in range(2)
+    ],
+    "/tf_static": [
+        MessageSample(
+            topic="/tf_static",
+            message_type="tf2_msgs/msg/TFMessage",
+            timestamp_ns=_BASE_TS_NS,
+            stamp_source="payload",
+            received_ns=_BASE_TS_NS,
+            payload={
+                "transforms": [
+                    {
+                        "header": {"stamp": _stamp(_BASE_TS_NS), "frame_id": a},
+                        "child_frame_id": b,
+                    }
+                    for a, b in MOCK_STATIC_EDGES
+                ]
+            },
+        )
     ],
     "/camera/image_raw": [
         MessageSample(

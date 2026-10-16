@@ -21,11 +21,17 @@ from pydantic import Field
 from topicforge.constants import (
     DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
+    DEFAULT_TF_STALE_AFTER_S,
+    DEFAULT_TF_WINDOW_S,
     MAX_NODE_TIMEOUT_S,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MAX_TF_STALE_AFTER_S,
+    MAX_TF_WINDOW_S,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
+    MIN_TF_STALE_AFTER_S,
+    MIN_TF_WINDOW_S,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -37,6 +43,7 @@ from topicforge.models import (
     ParticipantEventListing,
     ParticipantListing,
     SampleResult,
+    TfReport,
     TopicInfo,
     TopicListing,
     TopicMetrics,
@@ -61,6 +68,11 @@ _NODE_PARAM_DESC = (
 _NODE_TIMEOUT_PARAM_DESC = (
     "Seconds to wait for the parameter read, 1..20, default 8. A node that does not "
     "answer is reported in `parameters_note`, not as an error."
+)
+
+_TF_FRAME_PARAM_DESC = (
+    "Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get "
+    "the chain between them in `path`."
 )
 
 _DDS_TOPIC_PARAM_DESC = (
@@ -263,6 +275,48 @@ def register_tools(
         ] = DEFAULT_NODE_TIMEOUT_S,
     ) -> NodeInfo:
         return inspector.get_node_info(node, timeout_s)
+
+    @mcp.tool(
+        annotations=read_only_annotations("Inspect TF tree", open_world=True),
+        description=(
+            "ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) "
+            "and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a "
+            "`TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, "
+            "`observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts "
+            "and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` "
+            "stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), "
+            "`static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they "
+            "hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and "
+            "`target_frame` for the `path` between them. **Empty `frames`** when nothing is "
+            "published (read `note`). The listening is capped (3000 messages): `echo` can drop "
+            "messages at high rates, so the tree is exact but frequencies are approximate "
+            "(`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed "
+            "5 s capture of the demo robot with one stale frame." + _ROS_LANE_NOTE
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "inspect_tf")
+    def inspect_tf(
+        window_s: Annotated[
+            float,
+            Field(
+                description="Seconds to listen to `/tf`, 1..20, default 5.",
+                ge=MIN_TF_WINDOW_S,
+                le=MAX_TF_WINDOW_S,
+            ),
+        ] = DEFAULT_TF_WINDOW_S,
+        stale_after_s: Annotated[
+            float,
+            Field(
+                description="A frame is stale past this many seconds of stamp time, default 2.",
+                ge=MIN_TF_STALE_AFTER_S,
+                le=MAX_TF_STALE_AFTER_S,
+            ),
+        ] = DEFAULT_TF_STALE_AFTER_S,
+        source_frame: Annotated[str | None, Field(description=_TF_FRAME_PARAM_DESC)] = None,
+        target_frame: Annotated[str | None, Field(description="See `source_frame`.")] = None,
+    ) -> TfReport:
+        return inspector.inspect_tf(window_s, stale_after_s, source_frame, target_frame)
 
     @mcp.tool(
         annotations=read_only_annotations("Sample topic messages", open_world=True),

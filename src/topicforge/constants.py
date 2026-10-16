@@ -39,6 +39,16 @@ DEFAULT_NODE_TIMEOUT_S = 8.0
 MIN_NODE_TIMEOUT_S = 1.0
 MAX_NODE_TIMEOUT_S = 20.0
 
+# `inspect_tf` listening time on `/tf`, in seconds. The static pass (about 3 s), the
+# graph queries and stopping the CLI come on top: the whole call stays under 45 s.
+DEFAULT_TF_WINDOW_S = 5.0
+MIN_TF_WINDOW_S = 1.0
+MAX_TF_WINDOW_S = 20.0
+# A frame whose newest transform trails the newest `/tf` stamp by more than this is stale.
+DEFAULT_TF_STALE_AFTER_S = 2.0
+MIN_TF_STALE_AFTER_S = 0.1
+MAX_TF_STALE_AFTER_S = 3600.0
+
 # Size of the participant lifecycle event log. `participant_events` returns at most this
 # many events; a full result is reported as truncated.
 MAX_PARTICIPANT_EVENTS = 200
