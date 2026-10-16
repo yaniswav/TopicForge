@@ -15,7 +15,11 @@ Everything is deterministic and exact by construction:
   edge beam goes to the narrower sector, with a 1e-4 rad tolerance);
 - rates are the timer periods, and the bench stamps everything with seconds since start on
   the same monotonic clock, so the simulated rate equals the wall rate;
-- topics, types, counts and QoS are what `publisher.py` and `blocked_node.py` create.
+- topics, types, counts and QoS are what `publisher.py` and `blocked_node.py` create;
+- the TF tree is the `tf` section: three static edges on `/tf_static`, three steady edges
+  on `/tf` (one of them gives `tool` a second parent), and one edge (`map -> odom`) that
+  is published for `TF_FLAKY_ACTIVE_S` after each new subscriber of `/tf` and then stops,
+  so any capture longer than that sees it go stale.
 """
 
 from __future__ import annotations
@@ -42,6 +46,25 @@ SCAN_PERIOD = 0.1
 TWIST_PERIOD = 0.2
 IMAGE_PERIOD = 0.5
 EDGE_PERIOD = 0.5
+TF_PERIOD = 0.1
+# `map -> odom` is sent this long after each new subscriber of `/tf`, then it stops.
+TF_FLAKY_ACTIVE_S = 3.0
+# (parent, child). Static edges go out once on `/tf_static`.
+TF_STATIC_EDGES = (
+    ("base_link", SCAN_FRAME),
+    ("base_link", "camera_link"),
+    ("camera_link", "camera_optical_frame"),
+)
+# `tool` has two parents: the conflict `inspect_tf` must report.
+TF_STEADY_EDGES = (("odom", "base_link"), ("base_link", "tool"), ("odom", "tool"))
+TF_FLAKY_EDGE = ("map", "odom")
+# The `inspect_tf` call of `scripts/ground_truth/calls.json`: the window outlasts the flaky edge.
+TF_CALL = {
+    "window_s": 12,
+    "stale_after_s": 2.0,
+    "source_frame": "camera_optical_frame",
+    "target_frame": SCAN_FRAME,
+}
 
 # name -> (type, latched). One publisher each, from /bench_robot, no subscriber.
 BENCH_TOPICS = {
@@ -51,6 +74,8 @@ BENCH_TOPICS = {
     "/camera/image_raw": ("sensor_msgs/msg/Image", False),
     "/scan_edge": ("sensor_msgs/msg/LaserScan", False),
     "/robot_description_lite": ("std_msgs/msg/String", True),
+    "/tf": ("tf2_msgs/msg/TFMessage", False),
+    "/tf_static": ("tf2_msgs/msg/TFMessage", True),
 }
 # Present on every graph; the number of endpoints depends on hidden CLI and daemon nodes.
 INFRA_TOPICS = {
@@ -73,6 +98,29 @@ STAMPS = {
     "/cmd_vel_out": "none",
 }
 SECTOR_EDGE_EPS = 1e-4
+
+
+def tf_truth() -> dict[str, Any]:
+    """What `inspect_tf` must report for the bench tree (see `TF_*` above)."""
+    edges = [*TF_STATIC_EDGES, *TF_STEADY_EDGES, TF_FLAKY_EDGE]
+    return {
+        "call": dict(TF_CALL),
+        "static_edges": [list(e) for e in TF_STATIC_EDGES],
+        "dynamic_edges": [list(e) for e in (*TF_STEADY_EDGES, TF_FLAKY_EDGE)],
+        "frames": sorted({name for edge in edges for name in edge}),
+        "roots": [TF_FLAKY_EDGE[0]],
+        "stale": [TF_FLAKY_EDGE[1]],
+        "two_parents": {"tool": sorted({"base_link", "odom"})},
+        "finding_kinds": ["stale", "two_parents"],
+        "steady_hz": 1.0 / TF_PERIOD,
+        "path": [
+            TF_CALL["source_frame"],
+            "camera_link",
+            "base_link",
+            SCAN_FRAME,
+        ],
+        "real_time_factor": 1.0,
+    }
 
 
 def f32(value: float) -> float:
@@ -202,6 +250,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
             "expected_verdicts": ["stable"],
             "note": "timer periods; the bench stamps with seconds since start, so sim rate = wall rate",
         },
+        "tf": tf_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

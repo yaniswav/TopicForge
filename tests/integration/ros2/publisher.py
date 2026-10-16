@@ -13,13 +13,14 @@ import time
 import ground_truth as model
 import rclpy
 from builtin_interfaces.msg import Time
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Transform, TransformStamped, Twist
 from ground_truth import CAMERA_DELAY_SEC, N_BEAMS
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import String
+from tf2_msgs.msg import TFMessage
 
 
 def sim_time_msg(t: float) -> Time:
@@ -43,6 +44,11 @@ class BenchRobot(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self._desc_pub = self.create_publisher(String, "/robot_description_lite", latched)
+        # tf2's own QoS: /tf is reliable and volatile with a deep queue, /tf_static latched.
+        self._tf_pub = self.create_publisher(TFMessage, "/tf", QoSProfile(depth=100))
+        self._tf_static_pub = self.create_publisher(TFMessage, "/tf_static", latched)
+        self._tf_subscribers = 0
+        self._tf_armed_at = 0.0
 
         self._image_data = bytes(640 * 480 * 3)
         self.create_timer(model.CLOCK_PERIOD, self._tick_clock)
@@ -50,10 +56,37 @@ class BenchRobot(Node):
         self.create_timer(model.TWIST_PERIOD, self._tick_twist)
         self.create_timer(model.IMAGE_PERIOD, self._tick_image)
         self.create_timer(model.EDGE_PERIOD, self._tick_edge)
+        self.create_timer(model.TF_PERIOD, self._tick_tf)
 
         desc = String()
         desc.data = "bench_robot: differential drive, 2D lidar"
         self._desc_pub.publish(desc)
+        self._tf_static_pub.publish(
+            TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
+        )
+
+    @staticmethod
+    def _transform(parent: str, child: str, t: float) -> TransformStamped:
+        msg = TransformStamped()
+        msg.header.stamp = sim_time_msg(t)
+        msg.header.frame_id = parent
+        msg.child_frame_id = child
+        msg.transform = Transform()
+        msg.transform.translation.x = 1.0
+        msg.transform.rotation.w = 1.0
+        return msg
+
+    def _tick_tf(self) -> None:
+        """Steady edges always; the flaky edge for a few seconds after each new subscriber."""
+        now = self._now()
+        subscribers = self._tf_pub.get_subscription_count()
+        if subscribers > 0 and self._tf_subscribers == 0:
+            self._tf_armed_at = now
+        self._tf_subscribers = subscribers
+        edges = list(model.TF_STEADY_EDGES)
+        if subscribers > 0 and now - self._tf_armed_at < model.TF_FLAKY_ACTIVE_S:
+            edges.append(model.TF_FLAKY_EDGE)
+        self._tf_pub.publish(TFMessage(transforms=[self._transform(p, c, now) for p, c in edges]))
 
     def _now(self) -> float:
         return time.monotonic() - self._t0

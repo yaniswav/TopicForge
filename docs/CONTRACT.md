@@ -171,7 +171,7 @@ The 45 s are wall time from the request to the response, lock wait included. The
 enforces it (`topicforge.tools.guard`, with `topicforge.budget` passing the deadline down):
 
 - Calls run in two lanes with one lock each: ROS (`list_topics`, `get_topic_info`,
-  `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
+  `list_nodes`, `get_node_info`, `inspect_tf`, `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
   `participant_events`, `topic_metrics`, `list_endpoints`).
   `health_check` never takes a lock and never runs the `ros2` CLI; `peek_bag_samples` reads
   a file in pure Python and takes none either.
@@ -774,3 +774,24 @@ value; compare against `health_check.now_ns` when needed.
   a reader `deadline_ns` tighter than the writer's is incompatible.
 - `HealthReport.ros2_distro` discloses `ROS_DISTRO` by design under the local-trust threat model
   (README "Security model"); a hosted multi-tenant endpoint would scrub it.
+
+### 9.8 `inspect_tf` (tool 15)
+
+Tool 15, additive, ROS lane, open-world, `ros2` CLI only (a DDS-only setup raises the usual
+error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_after_s` (default
+2), `source_frame` and `target_frame` (both or neither).
+
+- The tree comes from the transforms: `/tf_static` is read once (transient_local, one latched
+  message per publisher, about 3 s), then `/tf` is streamed uncut for `window_s`, at most 3000
+  messages. A stream that cannot be read is a `note`, not an error.
+- Time is the header stamp. `age_s` is the distance between a frame's newest stamp and the
+  newest `/tf` stamp (`reference_ns`), so it is correct on sim time. `stale` is `age_s` above
+  `stale_after_s`; static frames have no age. `observed_frequency_hz` uses the arrival time,
+  `sim_frequency_hz` the stamps, `real_time_factor` is their ratio (about 1 on a real robot).
+- `findings.kind` is an open set (1.9): `stale`, `two_parents`, `disconnected` (more than one
+  root), `static_and_dynamic` (a frame on both topics), `cycle`, `no_path` (unknown or
+  unconnected frames). A sound tree has none.
+- `echo` can drop messages at high rates: the structure and the findings hold, the exact
+  message counts and frequencies are approximate (`truncated` says when messages were lost).
+- The mock `/tf_static` topic carries the fixed frames of the demo robot; mock `inspect_tf`
+  is a fixed 5 s capture and ignores `window_s`.

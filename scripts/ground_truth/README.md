@@ -50,6 +50,7 @@ The bench truth is exact by construction: ranges `1.0 + j * 0.001` m over 541 be
 +-135 degrees (rounded to float32), sector minima from the CONTRACT.md sector rule, rates equal to
 the timer periods (the bench stamps with seconds since start, so simulated rate equals wall rate),
 `use_sim_time` false on `/bench_robot` and `null` on `/bench_blocked` (its executor never answers).
+The TF tree (`tf` section) is three static edges on `/tf_static`, three steady edges on `/tf` (one gives `tool` a second parent) and `map -> odom`, which `publisher.py` sends for 3 s after each new subscriber of `/tf` and then stops, so the 12 s `inspect_tf` call (`17_inspect_tf`) must find exactly one `stale` and one `two_parents` finding.
 `/parameter_events` and `/rosout` are checked for presence and type only: their endpoint counts
 depend on hidden CLI and daemon nodes.
 

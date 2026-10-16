@@ -49,6 +49,7 @@ from topicforge.adapters.ros2_live.sample_extras import (
     rate_of_run,
     wants_whole_arrays,
 )
+from topicforge.adapters.ros2_live.tf_capture import capture_tf
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
@@ -66,6 +67,7 @@ from topicforge.models import (
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
+    TfCapture,
     TopicInfo,
     TopicListItem,
     TopicMetrics,
@@ -216,6 +218,23 @@ class Ros2CliAdapter:
             parameters_note=parameters_note,
             duplicate_count=names.count(node),
             mode=self.effective_mode,
+        )
+
+    def capture_tf(self, window_s: float) -> TfCapture:
+        """Raw `/tf_static` and `/tf` transforms: a latched read, then `window_s` of `/tf`.
+
+        Both passes stream `ros2 topic echo` within the call budget; see
+        `ros2_live.tf_capture`. A stream that cannot be read becomes a capture note.
+        """
+        exe = shutil.which(self._exe)
+        if exe is None:
+            raise AdapterError(f"`{self._exe}` not found on PATH. Source your ROS2 setup file.")
+        return capture_tf(
+            window_s,
+            exe=exe,
+            topic_info=self._topic_info,
+            qos_args=_echo_qos_args,
+            max_message_chars=self._max_message_chars,
         )
 
     def _node_names(self) -> list[str]:

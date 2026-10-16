@@ -244,6 +244,40 @@ def _bench_scan_sample(gt: dict, args: dict) -> dict:
     )
 
 
+def _tf_report(truth: dict) -> dict[str, Any]:
+    """A perfect `inspect_tf` answer for the bench's `tf` truth."""
+    parents = {}
+    for parent, child in [*truth["static_edges"], *truth["dynamic_edges"]]:
+        parents.setdefault(child, []).append(parent)
+    static = {child for _, child in truth["static_edges"]}
+    frames = []
+    for name in truth["frames"]:
+        parent = sorted(parents[name])[0] if name in parents else None
+        steady = name not in static and parent is not None
+        frames.append(
+            {
+                "name": name,
+                "parent": parent,
+                "kind": None if parent is None else ("static" if name in static else "dynamic"),
+                "stale": name in truth["stale"],
+                "observed_frequency_hz": truth["steady_hz"] if steady else None,
+                "sim_frequency_hz": truth["steady_hz"] if steady else None,
+            }
+        )
+    findings = [{"kind": "stale", "frames": ["map", "odom"], "text": "stale"}]
+    findings += [
+        {"kind": "two_parents", "frames": [child, *ps], "text": "two parents"}
+        for child, ps in truth["two_parents"].items()
+    ]
+    return {
+        "frames": frames,
+        "roots": truth["roots"],
+        "findings": findings,
+        "path": truth["path"],
+        "real_time_factor": truth["real_time_factor"],
+    }
+
+
 def _bench_results(gt: dict) -> dict[str, Any]:
     out: dict[str, Any] = {}
     before = gt["graph"]["before_capture"]
@@ -362,6 +396,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     out["06_detect_qos_mismatches"] = _call(
         "detect_qos_mismatches", {}, {"reports": [], "reports_total": 0, "matched_total": 6}
     )
+    out["17_inspect_tf"] = _call("inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"]))
     out["07_sample_scan_full"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 1})
     out["08_sample_scan_defaults"] = _call(
         "sample_messages",
@@ -491,7 +526,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
     assert code == 0
     assert report["rate_cv"]["/scan"]["interval_cv"] == 0.04
     sections = {r["section"] for r in report["rows"]}
-    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds"}
+    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf"}
 
 
 @pytest.mark.parametrize(
@@ -543,6 +578,51 @@ def test_synthetic_run_with_one_wrong_answer_fails(
     code, report = _run(tmp_path, bench_truth, results, "--strict-shape")
     assert code == 1
     assert any(failing in m for m in _metrics(report, "FAIL")), _metrics(report, "FAIL")
+
+
+def test_the_tf_section_catches_each_kind_of_wrong_tree(tmp_path: Path, bench_truth: dict) -> None:
+    def run(mutate: Any) -> tuple[int, list[str]]:
+        results = _bench_results(bench_truth)
+        _bag_results(bench_truth, results)
+        mutate(results["17_inspect_tf"]["parsed"][0])
+        code, report = _run(tmp_path / str(id(mutate)), bench_truth, results, "--strict-shape")
+        return code, [m for m in _metrics(report, "FAIL") if "inspect_tf" in m]
+
+    def no_stale(r: dict) -> None:
+        next(f for f in r["frames"] if f["name"] == "odom")["stale"] = False
+        r["findings"] = [f for f in r["findings"] if f["kind"] != "stale"]
+
+    cases = {
+        "frame set": lambda r: r["frames"].pop(0),
+        "finding kinds": lambda r: r["findings"].pop(),
+        "stale frames": no_stale,
+        "roots": lambda r: r.update(roots=["odom"]),
+        "path": lambda r: r.update(path=None),
+        "two_parents tool": lambda r: r["findings"][-1].update(frames=["tool", "odom"]),
+    }
+    for needle, mutate in cases.items():
+        code, failed = run(mutate)
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+def test_a_missing_tf_answer_is_a_warning_not_a_failure(tmp_path: Path, bench_truth: dict) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    del results["17_inspect_tf"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0 and "inspect_tf" in _metrics(report, "WARN")
+
+
+def test_the_bench_tf_truth_is_a_sound_description_of_the_published_tree() -> None:
+    tf = bench.build_truth("humble", "rmw_fastrtps_cpp")["tf"]
+    assert tf["roots"] == ["map"] and "tool" in tf["two_parents"]
+    assert tf["path"] == [
+        "camera_optical_frame",
+        "camera_link",
+        "base_link",
+        "base_laser",
+    ]
+    assert tf["call"]["window_s"] > bench.TF_FLAKY_ACTIVE_S + 2 * tf["call"]["stale_after_s"]
 
 
 def _clock_run(tmp_path: Path, truth: dict, **kw: Any) -> tuple[int, dict]:

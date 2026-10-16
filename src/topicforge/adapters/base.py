@@ -19,6 +19,7 @@ from topicforge.models import (
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
+    TfCapture,
     TopicInfo,
     TopicListItem,
     TopicMetrics,
@@ -102,6 +103,8 @@ class MiddlewareAdapter(Protocol):
     def list_nodes(self) -> NodeListing: ...
 
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo: ...
+
+    def capture_tf(self, window_s: float) -> TfCapture: ...
 
     # DDS methods. The ROS2 CLI backend raises AdapterError when no DDS
     # backend is configured.

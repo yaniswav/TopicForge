@@ -33,6 +33,7 @@ LOCKED_TOOLS = {
     "list_endpoints",
     "list_nodes",
     "get_node_info",
+    "inspect_tf",
 }
 ROS_TOOLS = {
     "list_topics",
@@ -41,6 +42,7 @@ ROS_TOOLS = {
     "analyze_bag",
     "list_nodes",
     "get_node_info",
+    "inspect_tf",
 }
 
 
