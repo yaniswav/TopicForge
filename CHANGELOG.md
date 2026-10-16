@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Fixed
+
+- Ground-truth comparator (`scripts/ground_truth`, tooling only: no change to the MCP tools or
+  the output contract). Two real OmniSim runs on 0.7.1 showed false FAILs that were the host's
+  or the harness's doing, not TopicForge's: wall-clock frequency rows are now WARN at most when
+  the kit's real-time factor is under 0.5 or the wall/sim ratios of the kit and TopicForge
+  differ by more than 25 percent (simulated-time rows still gate); `/parameter_events` and
+  `/rosout` writer/reader counts are no longer compared; `ros2` CLI participants started by
+  TopicForge itself (`is_topicforge_cli` or a `_ros2cli_` node name) are ignored and reported.
+  `drive.py` now runs the DDS calls before `get_node_info` and settles 3 s before them and at the end.
+
 ## [0.7.1] - 2026-10-14
 
 QoS fix suggestions and agent-friction fixes from the blind evaluation (`docs/EVAL.md`). Additive only: no field or

@@ -701,6 +701,19 @@ def test_drive_skips_bag_calls_without_a_bag_or_a_topic() -> None:
     assert drive.expand({**call, "requires_bag_topic": "/clock"}, saved, "/b")
 
 
+def test_default_calls_file_runs_dds_calls_before_node_info_and_settles() -> None:
+    calls = json.loads(
+        (ROOT / "scripts" / "ground_truth" / "calls.json").read_text(encoding="utf-8")
+    )
+    names = [c["name"] for c in calls if "name" in c]
+    for dds in ("04_list_participants", "05_list_endpoints", "06_detect_qos_mismatches"):
+        assert names.index(dds) < names.index("03n_node_info_{slug}")
+    # 3 s settle before the DDS calls (ghost CLI participants leave) and at the very end.
+    assert calls[-1] == {"settle_s": 3}
+    first_dds = next(i for i, c in enumerate(calls) if c.get("name") == "04_list_participants")
+    assert calls[first_dds - 1] == {"settle_s": 3}
+
+
 def test_default_calls_file_puts_graph_calls_before_sampling() -> None:
     calls = json.loads(
         (ROOT / "scripts" / "ground_truth" / "calls.json").read_text(encoding="utf-8")
@@ -721,8 +734,7 @@ def test_default_calls_file_puts_graph_calls_before_sampling() -> None:
 def test_scripts_are_ascii() -> None:
     for path in [
         *(ROOT / "scripts" / "ground_truth").iterdir(),
-        FIXTURES / "omnisim_064_truth.json",
-        FIXTURES / "omnisim_064_results.json",
+        *FIXTURES.glob("*.json"),
         ROOT / "tests/integration/ros2/ground_truth.py",
     ]:
         if path.is_file():
@@ -735,3 +747,174 @@ def test_bag_truth_reads_a_humble_bag_without_message_definitions() -> None:
     truth = compare.build_bag_truth(ROOT / "tests" / "fixtures" / "bags" / "omnisim_humble")
     assert truth["message_count"] == 1434
     assert truth["per_topic"]["/scan"]["count"] == 177
+
+
+# ---------------------------------------------------------------- 0.7.1 runs, 2026-10-14
+def _fixture(tag: str) -> tuple[dict, dict]:
+    truth = json.loads((FIXTURES / f"omnisim_071_{tag}_truth.json").read_text(encoding="utf-8"))
+    results = json.loads((FIXTURES / f"omnisim_071_{tag}_results.json").read_text(encoding="utf-8"))
+    return truth, results
+
+
+def test_071_morning_run_low_rtf_ends_pass_with_wall_rows_as_warnings(tmp_path: Path) -> None:
+    # Host busy rendering, real_time_factor 0.162: every wall-clock frequency was a FAIL.
+    # The truth is reconstructed (the kit's file was overwritten by the rerun); no bag section.
+    code, report = _run(tmp_path, *_fixture("morning"))
+    assert code == 0
+    assert report["result"] == "PASS"
+    assert report["counts"].get("FAIL", 0) == 0
+    rows = [r for r in report["rows"] if "wall frequency" in r["metric"]]
+    assert len(rows) == 8
+    assert {r["verdict"] for r in rows} == {"WARN"}
+    assert all("low RTF 0.162" in r["note"] for r in rows)
+    sim = [r for r in report["rows"] if "sim frequency" in r["metric"] and r["verdict"] != "INFO"]
+    assert sim and {r["verdict"] for r in sim} == {"PASS"}
+
+
+def test_071_morning_run_still_fails_when_a_sim_frequency_is_wrong(tmp_path: Path) -> None:
+    truth, results = _fixture("morning")
+    truth["rates"]["per_topic"]["/odom"]["rate_sim_hz"] = 50.0
+    code, report = _run(tmp_path, truth, results)
+    assert code == 1
+    assert "/odom sim frequency (Hz, n=12)" in _metrics(report, "FAIL")
+
+
+def test_071_rerun_ends_pass_with_zero_fail(tmp_path: Path) -> None:
+    # RTF 0.908. Wall rows gate again and pass; ghost CLI participants were the old FAIL.
+    code, report = _run(tmp_path, *_fixture("rerun"))
+    assert code == 0
+    assert report["result"] == "PASS"
+    assert report["counts"].get("FAIL", 0) == 0
+    assert report["counts"]["PASS"] >= 75
+    wall = [r for r in report["rows"] if "wall frequency" in r["metric"] and r["verdict"] != "INFO"]
+    assert wall and {r["verdict"] for r in wall} == {"PASS"}
+
+
+def test_071_rerun_ghost_cli_writers_on_infra_topics_are_not_counted(tmp_path: Path) -> None:
+    truth, results = _fixture("rerun")
+    bad = copy.deepcopy(results)
+    endpoints = bad["05_list_endpoints"]["parsed"][0]["endpoints"]
+    ghost = next(e for e in endpoints if e["role"] == "writer" and e["ros_topic"] == "/rosout")
+    endpoints.append(copy.deepcopy(ghost))
+    code, report = _run(tmp_path, truth, bad)
+    assert code == 0
+    assert "writers/readers per topic (list_endpoints)" in _metrics(report, "PASS")
+    # ...but a real topic still counts.
+    scan = next(e for e in endpoints if e["role"] == "writer" and e["ros_topic"] == "/scan")
+    endpoints.append(copy.deepcopy(scan))
+    code, report = _run(tmp_path / "again", truth, bad)
+    assert code == 1
+    assert "writers/readers per topic (list_endpoints)" in _metrics(report, "FAIL")
+
+
+def _participants(results: dict) -> list[dict]:
+    return results["04_list_participants"]["parsed"][0]["participants"]
+
+
+def _active_fast(participants: list[dict]) -> list[dict]:
+    return [
+        p
+        for p in participants
+        if p["vendor"] == "fast" and not p["is_observer"] and p["status"] == "active"
+    ]
+
+
+def test_cli_participants_are_ignored_by_flag_or_node_name(tmp_path: Path) -> None:
+    truth, results = _fixture("rerun")
+    bad = copy.deepcopy(results)
+    active = _active_fast(_participants(bad))
+    assert len(active) == 8  # 6 nodes + daemon + one ghost `ros2 node info`
+    active[0]["is_topicforge_cli"] = True
+    active[1]["node_names"] = ["/_ros2cli_4242"]
+    _, report = _run(tmp_path, truth, bad)
+    count = next(r for r in report["rows"] if r["metric"].startswith("fast active participants"))
+    assert count["topicforge"] == 6
+    assert count["verdict"] == "PASS"
+    note = next(r for r in report["rows"] if r["metric"].startswith("TopicForge ros2 CLI"))
+    assert note["topicforge"] == "2 ignored"
+    assert note["verdict"] == "INFO"
+
+
+def test_cli_participant_flag_false_or_absent_changes_nothing(tmp_path: Path) -> None:
+    truth, results = _fixture("rerun")
+    flagged = copy.deepcopy(results)
+    for p in _participants(flagged):
+        p["is_topicforge_cli"] = False
+    _, report = _run(tmp_path, truth, flagged)
+    assert not [r for r in report["rows"] if r["metric"].startswith("TopicForge ros2 CLI")]
+    count = next(r for r in report["rows"] if r["metric"].startswith("fast active participants"))
+    assert count["topicforge"] == 8
+
+
+@pytest.mark.parametrize(
+    ("participant", "expected"),
+    [
+        ({"name": "/"}, False),
+        ({"name": "/", "is_topicforge_cli": False}, False),
+        ({"name": "/", "is_topicforge_cli": True}, True),
+        ({"name": "/_ros2cli_1234"}, True),
+        ({"name": "_ros2cli_1234"}, True),
+        ({"name": "/", "node_names": ["/_ros2cli_77"]}, True),
+        ({"name": "/", "node_names": ["/omnisim_clock"]}, False),
+        ({"name": None}, False),
+    ],
+)
+def test_is_cli_participant(participant: dict, expected: bool) -> None:
+    assert compare._is_cli_participant(participant) is expected
+
+
+def _rows_for(rate: dict, truth: dict, rtf: float | None) -> dict[str, dict[str, Any]]:
+    rep = compare.Report()
+    compare._compare_frequencies(truth, "/t", rate, rep, None, True, 3.0, rtf=rtf)
+    return {r["metric"].split()[1]: r for r in rep.rows}
+
+
+_RATE = {"message_count": 12, "observed_frequency_hz": 4.0, "sim_frequency_hz": 5.0}
+_KIT = {"rate_wall_hz": 4.5, "rate_sim_hz": 5.0}
+
+
+def test_rtf_rule_makes_wall_fail_a_warn_naming_the_rtf() -> None:
+    kit = {"rate_wall_hz": 1.0, "rate_sim_hz": 5.0}
+    rows = _rows_for({**_RATE, "observed_frequency_hz": 5.0}, kit, 0.162)
+    assert rows["wall"]["verdict"] == "WARN"
+    assert "low RTF 0.162 < 0.5" in rows["wall"]["note"]
+    assert rows["sim"]["verdict"] == "PASS"
+
+
+def test_rtf_rule_does_not_apply_at_or_above_the_threshold_or_without_rtf() -> None:
+    kit = {"rate_wall_hz": 1.0, "rate_sim_hz": 1.0}
+    rate = {**_RATE, "observed_frequency_hz": 5.0, "sim_frequency_hz": 5.0}
+    for rtf in (0.5, 0.9, None):
+        assert _rows_for(rate, kit, rtf)["wall"]["verdict"] == "FAIL"
+
+
+def test_ratio_rule_warns_when_the_wall_sim_ratios_differ_by_more_than_25_percent() -> None:
+    # kit ratio 0.5, TopicForge ratio 0.8 (60 % apart); wall 4.0 vs 2.5 is a FAIL otherwise.
+    kit = {"rate_wall_hz": 2.5, "rate_sim_hz": 5.0}
+    rows = _rows_for(_RATE, kit, 0.9)
+    assert rows["wall"]["verdict"] == "WARN"
+    assert "wall/sim ratio mismatch" in rows["wall"]["note"]
+    assert "0.800" in rows["wall"]["note"]
+    assert "0.500" in rows["wall"]["note"]
+
+
+def test_ratio_rule_keeps_the_gate_when_the_ratios_agree() -> None:
+    # ratios 0.9 and 0.9, but the wall rate itself is 60 % off: still a FAIL.
+    kit = {"rate_wall_hz": 4.5, "rate_sim_hz": 5.0}
+    rate = {**_RATE, "observed_frequency_hz": 1.8, "sim_frequency_hz": 2.0}
+    assert _rows_for(rate, kit, 0.9)["wall"]["verdict"] == "FAIL"
+
+
+def test_ratio_rule_needs_both_rates_and_leaves_sim_rows_gating() -> None:
+    clock = {"rate_wall_hz": 6.0, "rate_sim_hz": None}
+    rows = _rows_for({**_RATE, "observed_frequency_hz": 10.0}, clock, 0.9)
+    assert rows["wall"]["verdict"] == "FAIL"
+    assert rows["sim"]["verdict"] == "INFO"
+    rows = _rows_for(_RATE, {"rate_wall_hz": 2.5, "rate_sim_hz": 1.0}, 0.9)
+    assert rows["sim"]["verdict"] == "FAIL"
+
+
+def test_relaxation_does_not_touch_a_passing_wall_row() -> None:
+    rows = _rows_for(_RATE, _KIT, 0.1)
+    assert rows["wall"]["verdict"] == "PASS"
+    assert "low RTF" not in rows["wall"]["note"]

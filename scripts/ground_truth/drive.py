@@ -12,6 +12,7 @@ that venv's interpreter (and starts `DIR/bin/topicforge`).
 A calls file is a JSON list. Each entry is one of:
 
     {"list_tools": true}
+    {"settle_s": 3}
     {"name": "02_list_topics", "tool": "list_topics", "args": {}, "timeout": 120}
     {"name": "03_topic_info_{slug}", "tool": "get_topic_info", "for_each": "topics",
      "args": {"topic": "{item}"}}
@@ -22,6 +23,9 @@ replaced in the name and the arguments. `min_publishers` and `exclude` filter th
 `needs_bag` entries are skipped without `--bag` (and `{BAG}` is replaced by it);
 `requires_bag_topic` skips the entry when the `13_analyze_bag` result does not list that topic.
 Entries run in order inside ONE MCP session, so put graph calls before sampling calls.
+`{"settle_s": N}` sleeps N seconds: every `ros2` CLI call (get_node_info, topic info) starts a
+process that stays a DDS participant for 0.3-2 s after it exits, so calls.json settles 3 s
+before the DDS calls and at the end, and no ghost participant reaches list_participants.
 
 Each result goes to `<out>/<name>.json` as `{isError, content, parsed, structuredContent?,
 _call: {tool, args, wall_s, t_wall}}` (`{exception, _call}` when the call raised or timed
@@ -219,6 +223,10 @@ async def run(args: argparse.Namespace, calls: list[dict], out: Path, errlog: An
             },
         )
         for entry in calls:
+            if "settle_s" in entry:
+                print("settle", entry["settle_s"], flush=True)
+                await asyncio.sleep(float(entry["settle_s"]))
+                continue
             for call in expand(entry, saved, args.bag) if not entry.get("list_tools") else [entry]:
                 if call.get("list_tools"):
                     listed = await session.list_tools()
