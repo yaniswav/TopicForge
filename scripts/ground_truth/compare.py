@@ -34,6 +34,11 @@ Tolerances (the constants below; each row names the one it used):
                             with message_count >= 10 and kept messages spanning >= 0.9 s, WARN at
                             most below; the verdict is WARN-only; startup_burst_count > 0 is an
                             INFO row
+    wall frequency          a FAIL becomes a WARN (the reason is in the note) when the kit's
+                            omnisim.real_time_factor_during_window is < 0.5 (LOW_RTF), or when
+                            TopicForge's observed/sim frequency ratio differs from the kit's
+                            rate_wall_hz / rate_sim_hz by more than 25 % (RATIO_TOL). The
+                            simulated-time rows keep gating
     STABLE_CV               a fixed-rate topic (rates.fixed_rate_topics) with interval_cv >= 0.2
                             over >= 0.9 s is a WARN when the cv of its own stamps is < 0.2, an
                             INFO otherwise (CONTRACT.md section 4); every cv is listed at the end
@@ -73,6 +78,9 @@ RATE_GATE_SPAN_S = 0.9
 STABLE_CV = 0.2
 BAG_DURATION_TOL_S = 1e-6
 INFRA_TOPICS = ("/parameter_events", "/rosout")
+LOW_RTF = 0.5
+RATIO_TOL = 0.25
+CLI_NODE_PREFIXES = ("/_ros2cli_", "_ros2cli_")
 SAMPLE_PREFIXES = ("09_", "10_", "11_", "12_", "20_sample_")
 # Expected stamp_source per topic when the truth carries no `stamps` map (the OmniSim kit).
 DEFAULT_STAMPS = {
@@ -927,6 +935,7 @@ def check_rates(gt: dict, res: Results, rep: Report) -> None:
     per_topic = truth.get("per_topic") or {}
     fixed = set(truth.get("fixed_rate_topics") or [])
     verdicts_ok = tuple(truth.get("expected_verdicts") or ("stable", "jittery"))
+    rtf = (gt.get("omnisim") or {}).get("real_time_factor_during_window")
     blocks = _rate_blocks(res)
     if not any(b[1].get("rate") for b in blocks):
         rep.add(
@@ -1007,7 +1016,30 @@ def check_rates(gt: dict, res: Results, rep: Report) -> None:
             "machine dependent: never FAIL",
             wall,
         )
-        _compare_frequencies(per_topic.get(topic) or {}, topic, rate, rep, wall, gated, span)
+        _compare_frequencies(
+            per_topic.get(topic) or {}, topic, rate, rep, wall, gated, span, rtf=rtf
+        )
+
+
+def _wall_relaxation(truth: dict, rate: dict, rtf: float | None) -> str | None:
+    """Why a wall-clock frequency cannot gate on this machine, else None.
+
+    Wall rates depend on how busy the host was while the kit measured: a low real-time factor
+    (the simulator ran slower than real time) or a wall/sim ratio that differs between the kit
+    and TopicForge (the two measured different stretches of an uneven run) both void the gate.
+    """
+    if isinstance(rtf, (int, float)) and rtf < LOW_RTF:
+        return f"low RTF {rtf:.3f} < {LOW_RTF}"
+    obs, sim = rate.get("observed_frequency_hz"), rate.get("sim_frequency_hz")
+    k_wall, k_sim = truth.get("rate_wall_hz"), truth.get("rate_sim_hz")
+    if all(isinstance(v, (int, float)) and v > 0 for v in (obs, sim, k_wall, k_sim)):
+        ours, kit = obs / sim, k_wall / k_sim
+        if abs(ours - kit) / kit > RATIO_TOL:
+            return (
+                f"wall/sim ratio mismatch: TopicForge {ours:.3f} vs kit {kit:.3f} "
+                f"(differs by more than {RATIO_TOL:.0%})"
+            )
+    return None
 
 
 def _compare_frequencies(
@@ -1018,8 +1050,10 @@ def _compare_frequencies(
     wall: float | None,
     gated: bool,
     span: float | None,
+    rtf: float | None = None,
 ) -> None:
     n = rate.get("message_count")
+    relaxed = _wall_relaxation(truth, rate, rtf)
     for field, key, label in (
         ("observed_frequency_hz", "rate_wall_hz", "wall"),
         ("sim_frequency_hz", "rate_sim_hz", "sim"),
@@ -1040,6 +1074,9 @@ def _compare_frequencies(
         note = f"relative error {err:.3f}; pass <= {RATE_PASS}, fail > {RATE_WARN}"
         if not gated:
             note += f"; span {span} s under {RATE_GATE_SPAN_S}: WARN at most"
+        if label == "wall" and relaxed and verdict == "FAIL":
+            verdict = "WARN"
+            note += f"; WARN at most, {relaxed}: wall-clock rows do not gate here"
         rep.add(
             "rates",
             f"{topic} {label} frequency (Hz, n={n})",
@@ -1091,6 +1128,21 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
             and not p.get("is_observer")
             and p.get("status", "active") == "active"
         ]
+        # A `ros2 node info` process TopicForge spawned stays a participant for a few
+        # seconds: ignore it (flag `is_topicforge_cli`, or a `_ros2cli_<pid>` node name).
+        cli = [p for p in mine if _is_cli_participant(p)]
+        mine = [p for p in mine if p not in cli]
+        if cli:
+            rep.add(
+                "dds",
+                "TopicForge ros2 CLI participants ignored",
+                "0 or more",
+                f"{len(cli)} ignored",
+                "INFO",
+                "spawned by get_node_info / topic calls: flag is_topicforge_cli or a "
+                "_ros2cli_ node name",
+                wall,
+            )
         rep.add(
             "dds",
             f"{vendor} active participants (not the observer)",
@@ -1136,6 +1188,14 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
         )
 
 
+def _is_cli_participant(p: dict[str, Any]) -> bool:
+    """True for a participant that is a `ros2` CLI process started by TopicForge itself."""
+    if p.get("is_topicforge_cli", False):
+        return True
+    names = [p.get("name"), *(p.get("node_names") or [])]
+    return any(isinstance(n, str) and n.startswith(CLI_NODE_PREFIXES) for n in names)
+
+
 def _check_endpoints(before: dict, res: Results, rep: Report) -> None:
     data = res.load("05_list_endpoints")
     if not data or tool_err(data):
@@ -1160,6 +1220,10 @@ def _check_endpoints(before: dict, res: Results, rep: Report) -> None:
         if topic.get("counts") == "ignore":
             continue
         n = topic["name"]
+        if n in INFRA_TOPICS:
+            # Presence and type only (see check_graph): the hidden CLI and daemon nodes
+            # add writers and readers that the truth cannot count.
+            continue
         w, r = count[n].get("writer", 0), count[n].get("reader", 0)
         if (w, r) != (topic["publisher_count"], topic["subscription_count"]):
             bad.append(f"{n} w{w}/r{r} vs {topic['publisher_count']}/{topic['subscription_count']}")

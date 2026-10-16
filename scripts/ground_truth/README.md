@@ -11,7 +11,7 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | File | Role |
 | --- | --- |
 | `drive.py` | MCP stdio driver: runs `calls.json` in one session, saves one JSON per call (result, wall time) and the server's stderr |
-| `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes |
+| `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes; `{"settle_s": 3}` entries sleep (before the DDS calls and at the end) |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
@@ -19,6 +19,23 @@ SHAPE (output shape changed; counted as a failure with `--strict-shape`, which C
 Sections and tolerances are listed at the top of `compare.py`: graph (topics, types, counts, QoS per
 side, nodes, `use_sim_time` per node), scan (geometry, every range, wall and sector minima), stamps
 (`stamp_source` per topic), rates (verdict, frequency, interval_cv), bag, dds.
+
+Machine-dependent rows (OmniSim kit runs on a shared host):
+
+- Wall-clock frequency rows are WARN at most, never FAIL, when the kit's
+  `omnisim.real_time_factor_during_window` is below 0.5, or when TopicForge's
+  `observed_frequency_hz / sim_frequency_hz` differs from the kit's `rate_wall_hz / rate_sim_hz` by
+  more than 25 percent. The note of the row says which (low RTF, or the two ratios). Simulated-time
+  frequency rows stay the gate. (2026-10-14: a run at RTF 0.162 gave 8 wall-clock FAILs, all
+  sim-time rows passed.)
+- `/parameter_events` and `/rosout` are checked for presence and type only: their writer and reader
+  counts (`list_endpoints`) and node lists include hidden `ros2` CLI and daemon nodes, so the
+  comparator skips them.
+- Participants flagged `is_topicforge_cli`, or whose node names start with `/_ros2cli_`, are not
+  counted as ROS nodes in the `dds` section; an INFO row says how many were ignored. The flag is
+  optional in the output: its absence changes nothing.
+- `drive.py` runs the DDS calls (04-06) before `get_node_info` and settles 3 s before them and at the
+  end, because a `ros2 node info` process stays a DDS participant for 0.3 to 2 s after it exits.
 
 ## Against the OmniSim kit (Windows + WSL)
 
@@ -57,5 +74,9 @@ depend on hidden CLI and daemon nodes.
 ## Tests
 
 `tests/test_ground_truth_compare.py` runs the comparator without ROS on a trimmed recording of a
-real OmniSim run (`tests/fixtures/ground_truth/`, TopicForge 0.6.4, kit Apache-2.0), on a synthetic
-contract-2 answer set for the bench truth, and on corrupted copies that must fail with exit 1.
+real OmniSim run (`tests/fixtures/ground_truth/`, TopicForge 0.6.4, kit Apache-2.0), on two trimmed
+0.7.1 runs of 2026-10-14 (`omnisim_071_morning_*`: RTF 0.162, must end PASS with WARN rows;
+`omnisim_071_rerun_*`: RTF 0.908, PASS with zero FAIL; the morning truth is reconstructed from the
+rerun truth plus the morning's rows because the kit overwrote the original file, and has no bag
+section), on a synthetic contract-2 answer set for the bench truth, and on corrupted copies that
+must fail with exit 1.
