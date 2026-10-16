@@ -25,6 +25,7 @@ the byte after the header)::
 from __future__ import annotations
 
 import os
+import socket
 import struct
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
@@ -328,11 +329,33 @@ def fast_pid_bits(guid: str) -> int | None:
     return int.from_bytes(prefix[4:6], "little")
 
 
-def _matches_pid(p: ParticipantInfo, pids: set[int], extra_pids: Mapping[str, int]) -> bool:
+def _same_host(announced: str | None, local: str) -> bool | None:
+    """Whether an announced hostname is this machine's; `None` when it is unknown."""
+    if not announced:
+        return None
+    a, b = announced.strip().lower(), local.strip().lower()
+    return a == b or a.split(".")[0] == b.split(".")[0]
+
+
+def _matches_pid(
+    p: ParticipantInfo, pids: set[int], extra_pids: Mapping[str, int], local_host: str
+) -> bool:
+    """Whether `p` is provably a process TopicForge spawned on this machine.
+
+    A pid means nothing across hosts. The `_ros2cli_<pid>` node name is strong enough
+    to flag when the host is unknown; a declared pid (Cyclone `__Pid`) or the 16 Fast
+    DDS GUID pid bits only flag when the participant's hostname is known and local.
+    Everything else falls to the time-correlation note.
+    """
+    same = _same_host(p.hostname, local_host)
+    if same is False:
+        return False
     for node in p.node_names:
         pid = cli_pid_of_node(node)
         if pid is not None and pid in pids:
             return True
+    if same is not True:
+        return False
     declared = extra_pids.get(p.guid)
     if declared is not None and declared in pids:
         return True
@@ -349,22 +372,25 @@ def flag_topicforge_cli(
     now_ns: int,
     window_s: float = CLI_GHOST_WINDOW_S,
     extra_pids: Mapping[str, int] | None = None,
+    local_host: str | None = None,
 ) -> list[ParticipantInfo]:
     """Set `is_topicforge_cli` on participants started by TopicForge's own `ros2` calls.
 
     `spawns` is the ring of `(pid, wall_ns)` of processes TopicForge started.
-    A participant is flagged when its `_ros2cli_<pid>` node name, its Fast DDS
-    GUID pid bits or a declared pid (`extra_pids`, guid -> pid, e.g. Cyclone's
-    `__Pid` property) match a spawn younger than `window_s`. Never excludes.
+    A participant is flagged when its `_ros2cli_<pid>` node name, or (hostname
+    known and local) its Fast DDS GUID pid bits or a declared pid (`extra_pids`,
+    guid -> pid, e.g. Cyclone's `__Pid` property) match a spawn younger than
+    `window_s`. A participant announcing another host is never flagged. Never excludes.
     """
     horizon = now_ns - int(window_s * 1e9)
     pids = {pid for pid, ns in spawns if ns >= horizon}
     if not pids:
         return list(participants)
     declared = extra_pids or {}
+    host = local_host if local_host is not None else socket.gethostname()
     return [
         p.model_copy(update={"is_topicforge_cli": True})
-        if not p.is_observer and _matches_pid(p, pids, declared)
+        if not p.is_observer and _matches_pid(p, pids, declared, host)
         else p
         for p in participants
     ]

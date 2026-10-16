@@ -189,3 +189,9 @@ def test_wall_time_robot_has_a_factor_of_one_and_no_hint() -> None:
 def test_leading_slashes_in_frame_names_are_ignored() -> None:
     report = _report(dynamic=[_s("/odom", "/base_link", 1), _s("odom", "base_link", 2)])
     assert report.frame_count == 2 and report.transform_count == 1
+
+
+def test_an_empty_capture_hints_no_frames_not_static_only() -> None:
+    report = _report()
+    assert any("No TF frames were received" in h for h in report.hints)
+    assert not any("only static frames" in h for h in report.hints)

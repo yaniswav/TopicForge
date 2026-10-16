@@ -59,11 +59,20 @@ def test_a_cli_ghost_is_flagged_not_excluded() -> None:
 
 
 def test_a_cyclone_pid_property_flags_a_ghost() -> None:
-    p = _p("a.b.c.d")
+    import socket
+
+    p = _p("a.b.c.d", hostname=socket.gethostname())
     composite, dds = _composite([p])
     dds.pids = {"a.b.c.d": 555}
     spawned_pids.record_spawn(555)
     assert composite.list_participants()[0].is_topicforge_cli
+
+
+def test_a_cyclone_pid_without_a_known_host_does_not_flag() -> None:
+    composite, dds = _composite([_p("a.b.c.d")])
+    dds.pids = {"a.b.c.d": 555}
+    spawned_pids.record_spawn(555)
+    assert not composite.list_participants()[0].is_topicforge_cli
 
 
 def test_nothing_is_flagged_without_a_spawn() -> None:

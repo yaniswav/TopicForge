@@ -28,9 +28,18 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `ParticipantInfo.is_topicforge_cli`: the `ros2` CLI processes TopicForge itself spawns
   (right after `get_node_info` they stay on the bus 0.3-2 s, so a 7-participant bus
   listed 8) are flagged, never hidden, and the listing `note` explains them. Matched by
-  `_ros2cli_<pid>` node name, Fast DDS GUID pid bits or Cyclone `__Pid` against a 30 s ring
-  of pids recorded by the process runner.
+  `_ros2cli_<pid>` node name, or (only when the participant's hostname is known and is this
+  machine's) Fast DDS GUID pid bits or Cyclone `__Pid`, against a 30 s ring of pids recorded
+  by the process runner; a participant announcing another host is never flagged. Limit: on
+  Windows `ros2.exe` spawns a child process, so the recorded pid rarely matches and the flag
+  mostly falls back to the time-correlation note (`may be its ghosts`).
 - `ParticipantListing.restarts_by_node`: `restarts_by_name` keyed by ROS 2 node name.
+
+### Changed
+
+- `MiddlewareAdapter` gains `capture_tf(window_s)` (needed by `inspect_tf`). Third-party
+  adapters implementing the protocol must add it; DDS-only ones can raise the DDS-only error
+  (`DDS_ONLY_ERROR_MSG`).
 
 ### Fixed
 

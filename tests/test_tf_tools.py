@@ -344,3 +344,56 @@ def test_inspect_tf_errors_reach_the_client() -> None:
         asyncio.run(_app().call_tool("inspect_tf", {"source_frame": "laser"}))
     with pytest.raises(ToolError):
         asyncio.run(_app().call_tool("inspect_tf", {"window_s": 99}))
+
+
+def test_both_streams_failing_for_a_real_reason_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    echo = FakeEcho({})
+    with pytest.raises(AdapterError, match="Could not read the TF topics"):
+        _capture(
+            monkeypatch,
+            echo,
+            {"/tf_static": AdapterError("ros2 timed out"), "/tf": AdapterError("daemon down")},
+        )
+
+
+def test_both_topics_absent_is_a_note_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    cap = _capture(
+        monkeypatch,
+        FakeEcho({}),
+        {"/tf_static": AdapterError("Topic not found"), "/tf": AdapterError("Topic not found")},
+    )
+    assert cap.static == [] and cap.dynamic == []
+    assert len(cap.notes) == 2
+
+
+def test_one_failed_stream_stays_a_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    echo = FakeEcho({"/tf": _run(_tf_doc(("odom", "base_link", 1)))})
+    cap = _capture(
+        monkeypatch, echo, {"/tf_static": AdapterError("ros2 timed out"), "/tf": _info("/tf", 1)}
+    )
+    assert len(cap.dynamic) == 1 and any("timed out" in n for n in cap.notes)
+
+
+def test_a_shortened_window_is_noted(monkeypatch: pytest.MonkeyPatch) -> None:
+    echo = FakeEcho({"/tf_static": _run(), "/tf": _run(_tf_doc(("odom", "base_link", 1)))})
+    real = tf_capture.call_budget.clamp
+    monkeypatch.setattr(
+        tf_capture.call_budget,
+        "clamp",
+        lambda t, r=0.0: min(real(t, r), 2.0) if t > 4 and t != 8.0 else real(t, r),
+    )
+    cap = _capture(
+        monkeypatch, echo, {"/tf_static": _info("/tf_static", 0), "/tf": _info("/tf", 1)}
+    )
+    assert any("shortened the /tf window" in n for n in cap.notes)
+
+
+def test_parse_grace_drops_the_oldest_documents_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    docs = [_tf_doc(("odom", "base_link", i)) for i in range(1, 6)]
+    run = _run(*docs)
+    ticks = iter([0.0, 0.0, 99.0, 99.0, 99.0, 99.0])
+    monkeypatch.setattr(tf_capture.time, "monotonic", lambda: next(ticks))
+    samples, dropped = tf_capture._decode(run, parse_until=1.0)
+    assert dropped == 3 and len(samples) == 2
+    assert [s.received_ns for s in samples] == sorted(s.received_ns for s in samples)
+    assert samples[-1].received_ns == 5 * NS

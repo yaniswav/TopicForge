@@ -329,7 +329,9 @@ by the mock. A fourth reader on `ros_discovery_info` (type
 `rmw_dds_common::msg::dds_::ParticipantEntitiesInfo_`, RELIABLE, TRANSIENT_LOCAL, KEEP_ALL)
 feeds a cache keyed by the 12-byte GUID prefix; `adapters/common/ros_discovery.py` decodes
 the XCDR1 payload by hand and accepts the gid width (24 or 16) that consumes the buffer
-exactly. Verified on the wire against rmw_fastrtps on Humble (24) and Jazzy (16). A
+exactly. The decoder was checked on captures from real rmw_fastrtps nodes (Humble: 24,
+Jazzy: 16, both in WSL), and the Cyclone reader matched those nodes in WSL; rmw_cyclonedds
+and Connext writers are untested. A
 participant that has left keeps the last non-empty list it announced. Fast DDS and RTI
 backends leave it `none`.
 
@@ -667,7 +669,9 @@ shows only added properties.
 ### 9.1 Listing size
 
 `tools/list` carries the description, input schema and output schema of every tool, and some
-clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.1 serves about 113 KB.
+clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 serves about 119 KB
+(measured 118,884 bytes against the 120,000 test ceiling), so the next tool needs the schema
+compaction planned for 0.7.3 first.
 How:
 
 - Pydantic's generated `title` is dropped from every property and nested model, and the
@@ -806,7 +810,8 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
 
 - The tree comes from the transforms: `/tf_static` is read once (transient_local, one latched
   message per publisher, about 3 s), then `/tf` is streamed uncut for `window_s`, at most 3000
-  messages. A stream that cannot be read is a `note`, not an error.
+  messages. A topic that is absent or has no publisher is a `note`; when both streams fail for any
+  other reason the call raises an error instead of returning an empty tree.
 - Time is the header stamp. `age_s` is the distance between a frame's newest stamp and the
   newest `/tf` stamp (`reference_ns`), so it is correct on sim time. `stale` is `age_s` above
   `stale_after_s`; static frames have no age. `observed_frequency_hz` uses the arrival time,
@@ -814,6 +819,9 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
 - `findings.kind` is an open set (1.9): `stale`, `two_parents`, `disconnected` (more than one
   root), `static_and_dynamic` (a frame on both topics), `cycle`, `no_path` (unknown or
   unconnected frames). A sound tree has none.
+- Ages are measured against the newest `/tf` stamp, so one publisher with a future stamp or a
+  zero stamp skews the staleness of every other frame: a frame can read as stale because
+  another one runs ahead. Check `stamp_span_s` and the stamps when many frames go stale at once.
 - `echo` can drop messages at high rates: the structure and the findings hold, the exact
   message counts and frequencies are approximate (`truncated` says when messages were lost).
 - The mock `/tf_static` topic carries the fixed frames of the demo robot; mock `inspect_tf`

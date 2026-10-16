@@ -312,17 +312,36 @@ def test_spawns_older_than_the_window_are_forgotten() -> None:
 
 
 def test_fast_guid_pid_bits_flag_without_a_node_name() -> None:
-    fast = _participant("010fe8e0.cb01af68.00000000.000001c1", vendor="fast")
-    cyclone = _participant("0110d63c.cb01af68.00000000.000001c1", vendor="cyclone")
-    out = flag_topicforge_cli([fast, cyclone], [(459 + 65536, NOW)], now_ns=NOW)
+    fast = _participant("010fe8e0.cb01af68.00000000.000001c1", vendor="fast", hostname="Box")
+    cyclone = _participant("0110d63c.cb01af68.00000000.000001c1", vendor="cyclone", hostname="box")
+    out = flag_topicforge_cli([fast, cyclone], [(459 + 65536, NOW)], now_ns=NOW, local_host="box")
     assert [p.is_topicforge_cli for p in out] == [True, False]
 
 
+def test_pid_bits_alone_do_not_flag_when_the_host_is_unknown() -> None:
+    fast = _participant("010fe8e0.cb01af68.00000000.000001c1", vendor="fast")
+    out = flag_topicforge_cli([fast], [(459, NOW)], now_ns=NOW, local_host="box")
+    assert not out[0].is_topicforge_cli
+
+
+def test_same_pid_on_another_host_is_not_flagged() -> None:
+    remote = _participant("a.b.c.d", hostname="other", node_names=["/_ros2cli_100", "/n"])
+    local = _participant("e.f.g.h", hostname="box", node_names=["/_ros2cli_100"])
+    out = flag_topicforge_cli(
+        [remote, local], [(100, NOW)], now_ns=NOW, extra_pids={"a.b.c.d": 100}, local_host="box"
+    )
+    assert [p.is_topicforge_cli for p in out] == [False, True]
+
+
 def test_declared_pid_flags_a_cyclone_participant() -> None:
-    p = _participant("0110d63c.f086f4cc.a8799a7e.000001c1")
-    out = flag_topicforge_cli([p], [(4321, NOW)], now_ns=NOW, extra_pids={p.guid: 4321})
+    p = _participant("0110d63c.f086f4cc.a8799a7e.000001c1", hostname="box")
+    out = flag_topicforge_cli(
+        [p], [(4321, NOW)], now_ns=NOW, extra_pids={p.guid: 4321}, local_host="box"
+    )
     assert out[0].is_topicforge_cli
-    out = flag_topicforge_cli([p], [(4321, NOW)], now_ns=NOW, extra_pids={p.guid: 1})
+    out = flag_topicforge_cli(
+        [p], [(4321, NOW)], now_ns=NOW, extra_pids={p.guid: 1}, local_host="box"
+    )
     assert not out[0].is_topicforge_cli
 
 

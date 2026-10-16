@@ -9,8 +9,10 @@ Two streaming passes, each bounded by the call budget (`topicforge.budget`):
    messages. `echo` can drop messages at high rates; the structure of the tree survives
    that, the frequencies and the exact count do not.
 
-A stream that cannot be read becomes a note on the capture, not an error: an empty
-tree is a result.
+A topic that is absent or has no publisher becomes a note on the capture, not an
+error: an empty tree is a result. When both streams fail for any other reason (CLI
+failure, timeout, no budget) the capture raises `AdapterError` rather than present
+an empty tree as success.
 """
 
 from __future__ import annotations
@@ -54,10 +56,13 @@ def capture_tf(
     `--qos-*` flags that match its publishers.
     """
     notes: list[str] = []
-    static, static_dropped = _static_pass(exe, topic_info, max_message_chars, notes)
+    failures: list[str] = []
+    static, static_dropped = _static_pass(exe, topic_info, max_message_chars, notes, failures)
     dynamic, dropped, capped, actual_s = _dynamic_pass(
-        window_s, exe, topic_info, qos_args, max_message_chars, notes
+        window_s, exe, topic_info, qos_args, max_message_chars, notes, failures
     )
+    if len(failures) >= 2:
+        raise AdapterError("Could not read the TF topics: " + " ".join(failures))
     return TfCapture(
         static=static,
         dynamic=dynamic,
@@ -72,38 +77,52 @@ def _echo_cmd(exe: str, topic: str, qos: list[str]) -> list[str]:
     return [exe, "topic", "echo", "--no-lost-messages", "--full-length", *qos, topic]
 
 
-def _info_or_note(topic: str, topic_info: TopicInfoFn, notes: list[str]) -> TopicInfo | None:
+def _info_or_note(
+    topic: str, topic_info: TopicInfoFn, notes: list[str], failures: list[str]
+) -> TopicInfo | None:
+    """Topic info, or `None` with a note; a failure other than "absent" is also recorded."""
     wait = call_budget.clamp(_GRAPH_QUERY_S, _STOP_RESERVE_S)
     if wait <= 0:
-        notes.append(f"No time was left in this call's budget to read {topic}: retry.")
+        msg = f"No time was left in this call's budget to read {topic}: retry."
+        notes.append(msg)
+        failures.append(msg)
         return None
     try:
         return topic_info(topic, wait)
     except AdapterError as exc:
-        notes.append(f"{topic} could not be read ({exc}).")
+        msg = f"{topic} could not be read ({exc})."
+        notes.append(msg)
+        if "not found" not in str(exc).lower():
+            failures.append(msg)
         return None
 
 
 def _decode(run: EchoRun, parse_until: float) -> tuple[list[TfSample], int]:
-    """Samples of the run's documents; the second value counts documents not decoded."""
-    samples: list[TfSample] = []
+    """Samples of the run's documents; the second value counts documents not decoded.
+
+    Documents are parsed newest first, so when the grace runs out the ones dropped are
+    the oldest (the newest define the reference time). Samples keep arrival order.
+    """
+    chunks: list[list[TfSample]] = []
     skipped = 0
-    for index, doc in enumerate(run.documents):
+    docs = run.documents
+    for index in range(len(docs) - 1, -1, -1):
         if time.monotonic() > parse_until:
-            skipped += len(run.documents) - index
+            skipped += index + 1
             break
-        parsed = parse_tf_message(doc.text, doc.received_ns)
+        parsed = parse_tf_message(docs[index].text, docs[index].received_ns)
         if parsed is None:
             skipped += 1
         else:
-            samples.extend(parsed)
+            chunks.append(parsed)
+    samples = [s for chunk in reversed(chunks) for s in chunk]
     return samples, skipped + run.oversized
 
 
 def _static_pass(
-    exe: str, topic_info: TopicInfoFn, max_chars: int, notes: list[str]
+    exe: str, topic_info: TopicInfoFn, max_chars: int, notes: list[str], failures: list[str]
 ) -> tuple[list[TfSample], int]:
-    info = _info_or_note("/tf_static", topic_info, notes)
+    info = _info_or_note("/tf_static", topic_info, notes, failures)
     if info is None:
         return [], 0
     if info.publisher_count == 0:
@@ -111,7 +130,9 @@ def _static_pass(
         return [], 0
     wait = call_budget.clamp(_STATIC_WAIT_S, _STOP_RESERVE_S)
     if wait < _MIN_STREAM_S:
-        notes.append("No time was left in this call's budget to read /tf_static: retry.")
+        msg = "No time was left in this call's budget to read /tf_static: retry."
+        notes.append(msg)
+        failures.append(msg)
         return [], 0
     qos = ["--qos-reliability", "reliable", "--qos-durability", "transient_local"]
     run = stream_echo(
@@ -137,8 +158,9 @@ def _dynamic_pass(
     qos_args: QosArgsFn,
     max_chars: int,
     notes: list[str],
+    failures: list[str],
 ) -> tuple[list[TfSample], int, bool, float]:
-    info = _info_or_note("/tf", topic_info, notes)
+    info = _info_or_note("/tf", topic_info, notes, failures)
     if info is None:
         return [], 0, False, 0.0
     window = window_s if info.publisher_count else min(window_s, _NO_PUBLISHER_WAIT_S)
@@ -146,8 +168,15 @@ def _dynamic_pass(
         notes.append("/tf has no publisher: no dynamic transform is being sent.")
     wait = call_budget.clamp(window, _STOP_RESERVE_S)
     if wait < _MIN_STREAM_S:
-        notes.append("No time was left in this call's budget to listen to /tf: retry.")
+        msg = "No time was left in this call's budget to listen to /tf: retry."
+        notes.append(msg)
+        failures.append(msg)
         return [], 0, False, 0.0
+    if wait < window - 0.05:
+        notes.append(
+            f"The call's time budget shortened the /tf window to {wait:.1f} s "
+            f"(asked for {window:.1f} s): frequencies and staleness rest on less data."
+        )
     run = stream_echo(
         _echo_cmd(exe, "/tf", qos_args(info)),
         count=MAX_TF_DOCS,

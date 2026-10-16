@@ -53,3 +53,13 @@ def test_a_left_participant_falls_back_to_its_last_names_but_an_active_one_does_
     out = with_node_names([gone, live], names, last)
     assert out[0].node_names == ["/a"] and out[0].node_names_source == "ros_discovery_info"
     assert out[1].node_names == []
+
+
+def test_a_remote_participant_with_a_cli_pid_name_is_not_flagged_but_counted() -> None:
+    from topicforge.adapters.common.ros_discovery import flag_topicforge_cli
+
+    old = _p("a.b.c.d", ["/lidar", "/_ros2cli_77"], status="left", hostname="other")
+    new = _p("e.f.g.h", ["/lidar"], hostname="other")
+    out = flag_topicforge_cli([old, new], [(77, 10)], now_ns=10, local_host="box")
+    assert not any(p.is_topicforge_cli for p in out)
+    assert restarts_from_nodes(out)["/lidar"].lives == 2

@@ -101,7 +101,7 @@ def build_tf_report(
         transform_count=len(edges),
         message_count=len(capture.static) + len(capture.dynamic),
         findings=findings,
-        hints=_hints(rtf, findings, bool(capture.dynamic)),
+        hints=_hints(rtf, findings, bool(capture.dynamic), bool(frames)),
         path=path,
         path_note=path_note,
         reference_ns=reference_ns,
@@ -364,7 +364,9 @@ def _clock_figures(
     return (span if span > 0 else None), rtf
 
 
-def _hints(rtf: float | None, findings: list[TfFinding], has_dynamic: bool) -> list[str]:
+def _hints(
+    rtf: float | None, findings: list[TfFinding], has_dynamic: bool, has_frames: bool
+) -> list[str]:
     hints = []
     if rtf is not None and abs(rtf - 1.0) > _RTF_TOLERANCE:
         hints.append(
@@ -377,7 +379,12 @@ def _hints(rtf: float | None, findings: list[TfFinding], has_dynamic: bool) -> l
             "A stale frame stopped being published (or the sim clock stopped): check its "
             "publisher with `get_topic_info` on /tf."
         )
-    if not has_dynamic:
+    if not has_frames:
+        hints.append(
+            "No TF frames were received on /tf_static or /tf: check that a publisher exists "
+            "(`get_topic_info` on /tf and /tf_static) and that the domain and QoS match."
+        )
+    elif not has_dynamic:
         hints.append("No /tf message arrived: only static frames are known, so no age is given.")
     return hints
 

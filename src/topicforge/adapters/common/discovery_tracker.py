@@ -329,9 +329,10 @@ def apply_builtin_samples(
     reader returns them with only a key and a `sample_info` once an instance
     is disposed or has no writers) remove it and, for participants, record the
     loss at the dispose's source timestamp. `info_samples` are raw
-    `ros_discovery_info` payloads (node names), applied after the participants
-    after them; names outlive the participant (the cache is bounded). Cycles faster than the builtin
-    reader's history depth can still be missed: a known limit.
+    `ros_discovery_info` payloads (node names); they are applied after the
+    participants, and names outlive the participant (the cache is bounded).
+    Cycles faster than the builtin reader's history depth can still be missed:
+    a known limit.
     """
     with caches.lock:
         for sample in _by_time(participant_samples, now_ns):
@@ -341,12 +342,7 @@ def apply_builtin_samples(
         for sample in subscription_samples:
             _apply_endpoint(caches, "reader", caches.subscriptions, sample, now_ns)
         if info_samples:
-            _apply_node_names(caches, info_samples)
-
-
-def _apply_node_names(caches: DiscoveryCaches, raws: list[bytes]) -> None:
-    """Cache node names; a participant that left keeps its names (who went away), bounded."""
-    apply_info_samples(caches.ros_nodes, raws)
+            apply_info_samples(caches.ros_nodes, info_samples)
 
 
 TakeAll = Callable[[], tuple[list[Any], ...]]
