@@ -1125,7 +1125,7 @@ wheels = [
 
 [[package]]
 name = "topicforge"
-version = "0.7.1"
+version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclonedds", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or sys_platform == 'darwin'" },
@@ -1134,21 +1134,21 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rosbags" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/65/b488f81fac063a98603956cc7b83bd3bf29d5a3f107cb8890be9c246b688/topicforge-0.7.1.tar.gz", hash = "sha256:61d6203adb3634c3c87bbbe567be0cfb4c69d93b7a283d04173cafb6561264e4", size = 488259, upload-time = "2026-10-14T06:26:41.539Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/37/00950c9697c879eb8f72e9efd5fe0b491c8d7a74b84838573eb01072ee4a/topicforge-0.7.2.tar.gz", hash = "sha256:0be068273ff76e1adc35e8f3b7b18046af5c7fb5ef940bee5533470490f0e9b7", size = 567832, upload-time = "2026-10-18T06:30:24.801Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/cb/13ce35eafa8f41c74f5cf72fb4dcc8c3da4a5bca35c2ece61e4c2d3f08e5/topicforge-0.7.1-py3-none-any.whl", hash = "sha256:5973f35aea59cb8f0ff78e7bce50283a3389dfa927f4e1dcc9fc08ed45a488e4", size = 204044, upload-time = "2026-10-14T06:26:39.995Z" },
+    { url = "https://files.pythonhosted.org/packages/16/87/5a7f69d37bbeedd6eaab53f108ba2be1089336e81514bb2beda3bc709a52/topicforge-0.7.2-py3-none-any.whl", hash = "sha256:983b33f7e4b23308bd9f6a61acb418a81c1e7e22ab57b858dbd20f0911bfc117", size = 227967, upload-time = "2026-10-18T06:30:23.112Z" },
 ]
 
 [[package]]
 name = "topicforge-claude-plugin"
-version = "0.7.1"
+version = "0.7.2"
 source = { virtual = "." }
 dependencies = [
     { name = "topicforge" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "topicforge", specifier = "==0.7.1" }]
+requires-dist = [{ name = "topicforge", specifier = "==0.7.2" }]
 
 [[package]]
 name = "truststore"
