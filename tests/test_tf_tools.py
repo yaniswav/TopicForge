@@ -7,6 +7,7 @@ against a real graph (`tests/integration/ros2/`).
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 import pytest
@@ -97,13 +98,20 @@ def _info(topic: str, publishers: int) -> TopicInfo:
 class FakeEcho:
     """A scripted `stream_echo`: answers by topic and records every call."""
 
-    def __init__(self, runs: dict[str, EchoRun]) -> None:
+    def __init__(self, runs: dict[str, EchoRun | Exception]) -> None:
         self.runs = runs
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
 
     def __call__(self, cmd: list[str], **kw: Any) -> EchoRun:
         self.calls.append((cmd, kw))
-        return self.runs[cmd[-1]]
+        found = self.runs[cmd[-1]]
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    def call(self, topic: str) -> tuple[list[str], dict[str, Any]]:
+        """The recorded call for `topic` (the two echoes run concurrently, in any order)."""
+        return next(c for c in self.calls if c[0][-1] == topic)
 
 
 def _run(*docs: str, oversized: int = 0, exit_code: int | None = None) -> EchoRun:
@@ -153,11 +161,11 @@ def test_capture_reads_the_latched_topic_then_listens_to_tf(
     )
     assert len(cap.static) == 2 and len(cap.dynamic) == 2
     assert cap.window_actual_s == 4.0 and cap.notes == [] and not cap.capped
-    static_cmd, static_kw = echo.calls[0]
+    static_cmd, static_kw = echo.call("/tf_static")
     assert static_cmd[-1] == "/tf_static" and static_kw["count"] == 2
     assert "transient_local" in static_cmd and "--full-length" in static_cmd
-    assert static_kw["deadline_s"] <= 3.0
-    tf_cmd, tf_kw = echo.calls[1]
+    assert static_kw["deadline_s"] == tf_capture._STATIC_MIN_WAIT_S
+    tf_cmd, tf_kw = echo.call("/tf")
     assert tf_kw["count"] == tf_capture.MAX_TF_DOCS and tf_kw["deadline_s"] == 5.0
     assert "--full-length" in tf_cmd and "volatile" in tf_cmd
 
@@ -189,7 +197,7 @@ def test_missing_streams_become_notes_not_errors(monkeypatch: pytest.MonkeyPatch
     assert any("/tf_static could not be read" in n for n in cap.notes)
     assert any("/tf has no publisher" in n for n in cap.notes)
     # No publisher on /tf: listens a short while only.
-    assert echo.calls[0][1]["deadline_s"] <= 2.0
+    assert echo.call("/tf")[1]["deadline_s"] <= 2.0
 
 
 def test_a_static_publisher_that_stays_silent_is_noted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -221,7 +229,7 @@ def test_adapter_capture_tf_wires_the_pieces(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(adapter, "_topic_info", lambda t, _timeout: _info(t, 1))
     cap = adapter.capture_tf(3.0)
     assert len(cap.static) == 1 and len(cap.dynamic) == 1
-    assert echo.calls[0][0][0] == "/bin/ros2"
+    assert echo.call("/tf")[0][0] == "/bin/ros2"
 
 
 def test_adapter_capture_tf_needs_the_cli(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -386,6 +394,113 @@ def test_a_shortened_window_is_noted(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch, echo, {"/tf_static": _info("/tf_static", 0), "/tf": _info("/tf", 1)}
     )
     assert any("shortened the /tf window" in n for n in cap.notes)
+
+
+def test_static_and_dynamic_echoes_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
+    dynamic_started = threading.Event()
+    static_saw_dynamic: list[bool] = []
+
+    def echo(cmd: list[str], **_kw: Any) -> EchoRun:
+        if cmd[-1] == "/tf":
+            dynamic_started.set()
+            return _run(_tf_doc(("odom", "base_link", 1)))
+        # The static run only completes once the dynamic one has started.
+        static_saw_dynamic.append(dynamic_started.wait(timeout=5.0))
+        return _run(_tf_doc(("a", "b", 0)))
+
+    cap = _capture(
+        monkeypatch,
+        echo,  # type: ignore[arg-type]
+        {"/tf_static": _info("/tf_static", 1), "/tf": _info("/tf", 1)},
+    )
+    assert static_saw_dynamic == [True]
+    assert len(cap.static) == 1 and len(cap.dynamic) == 1 and cap.notes == []
+
+
+def test_static_deadline_follows_the_window_when_longer(monkeypatch: pytest.MonkeyPatch) -> None:
+    echo = FakeEcho({"/tf_static": _run(), "/tf": _run()})
+    _capture(
+        monkeypatch,
+        echo,
+        {"/tf_static": _info("/tf_static", 1), "/tf": _info("/tf", 1)},
+        window_s=15.0,
+    )
+    assert echo.call("/tf_static")[1]["deadline_s"] == 15.0
+    assert echo.call("/tf")[1]["deadline_s"] == 15.0
+
+
+def test_static_deadline_is_clamped_by_the_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    echo = FakeEcho({"/tf_static": _run(), "/tf": _run()})
+    with tf_capture.call_budget.deadline_at(tf_capture.time.monotonic() + 8.0):
+        _capture(
+            monkeypatch,
+            echo,
+            {"/tf_static": _info("/tf_static", 1), "/tf": _info("/tf", 1)},
+            window_s=20.0,
+        )
+    static_wait = echo.call("/tf_static")[1]["deadline_s"]
+    assert 0 < static_wait <= 8.0 - tf_capture._STOP_RESERVE_S
+
+
+def test_worker_sees_the_callers_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[float | None] = []
+
+    def echo(cmd: list[str], **_kw: Any) -> EchoRun:
+        if cmd[-1] == "/tf_static":
+            seen.append(tf_capture.call_budget.remaining())
+        return _run()
+
+    with tf_capture.call_budget.deadline_at(tf_capture.time.monotonic() + 30.0):
+        _capture(
+            monkeypatch,
+            echo,  # type: ignore[arg-type]
+            {"/tf_static": _info("/tf_static", 1), "/tf": _info("/tf", 1)},
+        )
+    assert seen and seen[0] is not None and seen[0] > 0
+
+
+def test_a_static_worker_exception_becomes_a_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    echo = FakeEcho(
+        {
+            "/tf_static": AdapterError("could not start `ros2`: boom"),
+            "/tf": _run(_tf_doc(("odom", "base_link", 1))),
+        }
+    )
+    cap = _capture(
+        monkeypatch, echo, {"/tf_static": _info("/tf_static", 1), "/tf": _info("/tf", 1)}
+    )
+    assert len(cap.dynamic) == 1 and cap.static == []
+    assert any("/tf_static could not be read" in n and "boom" in n for n in cap.notes)
+
+
+def test_static_worker_failure_plus_dynamic_failure_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    echo = FakeEcho({"/tf_static": RuntimeError("worker died")})
+    with pytest.raises(AdapterError, match="worker died"):
+        _capture(
+            monkeypatch,
+            echo,
+            {"/tf_static": _info("/tf_static", 1), "/tf": AdapterError("daemon down")},
+        )
+
+
+def test_a_dynamic_crash_still_joins_the_static_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    finished = threading.Event()
+
+    def echo(cmd: list[str], **_kw: Any) -> EchoRun:
+        if cmd[-1] == "/tf":
+            raise AdapterError("could not start `ros2`: nope")
+        finished.set()
+        return _run()
+
+    with pytest.raises(AdapterError, match="nope"):
+        _capture(
+            monkeypatch,
+            echo,  # type: ignore[arg-type]
+            {"/tf_static": _info("/tf_static", 1), "/tf": _info("/tf", 1)},
+        )
+    assert finished.is_set()
 
 
 def test_parse_grace_drops_the_oldest_documents_first(monkeypatch: pytest.MonkeyPatch) -> None:

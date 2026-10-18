@@ -809,8 +809,9 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
 2), `source_frame` and `target_frame` (both or neither).
 
 - The tree comes from the transforms: `/tf_static` is read once (transient_local, one latched
-  message per publisher, about 3 s), then `/tf` is streamed uncut for `window_s`, at most 3000
-  messages. A topic that is absent or has no publisher is a `note`; when both streams fail for any
+  message per publisher; it stops as soon as they are in, and waits at most the longer of
+  `window_s` and 6 s), concurrently with `/tf`, which is streamed uncut for `window_s`, at most
+  3000 messages. A topic that is absent or has no publisher is a `note`; when both streams fail for any
   other reason the call raises an error instead of returning an empty tree.
 - Time is the header stamp. `age_s` is the distance between a frame's newest stamp and the
   newest `/tf` stamp (`reference_ns`), so it is correct on sim time. `stale` is `age_s` above

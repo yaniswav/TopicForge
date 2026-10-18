@@ -1,13 +1,22 @@
 """Capture `/tf_static` and `/tf` through `ros2 topic echo` for `inspect_tf`.
 
-Two streaming passes, each bounded by the call budget (`topicforge.budget`):
+Two streaming passes, each bounded by the call budget (`topicforge.budget`), run
+concurrently:
 
 1. `/tf_static`: latched (transient_local, reliable), so one message per publisher is
-   waiting on arrival. The pass asks for `publisher_count` messages and stops after
-   `_STATIC_WAIT_S`.
-2. `/tf`: listened to for the window, uncut (`--full-length`), at most `MAX_TF_DOCS`
-   messages. `echo` can drop messages at high rates; the structure of the tree survives
-   that, the frequencies and the exact count do not.
+   waiting on arrival. Once its topic info is read, the echo starts in a worker thread
+   and asks for `publisher_count` messages, stopping early when they are in. It gets the
+   longer of the `/tf` window and `_STATIC_MIN_WAIT_S`, because `ros2` start-up, DDS
+   discovery and the replay are slow on a loaded Humble runner; it only costs time when
+   a publisher stays silent.
+2. `/tf`: meanwhile, in the calling thread, listened to for the window, uncut
+   (`--full-length`), at most `MAX_TF_DOCS` messages. `echo` can drop messages at high
+   rates; the structure of the tree survives that, the frequencies and the exact count
+   do not.
+
+The worker runs in a copy of the caller's context (the budget is a contextvar) and every
+clamp is computed in the calling thread. `stream_echo` kills its process tree on its own
+deadline, so a worker never outlives its process; a worker failure becomes a note.
 
 A topic that is absent or has no publisher becomes a note on the capture, not an
 error: an empty tree is a result. When both streams fail for any other reason (CLI
@@ -17,8 +26,11 @@ an empty tree as success.
 
 from __future__ import annotations
 
+import contextvars
+import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError
@@ -28,7 +40,10 @@ from topicforge.models import TfCapture, TfSample, TopicInfo
 
 # Most `/tf` messages kept in one capture.
 MAX_TF_DOCS = 3000
-_STATIC_WAIT_S = 3.0
+# The `/tf_static` echo waits at least this long (and at least the `/tf` window).
+_STATIC_MIN_WAIT_S = 6.0
+# Margin over the echo deadline for the worker to kill its process and return.
+_STATIC_JOIN_SLACK_S = 3.0
 # Wait on `/tf` when it has no announced publisher.
 _NO_PUBLISHER_WAIT_S = 2.0
 # Time kept back from the call budget for stopping the CLI (about 2 s) and decoding.
@@ -49,7 +64,7 @@ def capture_tf(
     qos_args: QosArgsFn,
     max_message_chars: int,
 ) -> TfCapture:
-    """Read `/tf_static` then `/tf` for `window_s` seconds; see the module docstring.
+    """Read `/tf_static` and `/tf` (for `window_s` seconds) together; see the module docstring.
 
     `exe` is the resolved `ros2` path, `topic_info(topic, timeout)` reads one topic
     (raising `AdapterError` when it does not exist) and `qos_args(info)` gives the
@@ -57,10 +72,13 @@ def capture_tf(
     """
     notes: list[str] = []
     failures: list[str] = []
-    static, static_dropped = _static_pass(exe, topic_info, max_message_chars, notes, failures)
-    dynamic, dropped, capped, actual_s = _dynamic_pass(
-        window_s, exe, topic_info, qos_args, max_message_chars, notes, failures
-    )
+    job = _start_static(window_s, exe, topic_info, max_message_chars, notes, failures)
+    try:
+        dynamic, dropped, capped, actual_s = _dynamic_pass(
+            window_s, exe, topic_info, qos_args, max_message_chars, notes, failures
+        )
+    finally:
+        static, static_dropped = _finish_static(job, notes, failures)
     if len(failures) >= 2:
         raise AdapterError("Could not read the TF topics: " + " ".join(failures))
     return TfCapture(
@@ -119,33 +137,91 @@ def _decode(run: EchoRun, parse_until: float) -> tuple[list[TfSample], int]:
     return samples, skipped + run.oversized
 
 
-def _static_pass(
-    exe: str, topic_info: TopicInfoFn, max_chars: int, notes: list[str], failures: list[str]
-) -> tuple[list[TfSample], int]:
+@dataclass
+class _StaticJob:
+    """The `/tf_static` echo running in a worker thread, or the reason there is none."""
+
+    thread: threading.Thread | None = None
+    expected: int = 0
+    max_chars: int = 0
+    wait_s: float = 0.0
+    started: float = 0.0
+    run: EchoRun | None = None
+    error: Exception | None = None
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _start_static(
+    window_s: float,
+    exe: str,
+    topic_info: TopicInfoFn,
+    max_chars: int,
+    notes: list[str],
+    failures: list[str],
+) -> _StaticJob:
+    """Read `/tf_static` info, then start its echo in a worker; no thread when there is nothing to read."""
+    job = _StaticJob()
     info = _info_or_note("/tf_static", topic_info, notes, failures)
     if info is None:
-        return [], 0
+        return job
     if info.publisher_count == 0:
         notes.append("/tf_static has no publisher: no static transform is known.")
-        return [], 0
-    wait = call_budget.clamp(_STATIC_WAIT_S, _STOP_RESERVE_S)
+        return job
+    wait = call_budget.clamp(max(window_s, _STATIC_MIN_WAIT_S), _STOP_RESERVE_S)
     if wait < _MIN_STREAM_S:
         msg = "No time was left in this call's budget to read /tf_static: retry."
         notes.append(msg)
         failures.append(msg)
-        return [], 0
+        return job
     qos = ["--qos-reliability", "reliable", "--qos-durability", "transient_local"]
-    run = stream_echo(
-        _echo_cmd(exe, "/tf_static", qos),
-        count=info.publisher_count,
-        deadline_s=wait,
-        max_document_chars=max_chars,
+    cmd = _echo_cmd(exe, "/tf_static", qos)
+    job.expected, job.max_chars, job.wait_s = info.publisher_count, max_chars, wait
+    job.started = time.monotonic()
+
+    def work() -> None:
+        try:
+            run = stream_echo(
+                cmd, count=job.expected, deadline_s=wait, max_document_chars=max_chars
+            )
+        except Exception as exc:  # recorded here, reported by the caller
+            with job._lock:
+                job.error = exc
+        else:
+            with job._lock:
+                job.run = run
+
+    context = contextvars.copy_context()
+    job.thread = threading.Thread(
+        target=context.run, args=(work,), name="topicforge-tf-static", daemon=True
     )
+    job.thread.start()
+    return job
+
+
+def _finish_static(
+    job: _StaticJob, notes: list[str], failures: list[str]
+) -> tuple[list[TfSample], int]:
+    """Join the worker (bounded) and decode its run; problems become notes and failures."""
+    if job.thread is None:
+        return [], 0
+    join_s = job.wait_s + _STATIC_JOIN_SLACK_S - (time.monotonic() - job.started)
+    left = call_budget.remaining()
+    if left is not None:
+        join_s = min(join_s, left)
+    job.thread.join(timeout=max(join_s, 0.0))
+    with job._lock:
+        run, error = job.run, job.error
+    if run is None:
+        reason = f"({error})" if error is not None else "(it did not finish in time)"
+        msg = f"/tf_static could not be read {reason}."
+        notes.append(msg)
+        failures.append(msg)
+        return [], 0
     samples, dropped = _decode(run, time.monotonic() + _PARSE_GRACE_S)
     got = len(run.documents) + run.oversized
-    if got < info.publisher_count:
+    if got < job.expected:
         notes.append(
-            f"{got} of {info.publisher_count} /tf_static publishers delivered their latched "
+            f"{got} of {job.expected} /tf_static publishers delivered their latched "
             "message: some static frames may be missing."
         )
     return samples, dropped
