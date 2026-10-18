@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-18
+
+TF tree inspection, ROS 2 node names on DDS participants, and a flag for the `ros2` CLI
+processes TopicForge itself spawns. Additive only: no field or input was renamed, removed or
+retyped (`docs/CONTRACT.md` section 9). Validated on the Docker ROS 2 bench (Humble and Jazzy,
+rmw_fastrtps and rmw_cyclonedds).
+
 ### Added
 
 - `inspect_tf`, the 15th tool (additive, `docs/CONTRACT.md` section 9.8): rebuilds the TF tree
@@ -1706,7 +1713,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...v0.6.4
