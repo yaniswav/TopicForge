@@ -1152,13 +1152,20 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
             "" if len(mine) in (nodes, nodes + 1) else "the daemon and CLI processes come and go",
             wall,
         )
-        unnamed = sum(1 for p in mine if vendor == "fast" and p.get("name") in ("/", "", None))
+        # A Fast DDS participant is named "/"; since 0.7.2 node_names (read from
+        # ros_discovery_info) maps it to its nodes, so only a participant with
+        # neither is unusable.
+        unnamed = sum(
+            1
+            for p in mine
+            if vendor == "fast" and p.get("name") in ("/", "", None) and not p.get("node_names")
+        )
         if vendor == "fast":
             rep.add(
                 "dds",
                 "Fast DDS participant names usable",
                 "node names",
-                f"{unnamed}/{len(mine)} named '/'",
+                f"{unnamed}/{len(mine)} without a name or node_names",
                 "WARN" if unnamed else "PASS",
                 "D3: cannot map participants to nodes" if unnamed else "",
                 wall,

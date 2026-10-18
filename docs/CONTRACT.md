@@ -330,8 +330,8 @@ by the mock. A fourth reader on `ros_discovery_info` (type
 feeds a cache keyed by the 12-byte GUID prefix; `adapters/common/ros_discovery.py` decodes
 the XCDR1 payload by hand and accepts the gid width (24 or 16) that consumes the buffer
 exactly. The decoder was checked on captures from real rmw_fastrtps nodes (Humble: 24,
-Jazzy: 16, both in WSL), and the Cyclone reader matched those nodes in WSL; rmw_cyclonedds
-and Connext writers are untested. A
+Jazzy: 16, both in WSL), and the Docker ROS 2 bench names every node on Humble and Jazzy
+with both rmw_fastrtps and rmw_cyclonedds; Connext writers are untested. A
 participant that has left keeps the last non-empty list it announced. Fast DDS and RTI
 backends leave it `none`.
 

@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `list_participants` fills `node_names` (and `node_names_source` `ros_discovery_info`) on
   the Cyclone backend: a fourth reader on `ros_discovery_info` plus a hand-written XCDR1
   decoder (`adapters/common/ros_discovery.py`) that accepts the 24-byte (Humble) and
-  16-byte (Jazzy and later) gid. Checked against real rmw_fastrtps nodes on Humble and
-  Jazzy. Mock participants get names from the mock node fixtures.
+  16-byte (Jazzy and later) gid. Checked on the Docker ROS 2 bench (Humble and Jazzy, rmw_fastrtps
+  and rmw_cyclonedds). Mock participants get names from the mock node fixtures.
 - `ParticipantInfo.is_topicforge_cli`: the `ros2` CLI processes TopicForge itself spawns
   (right after `get_node_info` they stay on the bus 0.3-2 s, so a 7-participant bus
   listed 8) are flagged, never hidden, and the listing `note` explains them. Matched by
