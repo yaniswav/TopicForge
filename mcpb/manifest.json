@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "topicforge",
   "display_name": "TopicForge (ROS 2 / DDS)",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Read-only ROS 2 and DDS inspection: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
   "author": {
     "name": "Yanis Ethvignot",
@@ -61,7 +61,8 @@
     { "name": "peek_bag_samples", "description": "Peek decoded samples out of a recorded bag." },
     { "name": "list_endpoints", "description": "Normalized DDS writers and readers with QoS." },
     { "name": "list_nodes", "description": "ROS 2 nodes on the graph: names, namespaces, duplicates." },
-    { "name": "get_node_info", "description": "One node's topics, services, actions and parameters." }
+    { "name": "get_node_info", "description": "One node's topics, services, actions and parameters." },
+    { "name": "inspect_tf", "description": "The TF tree: roots, stale, two-parent and disconnected frames, paths." }
   ],
   "compatibility": {
     "platforms": ["darwin", "linux", "win32"],

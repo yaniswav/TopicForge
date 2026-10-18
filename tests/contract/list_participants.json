@@ -95,6 +95,11 @@
             "description": "True for TopicForge's own read-only observer participant.",
             "type": "boolean"
           },
+          "is_topicforge_cli": {
+            "default": false,
+            "description": "True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
+            "type": "boolean"
+          },
           "last_seen_ns": {
             "anyOf": [
               {
@@ -257,6 +262,13 @@
           "$ref": "#/$defs/NameLifecycle"
         },
         "description": "Names seen with several GUIDs or lost at least once (absent: ran once and stayed). A restart is a new GUID with the same name.",
+        "type": "object"
+      },
+      "restarts_by_node": {
+        "additionalProperties": {
+          "$ref": "#/$defs/NameLifecycle"
+        },
+        "description": "`restarts_by_name` keyed by ROS 2 node full name.",
         "type": "object"
       },
       "restarts_note": {

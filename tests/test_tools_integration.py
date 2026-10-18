@@ -37,6 +37,8 @@ MVP_TOOLS = {
     # ROS 2 nodes
     "list_nodes",
     "get_node_info",
+    # TF tree
+    "inspect_tf",
 }
 
 
@@ -51,10 +53,10 @@ def test_build_app_succeeds() -> None:
     assert app is not None
 
 
-def test_tool_surface_is_locked_at_fourteen() -> None:
+def test_tool_surface_is_locked_at_fifteen() -> None:
     names = {t.name for t in asyncio.run(_mock_app().list_tools())}
     assert names == MVP_TOOLS
-    assert len(names) == 14
+    assert len(names) == 15
 
 
 def test_all_mvp_tools_registered() -> None:
@@ -112,6 +114,7 @@ _EXPECTED_OUTPUT_TITLES = {
     "list_endpoints": "EndpointListing",
     "list_nodes": "NodeListing",
     "get_node_info": "NodeInfo",
+    "inspect_tf": "TfReport",
 }
 
 

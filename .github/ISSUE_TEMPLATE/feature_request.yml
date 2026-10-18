@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before opening : TopicForge is intentionally small. The tool surface is deliberately small (14 tools) ;
+        Before opening : TopicForge is intentionally small. The tool surface is deliberately small (15 tools) ;
         a new tool needs a written discussion first (see `docs/product-plan.md section 11`
         "Scope creep within the TopicForge umbrella"). Some ideas (URDF inspection, bag anomaly
         detection) are candidate commercial-engagement deliverables rather than core additions;

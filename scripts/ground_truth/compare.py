@@ -18,7 +18,8 @@ no longer has the expected shape; reported, never a crash), INFO (informative).
 
 Sections: graph (topics, types, counts, QoS per side, nodes, use_sim_time per node), scan
 (geometry, every range, wall and sector minima), stamps (stamp_source per topic), rates
-(verdict and frequency, simulated and wall time), bag, dds. Reads output contract 2 (0.7:
+(verdict and frequency, simulated and wall time), bag, dds, tf (the `inspect_tf` tree; only the
+bench truth has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -33,6 +34,11 @@ Tolerances (the constants below; each row names the one it used):
                             with message_count >= 10 and kept messages spanning >= 0.9 s, WARN at
                             most below; the verdict is WARN-only; startup_burst_count > 0 is an
                             INFO row
+    wall frequency          a FAIL becomes a WARN (the reason is in the note) when the kit's
+                            omnisim.real_time_factor_during_window is < 0.5 (LOW_RTF), or when
+                            TopicForge's observed/sim frequency ratio differs from the kit's
+                            rate_wall_hz / rate_sim_hz by more than 25 % (RATIO_TOL). The
+                            simulated-time rows keep gating
     STABLE_CV               a fixed-rate topic (rates.fixed_rate_topics) with interval_cv >= 0.2
                             over >= 0.9 s is a WARN when the cv of its own stamps is < 0.2, an
                             INFO otherwise (CONTRACT.md section 4); every cv is listed at the end
@@ -72,6 +78,9 @@ RATE_GATE_SPAN_S = 0.9
 STABLE_CV = 0.2
 BAG_DURATION_TOL_S = 1e-6
 INFRA_TOPICS = ("/parameter_events", "/rosout")
+LOW_RTF = 0.5
+RATIO_TOL = 0.25
+CLI_NODE_PREFIXES = ("/_ros2cli_", "_ros2cli_")
 SAMPLE_PREFIXES = ("09_", "10_", "11_", "12_", "20_sample_")
 # Expected stamp_source per topic when the truth carries no `stamps` map (the OmniSim kit).
 DEFAULT_STAMPS = {
@@ -926,6 +935,7 @@ def check_rates(gt: dict, res: Results, rep: Report) -> None:
     per_topic = truth.get("per_topic") or {}
     fixed = set(truth.get("fixed_rate_topics") or [])
     verdicts_ok = tuple(truth.get("expected_verdicts") or ("stable", "jittery"))
+    rtf = (gt.get("omnisim") or {}).get("real_time_factor_during_window")
     blocks = _rate_blocks(res)
     if not any(b[1].get("rate") for b in blocks):
         rep.add(
@@ -1006,7 +1016,30 @@ def check_rates(gt: dict, res: Results, rep: Report) -> None:
             "machine dependent: never FAIL",
             wall,
         )
-        _compare_frequencies(per_topic.get(topic) or {}, topic, rate, rep, wall, gated, span)
+        _compare_frequencies(
+            per_topic.get(topic) or {}, topic, rate, rep, wall, gated, span, rtf=rtf
+        )
+
+
+def _wall_relaxation(truth: dict, rate: dict, rtf: float | None) -> str | None:
+    """Why a wall-clock frequency cannot gate on this machine, else None.
+
+    Wall rates depend on how busy the host was while the kit measured: a low real-time factor
+    (the simulator ran slower than real time) or a wall/sim ratio that differs between the kit
+    and TopicForge (the two measured different stretches of an uneven run) both void the gate.
+    """
+    if isinstance(rtf, (int, float)) and rtf < LOW_RTF:
+        return f"low RTF {rtf:.3f} < {LOW_RTF}"
+    obs, sim = rate.get("observed_frequency_hz"), rate.get("sim_frequency_hz")
+    k_wall, k_sim = truth.get("rate_wall_hz"), truth.get("rate_sim_hz")
+    if all(isinstance(v, (int, float)) and v > 0 for v in (obs, sim, k_wall, k_sim)):
+        ours, kit = obs / sim, k_wall / k_sim
+        if abs(ours - kit) / kit > RATIO_TOL:
+            return (
+                f"wall/sim ratio mismatch: TopicForge {ours:.3f} vs kit {kit:.3f} "
+                f"(differs by more than {RATIO_TOL:.0%})"
+            )
+    return None
 
 
 def _compare_frequencies(
@@ -1017,8 +1050,10 @@ def _compare_frequencies(
     wall: float | None,
     gated: bool,
     span: float | None,
+    rtf: float | None = None,
 ) -> None:
     n = rate.get("message_count")
+    relaxed = _wall_relaxation(truth, rate, rtf)
     for field, key, label in (
         ("observed_frequency_hz", "rate_wall_hz", "wall"),
         ("sim_frequency_hz", "rate_sim_hz", "sim"),
@@ -1039,6 +1074,9 @@ def _compare_frequencies(
         note = f"relative error {err:.3f}; pass <= {RATE_PASS}, fail > {RATE_WARN}"
         if not gated:
             note += f"; span {span} s under {RATE_GATE_SPAN_S}: WARN at most"
+        if label == "wall" and relaxed and verdict == "FAIL":
+            verdict = "WARN"
+            note += f"; WARN at most, {relaxed}: wall-clock rows do not gate here"
         rep.add(
             "rates",
             f"{topic} {label} frequency (Hz, n={n})",
@@ -1090,6 +1128,21 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
             and not p.get("is_observer")
             and p.get("status", "active") == "active"
         ]
+        # A `ros2 node info` process TopicForge spawned stays a participant for a few
+        # seconds: ignore it (flag `is_topicforge_cli`, or a `_ros2cli_<pid>` node name).
+        cli = [p for p in mine if _is_cli_participant(p)]
+        mine = [p for p in mine if p not in cli]
+        if cli:
+            rep.add(
+                "dds",
+                "TopicForge ros2 CLI participants ignored",
+                "0 or more",
+                f"{len(cli)} ignored",
+                "INFO",
+                "spawned by get_node_info / topic calls: flag is_topicforge_cli or a "
+                "_ros2cli_ node name",
+                wall,
+            )
         rep.add(
             "dds",
             f"{vendor} active participants (not the observer)",
@@ -1099,13 +1152,20 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
             "" if len(mine) in (nodes, nodes + 1) else "the daemon and CLI processes come and go",
             wall,
         )
-        unnamed = sum(1 for p in mine if vendor == "fast" and p.get("name") in ("/", "", None))
+        # A Fast DDS participant is named "/"; since 0.7.2 node_names (read from
+        # ros_discovery_info) maps it to its nodes, so only a participant with
+        # neither is unusable.
+        unnamed = sum(
+            1
+            for p in mine
+            if vendor == "fast" and p.get("name") in ("/", "", None) and not p.get("node_names")
+        )
         if vendor == "fast":
             rep.add(
                 "dds",
                 "Fast DDS participant names usable",
                 "node names",
-                f"{unnamed}/{len(mine)} named '/'",
+                f"{unnamed}/{len(mine)} without a name or node_names",
                 "WARN" if unnamed else "PASS",
                 "D3: cannot map participants to nodes" if unnamed else "",
                 wall,
@@ -1135,6 +1195,14 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
         )
 
 
+def _is_cli_participant(p: dict[str, Any]) -> bool:
+    """True for a participant that is a `ros2` CLI process started by TopicForge itself."""
+    if p.get("is_topicforge_cli", False):
+        return True
+    names = [p.get("name"), *(p.get("node_names") or [])]
+    return any(isinstance(n, str) and n.startswith(CLI_NODE_PREFIXES) for n in names)
+
+
 def _check_endpoints(before: dict, res: Results, rep: Report) -> None:
     data = res.load("05_list_endpoints")
     if not data or tool_err(data):
@@ -1159,6 +1227,10 @@ def _check_endpoints(before: dict, res: Results, rep: Report) -> None:
         if topic.get("counts") == "ignore":
             continue
         n = topic["name"]
+        if n in INFRA_TOPICS:
+            # Presence and type only (see check_graph): the hidden CLI and daemon nodes
+            # add writers and readers that the truth cannot count.
+            continue
         w, r = count[n].get("writer", 0), count[n].get("reader", 0)
         if (w, r) != (topic["publisher_count"], topic["subscription_count"]):
             bad.append(f"{n} w{w}/r{r} vs {topic['publisher_count']}/{topic['subscription_count']}")
@@ -1423,8 +1495,163 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
     }
 
 
+# ---------------------------------------------------------------------------- tf
+# Self-contained: the `tf` section of the truth (only the bench writes one) against the
+# `inspect_tf` answer saved as `17_inspect_tf`. No other section reads either.
+TF_CALL_NAME = "17_inspect_tf"
+TF_RTF_TOL = 0.25
+
+
+def _tf_expected_parents(truth: dict) -> dict[str, set[str]]:
+    parents: dict[str, set[str]] = {}
+    for parent, child in [*truth["static_edges"], *truth["dynamic_edges"]]:
+        parents.setdefault(child, set()).add(parent)
+    return parents
+
+
+def _tf_frame_rows(truth: dict, frames: dict[str, dict], rep: Report, wall: float | None) -> None:
+    got_names, want_names = sorted(frames), sorted(truth["frames"])
+    rep.add(
+        "tf",
+        "frame set (inspect_tf)",
+        want_names,
+        got_names,
+        "PASS" if got_names == want_names else "FAIL",
+        "",
+        wall,
+    )
+    static_children = {child for _, child in truth["static_edges"]}
+    for child, parents in sorted(_tf_expected_parents(truth).items()):
+        frame = frames.get(child)
+        if frame is None:
+            continue
+        ok = frame.get("parent") in parents
+        if len(parents) == 1:
+            kind = "static" if child in static_children else "dynamic"
+            ok = ok and frame.get("kind") == kind
+            want = f"{next(iter(parents))} ({kind})"
+        else:
+            want = f"one of {sorted(parents)}"
+        rep.add(
+            "tf",
+            f"{child} parent and kind (inspect_tf)",
+            want,
+            f"{frame.get('parent')} ({frame.get('kind')})",
+            "PASS" if ok else "FAIL",
+            "",
+            wall,
+        )
+
+
+def _tf_finding_rows(truth: dict, report: dict, rep: Report, wall: float | None) -> None:
+    findings = report.get("findings") or []
+    kinds = sorted({f.get("kind") for f in findings})
+    want_kinds = sorted(truth["finding_kinds"])
+    rep.add(
+        "tf",
+        "finding kinds (inspect_tf)",
+        want_kinds,
+        kinds,
+        "PASS" if kinds == want_kinds else "FAIL",
+        "one finding per fault and nothing else",
+        wall,
+    )
+    stale = sorted(f["name"] for f in report.get("frames") or [] if f.get("stale"))
+    rep.add(
+        "tf",
+        "stale frames (inspect_tf)",
+        sorted(truth["stale"]),
+        stale,
+        "PASS" if stale == sorted(truth["stale"]) else "FAIL",
+        "the edge that stopped publishing during the window",
+        wall,
+    )
+    for child, parents in truth["two_parents"].items():
+        want = [child, *parents]
+        got = [f.get("frames") for f in findings if f.get("kind") == "two_parents"]
+        rep.add(
+            "tf",
+            f"two_parents {child} (inspect_tf)",
+            want,
+            got,
+            "PASS" if [want] == got else "FAIL",
+            "",
+            wall,
+        )
+
+
+def _tf_rate_rows(truth: dict, report: dict, rep: Report, wall: float | None) -> None:
+    steady = next((f for f in report.get("frames") or [] if f.get("name") == "base_link"), {})
+    for field, label in (("observed_frequency_hz", "wall"), ("sim_frequency_hz", "sim")):
+        got, want = steady.get(field), truth["steady_hz"]
+        if got is None:
+            rep.add("tf", f"base_link {label} frequency", want, got, "INFO", "not comparable", wall)
+            continue
+        err = abs(got - want) / want
+        rep.add(
+            "tf",
+            f"base_link {label} frequency (Hz)",
+            fmt(want),
+            fmt(got),
+            "PASS" if err <= RATE_PASS else "WARN",
+            f"relative error {err:.3f}; `echo` can drop messages: WARN at most",
+            wall,
+        )
+    rtf = report.get("real_time_factor")
+    ok = rtf is not None and abs(rtf - truth["real_time_factor"]) <= TF_RTF_TOL
+    rep.add(
+        "tf",
+        "real_time_factor (inspect_tf)",
+        f"{truth['real_time_factor']} +- {TF_RTF_TOL}",
+        rtf,
+        "PASS" if ok else "WARN",
+        "machine dependent: never FAIL",
+        wall,
+    )
+
+
+@guard("tf")
+def check_tf(gt: dict, res: Results, rep: Report) -> None:
+    truth = gt.get("tf")
+    if not truth:
+        return
+    data = res.load(TF_CALL_NAME)
+    wall = res.times.get(TF_CALL_NAME)
+    err = tool_err(data)
+    if err == "missing":
+        rep.add("tf", "inspect_tf", "present (0.7.2)", "absent", "WARN", "older server", wall)
+        return
+    if err:
+        rep.add("tf", "inspect_tf", "a report", err, "FAIL", "", wall)
+        return
+    report = objs(data)[0]
+    frames = {f["name"]: f for f in report["frames"]}
+    _tf_frame_rows(truth, frames, rep, wall)
+    roots = sorted(report["roots"])
+    rep.add(
+        "tf",
+        "roots (inspect_tf)",
+        sorted(truth["roots"]),
+        roots,
+        "PASS" if roots == sorted(truth["roots"]) else "FAIL",
+        "",
+        wall,
+    )
+    _tf_finding_rows(truth, report, rep, wall)
+    rep.add(
+        "tf",
+        "path source to target (inspect_tf)",
+        truth["path"],
+        report.get("path"),
+        "PASS" if report.get("path") == truth["path"] else "FAIL",
+        "",
+        wall,
+    )
+    _tf_rate_rows(truth, report, rep, wall)
+
+
 # ---------------------------------------------------------------------------- report
-SECTIONS = (check_graph, check_scan, check_stamps, check_rates, check_bag, check_dds)
+SECTIONS = (check_graph, check_scan, check_stamps, check_rates, check_bag, check_dds, check_tf)
 
 
 def compare(gt: dict[str, Any], results: Path) -> tuple[Report, Results]:

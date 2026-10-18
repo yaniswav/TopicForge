@@ -1,0 +1,344 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Inspect TF tree"
+  },
+  "description": "ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
+  "inputSchema": {
+    "properties": {
+      "source_frame": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get the chain between them in `path`."
+      },
+      "stale_after_s": {
+        "default": 2.0,
+        "description": "A frame is stale past this many seconds of stamp time, default 2.",
+        "maximum": 3600.0,
+        "minimum": 0.1,
+        "type": "number"
+      },
+      "target_frame": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "See `source_frame`."
+      },
+      "window_s": {
+        "default": 5.0,
+        "description": "Seconds to listen to `/tf`, 1..20, default 5.",
+        "maximum": 20.0,
+        "minimum": 1.0,
+        "type": "number"
+      }
+    },
+    "type": "object"
+  },
+  "name": "inspect_tf",
+  "outputSchema": {
+    "$defs": {
+      "TfFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "`stale`, `two_parents`, `disconnected`, `static_and_dynamic`, `no_path`, `cycle`; open set.",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "frames",
+          "text"
+        ],
+        "type": "object"
+      },
+      "TfFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seconds its stamp trails the newest `/tf` stamp; `None` if static or root."
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "static",
+                  "dynamic",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source of the frame's transforms; `None` for a root."
+          },
+          "last_stamp_ns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_count": {
+            "description": "Transforms to `parent` captured.",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "observed_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rate on arrival (wall) time."
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`None` for a root; with two parents, the latest seen."
+          },
+          "sim_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rate on header stamps."
+          },
+          "stale": {
+            "description": "`age_s` above `stale_after_s`.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "parent",
+          "kind",
+          "message_count",
+          "last_stamp_ns",
+          "age_s",
+          "stale",
+          "observed_frequency_hz",
+          "sim_frequency_hz"
+        ],
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "The TF tree as captured: frames, roots, findings and an optional path.",
+    "properties": {
+      "dynamic_count": {
+        "description": "Frames with a dynamic transform.",
+        "type": "integer"
+      },
+      "findings": {
+        "description": "Empty when the tree is sound.",
+        "items": {
+          "$ref": "#/$defs/TfFinding"
+        },
+        "type": "array"
+      },
+      "frame_count": {
+        "type": "integer"
+      },
+      "frames": {
+        "description": "Sorted by name.",
+        "items": {
+          "$ref": "#/$defs/TfFrame"
+        },
+        "type": "array"
+      },
+      "hints": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "message_count": {
+        "description": "Transforms captured, repeats included.",
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "`live` or `mock` (fixtures).",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "One sentence of context, or `None`."
+      },
+      "path": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Frames from `source_frame` to `target_frame`."
+      },
+      "path_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why `path` is `None`, or context."
+      },
+      "real_time_factor": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Stamp time over wall time: about 1 on a real robot, other on sim."
+      },
+      "reference_ns": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Newest `/tf` stamp: the clock for `age_s`."
+      },
+      "roots": {
+        "description": "Frames with no parent; one in a sound tree.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "stale_count": {
+        "type": "integer"
+      },
+      "stamp_span_s": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "static_count": {
+        "description": "Frames with a static transform.",
+        "type": "integer"
+      },
+      "transform_count": {
+        "description": "Distinct parent-child pairs.",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "Messages were dropped or the cap was hit.",
+        "type": "boolean"
+      },
+      "window_actual_s": {
+        "type": "number"
+      },
+      "window_s": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "frames",
+      "roots",
+      "frame_count",
+      "static_count",
+      "dynamic_count",
+      "stale_count",
+      "transform_count",
+      "message_count",
+      "findings",
+      "hints",
+      "reference_ns",
+      "window_s",
+      "window_actual_s",
+      "stamp_span_s",
+      "real_time_factor",
+      "truncated",
+      "mode_effective"
+    ],
+    "title": "TfReport",
+    "type": "object"
+  },
+  "title": "Inspect TF tree"
+}

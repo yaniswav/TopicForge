@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
-from topicforge.adapters.ros2_mock import fixtures, node_fixtures
+from topicforge.adapters.ros2_mock import fixtures, node_fixtures, tf_fixtures
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_SAMPLE_TIMEOUT_S,
@@ -20,6 +20,7 @@ from topicforge.models import (
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
+    TfCapture,
     TopicInfo,
     TopicListItem,
     TopicMetrics,
@@ -58,6 +59,10 @@ class MockAdapter:
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         # Mock parameters are read instantly, so `timeout_s` does not apply.
         return node_fixtures.mock_node_info(node)
+
+    def capture_tf(self, window_s: float) -> TfCapture:
+        # The mock capture is fixed: `window_s` does not apply.
+        return tf_fixtures.mock_tf_capture()
 
     def sample_messages(
         self,
@@ -110,7 +115,7 @@ class MockAdapter:
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
         if domain_id < 0 or domain_id > 232:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
-        return [p for p in fixtures.MOCK_PARTICIPANTS if p.domain_id == domain_id]
+        return [_with_mock_nodes(p) for p in fixtures.MOCK_PARTICIPANTS if p.domain_id == domain_id]
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         if topic is not None and topic not in fixtures.MOCK_DDS_TOPICS:
@@ -176,3 +181,13 @@ def _reject_non_bag_path(path: str) -> None:
             f"expected one of {sorted(_BAG_EXTENSIONS)} or a "
             "`rosbag2_*` directory"
         )
+
+
+def _with_mock_nodes(participant: ParticipantInfo) -> ParticipantInfo:
+    """Attach the node names the mock robot's participants announce on `ros_discovery_info`."""
+    names = node_fixtures.mock_participant_node_names(participant.name)
+    if not names:
+        return participant
+    return participant.model_copy(
+        update={"node_names": names, "node_names_source": "ros_discovery_info"}
+    )

@@ -171,7 +171,7 @@ The 45 s are wall time from the request to the response, lock wait included. The
 enforces it (`topicforge.tools.guard`, with `topicforge.budget` passing the deadline down):
 
 - Calls run in two lanes with one lock each: ROS (`list_topics`, `get_topic_info`,
-  `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
+  `list_nodes`, `get_node_info`, `inspect_tf`, `sample_messages`, `analyze_bag`) and DDS (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`,
   `participant_events`, `topic_metrics`, `list_endpoints`).
   `health_check` never takes a lock and never runs the `ros2` CLI; `peek_bag_samples` reads
   a file in pure Python and takes none either.
@@ -323,6 +323,17 @@ from the `ros2` CLI) or `none` (no link could be made, and `node_names` is then 
 rather than absent). There is no `participant_name` value: since Foxy the participant
 carries the name of the enclave, not of a node. The field exists because Fast DDS
 participants all announce the name `/`.
+
+Filled since 0.7.2 on the Cyclone backend (`node_names_source` `ros_discovery_info`) and
+by the mock. A fourth reader on `ros_discovery_info` (type
+`rmw_dds_common::msg::dds_::ParticipantEntitiesInfo_`, RELIABLE, TRANSIENT_LOCAL, KEEP_ALL)
+feeds a cache keyed by the 12-byte GUID prefix; `adapters/common/ros_discovery.py` decodes
+the XCDR1 payload by hand and accepts the gid width (24 or 16) that consumes the buffer
+exactly. The decoder was checked on captures from real rmw_fastrtps nodes (Humble: 24,
+Jazzy: 16, both in WSL), and the Docker ROS 2 bench names every node on Humble and Jazzy
+with both rmw_fastrtps and rmw_cyclonedds; Connext writers are untested. A
+participant that has left keeps the last non-empty list it announced. Fast DDS and RTI
+backends leave it `none`.
 
 Risk: `ros_discovery_info` is a user topic whose `Gid.data` is 24 bytes on Humble
 and 16 bytes from Iron. Fallback: `ros2_cli`, through the GID prefixes printed by
@@ -658,7 +669,9 @@ shows only added properties.
 ### 9.1 Listing size
 
 `tools/list` carries the description, input schema and output schema of every tool, and some
-clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.1 serves about 113 KB.
+clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 serves about 119 KB
+(measured 118,884 bytes against the 120,000 test ceiling), so the next tool needs the schema
+compaction planned for 0.7.3 first.
 How:
 
 - Pydantic's generated `title` is dropped from every property and nested model, and the
@@ -670,6 +683,20 @@ How:
 - `tests/test_friction_fixes.py` fails if the listing grows back over 120 KB.
 
 Rule for new fields: one sentence, no history, no restating the name.
+
+### 9.1b `is_topicforge_cli` and `restarts_by_node` (0.7.2)
+
+Both additive. `ParticipantInfo.is_topicforge_cli` (default `false`) marks the `ros2` CLI
+process that a TopicForge call (`list_nodes`, `get_node_info`, `sample_messages`, ...)
+spawned: it joins the domain as a participant and stays 0.3-2 s after exiting, so a bus
+of 7 looked like 8. A participant is flagged, never removed, when one of these matches a
+pid TopicForge started in the last 30 s: its `/_ros2cli_<pid>` node name; the pid in a
+Fast DDS GUID prefix (bytes 4-5, low 16 bits); a Cyclone `__Pid` property. The listing
+`note` says so, and counts participants that merely appeared within 5 s of a CLI call.
+Only the composite (ROS CLI plus DDS) adapter flags; the pid check is unavailable where the
+launcher is not the process that joins DDS (Windows `ros2.exe`), the note still applies.
+`ParticipantListing.restarts_by_node` is `restarts_by_name` keyed by node full name, over
+the participants that announced node names, the CLI ghosts left out.
 
 ### 9.2 `restarts_by_name`
 
@@ -774,3 +801,29 @@ value; compare against `health_check.now_ns` when needed.
   a reader `deadline_ns` tighter than the writer's is incompatible.
 - `HealthReport.ros2_distro` discloses `ROS_DISTRO` by design under the local-trust threat model
   (README "Security model"); a hosted multi-tenant endpoint would scrub it.
+
+### 9.8 `inspect_tf` (tool 15)
+
+Tool 15, additive, ROS lane, open-world, `ros2` CLI only (a DDS-only setup raises the usual
+error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_after_s` (default
+2), `source_frame` and `target_frame` (both or neither).
+
+- The tree comes from the transforms: `/tf_static` is read once (transient_local, one latched
+  message per publisher; it stops as soon as they are in, and waits at most the longer of
+  `window_s` and 6 s), concurrently with `/tf`, which is streamed uncut for `window_s`, at most
+  3000 messages. A topic that is absent or has no publisher is a `note`; when both streams fail for any
+  other reason the call raises an error instead of returning an empty tree.
+- Time is the header stamp. `age_s` is the distance between a frame's newest stamp and the
+  newest `/tf` stamp (`reference_ns`), so it is correct on sim time. `stale` is `age_s` above
+  `stale_after_s`; static frames have no age. `observed_frequency_hz` uses the arrival time,
+  `sim_frequency_hz` the stamps, `real_time_factor` is their ratio (about 1 on a real robot).
+- `findings.kind` is an open set (1.9): `stale`, `two_parents`, `disconnected` (more than one
+  root), `static_and_dynamic` (a frame on both topics), `cycle`, `no_path` (unknown or
+  unconnected frames). A sound tree has none.
+- Ages are measured against the newest `/tf` stamp, so one publisher with a future stamp or a
+  zero stamp skews the staleness of every other frame: a frame can read as stale because
+  another one runs ahead. Check `stamp_span_s` and the stamps when many frames go stale at once.
+- `echo` can drop messages at high rates: the structure and the findings hold, the exact
+  message counts and frequencies are approximate (`truncated` says when messages were lost).
+- The mock `/tf_static` topic carries the fixed frames of the demo robot; mock `inspect_tf`
+  is a fixed 5 s capture and ignores `window_s`.

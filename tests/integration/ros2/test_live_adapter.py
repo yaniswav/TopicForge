@@ -449,3 +449,32 @@ def test_get_node_info_writes_no_file(
     adapter.list_nodes()
     adapter.get_node_info("/bench_robot")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_inspect_tf_reads_the_bench_tree(adapter: Ros2CliAdapter) -> None:
+    """The bench publishes a known tree: see `TF_*` in `ground_truth.py`."""
+    from topicforge.adapters.common.tf_tree import build_tf_report
+
+    from . import ground_truth as model
+
+    call = model.TF_CALL
+    started = time.monotonic()
+    capture = adapter.capture_tf(float(call["window_s"]))
+    assert time.monotonic() - started < 45
+    report = build_tf_report(
+        capture,
+        float(call["stale_after_s"]),
+        str(call["source_frame"]),
+        str(call["target_frame"]),
+    )
+    truth = model.tf_truth()
+    assert [f.name for f in report.frames] == truth["frames"]
+    assert report.roots == truth["roots"]
+    assert sorted({f.kind for f in report.findings}) == truth["finding_kinds"]
+    assert [f.name for f in report.frames if f.stale] == truth["stale"]
+    assert report.path == truth["path"]
+    by_name = {f.name: f for f in report.frames}
+    assert by_name["base_laser"].kind == "static" and by_name["base_laser"].age_s is None
+    steady = by_name["base_link"].observed_frequency_hz
+    assert steady is not None and abs(steady - truth["steady_hz"]) < 0.3 * truth["steady_hz"]
+    assert not _echo_processes(), "the killed `ros2 topic echo` left a process behind"

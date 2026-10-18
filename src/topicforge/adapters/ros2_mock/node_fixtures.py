@@ -119,3 +119,9 @@ def mock_node_info(node: str) -> NodeInfo:
         duplicate_count=1,
         mode="mock",
     )
+
+
+def mock_participant_node_names(participant_name: str | None) -> list[str]:
+    """Node names a mock participant hosts: the node named like it, if there is one."""
+    full = f"/{participant_name}" if participant_name else ""
+    return [full] if full in MOCK_NODE_PARAMETERS else []

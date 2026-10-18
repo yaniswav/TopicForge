@@ -12,9 +12,12 @@ side propagates unchanged.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from topicforge.adapters.base import AdapterName, EffectiveMode, MiddlewareAdapter
+from topicforge.adapters.common.ros_discovery import flag_topicforge_cli, probable_ghost_count
+from topicforge.adapters.common.spawned_pids import recent_spawns
 from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
 from topicforge.models import (
     BagAnalysis,
@@ -25,6 +28,7 @@ from topicforge.models import (
     ParticipantEvent,
     ParticipantInfo,
     SampleResult,
+    TfCapture,
     TopicInfo,
     TopicListItem,
     TopicMetrics,
@@ -90,6 +94,9 @@ class CompositeAdapter:
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         return self._ros.get_node_info(node, timeout_s)
 
+    def capture_tf(self, window_s: float) -> TfCapture:
+        return self._ros.capture_tf(window_s)
+
     def sim_clock_published(self) -> bool | None:
         """The ROS 2 half's `/clock` probe, `None` when it has none."""
         probe = getattr(self._ros, "sim_clock_published", None)
@@ -113,7 +120,18 @@ class CompositeAdapter:
         return bool(wait()) if callable(wait) else True
 
     def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
-        return self._dds.list_participants(domain_id)
+        participants = self._dds.list_participants(domain_id)
+        pids_of = getattr(self._dds, "participant_pids", None)
+        return flag_topicforge_cli(
+            participants,
+            recent_spawns(),
+            now_ns=time.time_ns(),
+            extra_pids=pids_of() if callable(pids_of) else None,
+        )
+
+    def unflagged_ghost_count(self, participants: list[ParticipantInfo]) -> int:
+        """Participants that appeared right after a TopicForge CLI call but were not identified."""
+        return probable_ghost_count(participants, recent_spawns(), now_ns=time.time_ns())
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
         return self._dds.detect_qos_mismatches(topic)

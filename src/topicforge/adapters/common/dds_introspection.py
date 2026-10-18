@@ -156,6 +156,18 @@ def cyclone_extract_hostname(sample: Any) -> str | None:
         return None
 
 
+def cyclone_extract_pid(sample: Any) -> int | None:
+    """Pid announced in the `__Pid` `Property` of a Cyclone participant sample, else `None`."""
+    try:
+        for policy in _iter_qos(sample):
+            if _type_leaf(policy) == "Property" and getattr(policy, "key", None) == "__Pid":
+                value = str(getattr(policy, "value", "")).strip()
+                return int(value) if value.isdigit() else None
+    except Exception:
+        return None
+    return None
+
+
 def cyclone_extract_topic_name(sample: Any) -> str | None:
     """Pull the topic name off a Cyclone endpoint sample (`topic_name` then `topic`)."""
     v = getattr(sample, "topic_name", None)

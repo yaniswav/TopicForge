@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-18
+
+TF tree inspection, ROS 2 node names on DDS participants, and a flag for the `ros2` CLI
+processes TopicForge itself spawns. Additive only: no field or input was renamed, removed or
+retyped (`docs/CONTRACT.md` section 9). Validated on the Docker ROS 2 bench (Humble and Jazzy,
+rmw_fastrtps and rmw_cyclonedds).
+
+### Added
+
+- `inspect_tf`, the 15th tool (additive, `docs/CONTRACT.md` section 9.8): rebuilds the TF tree
+  from `/tf_static` (latched, read once) and `/tf` (listened to for `window_s`, 1 to 20 s) and
+  returns `TfReport`: every frame with its parent, `kind` (static, dynamic, both), `age_s`,
+  `stale`, and two rates (`observed_frequency_hz` on wall time, `sim_frequency_hz` on header
+  stamps), the `roots`, and `findings` (`stale`, `two_parents`, `disconnected`,
+  `static_and_dynamic`, `cycle`, `no_path`). Ages are measured on the stamps against the newest
+  `/tf` stamp, so they hold on sim time; `real_time_factor` says when the robot runs on
+  `/clock`. `source_frame` and `target_frame` give the chain between two frames in `path`.
+  ROS lane, `ros2` CLI only (a DDS-only setup raises the usual error); the mock serves a fixed
+  tree with one stale frame. The mock `/tf` sample no longer carries `base_link -> laser`,
+  which moved to the new mock topic `/tf_static`.
+- `list_participants` fills `node_names` (and `node_names_source` `ros_discovery_info`) on
+  the Cyclone backend: a fourth reader on `ros_discovery_info` plus a hand-written XCDR1
+  decoder (`adapters/common/ros_discovery.py`) that accepts the 24-byte (Humble) and
+  16-byte (Jazzy and later) gid. Checked on the Docker ROS 2 bench (Humble and Jazzy, rmw_fastrtps
+  and rmw_cyclonedds). Mock participants get names from the mock node fixtures.
+- `ParticipantInfo.is_topicforge_cli`: the `ros2` CLI processes TopicForge itself spawns
+  (right after `get_node_info` they stay on the bus 0.3-2 s, so a 7-participant bus
+  listed 8) are flagged, never hidden, and the listing `note` explains them. Matched by
+  `_ros2cli_<pid>` node name, or (only when the participant's hostname is known and is this
+  machine's) Fast DDS GUID pid bits or Cyclone `__Pid`, against a 30 s ring of pids recorded
+  by the process runner; a participant announcing another host is never flagged. Limit: on
+  Windows `ros2.exe` spawns a child process, so the recorded pid rarely matches and the flag
+  mostly falls back to the time-correlation note (`may be its ghosts`).
+- `ParticipantListing.restarts_by_node`: `restarts_by_name` keyed by ROS 2 node name.
+
+### Changed
+
+- `MiddlewareAdapter` gains `capture_tf(window_s)` (needed by `inspect_tf`). Third-party
+  adapters implementing the protocol must add it; DDS-only ones can raise the DDS-only error
+  (`DDS_ONLY_ERROR_MSG`).
+
+### Fixed
+
+- Ground-truth comparator (`scripts/ground_truth`, tooling only: no change to the MCP tools or
+  the output contract). Two real OmniSim runs on 0.7.1 showed false FAILs that were the host's
+  or the harness's doing, not TopicForge's: wall-clock frequency rows are now WARN at most when
+  the kit's real-time factor is under 0.5 or the wall/sim ratios of the kit and TopicForge
+  differ by more than 25 percent (simulated-time rows still gate); `/parameter_events` and
+  `/rosout` writer/reader counts are no longer compared; `ros2` CLI participants started by
+  TopicForge itself (`is_topicforge_cli` or a `_ros2cli_` node name) are ignored and reported.
+  `drive.py` now runs the DDS calls before `get_node_info` and settles 3 s before them and at the end.
+
 ## [0.7.1] - 2026-10-14
 
 QoS fix suggestions and agent-friction fixes from the blind evaluation (`docs/EVAL.md`). Additive only: no field or
@@ -1661,7 +1713,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/yaniswav/TopicForge/compare/v0.6.3...v0.6.4

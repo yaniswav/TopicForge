@@ -32,6 +32,10 @@ from topicforge.adapters.common.dds_introspection import (
 )
 from topicforge.adapters.common.endpoints import announced_ns_of, format_participant_key
 from topicforge.adapters.common.lifecycle import LifecycleBuffer
+from topicforge.adapters.common.ros_discovery import (
+    NodeNameCache,
+    apply_info_samples,
+)
 from topicforge.models import ParticipantInfo
 
 DEFAULT_PERIOD_S = 0.5
@@ -154,6 +158,9 @@ class DiscoverySnapshot:
     subscriptions: list[Any]
     departed: list[tuple[str, DepartedRecord]]
     participant_infos: list[ParticipantInfo]
+    node_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    node_names_last: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """Node names per participant prefix key, from `ros_discovery_info`."""
 
 
 @dataclass
@@ -177,6 +184,7 @@ class DiscoveryCaches:
     departed_participants: OrderedDict[str, tuple[int, str | None]] = field(
         default_factory=OrderedDict
     )
+    ros_nodes: NodeNameCache = field(default_factory=NodeNameCache)
 
     def snapshot(self, domain_id: int, now_ns: int | None = None) -> DiscoverySnapshot:
         """Everything handlers need, read under the pass lock."""
@@ -187,6 +195,8 @@ class DiscoveryCaches:
                 subscriptions=self.subscriptions.values(),
                 departed=self.departed.records(time.time_ns() if now_ns is None else now_ns),
                 participant_infos=self.lifecycle.snapshot_participants(domain_id=domain_id),
+                node_names=self.ros_nodes.as_dict(),
+                node_names_last=self.ros_nodes.last_dict(),
             )
 
     def evictions(self) -> int:
@@ -311,14 +321,18 @@ def apply_builtin_samples(
     now_ns: int,
     *,
     domain_id: int,
+    info_samples: list[bytes] | None = None,
 ) -> None:
     """Fold one pass of taken builtin samples into the caches and the lifecycle.
 
     Valid samples announce or refresh an entity. Invalid samples (the builtin
     reader returns them with only a key and a `sample_info` once an instance
     is disposed or has no writers) remove it and, for participants, record the
-    loss at the dispose's source timestamp. Cycles faster than the builtin
-    reader's history depth can still be missed: a known limit.
+    loss at the dispose's source timestamp. `info_samples` are raw
+    `ros_discovery_info` payloads (node names); they are applied after the
+    participants, and names outlive the participant (the cache is bounded).
+    Cycles faster than the builtin reader's history depth can still be missed:
+    a known limit.
     """
     with caches.lock:
         for sample in _by_time(participant_samples, now_ns):
@@ -327,9 +341,11 @@ def apply_builtin_samples(
             _apply_endpoint(caches, "writer", caches.publications, sample, now_ns)
         for sample in subscription_samples:
             _apply_endpoint(caches, "reader", caches.subscriptions, sample, now_ns)
+        if info_samples:
+            apply_info_samples(caches.ros_nodes, info_samples)
 
 
-TakeAll = Callable[[], tuple[list[Any], list[Any], list[Any]]]
+TakeAll = Callable[[], tuple[list[Any], ...]]
 TakeInto = Callable[[list[Any]], None]
 
 
@@ -342,14 +358,22 @@ class BufferedTake:
     handed over by the next successful call.
     """
 
-    def __init__(self, participants: TakeInto, publications: TakeInto, subscriptions: TakeInto):
+    def __init__(
+        self,
+        participants: TakeInto,
+        publications: TakeInto,
+        subscriptions: TakeInto,
+        node_info: TakeInto | None = None,
+    ):
         self._takers = (participants, publications, subscriptions)
-        self._pending: tuple[list[Any], list[Any], list[Any]] = ([], [], [])
+        if node_info is not None:
+            self._takers = (*self._takers, node_info)
+        self._pending: tuple[list[Any], ...] = tuple([] for _ in self._takers)
 
-    def __call__(self) -> tuple[list[Any], list[Any], list[Any]]:
+    def __call__(self) -> tuple[list[Any], ...]:
         for take, sink in zip(self._takers, self._pending, strict=True):
             take(sink)
-        out, self._pending = self._pending, ([], [], [])
+        out, self._pending = self._pending, tuple([] for _ in self._takers)
         return out
 
 
@@ -413,10 +437,16 @@ class DiscoveryTracker:
     def run_pass(self) -> None:
         """One pass, never raises: take, apply, update the counters."""
         try:
-            parts, pubs, subs = self._take_all()
+            parts, pubs, subs, *rest = self._take_all()
             now_ns = self._clock_ns()
             apply_builtin_samples(
-                self._caches, parts, pubs, subs, now_ns, domain_id=self._domain_id
+                self._caches,
+                parts,
+                pubs,
+                subs,
+                now_ns,
+                domain_id=self._domain_id,
+                info_samples=rest[0] if rest else None,
             )
         except Exception as exc:
             with self._lock:

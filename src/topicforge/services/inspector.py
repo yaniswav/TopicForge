@@ -8,18 +8,26 @@ from collections.abc import Callable
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
+from topicforge.adapters.common.ros_discovery import cli_ghost_note
+from topicforge.adapters.common.tf_tree import build_tf_report
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
     DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
+    DEFAULT_TF_STALE_AFTER_S,
+    DEFAULT_TF_WINDOW_S,
     MAX_ARRAY_LENGTH,
     MAX_NODE_TIMEOUT_S,
     MAX_PARTICIPANT_EVENTS,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MAX_TF_STALE_AFTER_S,
+    MAX_TF_WINDOW_S,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
+    MIN_TF_STALE_AFTER_S,
+    MIN_TF_WINDOW_S,
     TRUNCATED_FIELDS_KEY,
 )
 from topicforge.models import (
@@ -29,8 +37,10 @@ from topicforge.models import (
     NodeInfo,
     NodeListing,
     ParticipantEventListing,
+    ParticipantInfo,
     ParticipantListing,
     SampleResult,
+    TfReport,
     TopicInfo,
     TopicListing,
     TopicMetrics,
@@ -40,6 +50,7 @@ from topicforge.services.dds_views import (
     domain_note,
     join_notes,
     restarts_from_events,
+    restarts_from_nodes,
     restarts_from_participants,
     with_event_ages,
 )
@@ -109,6 +120,26 @@ class Inspector:
         name = _validate_node_name(node)
         _validate_node_timeout_s(timeout_s)
         return self._adapter.get_node_info(name, timeout_s)
+
+    def inspect_tf(
+        self,
+        window_s: float = DEFAULT_TF_WINDOW_S,
+        stale_after_s: float = DEFAULT_TF_STALE_AFTER_S,
+        source_frame: str | None = None,
+        target_frame: str | None = None,
+    ) -> TfReport:
+        _validate_range("window_s", window_s, MIN_TF_WINDOW_S, MAX_TF_WINDOW_S)
+        _validate_range("stale_after_s", stale_after_s, MIN_TF_STALE_AFTER_S, MAX_TF_STALE_AFTER_S)
+        source, target = _validate_frame_pair(source_frame, target_frame)
+        capture = self._adapter.capture_tf(float(window_s))
+        return build_tf_report(
+            capture,
+            float(stale_after_s),
+            source,
+            target,
+            window_s=float(window_s),
+            mode_effective=self._adapter.effective_mode,
+        )
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         _validate_topic_name(topic)
@@ -187,9 +218,18 @@ class Inspector:
             truncated=False,
             domain_id=self._observed_domain(domain_id),
             mode_effective=self._adapter.effective_mode,
-            note=self._domain_note(domain_id),
+            note=join_notes(self._domain_note(domain_id), self._ghost_note(participants)),
             restarts_by_name=restarts,
             restarts_note=restarts_note,
+            restarts_by_node=restarts_from_nodes(participants),
+        )
+
+    def _ghost_note(self, participants: list[ParticipantInfo]) -> str | None:
+        """Note on the `ros2` CLI processes TopicForge spawned (flagged or probable), else `None`."""
+        probable = getattr(self._adapter, "unflagged_ghost_count", None)
+        return cli_ghost_note(
+            sum(1 for p in participants if p.is_topicforge_cli),
+            probable(participants) if callable(probable) else 0,
         )
 
     def detect_qos_mismatches(self, topic: str | None = None) -> MismatchScan:
@@ -363,6 +403,30 @@ def _validate_node_name(node: str) -> str:
             "start with a letter or underscore and contain only letters, digits and underscores"
         )
     return name
+
+
+def _validate_range(name: str, value: float, low: float, high: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AdapterError(f"{name} must be a number, got {type(value).__name__}")
+    if not low <= value <= high:
+        raise AdapterError(f"{name} must be in {low:g}..{high:g}, got {value}")
+
+
+def _validate_frame_pair(source: str | None, target: str | None) -> tuple[str | None, str | None]:
+    """Both frames or neither; names are stripped and a leading `/` removed (tf2 has none)."""
+    if (source is None) != (target is None):
+        raise AdapterError("source_frame and target_frame go together: give both or neither")
+    if source is None or target is None:
+        return None, None
+    names = []
+    for label, value in (("source_frame", source), ("target_frame", target)):
+        name = value.strip().lstrip("/") if isinstance(value, str) else ""
+        if not name or len(name) > 256 or any(c.isspace() for c in name):
+            raise AdapterError(
+                f"{label} must be a frame name without spaces, e.g. `base_link` (got {value!r})"
+            )
+        names.append(name)
+    return names[0], names[1]
 
 
 def _validate_node_timeout_s(value: float) -> None:

@@ -64,6 +64,7 @@ from topicforge.models import (
     ParticipantInfo,
     QosProfile,
     SampleResult,
+    TfCapture,
     TopicInfo,
     TopicListItem,
     TopicMetrics,
@@ -238,6 +239,9 @@ class FastDdsAdapter:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def capture_tf(self, window_s: float) -> TfCapture:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def get_topic_info(self, topic: str) -> TopicInfo:
