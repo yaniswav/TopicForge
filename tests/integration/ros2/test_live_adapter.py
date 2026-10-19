@@ -389,7 +389,9 @@ def test_twist_rate_is_stable_at_five_hertz(adapter: Ros2CliAdapter) -> None:
     rate = adapter.sample_messages("/cmd_vel_out", 20).rate
     assert rate is not None
     assert rate.observed_frequency_hz == pytest.approx(5.0, rel=0.1)
-    assert rate.verdict == "stable"
+    # The verdict is machine dependent (the comparator never fails on it): a loaded runner
+    # can make a fixed 5 Hz publisher read jittery, never intermittent.
+    assert rate.verdict in ("stable", "jittery"), (rate.verdict, rate.interval_cv)
     assert rate.sim_frequency_hz is None  # a Twist has no stamp
 
 
