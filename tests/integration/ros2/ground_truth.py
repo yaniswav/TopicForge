@@ -15,7 +15,8 @@ Everything is deterministic and exact by construction:
   edge beam goes to the narrower sector, with a 1e-4 rad tolerance);
 - rates are the timer periods, and the bench stamps everything with seconds since start on
   the same monotonic clock, so the simulated rate equals the wall rate;
-- topics, types, counts and QoS are what `publisher.py` and `blocked_node.py` create;
+- topics, types, counts and QoS are what `publisher.py`, `blocked_node.py` and
+  `lifecycle_node.py` create (the last one a managed node in `/robot1`);
 - the TF tree is the `tf` section: three static edges on `/tf_static`, three steady edges
   on `/tf` (one of them gives `tool` a second parent), and one edge (`map -> odom`) that
   is published for `TF_FLAKY_ACTIVE_S` after each new subscriber of `/tf` and then stops,
@@ -82,7 +83,13 @@ INFRA_TOPICS = {
     "/parameter_events": "rcl_interfaces/msg/ParameterEvent",
     "/rosout": "rcl_interfaces/msg/Log",
 }
-BENCH_NODES = {"/bench_robot": False, "/bench_blocked": None}
+# A managed node in a namespace: `list_nodes` must flag it `lifecycle` (it serves
+# `<name>/get_state` of type lifecycle_msgs/srv/GetState) and count it under `/robot1`.
+# Its only topic is `<name>/transition_event`, published by rclpy, never by `/bench_robot`.
+LIFECYCLE_NODE = "/robot1/bench_lifecycle"
+LIFECYCLE_TOPIC = f"{LIFECYCLE_NODE}/transition_event"
+LIFECYCLE_TOPIC_TYPE = "lifecycle_msgs/msg/TransitionEvent"
+BENCH_NODES = {"/bench_robot": False, "/bench_blocked": None, LIFECYCLE_NODE: False}
 PERIODS = {
     "/clock": CLOCK_PERIOD,
     "/scan": SCAN_PERIOD,
@@ -169,10 +176,11 @@ def sector_minima() -> dict[str, dict[str, Any]]:
 
 
 def _endpoint(topic: str, node: str, latched: bool) -> dict[str, Any]:
+    namespace, _, name = node.rpartition("/")
     return {
-        "node_name": node.strip("/"),
-        "node_namespace": "/",
-        "topic_type": BENCH_TOPICS[topic][0],
+        "node_name": name,
+        "node_namespace": namespace or "/",
+        "topic_type": LIFECYCLE_TOPIC_TYPE if topic == LIFECYCLE_TOPIC else BENCH_TOPICS[topic][0],
         "endpoint_type": "PUBLISHER",
         "reliability": "RELIABLE",
         "durability": "TRANSIENT_LOCAL" if latched else "VOLATILE",
@@ -204,7 +212,32 @@ def _graph() -> dict[str, Any]:
                 "endpoints": [_endpoint(name, "/bench_robot", latched)],
             }
         )
-    return {"nodes": sorted(BENCH_NODES), "use_sim_time": dict(BENCH_NODES), "topics": topics}
+    topics.append(
+        {
+            "name": LIFECYCLE_TOPIC,
+            "types": [LIFECYCLE_TOPIC_TYPE],
+            "publisher_count": 1,
+            "subscription_count": 0,
+            "endpoints": [_endpoint(LIFECYCLE_TOPIC, LIFECYCLE_NODE, False)],
+        }
+    )
+    topics.sort(key=lambda t: t["name"])
+    return {
+        "nodes": sorted(BENCH_NODES),
+        "use_sim_time": dict(BENCH_NODES),
+        "lifecycle_nodes": [LIFECYCLE_NODE],
+        "nodes_by_namespace": nodes_by_namespace(),
+        "topics": topics,
+    }
+
+
+def nodes_by_namespace() -> dict[str, int]:
+    """Distinct bench nodes per namespace (`/` is the root), sorted, as `list_nodes` counts."""
+    counts: dict[str, int] = {}
+    for node in BENCH_NODES:
+        namespace = node.rpartition("/")[0] or "/"
+        counts[namespace] = counts.get(namespace, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def build_truth(distro: str, rmw: str) -> dict[str, Any]:

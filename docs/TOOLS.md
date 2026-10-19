@@ -117,6 +117,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `parameters_note` | `str \| null` | no | Why `parameters` is `None`, or what was masked or cut; `None` when complete. |
 | `use_sim_time` | `bool \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
 | `use_sim_time_note` | `str \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
+| `lifecycle` | `bool` | no | True when `service_servers` has `<full_name>/get_state` (GetState). |
 | `duplicate_count` | `int` | yes | Nodes using this exact full name; above 1, the data above belongs to one of them. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `str \| null` | no | One sentence of context, or `None`. |
@@ -285,7 +286,7 @@ List every DDS endpoint (writer and reader) announced on the bus as an `Endpoint
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (one CLI call). **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` (managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (two CLI calls). **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
 
 ### Input parameters
 
@@ -300,6 +301,9 @@ None.
 | `total` | `int` | yes | Distinct node names on the graph (no cap applies). |
 | `truncated` | `bool` | yes | True when `returned` is less than `total` because of a cap. |
 | `duplicates` | `list[str]` | yes | Full names that appear more than once on the graph. Empty when every name is unique. |
+| `lifecycle_count` | `int` | no | Nodes with `lifecycle` true. |
+| `lifecycle_note` | `str \| null` | no | Why `lifecycle` could not be determined (service list failed), else `None`. |
+| `by_namespace` | `dict[str, int]` | no | Distinct full names per namespace (`/` is the root), sorted by namespace. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `str \| null` | no | One sentence of context, or `None`. |
 

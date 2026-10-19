@@ -34,6 +34,10 @@ MASKED_VALUE = "<masked>"
 # A parameter whose dotted name contains one of these words is a secret.
 _SECRET_NAME = re.compile(r"password|secret|token|api[_-]?key|credential", re.IGNORECASE)
 
+# The service a managed (lifecycle) node offers; `ros2 lifecycle nodes` uses the same rule.
+LIFECYCLE_SERVICE = "get_state"
+LIFECYCLE_SERVICE_TYPE = "lifecycle_msgs/srv/GetState"
+
 Mode = Literal["mock", "live"]
 
 
@@ -43,8 +47,27 @@ def split_full_name(full_name: str) -> tuple[str, str]:
     return name, namespace or "/"
 
 
-def build_node_listing(full_names: Sequence[str], mode: Mode) -> NodeListing:
-    """The `list_nodes` result for the names `ros2 node list` printed (duplicates included)."""
+def lifecycle_node_names(
+    full_names: Sequence[str], services: Mapping[str, Sequence[str]]
+) -> frozenset[str]:
+    """Nodes that offer `<name>/get_state` of type GetState, from a `{service: [types]}` map."""
+    return frozenset(
+        n for n in full_names if LIFECYCLE_SERVICE_TYPE in services.get(f"{n}/get_state", ())
+    )
+
+
+def build_node_listing(
+    full_names: Sequence[str],
+    mode: Mode,
+    *,
+    lifecycle: frozenset[str] = frozenset(),
+    lifecycle_note: str | None = None,
+) -> NodeListing:
+    """The `list_nodes` result for the names `ros2 node list` printed (duplicates included).
+
+    `lifecycle` holds the full names of managed nodes; `lifecycle_note` says why it is
+    unknown when the service list failed.
+    """
     counts = Counter(full_names)
     nodes = []
     for full_name in sorted(counts):
@@ -55,8 +78,10 @@ def build_node_listing(full_names: Sequence[str], mode: Mode) -> NodeListing:
                 namespace=namespace,
                 full_name=full_name,
                 duplicate_count=counts[full_name],
+                lifecycle=full_name in lifecycle,
             )
         )
+    by_namespace = dict(sorted(Counter(n.namespace for n in nodes).items()))
     duplicates = [n.full_name for n in nodes if n.duplicate_count > 1]
     return NodeListing(
         nodes=nodes,
@@ -64,6 +89,9 @@ def build_node_listing(full_names: Sequence[str], mode: Mode) -> NodeListing:
         total=len(nodes),
         truncated=False,
         duplicates=duplicates,
+        lifecycle_count=sum(n.lifecycle for n in nodes),
+        lifecycle_note=lifecycle_note,
+        by_namespace=by_namespace,
         mode_effective=mode,
         note=_listing_note(len(nodes), duplicates),
     )
@@ -223,6 +251,10 @@ def build_node_info(
         parameters_note=parameters_note,
         use_sim_time=sim_time,
         use_sim_time_note=sim_time_note,
+        lifecycle=any(
+            s.name == f"{full_name}/get_state" and s.type == LIFECYCLE_SERVICE_TYPE
+            for s in interfaces.get("service_servers", [])
+        ),
         duplicate_count=duplicate_count,
         mode_effective=mode,
         note=_duplicate_note(full_name, duplicate_count),
@@ -235,12 +267,14 @@ def offers_parameter_services(full_name: str, service_servers: Sequence[NodeInte
 
 
 __all__ = [
+    "LIFECYCLE_SERVICE_TYPE",
     "MASKED_VALUE",
     "MAX_PARAMETERS",
     "MAX_PARAM_VALUE_CHARS",
     "build_node_info",
     "build_node_listing",
     "build_parameters",
+    "lifecycle_node_names",
     "offers_parameter_services",
     "split_full_name",
     "unknown_node_error",

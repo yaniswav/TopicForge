@@ -22,7 +22,7 @@
   {"name": "20_sample_{slug}", "tool": "sample_messages", "for_each": "topics", "timeout": 60,
    "min_publishers": 1,
    "exclude": ["/scan", "/rosout", "/parameter_events", "/tf", "/tf_static",
-               "/robot_description_lite"],
+               "/robot_description_lite", "/robot1/bench_lifecycle/transition_event"],
    "args": {"topic": "{item}", "count": 12, "timeout_s": 30}},
   {"name": "17_inspect_tf", "tool": "inspect_tf", "timeout": 90,
    "args": {"window_s": 12, "stale_after_s": 2.0, "source_frame": "camera_optical_frame",

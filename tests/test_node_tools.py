@@ -61,6 +61,7 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> FakeCli:
     fake = FakeCli(
         {
             "node list": _ok(_read("node_list_plain.txt")),
+            "service list": _ok(_read("service_list_types.txt")),
             "node info": _ok(_read("node_info_humble.txt")),
             "param dump": _ok(_read("param_dump_humble.yaml")),
         }
@@ -77,13 +78,45 @@ def _info(adapter: Ros2CliAdapter, node: str = "/nav_planner", timeout_s: float 
 # ----- list_nodes -----
 
 
-def test_list_nodes_is_one_cli_call(cli: FakeCli) -> None:
+def test_list_nodes_is_two_cli_calls(cli: FakeCli) -> None:
     cli.replies["node list"] = _ok(_read("node_list_duplicates.txt"))
     listing = Ros2CliAdapter().list_nodes()
-    assert [c[1:] for c in (call[0] for call in cli.calls)] == [["node", "list"]]
+    assert [c[1:] for c in (call[0] for call in cli.calls)] == [
+        ["node", "list"],
+        ["service", "list", "-t"],
+    ]
     assert listing.mode_effective == "live"
     assert listing.duplicates == ["/lidar_driver"]
     assert {n.full_name: n.namespace for n in listing.nodes}["/robot1/base_controller"] == "/robot1"
+
+
+def test_list_nodes_flags_lifecycle_nodes_and_counts_namespaces(cli: FakeCli) -> None:
+    cli.replies["node list"] = _ok(
+        "/camera_driver\n/fake\n/lidar_driver\n/robot1/lifecycle_node\n/robot1/plain\n"
+    )
+    listing = Ros2CliAdapter().list_nodes()
+    assert {n.full_name for n in listing.nodes if n.lifecycle} == {
+        "/camera_driver",
+        "/robot1/lifecycle_node",
+    }  # `/fake/get_state` has the wrong type
+    assert listing.lifecycle_count == 2 and listing.lifecycle_note is None
+    assert listing.by_namespace == {"/": 3, "/robot1": 2}
+
+
+def test_a_failed_service_list_is_a_note_not_a_silent_false(cli: FakeCli) -> None:
+    cli.replies["service list"] = ProcessResult(
+        returncode=1, stdout="", stderr="boom\n", timed_out=False, truncated=False
+    )
+    listing = Ros2CliAdapter().list_nodes()
+    assert listing.lifecycle_count == 0 and listing.total == 2
+    assert listing.lifecycle_note is not None and "service list" in listing.lifecycle_note
+    cli.replies["service list"] = TIMED_OUT
+    assert Ros2CliAdapter().list_nodes().lifecycle_note is not None
+
+
+def test_an_empty_service_list_with_nodes_is_a_note(cli: FakeCli) -> None:
+    cli.replies["service list"] = _ok("")
+    assert Ros2CliAdapter().list_nodes().lifecycle_note is not None
 
 
 def test_list_nodes_failure_is_an_adapter_error(cli: FakeCli) -> None:
@@ -294,6 +327,19 @@ def test_composite_routes_both_tools_to_the_ros_half() -> None:
     assert composite.get_node_info("/n", 4.0) == "info"
     assert ros.calls == [("list_nodes", ()), ("get_node_info", ("/n", 4.0))]
     assert dds.calls == []
+
+
+def test_mock_camera_driver_is_the_lifecycle_node() -> None:
+    mock = MockAdapter()
+    listing = mock.list_nodes()
+    assert [n.full_name for n in listing.nodes if n.lifecycle] == ["/camera_driver"]
+    assert listing.lifecycle_count == 1 and listing.lifecycle_note is None
+    assert listing.by_namespace == {"/": 6}
+    info = mock.get_node_info("/camera_driver")
+    assert info.lifecycle
+    assert "/camera_driver/get_state" in [s.name for s in info.service_servers]
+    assert "/camera_driver/transition_event" in [p.name for p in info.publishers]
+    assert not mock.get_node_info("/lidar_driver").lifecycle
 
 
 def test_mock_nodes_match_the_mock_topics() -> None:

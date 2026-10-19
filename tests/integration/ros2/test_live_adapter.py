@@ -410,6 +410,20 @@ def test_list_nodes_sees_the_bench_nodes(adapter: Ros2CliAdapter) -> None:
     assert listing.mode_effective == "live" and listing.duplicates == []
 
 
+def test_list_nodes_flags_the_lifecycle_node_and_counts_namespaces(
+    adapter: Ros2CliAdapter,
+) -> None:
+    listing = adapter.list_nodes()
+    assert listing.lifecycle_note is None
+    assert [n.full_name for n in listing.nodes if n.lifecycle] == ["/robot1/bench_lifecycle"]
+    assert listing.lifecycle_count == 1
+    assert listing.by_namespace["/robot1"] == 1 and listing.by_namespace["/"] >= 2
+    info = adapter.get_node_info("/robot1/bench_lifecycle", timeout_s=8)
+    assert info.lifecycle
+    assert "/robot1/bench_lifecycle/transition_event" in {i.name for i in info.publishers}
+    assert not adapter.get_node_info("/bench_robot").lifecycle
+
+
 def test_get_node_info_of_the_publisher(adapter: Ros2CliAdapter) -> None:
     info = adapter.get_node_info("/bench_robot")
     published = {i.name: i.type for i in info.publishers}

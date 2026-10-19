@@ -454,6 +454,39 @@ def _expected_interfaces(gt: dict) -> dict[str, dict[str, set]]:
     return out
 
 
+def _check_node_groups(
+    before: dict, data: Any, listed: list[dict], truth_nodes: list[str], rep: Report, wall: Any
+) -> None:
+    """`lifecycle` and `by_namespace` of list_nodes, when the truth states them (bench only)."""
+    summary = (objs(data) or [{}])[0]
+    if "lifecycle_nodes" in before:
+        want = sorted(before["lifecycle_nodes"])
+        got = sorted(n["full_name"] for n in listed if n.get("lifecycle"))
+        note = summary.get("lifecycle_note")
+        ok = got == want and summary.get("lifecycle_count") == len(want) and not note
+        rep.add(
+            "graph",
+            "lifecycle nodes (list_nodes)",
+            want,
+            got if not note else f"{got} ({note})",
+            "PASS" if ok else "FAIL",
+            "a node serving <name>/get_state of type lifecycle_msgs/srv/GetState",
+            wall,
+        )
+    if "nodes_by_namespace" in before:
+        want_ns = before["nodes_by_namespace"]
+        got_ns = summary.get("by_namespace")
+        rep.add(
+            "graph",
+            "nodes per namespace (list_nodes)",
+            want_ns,
+            got_ns,
+            "PASS" if got_ns == want_ns and list(got_ns) == sorted(got_ns) else "FAIL",
+            f"{len(truth_nodes)} nodes, sorted by namespace, / is the root",
+            wall,
+        )
+
+
 def _check_nodes(gt: dict, res: Results, rep: Report) -> None:
     before = gt["graph"]["before_capture"]
     truth_nodes = sorted(before.get("nodes") or [])
@@ -494,6 +527,7 @@ def _check_nodes(gt: dict, res: Results, rep: Report) -> None:
         "",
         wall,
     )
+    _check_node_groups(before, data, listed, truth_nodes, rep, wall)
     want_iface = _expected_interfaces(gt)
     want_sim = before.get("use_sim_time") or {}
     bad_iface: list[str] = []

@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List ROS 2 nodes"
   },
-  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (one CLI call). **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` (managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (two CLI calls). **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
   "inputSchema": {
     "properties": {},
     "type": "object"
@@ -25,6 +25,10 @@
           "full_name": {
             "description": "Fully qualified node name, e.g. `/lidar_driver` or `/robot1/lidar_driver`.",
             "type": "string"
+          },
+          "lifecycle": {
+            "description": "True when the graph has `<full_name>/get_state` of type `lifecycle_msgs/srv/GetState` (a managed node). The state itself is never read.",
+            "type": "boolean"
           },
           "name": {
             "description": "Node name without its namespace, e.g. `lidar_driver`.",
@@ -47,12 +51,35 @@
     "additionalProperties": false,
     "description": "Envelope returned by `list_nodes`.",
     "properties": {
+      "by_namespace": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "description": "Distinct full names per namespace (`/` is the root), sorted by namespace.",
+        "type": "object"
+      },
       "duplicates": {
         "description": "Full names that appear more than once on the graph. Empty when every name is unique.",
         "items": {
           "type": "string"
         },
         "type": "array"
+      },
+      "lifecycle_count": {
+        "description": "Nodes with `lifecycle` true.",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "lifecycle_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Why `lifecycle` could not be determined (service list failed), else `None`."
       },
       "mode_effective": {
         "description": "`live` or `mock` (fixtures).",

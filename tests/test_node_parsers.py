@@ -16,6 +16,7 @@ from topicforge.adapters.ros2_live.node_parsers import (
     parse_node_list,
     parse_param_dump,
 )
+from topicforge.adapters.ros2_live.parsers import parse_service_list
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ros2_node"
 
@@ -133,3 +134,15 @@ def test_param_dump_of_a_node_without_parameters_is_empty() -> None:
 )
 def test_param_dump_of_anything_else_is_none(text: str) -> None:
     assert parse_param_dump(text) is None
+
+
+def test_service_list_maps_each_service_to_its_types() -> None:
+    services = parse_service_list(_read("service_list_types.txt"))
+    assert services["/camera_driver/get_state"] == ["lifecycle_msgs/srv/GetState"]
+    assert len(services) == 7
+
+
+def test_service_list_skips_noise_and_splits_several_types() -> None:
+    out = "WARNING: daemon\n\n/a/get_state [x/srv/A, lifecycle_msgs/srv/GetState]\nno slash [x]\n"
+    assert parse_service_list(out) == {"/a/get_state": ["x/srv/A", "lifecycle_msgs/srv/GetState"]}
+    assert parse_service_list("") == {}

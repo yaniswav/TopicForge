@@ -1,0 +1,7 @@
+/camera_driver/change_state [lifecycle_msgs/srv/ChangeState]
+/camera_driver/get_state [lifecycle_msgs/srv/GetState]
+/camera_driver/list_parameters [rcl_interfaces/srv/ListParameters]
+/fake/get_state [std_srvs/srv/Trigger]
+/lidar_driver/get_parameters [rcl_interfaces/srv/GetParameters]
+/nav_planner/list_parameters [rcl_interfaces/srv/ListParameters]
+/robot1/lifecycle_node/get_state [lifecycle_msgs/srv/GetState]
