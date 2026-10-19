@@ -671,8 +671,8 @@ shows only added properties.
 
 `tools/list` carries the description, input schema and output schema of every tool, and some
 clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 served about 119 KB
-(118,884 bytes). 0.7.3 serves about 90 KB (90,123 bytes, section 9.9) against a 100,000 test
-ceiling.
+(118,884 bytes). 0.7.3 serves about 95 KB (94,957 bytes, section 9.9) against a 100,000 test
+ceiling, which leaves about 5 KB before `graph_diff`.
 How:
 
 - Pydantic's generated `title` is dropped from every property and nested model, and the
@@ -907,15 +907,20 @@ topics"). An unknown level or an empty node is an error too.
   namespace separated by dots (`/robot1/driver` logs as `robot1.driver`). A log matches when
   `name == n` or `name` starts with `n + "."` (a child logger such as `driver.camera`). It
   never matches a free prefix (`drive` does not match `driver`) and it is case-sensitive.
-- Live reader. A `Log` topic is read with `--qos-history keep_last --qos-depth 2000` (with or
-  without a filter), because the `/rosout` writer is `RELIABLE`, `TRANSIENT_LOCAL`, `KEEP_LAST`
+  `node` matches the log `name` field, not the node's real identity: a node that logs under a
+  custom logger name will not match its own `node` value.
+- Live reader. With a filter, a `Log` topic is read with `--qos-history keep_last
+  --qos-depth 2000`, because the `/rosout` writer is `RELIABLE`, `TRANSIENT_LOCAL`, `KEEP_LAST`
   1000 with a 10 s lifespan, and the CLI default depth of 5 would drop most of that buffer.
-  Without a filter nothing else changes: the first `count` messages, `rate` as before.
+  Without a filter nothing changes from 0.7.2: the CLI default reader, the first `count`
+  messages, `rate` as before.
 - With a filter the call streams until `timeout_s` (at most 2000 messages), filters AFTER
   decoding, and returns the NEWEST `count` matches, oldest first (stamp order, arrival order
   for equal stamps). `note` says how many matched, for example `6 of 12 log messages read
   matched min_log_level=error, node=/bench_robot; the newest 3 are returned in stamp order.`,
-  adds the 2000-message cap when it was hit, and explains an empty result. `rate` is `null`
+  explains an empty result, and, when the 2000-message cap was hit, says the result is the
+  newest of the first 2000 read (newer logs may be unread: use a narrower `node` or a higher
+  `min_log_level`). `rate` is `null`
   (a replayed buffer has no meaningful rate).
 - Mock: `/rosout` is a mock topic (10 fixture lines from six nodes) with the same rules.
 
@@ -929,9 +934,13 @@ topics"). An unknown level or an empty node is an error too.
 - The same log filter, applied after decoding, with the same rules for level and node.
   A bag read returns the FIRST `count` matches in range, in bag order. This is the opposite of
   the live rule (newest): the live stream has no beginning to start from, the bag does. Both
-  tool descriptions say so.
+  tool descriptions say so. A filtered or ranged bag read can decode far more messages than it
+  returns, so it stops at 20 s or when the call budget runs out, checked every 64 messages, and
+  the `note` says `scan stopped after X s / N messages, K matches so far: narrow start_s/end_s
+  or the filter`.
 - `BagAnalysis.start_ns: int | None` (default `null`): record time of the first message, read
-  from `metadata.yaml` (`starting_time`) or the `rosbags` reader; `null` when unreadable.
+  from `metadata.yaml` (`starting_time`) or the `rosbags` reader; `null` only when unreadable.
+  A bag that starts at 0 (sim time) reports `0`.
 
 **Adapter protocol.** `MiddlewareAdapter.sample_messages` gains keyword arguments
 `min_log_level` and `node`; `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and

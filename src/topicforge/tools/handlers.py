@@ -358,10 +358,9 @@ def register_tools(
             "(`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns "
             "demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for "
             "an unknown topic, or when the CLI fails. Read-only; never publishes. **Logs**: "
-            "`/rosout` is read with a depth-2000 reader (it keeps the last 10 s). With "
-            "`min_log_level` or `node` the call streams until `timeout_s` (at most 2000 "
-            "messages), filters, and returns the NEWEST `count` matches in stamp order, `note` "
-            "saying `M of N matched`; `peek_bag_samples` returns the FIRST matches."
+            "`min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most "
+            "2000 messages) and return the NEWEST `count` matches in stamp order; "
+            "`peek_bag_samples` returns the FIRST matches."
             + (_SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
             + (
                 " **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time. "

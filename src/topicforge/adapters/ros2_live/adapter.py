@@ -412,6 +412,7 @@ class Ros2CliAdapter:
             info,
             max_array_length=None if whole else max_array_length,
             arrays_summary_only=arrays_summary_only,
+            deep_history=log_filter is not None,
         )
         if log_filter is not None:
             # Stream until the deadline, leaving the decode its share of the budget.
@@ -541,6 +542,7 @@ class Ros2CliAdapter:
         *,
         max_array_length: int | None,
         arrays_summary_only: bool,
+        deep_history: bool = False,
     ) -> list[str]:
         exe = shutil.which(self._exe)
         if exe is None:
@@ -551,7 +553,7 @@ class Ros2CliAdapter:
             "echo",
             "--no-lost-messages",
             *_echo_qos_args(info),
-            *_echo_depth_args(info),
+            *_echo_depth_args(info, deep_history),
             *_echo_array_args(max_array_length, arrays_summary_only),
             topic,
         ]
@@ -703,9 +705,12 @@ def _echo_qos_args(info: TopicInfo) -> list[str]:
     return ["--qos-reliability", reliability, "--qos-durability", durability]
 
 
-def _echo_depth_args(info: TopicInfo) -> list[str]:
-    """Deep `keep_last` history on a Log topic, to receive the `/rosout` buffer on connect."""
-    if not is_log_type(info.message_type):
+def _echo_depth_args(info: TopicInfo, deep_history: bool = False) -> list[str]:
+    """Deep `keep_last` history on a filtered Log read, to receive the `/rosout` buffer on connect.
+
+    Only with a log filter: an unfiltered read of `/rosout` keeps the CLI default depth.
+    """
+    if not deep_history or not is_log_type(info.message_type):
         return []
     return ["--qos-history", "keep_last", "--qos-depth", str(LOG_READER_DEPTH)]
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -202,17 +203,23 @@ def _stub_live(
     return cmds, kws
 
 
-def test_live_log_topic_gets_a_deep_reader_even_without_a_filter(
+def test_live_unfiltered_log_topic_keeps_the_default_reader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = EchoRun(documents=[_log_doc(1, 20, "a"), _log_doc(2, 40, "b")])
     cmds, kws = _stub_live(monkeypatch, run)
     result = Ros2CliAdapter().sample_messages("/rosout", 2)
+    assert "--qos-depth" not in cmds[0] and "--qos-history" not in cmds[0]
+    assert kws[0]["count"] == 2  # unchanged semantics: first count
+    assert [s.payload["name"] for s in result.samples] == ["a", "b"]
+
+
+def test_live_filtered_log_topic_gets_a_deep_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    cmds, _ = _stub_live(monkeypatch, EchoRun(documents=[_log_doc(1, 40, "a")]))
+    Ros2CliAdapter().sample_messages("/rosout", 2, min_log_level="error")
     cmd = cmds[0]
     assert cmd[cmd.index("--qos-history") + 1] == "keep_last"
     assert cmd[cmd.index("--qos-depth") + 1] == str(LOG_READER_DEPTH)
-    assert kws[0]["count"] == 2  # unchanged semantics: first count
-    assert [s.payload["name"] for s in result.samples] == ["a", "b"]
 
 
 def test_live_non_log_topic_has_no_depth_flags(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -350,3 +357,102 @@ def test_bag_start_ns_is_the_metadata_starting_time(tmp_path: Path) -> None:
     assert read_start_ns(bag) == _BASE
     assert BagService().analyze(str(bag)).start_ns == _BASE
     assert read_start_ns(tmp_path / "missing") is None
+
+
+def test_bag_start_ns_zero_is_reported_as_zero(tmp_path: Path) -> None:
+    from topicforge.services.bag_service import _reader_start_ns, read_start_ns
+
+    assert _reader_start_ns(0) == 0
+    assert _reader_start_ns(5) == 5
+    assert _reader_start_ns(-1) is None and _reader_start_ns(None) is None
+    bag = tmp_path / "bag"
+    bag.mkdir()
+    (bag / "metadata.yaml").write_text(
+        "rosbag2_bagfile_information:\n  starting_time:\n    nanoseconds_since_epoch: 0\n"
+    )
+    assert read_start_ns(bag) == 0
+
+
+class _EndlessReader:
+    """A reader whose message stream never ends and never matches a filter."""
+
+    start_time = 0
+    end_time = 10**12
+
+    def __init__(self) -> None:
+        self.read = 0
+        self.connections = [SimpleNamespace(topic="/rosout", msgtype="rcl_interfaces/msg/Log")]
+
+    def __enter__(self) -> _EndlessReader:
+        return self
+
+    def __exit__(self, *_a: object) -> None:
+        return None
+
+    def messages(self, **_kw: Any) -> Iterator[tuple[Any, int, bytes]]:
+        while True:
+            self.read += 1
+            yield self.connections[0], self.read, b""
+
+
+def _patch_endless(monkeypatch: pytest.MonkeyPatch) -> _EndlessReader:
+    from topicforge.services import bag_service
+
+    reader = _EndlessReader()
+    monkeypatch.setattr(bag_service, "_open_reader", lambda _p: (reader, "fake"))
+    monkeypatch.setattr(bag_service, "_lacks_embedded_definitions", lambda _r: False)
+    monkeypatch.setattr(
+        bag_service, "_decode_bag_message", lambda *_a, **_k: {"level": 10, "name": "x"}
+    )
+    return reader
+
+
+def test_filtered_bag_peek_stops_at_the_hard_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.services import bag_service
+
+    reader = _patch_endless(monkeypatch)
+    monkeypatch.setattr(bag_service, "PEEK_SCAN_MAX_SECONDS", 0.05)
+    samples, note = bag_service._peek_with_rosbags(
+        Path("x.mcap"), "/rosout", 3, log_filter=LogFilter("error", None)
+    )
+    assert samples == [] and reader.read < 10_000_000
+    assert note is not None and "scan stopped after" in note
+    assert "narrow start_s/end_s or the filter" in note
+
+
+def test_filtered_bag_peek_stops_when_the_call_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import time
+
+    from topicforge import budget
+    from topicforge.services import bag_service
+
+    _patch_endless(monkeypatch)
+    with budget.deadline_at(time.monotonic() - 1):
+        _, note = bag_service._peek_with_rosbags(
+            Path("x.mcap"), "/rosout", 3, log_filter=LogFilter("error", None)
+        )
+    assert note is not None and "scan stopped after" in note
+
+
+# ----- notes -----
+
+
+def test_newest_matches_cap_note_says_newer_logs_may_be_unread() -> None:
+    from topicforge.adapters.common.log_filter import newest_matches
+
+    _, note = newest_matches([], 3, LogFilter("error", None), cap_hit=True)
+    assert note is not None
+    assert "newer logs may be unread" in note and "older logs may be missing" not in note
+    assert "narrower `node`" in note and "higher `min_log_level`" in note
+
+
+def test_zero_count_gives_no_samples_and_no_hint() -> None:
+    from topicforge.adapters.common.log_filter import first_matches, newest_matches
+
+    log_filter = LogFilter("error", None)
+    assert newest_matches([], 0, log_filter) == ([], None)
+    assert first_matches([], 0, log_filter) == ([], None)
+    result = _mock().sample_messages("/rosout", 0, min_log_level="error")
+    assert result.samples == [] and not (result.note and "Nothing matched" in result.note)

@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from topicforge import budget
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import annotate_raw
 from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
@@ -65,6 +66,10 @@ _MAX_ARRAY_ELEMENTS = 4096
 SPAN_SCAN_MAX_BYTES = 200 * 1024 * 1024
 SPAN_SCAN_MAX_SECONDS = 5.0
 _SCAN_CLOCK_CHECK_EVERY = 1024
+# A filtered or ranged bag peek may decode far more messages than it returns; it stops
+# at this many seconds (or when the call budget runs out), checked every N messages.
+PEEK_SCAN_MAX_SECONDS = 20.0
+_PEEK_CLOCK_CHECK_EVERY = 64
 
 
 class _ScanBudgetExceeded(Exception):
@@ -208,22 +213,35 @@ def _bag_rate(samples: list[MessageSample]) -> TopicRate:
 _METADATA_START_NS = re.compile(r"starting_time:\s*nanoseconds_since_epoch:\s*(\d+)")
 
 
+def _metadata_start_ns(path: Path) -> int | None:
+    """`starting_time` of the rosbag2 `metadata.yaml` next to `path`, `None` when absent."""
+    meta = (path if path.is_dir() else path.parent) / "metadata.yaml"
+    if meta.is_file() and (m := _METADATA_START_NS.search(meta.read_text(errors="replace"))):
+        return int(m.group(1))
+    return None
+
+
+def _reader_start_ns(start: Any) -> int | None:
+    """A reader's `start_time` as ns; 0 is a valid start (sim time), a non-int is not."""
+    if isinstance(start, bool) or not isinstance(start, int) or start < 0:
+        return None
+    return start
+
+
 def read_start_ns(path: Path) -> int | None:
     """Record time in ns of the first message of the bag at `path`, `None` when unreadable.
 
     Reads rosbag2 `metadata.yaml` (`starting_time`) when present, else the `rosbags`
-    reader. Never raises.
+    reader. A bag that starts at 0 (sim time) reports 0. Never raises.
     """
     try:
-        meta = (path if path.is_dir() else path.parent) / "metadata.yaml"
-        if meta.is_file() and (m := _METADATA_START_NS.search(meta.read_text(errors="replace"))):
-            return int(m.group(1))
+        if (found := _metadata_start_ns(path)) is not None:
+            return found
         if not is_rosbags_available() or not path.exists():
             return None
         reader, _ = _open_reader(path)
         with reader:
-            start = int(reader.start_time)
-        return start if start > 0 else None
+            return _reader_start_ns(getattr(reader, "start_time", None))
     except Exception as exc:
         log.debug("could not read the start time of %s: %s", path, exc)
         return None
@@ -373,6 +391,7 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
     Returns a dict with `duration_s`, `message_count` and `topics`. `.db3` spans come
     from `sqlite3`; other containers are scanned through `rosbags`.
     """
+    meta_start = _metadata_start_ns(resolved)
     reader, _ = _open_reader(resolved)
     with reader:
         start = getattr(reader, "start_time", None)
@@ -385,11 +404,17 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
         topics: list[BagTopicStats] = [build_topic_stats(span) for span in spans.values()]
 
     return {
-        "start_ns": int(start) if isinstance(start, int) and start > 0 else None,
+        "start_ns": meta_start if meta_start is not None else _reader_start_ns(start),
         "duration_s": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
         "message_count": sum(t.message_count for t in topics),
         "topics": topics,
     }
+
+
+def _peek_out_of_time(hard_stop: float) -> bool:
+    """True when the hard cap or the active call budget of a bag scan has run out."""
+    left = budget.remaining()
+    return time.monotonic() > hard_stop or (left is not None and left <= 0)
 
 
 def _peek_with_rosbags(
@@ -409,6 +434,7 @@ def _peek_with_rosbags(
     samples: list[MessageSample] = []
     capped: set[str] = set()
     scanned = 0
+    stopped: str | None = None
     reader, typestore_desc = _open_reader(resolved)
     with reader:
         connections = [c for c in reader.connections if getattr(c, "topic", None) == topic]
@@ -426,10 +452,18 @@ def _peek_with_rosbags(
         bag_start = int(reader.start_time)
         duration_s = max(int(reader.end_time) - bag_start, 0) / 1_000_000_000
         start, stop = window_ns(bag_start, start_s, end_s)
+        started = time.monotonic()
+        hard_stop = started + PEEK_SCAN_MAX_SECONDS
         for connection, timestamp, raw in reader.messages(
             connections=connections, start=start, stop=stop
         ):
             if len(samples) >= count:
+                break
+            if scanned and scanned % _PEEK_CLOCK_CHECK_EVERY == 0 and _peek_out_of_time(hard_stop):
+                stopped = (
+                    f"scan stopped after {time.monotonic() - started:.1f} s / {scanned} "
+                    f"messages, {len(samples)} matches so far: narrow start_s/end_s or the filter."
+                )
                 break
             scanned += 1
             decoded = _decode_bag_message(reader, connection, raw, whole_arrays=whole)
@@ -452,8 +486,10 @@ def _peek_with_rosbags(
             )
 
     notes: list[str] = []
-    if log_filter is not None:
-        notes.append(first_matches_note(len(samples), scanned, log_filter))
+    if log_filter is not None and (text := first_matches_note(len(samples), scanned, log_filter)):
+        notes.append(text)
+    if stopped:
+        notes.append(stopped)
     if text := range_note(start_s, end_s, duration_s=duration_s, got=len(samples)):
         notes.append(text)
     if assumed:

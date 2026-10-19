@@ -146,7 +146,8 @@ class MockAdapter:
         notes: list[str] = []
         if log_filter is not None:
             samples, filter_note = first_matches(in_range, clamped, log_filter)
-            notes.append(filter_note)
+            if filter_note:
+                notes.append(filter_note)
         else:
             samples = in_range[:clamped]
         range_text = range_note(

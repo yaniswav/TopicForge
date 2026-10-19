@@ -38,12 +38,19 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `MiddlewareAdapter.sample_messages` gains keyword arguments `min_log_level` and `node`, and
   `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and `node` (all default `None`),
   like `capture_tf` in 0.7.2. Custom adapters must accept them.
-- `tools/list` shrinks from 118,884 to about 90 KB (`docs/CONTRACT.md` section 9.9), so the
-  next tools fit under the new 100,000-byte test ceiling. Additive: `MessageSample.summary` is
+- `tools/list` shrinks from 118,884 to about 95 KB (94,957 bytes, `docs/CONTRACT.md` section 9.9),
+  about 5 KB under the new 100,000-byte test ceiling, which is the headroom left before
+  `graph_diff`. Additive: `MessageSample.summary` is
   advertised as an open object keyed by `summary_type` (the five strict shapes are still built
   and validated by the server, and documented in `docs/TOOLS.md`), and `default` keywords are
   dropped from output schemas only. Payloads are unchanged.
 - The ground-truth comparator checks the `tools/list` size (< 100,000 bytes).
+- The mock graph gained `/camera_driver/transition_event` and `/rosout`, so mock `list_topics`
+  totals change (two more topics).
+- A filtered bag read (`peek_bag_samples` with a log filter or a range) stops after 20 s or when
+  the call budget runs out and says so in `note`. A bag that starts at 0 (sim time) reports
+  `start_ns` 0, not `null`. The live `/rosout` depth-2000 reader is used only when a log filter
+  is set; an unfiltered read behaves as in 0.7.2.
 
 ### Fixed
 

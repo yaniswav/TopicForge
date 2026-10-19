@@ -133,20 +133,26 @@ _NO_MATCH_HINT = (
 
 def newest_matches(
     samples: list[MessageSample], count: int, log_filter: LogFilter, *, cap_hit: bool = False
-) -> tuple[list[MessageSample], str]:
+) -> tuple[list[MessageSample], str | None]:
     """Live rule: the newest `count` matching samples in stamp order, and the note.
 
     `samples` are every message read; the sort is stable, so equal stamps keep arrival order.
     """
+    if count <= 0:
+        return [], None
     matched = [s for s in samples if log_filter.matches(s.payload)]
     matched.sort(key=lambda s: s.timestamp_ns)
-    kept = matched[-count:] if count > 0 else []
+    kept = matched[-count:]
     note = f"{len(matched)} of {len(samples)} log messages read matched {log_filter}"
     if len(matched) > len(kept):
         note += f"; the newest {len(kept)} are returned in stamp order"
     note += "."
     if cap_hit:
-        note += f" The read stopped at the {LOG_STREAM_CAP}-message cap: older logs may be missing."
+        note += (
+            f" The read stopped at the {LOG_STREAM_CAP}-message cap, so this is the newest of the "
+            f"first {LOG_STREAM_CAP} read and newer logs may be unread: use a narrower `node` "
+            "or a higher `min_log_level`."
+        )
     if not matched:
         note += _NO_MATCH_HINT
     return kept, note
@@ -154,7 +160,7 @@ def newest_matches(
 
 def first_matches(
     samples: list[MessageSample], count: int, log_filter: LogFilter
-) -> tuple[list[MessageSample], str]:
+) -> tuple[list[MessageSample], str | None]:
     """Bag rule: the first `count` matching samples in bag order, and the note."""
     kept: list[MessageSample] = []
     for sample in samples:
@@ -165,7 +171,12 @@ def first_matches(
     return kept, first_matches_note(len(kept), len(samples), log_filter)
 
 
-def first_matches_note(kept: int, scanned: int, log_filter: LogFilter) -> str:
-    """Note of a bag read that filtered `scanned` messages and kept the first `kept`."""
+def first_matches_note(kept: int, scanned: int, log_filter: LogFilter) -> str | None:
+    """Note of a bag read that filtered `scanned` messages and kept the first `kept`.
+
+    `None` when nothing was scanned (a zero `count` or an empty range): no hint then.
+    """
+    if kept == 0 and scanned == 0:
+        return None
     note = f"{kept} messages matched {log_filter} among the {scanned} scanned (first matches, bag order)."
     return note + (_NO_MATCH_HINT if kept == 0 else "")
