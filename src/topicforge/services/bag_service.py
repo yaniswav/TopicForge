@@ -186,6 +186,7 @@ def _bag_rate(samples: list[MessageSample]) -> TopicRate:
         recorded,
         basis="recorded_ns",
         stamps_ns=[s.timestamp_ns for s in samples] if samples and stamped else None,
+        stamped=[(s.recorded_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.recorded_ns],
     )
 
 

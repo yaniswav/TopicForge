@@ -571,7 +571,8 @@ def _rate(run: EchoRun, count: int, samples: list[MessageSample], skipped: int) 
     stamped = all(s.stamp_source in ("header", "payload") for s in samples)
     complete = not run.oversized and not skipped
     stamps = [s.timestamp_ns for s in samples] if samples and stamped and complete else None
-    return rate_of_run(run, count, stamps)
+    clock = [(s.received_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.received_ns]
+    return rate_of_run(run, count, stamps, clock)
 
 
 def _echo_array_args(max_array_length: int | None, arrays_summary_only: bool) -> list[str]:

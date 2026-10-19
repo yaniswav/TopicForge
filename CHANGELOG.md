@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `TopicRate` clock fields on `sample_messages` and `peek_bag_samples` (`docs/CONTRACT.md`
+  section 9.10): `clock_basis` (`wall`, `sim`, `none`, `mixed`), `stamp_age_median_s` and
+  `stamp_age_p95_s` (arrival minus stamp, wall-stamped topics only) and `stamp_regression_count`.
+  Additive, all with defaults. The bench gains `/imu/data`, `/pose_mixed` and `/stamps_regress`.
+
 ### Changed
 
 - `tools/list` shrinks from 118,884 to about 90 KB (`docs/CONTRACT.md` section 9.9), so the

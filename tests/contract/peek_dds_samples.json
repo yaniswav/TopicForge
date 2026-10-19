@@ -125,6 +125,16 @@
             ],
             "type": "string"
           },
+          "clock_basis": {
+            "description": "Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` (no stamps), `mixed` (several kinds, e.g. two publishers).",
+            "enum": [
+              "wall",
+              "sim",
+              "none",
+              "mixed"
+            ],
+            "type": "string"
+          },
           "interval_cv": {
             "anyOf": [
               {
@@ -195,6 +205,33 @@
               }
             ],
             "description": "Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps."
+          },
+          "stamp_age_median_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Median of arrival minus stamp, s, if `wall`; negative = publisher ahead."
+          },
+          "stamp_age_p95_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "95th percentile of that age (max under 20 messages)."
+          },
+          "stamp_regression_count": {
+            "description": "Times a stamp went back versus the previous one.",
+            "minimum": 0,
+            "type": "integer"
           },
           "startup_burst_count": {
             "description": "Leading messages set aside as a start-up drain (live only); still in `message_count`.",

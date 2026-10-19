@@ -19,7 +19,8 @@ no longer has the expected shape; reported, never a crash), INFO (informative).
 Sections: graph (topics, types, counts, QoS per side, nodes, use_sim_time per node), scan
 (geometry, every range, wall and sector minima), stamps (stamp_source per topic), rates
 (verdict and frequency, simulated and wall time), bag, dds, tf (the `inspect_tf` tree; only the
-bench truth has one). Reads output contract 2 (0.7:
+bench truth has one), clock (`clock_basis`, stamp age and regressions per
+topic; only the bench truth has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -380,7 +381,7 @@ def _check_topic_qos(truth: dict[str, dict], res: Results, rep: Report) -> None:
                 "subscriber_count", 0
             ):
                 bad.append(f"{name}: more nodes than endpoints ({len(pn)}/{len(sn)})")
-            want_p = sorted(node_full_name(e) for e in pubs)
+            want_p = sorted({node_full_name(e) for e in pubs})
             if pn and want_p and sorted(pn) != want_p:
                 bad.append(f"{name}: publisher_nodes {sorted(pn)} vs {want_p}")
     rep.add(
@@ -1650,6 +1651,90 @@ def check_tf(gt: dict, res: Results, rep: Report) -> None:
     _tf_rate_rows(truth, report, rep, wall)
 
 
+# ---------------------------------------------------------------------------- clock
+@guard("clock")
+def check_clock(gt: dict, res: Results, rep: Report) -> None:
+    """`TopicRate.clock_basis` and the stamp fields per topic (0.7.3); bench truth only."""
+    topics = (gt.get("clock") or {}).get("topics") or {}
+    best: dict[str, tuple[dict, float | None]] = {}
+    for topic, result, wall in _rate_blocks(res):
+        rate = result.get("rate")
+        if rate and topic in topics:
+            known = best.get(topic)
+            if known is None or (rate.get("message_count") or 0) >= (
+                known[0].get("message_count") or 0
+            ):
+                best[topic] = (rate, wall)
+    for topic, want in sorted(topics.items()):
+        if topic not in best:
+            rep.add("clock", f"{topic} rate block", "sampled", "absent", "WARN", "not sampled")
+            continue
+        rate, wall = best[topic]
+        if "clock_basis" not in rate:
+            rep.add("clock", f"{topic} clock_basis", want["basis"], "absent", "WARN", "pre-0.7.3")
+            continue
+        _clock_rows(topic, want, rate, rep, wall)
+
+
+def _clock_rows(topic: str, want: dict, rate: dict, rep: Report, wall: float | None) -> None:
+    basis = rate["clock_basis"]
+    rep.add(
+        "clock",
+        f"{topic} clock_basis",
+        want["basis"],
+        basis,
+        "PASS" if basis == want["basis"] else "FAIL",
+        "",
+        wall,
+    )
+    median, p95 = rate.get("stamp_age_median_s"), rate.get("stamp_age_p95_s")
+    if want["basis"] != "wall":
+        ok = median is None and p95 is None
+        rep.add(
+            "clock",
+            f"{topic} stamp age",
+            "null (not wall)",
+            [median, p95],
+            "PASS" if ok else "FAIL",
+            "",
+            wall,
+        )
+    else:
+        low, high = want["age_median_s_range"]
+        ok = isinstance(median, (int, float)) and low <= median <= high
+        rep.add(
+            "clock",
+            f"{topic} stamp_age_median_s",
+            f"{low}..{high}",
+            median,
+            "PASS" if ok else "FAIL",
+            f"published {want.get('published_age_s')} s behind; the age also holds delivery",
+            wall,
+        )
+        ok = isinstance(p95, (int, float)) and p95 < want["age_p95_s_max"]
+        rep.add(
+            "clock",
+            f"{topic} stamp_age_p95_s",
+            f"< {want['age_p95_s_max']}",
+            p95,
+            "PASS" if ok else "FAIL",
+            "",
+            wall,
+        )
+    if "min_regressions" in want:
+        count, got = rate.get("message_count") or 0, rate.get("stamp_regression_count")
+        ok = isinstance(got, int) and got >= want["min_regressions"]
+        rep.add(
+            "clock",
+            f"{topic} stamp_regression_count (n={count})",
+            f">= {want['min_regressions']}",
+            got,
+            "PASS" if ok else ("FAIL" if count >= want.get("min_messages", 12) else "WARN"),
+            "a stamp that goes back every 4th message",
+            wall,
+        )
+
+
 # ---------------------------------------------------------------------------- report
 LISTING_MAX_BYTES = 100_000
 
@@ -1697,6 +1782,7 @@ SECTIONS = (
     check_bag,
     check_dds,
     check_tf,
+    check_clock,
     check_listing,
 )
 

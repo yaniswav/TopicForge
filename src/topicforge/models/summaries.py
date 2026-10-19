@@ -232,6 +232,23 @@ class TopicRate(BaseModel):
     trailing_gap_s: float | None = Field(
         description="Time from the last message to the end of a live observation; else `null`."
     )
+    clock_basis: Literal["wall", "sim", "none", "mixed"] = Field(
+        default="none",
+        description=(
+            "Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` "
+            "(no stamps), `mixed` (several kinds, e.g. two publishers)."
+        ),
+    )
+    stamp_age_median_s: float | None = Field(
+        default=None,
+        description="Median of arrival minus stamp, s, if `wall`; negative = publisher ahead.",
+    )
+    stamp_age_p95_s: float | None = Field(
+        default=None, description="95th percentile of that age (max under 20 messages)."
+    )
+    stamp_regression_count: int = Field(
+        default=0, ge=0, description="Times a stamp went back versus the previous one."
+    )
     verdict: RateVerdict = Field(
         description=(
             "First match: `silent` (none), `insufficient` (under 5), `intermittent` (an"
