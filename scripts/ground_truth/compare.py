@@ -1769,6 +1769,163 @@ def _clock_rows(topic: str, want: dict, rate: dict, rep: Report, wall: float | N
         )
 
 
+# ---------------------------------------------------------------------------- logs
+# `/rosout` filter and bag ranges (0.7.3), bench truth only. The live calls use a short
+# `timeout_s` so the 10 s transient_local buffer must supply most lines: every row reports
+# the exact counts (and the level histogram) so a CI run shows whether the depth-2000
+# reader really gets the buffer on this RMW.
+LOG_LEVEL_NAMES = {10: "debug", 20: "info", 30: "warn", 40: "error", 50: "fatal"}
+_STARTING_TIME = re.compile(r"starting_time:\s*nanoseconds_since_epoch:\s*(\d+)")
+
+
+def _log_samples(res: Results, name: str) -> tuple[list[dict], dict, float | None] | str:
+    """`(samples, result, wall)` of a saved `sample_messages` / `peek_bag_samples`, else the error."""
+    data = res.load(name)
+    if data is None:
+        return "not run"
+    err = tool_err(data)
+    if err:
+        return err[:200]
+    result = objs(data)[0]
+    return result["samples"], result, res.times.get(name)
+
+
+def _level_counts(samples: list[dict]) -> dict[str, int]:
+    counts = collections.Counter(s["payload"].get("level") for s in samples)
+    return {LOG_LEVEL_NAMES.get(k, str(k)): v for k, v in sorted(counts.items(), key=str)}
+
+
+def _log_rows(
+    rep: Report,
+    metric: str,
+    want: str,
+    samples: list[dict],
+    result: dict,
+    ok: bool,
+    wall: float | None,
+    warn_if_few: bool = False,
+) -> None:
+    got = f"{len(samples)} msgs {_level_counts(samples)}"
+    note = (result.get("note") or "")[:220]
+    rep.add(
+        "logs", metric, want, got, "PASS" if ok else ("WARN" if warn_if_few else "FAIL"), note, wall
+    )
+
+
+@guard("logs")
+def check_logs(gt: dict, res: Results, rep: Report) -> None:
+    truth = gt.get("logs")
+    if not truth:
+        return
+    _check_live_logs(truth, res, rep)
+    _check_bag_logs(gt, truth, res, rep)
+
+
+def _check_live_logs(truth: dict, res: Results, rep: Report) -> None:
+    logger = truth["logger"]
+    for name, metric in (
+        ("21_log_error_node", "live /rosout error + node /bench_robot"),
+        ("22_log_warn", "live /rosout min_log_level warn"),
+        ("23_log_blocked_node", "live /rosout node /bench_blocked"),
+        ("24_log_lifecycle_node", "live /rosout node /robot1/bench_lifecycle"),
+    ):
+        loaded = _log_samples(res, name)
+        if isinstance(loaded, str):
+            rep.add("logs", metric, "samples", loaded, "WARN" if loaded == "not run" else "FAIL")
+            continue
+        samples, result, wall = loaded
+        names = {s["payload"].get("name") for s in samples}
+        levels = [s["payload"].get("level") for s in samples]
+        stamps = [s["timestamp_ns"] for s in samples]
+        ordered = stamps == sorted(stamps)
+        if name == "21_log_error_node":
+            want = f">= {truth['min_error_msgs']} msgs, all level 40, name {logger}"
+            ok = (
+                len(samples) >= truth["min_error_msgs"]
+                and set(levels) == {40}
+                and names == {logger}
+                and ordered
+            )
+            _log_rows(rep, metric, want, samples, result, ok, wall)
+        elif name == "22_log_warn":
+            ok = bool(samples) and min(levels) >= 30 and ordered
+            _log_rows(rep, metric, "levels >= 30 only, stamp order", samples, result, ok, wall)
+        elif name == "23_log_blocked_node":
+            ok = not samples and bool(result.get("note"))
+            _log_rows(rep, metric, "0 msgs and a note", samples, result, ok, wall)
+        else:
+            want = f">= 1 msg, all name {truth['lifecycle_logger']}"
+            ok = bool(samples) and names == {truth["lifecycle_logger"]}
+            _log_rows(rep, metric, want, samples, result, ok, wall)
+
+
+def _starting_time_ns(gt: dict) -> tuple[int | None, str]:
+    """`starting_time` of the bench bag: from its metadata.yaml, else the first message."""
+    bag = gt.get("bag") or {}
+    meta = Path(str(bag.get("bag_dir", ""))) / "metadata.yaml"
+    if meta.is_file():
+        found = _STARTING_TIME.search(meta.read_text(encoding="utf-8"))
+        if found:
+            return int(found.group(1)), "metadata.yaml"
+    first = bag.get("starting_time_ns")
+    return (int(first), "first message") if first is not None else (None, "none")
+
+
+def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
+    start_ns, source = _starting_time_ns(gt)
+    analysis = res.load("13_analyze_bag")
+    if analysis is not None and not tool_err(analysis) and start_ns is not None:
+        got = objs(analysis)[0].get("start_ns")
+        rep.add(
+            "logs",
+            "analyze_bag.start_ns",
+            f"{start_ns} ({source})",
+            got,
+            "PASS" if got == start_ns else "FAIL",
+            "",
+            res.times.get("13_analyze_bag"),
+        )
+    loaded = _log_samples(res, "25_peek_bag_rosout_error")
+    if isinstance(loaded, str):
+        rep.add("logs", "bag /rosout min_log_level error", "samples", loaded, "WARN")
+    else:
+        samples, result, wall = loaded
+        ok = len(samples) >= truth["bag_min_errors"] and {
+            s["payload"].get("level") for s in samples
+        } == {40}
+        _log_rows(
+            rep,
+            "bag /rosout min_log_level error",
+            f">= {truth['bag_min_errors']} msgs, all level 40",
+            samples,
+            result,
+            ok,
+            wall,
+        )
+    rng = truth["bag_range"]
+    loaded = _log_samples(res, "26_peek_bag_clock_range")
+    if isinstance(loaded, str):
+        rep.add("logs", "bag /clock start_s 2 end_s 4", "samples", loaded, "WARN")
+        return
+    samples, result, wall = loaded
+    if start_ns is None:
+        rep.add("logs", "bag /clock range", "bag start", "unknown", "WARN", "", wall)
+        return
+    low, high = start_ns + int(rng["start_s"] * 1e9), start_ns + int(rng["end_s"] * 1e9)
+    recorded = [s.get("recorded_ns") or 0 for s in samples]
+    inside = all(low <= r < high for r in recorded)
+    rep.add(
+        "logs",
+        f"bag /clock start_s {rng['start_s']} end_s {rng['end_s']} count {rng['count']}",
+        f"{rng['count']} samples with recorded_ns in [{low}, {high})",
+        f"{len(samples)} samples; first {min(recorded, default=0) - start_ns} ns, "
+        f"last {max(recorded, default=0) - start_ns} ns after start",
+        "PASS" if len(samples) == rng["count"] and inside else "FAIL",
+        (result.get("note") or "")[:200],
+        wall,
+    )
+
+
 # ---------------------------------------------------------------------------- report
 LISTING_MAX_BYTES = 100_000
 
@@ -1817,6 +1974,7 @@ SECTIONS = (
     check_dds,
     check_tf,
     check_clock,
+    check_logs,
     check_listing,
 )
 

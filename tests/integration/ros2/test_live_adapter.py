@@ -492,3 +492,34 @@ def test_inspect_tf_reads_the_bench_tree(adapter: Ros2CliAdapter) -> None:
     steady = by_name["base_link"].observed_frequency_hz
     assert steady is not None and abs(steady - truth["steady_hz"]) < 0.3 * truth["steady_hz"]
     assert not _echo_processes(), "the killed `ros2 topic echo` left a process behind"
+
+
+def test_rosout_filter_reads_the_buffer_and_keeps_the_node(adapter: Ros2CliAdapter) -> None:
+    """The depth-2000 reader must receive the buffered ERROR lines, not only the live ones."""
+    result = adapter.sample_messages(
+        "/rosout", 20, min_log_level="error", node="/bench_robot", timeout_s=6
+    )
+    # Counts are reported precisely: a short timeout leaves one live line at most.
+    assert result.count >= 3, (result.count, result.note)
+    assert {s.payload["level"] for s in result.samples} == {40}
+    assert {s.payload["name"] for s in result.samples} == {"bench_robot"}
+    stamps = [s.timestamp_ns for s in result.samples]
+    assert stamps == sorted(stamps)
+    blocked = adapter.sample_messages("/rosout", 5, node="/bench_blocked", timeout_s=4)
+    assert blocked.count == 0 and blocked.note
+
+
+def test_bag_start_ns_and_ranges_match_the_recorder(adapter: Ros2CliAdapter, bag: Path) -> None:
+    import re
+
+    meta = (bag / "metadata.yaml").read_text(encoding="utf-8")
+    found = re.search(r"nanoseconds_since_epoch:\s*(\d+)", meta)
+    assert found is not None
+    starting = int(found.group(1))
+    assert adapter.analyze_bag(str(bag)).start_ns == starting
+    result = adapter.peek_bag_samples(str(bag), "/clock", 50, start_s=2, end_s=4)
+    assert result.count == 50
+    low, high = starting + 2 * 10**9, starting + 4 * 10**9
+    assert all(low <= (s.recorded_ns or 0) < high for s in result.samples)
+    errors = adapter.peek_bag_samples(str(bag), "/rosout", 10, min_log_level="error")
+    assert errors.count >= 2 and {s.payload["level"] for s in errors.samples} == {40}

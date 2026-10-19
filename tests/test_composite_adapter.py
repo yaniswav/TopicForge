@@ -108,7 +108,9 @@ class _StubRosAdapter:
         self.calls.append(("topic_metrics", (topic, window_s, domain_id)))
         raise AdapterError("ROS adapter should not receive DDS calls")
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+    def peek_bag_samples(
+        self, path: str, topic: str, count: int, **_options: object
+    ) -> SampleResult:
         # Bag analysis is routed to the ROS side.
         self.calls.append(("peek_bag_samples", (path, topic, count)))
         return SampleResult(topic=topic, count=0, samples=[], mode_effective=self._mode)
@@ -190,7 +192,9 @@ class _StubDdsAdapter:
             mode_effective=self._mode,
         )
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+    def peek_bag_samples(
+        self, path: str, topic: str, count: int, **_options: object
+    ) -> SampleResult:
         # DDS half should NOT receive peek_bag_samples: bag analysis
         # routes to the ROS half. Recording the call here lets the
         # routing test assert this stub was not exercised.
@@ -259,7 +263,13 @@ def test_method_arguments_propagate_unchanged() -> None:
         (
             "/cmd_vel",
             7,
-            (("arrays_summary_only", False), ("max_array_length", 128), ("timeout_s", 10.0)),
+            (
+                ("arrays_summary_only", False),
+                ("max_array_length", 128),
+                ("min_log_level", None),
+                ("node", None),
+                ("timeout_s", 10.0),
+            ),
         ),
     )
     assert dds.calls[0] == ("peek_dds_samples", ("/dds/topic", 12))

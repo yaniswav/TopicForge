@@ -313,6 +313,6 @@ def test_mock_bag_samples_follow_the_stamp_contract() -> None:
 
     for samples in MOCK_BAG_SAMPLES.values():
         for sample in samples:
-            assert sample.stamp_source in ("header", "recorded")
+            assert sample.stamp_source in ("header", "recorded", "payload")
             assert sample.recorded_ns is not None
             assert "_msgtype" not in sample.payload

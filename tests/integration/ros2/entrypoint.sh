@@ -44,7 +44,7 @@ done
 echo "bench: recording bag (8 s)"
 # `ros2 bag record` has no --duration on Humble: stop it with SIGINT.
 timeout -s INT 8 ros2 bag record -o "$BAG" \
-    /clock /scan /cmd_vel_out /camera/image_raw /robot_description_lite \
+    /clock /scan /cmd_vel_out /camera/image_raw /robot_description_lite /rosout \
     > /bench/record.log 2>&1
 sleep 2
 if [ ! -e "$BAG/metadata.yaml" ]; then

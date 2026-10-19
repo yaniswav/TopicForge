@@ -177,6 +177,17 @@
         "description": "Bag path as supplied.",
         "type": "string"
       },
+      "start_ns": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Record time in ns of the bag's first message (rosbag2 `starting_time`): the zero of `peek_bag_samples` `start_s` / `end_s`. `null` when unreadable."
+      },
       "storage_format": {
         "anyOf": [
           {

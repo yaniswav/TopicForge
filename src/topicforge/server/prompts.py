@@ -69,6 +69,7 @@ sample_messages options:
 - `arrays_summary_only: true` shows only the non-array fields. Use it for images and point clouds.
 - `timestamp_ns` is the message header stamp: sim time on a simulation, 0 when `stamp_source` is `none`. `received_ns` is the wall clock at print time. Do not mix the two.
 - A short result carries a `note` saying why. A latched topic usually holds one message: use `count` 1.
+- For why a node failed, read `/rosout` with `min_log_level` and `node`: it returns the newest matching logs. `peek_bag_samples` takes `start_s` / `end_s` and the same filters on a bag (first matches).
 
 Bags:
 

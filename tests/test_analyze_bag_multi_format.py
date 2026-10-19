@@ -11,7 +11,7 @@ def test_mock_analyze_bag_returns_enriched_fields() -> None:
     # Original fields.
     assert result.path == "/tmp/demo.mcap"
     assert result.storage_format == "mcap"
-    assert result.message_count == 1288
+    assert result.message_count == 1298
     # Added fields.
     assert result.bag_format == "mcap"
     assert result.duration_s == 42.5

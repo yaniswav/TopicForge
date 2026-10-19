@@ -110,6 +110,25 @@ _MAX_ARRAY_LENGTH_PARAM_DESC = (
     "images and clouds; a message over 1 MiB is dropped with a note)."
 )
 
+_LOG_LEVEL_PARAM_DESC = (
+    "`/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level "
+    "(debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error."
+)
+
+_LOG_NODE_PARAM_DESC = (
+    "`/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` "
+    "(also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error."
+)
+
+_START_S_PARAM_DESC = (
+    "Only messages recorded at or after this many seconds from the bag's first message "
+    "(`analyze_bag.start_ns`), default from the start."
+)
+
+_END_S_PARAM_DESC = (
+    "Only messages recorded before this bag-relative second (exclusive), default to the end."
+)
+
 _ARRAYS_SUMMARY_PARAM_DESC = (
     "When true, arrays become a type-and-length summary: use it to read the non-array "
     "fields of large messages. Default false."
@@ -338,7 +357,11 @@ def register_tools(
             "65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap "
             "(`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns "
             "demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for "
-            "an unknown topic, or when the CLI fails. Read-only; never publishes."
+            "an unknown topic, or when the CLI fails. Read-only; never publishes. **Logs**: "
+            "`/rosout` is read with a depth-2000 reader (it keeps the last 10 s). With "
+            "`min_log_level` or `node` the call streams until `timeout_s` (at most 2000 "
+            "messages), filters, and returns the NEWEST `count` matches in stamp order, `note` "
+            "saying `M of N matched`; `peek_bag_samples` returns the FIRST matches."
             + (_SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
             + (
                 " **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time. "
@@ -373,6 +396,11 @@ def register_tools(
                 le=MAX_SAMPLE_TIMEOUT_S,
             ),
         ] = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: Annotated[
+            Literal["debug", "info", "warn", "error", "fatal"] | None,
+            Field(description=_LOG_LEVEL_PARAM_DESC),
+        ] = None,
+        node: Annotated[str | None, Field(description=_LOG_NODE_PARAM_DESC)] = None,
     ) -> SampleResult:
         return inspector.sample_messages(
             topic,
@@ -380,6 +408,8 @@ def register_tools(
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
             timeout_s=timeout_s,
+            min_log_level=min_log_level,
+            node=node,
         )
 
     @mcp.tool(
@@ -616,7 +646,10 @@ def register_tools(
             "Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, "
             "for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by "
             "extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the "
-            "**first** `count` messages of the topic in recording order, not the last. "
+            "**first** `count` messages of the topic in recording order, not the last "
+            "(`sample_messages` keeps the newest log matches). `start_s` / `end_s` limit it to "
+            "a bag-relative time range, empty with a `note` past the end; on `/rosout`, "
+            "`min_log_level` and `node` keep the first `count` matching logs in range. "
             "**Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level "
             "header (`stamp_source` `header`), else the time in the body of `Clock`, "
             "`TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); "
@@ -638,8 +671,23 @@ def register_tools(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
+        start_s: Annotated[float | None, Field(description=_START_S_PARAM_DESC, ge=0)] = None,
+        end_s: Annotated[float | None, Field(description=_END_S_PARAM_DESC, ge=0)] = None,
+        min_log_level: Annotated[
+            Literal["debug", "info", "warn", "error", "fatal"] | None,
+            Field(description=_LOG_LEVEL_PARAM_DESC),
+        ] = None,
+        node: Annotated[str | None, Field(description=_LOG_NODE_PARAM_DESC)] = None,
     ) -> SampleResult:
-        return inspector.peek_bag_samples(path, topic, count)
+        return inspector.peek_bag_samples(
+            path,
+            topic,
+            count,
+            start_s=start_s,
+            end_s=end_s,
+            min_log_level=min_log_level,
+            node=node,
+        )
 
     @mcp.tool(
         annotations=read_only_annotations("List DDS endpoints", open_world=True),

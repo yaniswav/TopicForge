@@ -471,6 +471,7 @@ def _bag_truth(gt: dict) -> None:
         "storage_identifier": "sqlite3",
         "duration_ns": 10_000_000_000,
         "message_count": 150,
+        "starting_time_ns": 10**9,
         "scans_total": 100,
         "scans_equal_to_published_scan": 100,
         "per_topic": {
@@ -500,6 +501,7 @@ def _bag_results(gt: dict, out: dict[str, Any]) -> None:
             "storage_format": "sqlite3",
             "duration_s": 10.0,
             "message_count": 150,
+            "start_ns": 10**9,
             "topics": [
                 {
                     "name": "/scan",
@@ -539,6 +541,27 @@ def _bag_results(gt: dict, out: dict[str, Any]) -> None:
             ]
         },
     )
+    _log_results(out)
+
+
+def _log(level: int, name: str, sec: int = 1) -> dict[str, Any]:
+    return {"payload": {"level": level, "name": name}, "timestamp_ns": sec * 10**9}
+
+
+def _log_results(out: dict[str, Any], clock_count: int = 50, error_count: int = 4) -> None:
+    """Results of the 0.7.3 log and bag-range calls, as a healthy bench gives them."""
+    errors = [_log(40, "bench_robot", 2 * i) for i in range(error_count)]
+    mixed = [_log(30, "bench_robot", 1), _log(40, "bench_robot", 2), _log(30, "bench_robot", 3)]
+    note = {"note": "matched"}
+    out["21_log_error_node"] = _call("sample_messages", {}, {"samples": errors, **note})
+    out["22_log_warn"] = _call("sample_messages", {}, {"samples": mixed, **note})
+    out["23_log_blocked_node"] = _call("sample_messages", {}, {"samples": [], **note})
+    out["24_log_lifecycle_node"] = _call(
+        "sample_messages", {}, {"samples": [_log(20, "robot1.bench_lifecycle")], **note}
+    )
+    out["25_peek_bag_rosout_error"] = _call("peek_bag_samples", {}, {"samples": errors[:3], **note})
+    clock = [{"recorded_ns": 3 * 10**9 + i * 10**7} for i in range(clock_count)]
+    out["26_peek_bag_clock_range"] = _call("peek_bag_samples", {}, {"samples": clock})
 
 
 @pytest.fixture
@@ -586,7 +609,18 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
     assert code == 0
     assert report["rate_cv"]["/scan"]["interval_cv"] == 0.04
     sections = {r["section"] for r in report["rows"]}
-    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf", "clock", "listing"}
+    assert sections == {
+        "graph",
+        "scan",
+        "stamps",
+        "rates",
+        "bag",
+        "dds",
+        "tf",
+        "clock",
+        "logs",
+        "listing",
+    }
 
 
 @pytest.mark.parametrize(
@@ -1105,3 +1139,41 @@ def test_listing_size_row_passes_fails_and_warns_when_absent(
     assert row(results, "big")["verdict"] == "FAIL"
     del results["_tools"]
     assert row(results, "absent")["verdict"] == "WARN"
+
+
+def _logs_report(tmp_path: Path, truth: dict, mutate: Any = None) -> dict[str, str]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    if mutate:
+        mutate(results)
+    _, report = _run(tmp_path, truth, results)
+    return {r["metric"]: r["verdict"] for r in report["rows"] if r["section"] == "logs"}
+
+
+def test_the_logs_section_passes_on_a_healthy_run(tmp_path: Path, bench_truth: dict) -> None:
+    verdicts = _logs_report(tmp_path, bench_truth)
+    assert len(verdicts) == 7
+    assert set(verdicts.values()) == {"PASS"}
+
+
+def test_too_few_buffered_errors_fail_and_the_row_reports_the_count(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def few(results: dict) -> None:
+        _log_results(results, error_count=2)
+
+    verdicts = _logs_report(tmp_path, bench_truth, few)
+    assert verdicts["live /rosout error + node /bench_robot"] == "FAIL"
+    rows = json.loads((tmp_path / "results" / "comparison.json").read_text())["rows"]
+    row = next(r for r in rows if r["metric"].startswith("live /rosout error"))
+    assert row["topicforge"].startswith("2 msgs")
+
+
+def test_a_wrong_range_count_or_start_ns_fails(tmp_path: Path, bench_truth: dict) -> None:
+    def short(results: dict) -> None:
+        _log_results(results, clock_count=40)
+        results["13_analyze_bag"]["parsed"][0]["start_ns"] = 5
+
+    verdicts = _logs_report(tmp_path, bench_truth, short)
+    assert verdicts["analyze_bag.start_ns"] == "FAIL"
+    assert verdicts["bag /clock start_s 2 end_s 4 count 50"] == "FAIL"

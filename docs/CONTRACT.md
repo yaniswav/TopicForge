@@ -411,7 +411,7 @@ replaces `rate_hz`, `sim_frequency_hz` is the same computation on the messages' 
 bag, where there is no end of window and so `trailing_gap_s` is always `null`. Messages
 dropped for size still count. `interval_cv` uses the population standard deviation.
 
-On `received_ns` the measuring subscriber is a fresh `ros2 topic echo`, whose reader keeps 5 messages (the `sensor_data` depth; the adapter overrides reliability and durability only) between the match and its first callback, then prints them in one go. On a fast topic that reads as a run of near-zero intervals at the start and inflates the frequency: the Docker bench read `/clock` (50 Hz) at 91.3 Hz over 12 messages, 11 intervals in 0.1205 s instead of 0.220 s, exactly five periods short. The block sets aside the leading run of intervals under a quarter of the median interval, never more than half of them, reports it as `startup_burst_count`, and computes the intervals, `observed_frequency_hz`, `interval_cv` and the verdict on the rest; `message_count` still counts them and their stamps still feed `sim_frequency_hz`. `recorded_ns` is never trimmed: what the recorder saw is the data. Kept messages spanning less than about a second stay coarse on both bases (one late message moves the frequency by several percent and the cv over 11 intervals by 0.2); the tool description asks for `count` 50 on a topic above 20 Hz. To check a configured publish rate, `sim_frequency_hz` is the number when the messages are stamped; `observed_frequency_hz` is what reached the subscriber.
+On `received_ns` the measuring subscriber is a fresh `ros2 topic echo`, whose reader keeps 5 messages (2000 on a `rcl_interfaces/msg/Log` topic, section 9.12) (the `sensor_data` depth; the adapter overrides reliability and durability only) between the match and its first callback, then prints them in one go. On a fast topic that reads as a run of near-zero intervals at the start and inflates the frequency: the Docker bench read `/clock` (50 Hz) at 91.3 Hz over 12 messages, 11 intervals in 0.1205 s instead of 0.220 s, exactly five periods short. The block sets aside the leading run of intervals under a quarter of the median interval, never more than half of them, reports it as `startup_burst_count`, and computes the intervals, `observed_frequency_hz`, `interval_cv` and the verdict on the rest; `message_count` still counts them and their stamps still feed `sim_frequency_hz`. `recorded_ns` is never trimmed: what the recorder saw is the data. Kept messages spanning less than about a second stay coarse on both bases (one late message moves the frequency by several percent and the cv over 11 intervals by 0.2); the tool description asks for `count` 50 on a topic above 20 Hz. To check a configured publish rate, `sim_frequency_hz` is the number when the messages are stamped; `observed_frequency_hz` is what reached the subscriber.
 
 `interval_cv` is the coefficient of variation of the intervals between consecutive
 messages (standard deviation divided by mean). `trailing_gap_s` is the interval between
@@ -891,3 +891,63 @@ clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
   a simulation restart counts once. Default 0.
 - Computed by the pure `services/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
   of the messages that were decoded; messages dropped for size or decode errors are not seen.
+
+### 9.12 `/rosout` filter and bag ranges (0.7.3)
+
+Additive; every new input is optional and every new field has a default.
+
+**`sample_messages`: `min_log_level`, `node`.** Both apply to `rcl_interfaces/msg/Log` topics
+(`/rosout`) only; on any other topic the call raises ("filter `rcl_interfaces/msg/Log`
+topics"). An unknown level or an empty node is an error too.
+
+- Levels are the ROS 2 constants, `debug` 10, `info` 20, `warn` 30, `error` 40, `fatal` 50, and
+  the test is `level >= threshold`.
+- `node` takes `/ns/name`, `name` or `ns.name`. It is normalized (leading `/` removed, `/` to
+  `.`) and compared with the log message's `name` field, which is the node's full name with the
+  namespace separated by dots (`/robot1/driver` logs as `robot1.driver`). A log matches when
+  `name == n` or `name` starts with `n + "."` (a child logger such as `driver.camera`). It
+  never matches a free prefix (`drive` does not match `driver`) and it is case-sensitive.
+- Live reader. A `Log` topic is read with `--qos-history keep_last --qos-depth 2000` (with or
+  without a filter), because the `/rosout` writer is `RELIABLE`, `TRANSIENT_LOCAL`, `KEEP_LAST`
+  1000 with a 10 s lifespan, and the CLI default depth of 5 would drop most of that buffer.
+  Without a filter nothing else changes: the first `count` messages, `rate` as before.
+- With a filter the call streams until `timeout_s` (at most 2000 messages), filters AFTER
+  decoding, and returns the NEWEST `count` matches, oldest first (stamp order, arrival order
+  for equal stamps). `note` says how many matched, for example `6 of 12 log messages read
+  matched min_log_level=error, node=/bench_robot; the newest 3 are returned in stamp order.`,
+  adds the 2000-message cap when it was hit, and explains an empty result. `rate` is `null`
+  (a replayed buffer has no meaningful rate).
+- Mock: `/rosout` is a mock topic (10 fixture lines from six nodes) with the same rules.
+
+**`peek_bag_samples`: `start_s`, `end_s`, `min_log_level`, `node`.**
+
+- `start_s` and `end_s` are bag-relative seconds, zero at the bag's first recorded message
+  (`BagAnalysis.start_ns`, the rosbag2 `starting_time`), applied to `recorded_ns` as the
+  half-open interval `[start, end)` through the `rosbags` reader. Both default to the whole bag.
+  `end_s` must exceed `start_s`; both must be finite and not negative. A range past the end of
+  the bag returns no sample and a `note` ("start_s ... is past the end of the bag").
+- The same log filter, applied after decoding, with the same rules for level and node.
+  A bag read returns the FIRST `count` matches in range, in bag order. This is the opposite of
+  the live rule (newest): the live stream has no beginning to start from, the bag does. Both
+  tool descriptions say so.
+- `BagAnalysis.start_ns: int | None` (default `null`): record time of the first message, read
+  from `metadata.yaml` (`starting_time`) or the `rosbags` reader; `null` when unreadable.
+
+**Adapter protocol.** `MiddlewareAdapter.sample_messages` gains keyword arguments
+`min_log_level` and `node`; `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and
+`node` (all default `None`). CHANGELOG, "Changed".
+
+**Code.** The pure rules are in `adapters/common/log_filter.py` (levels, node match, notes) and
+`adapters/common/bag_range.py` (range validation, `[start, end)` in ns), shared by the live
+adapter, the bag reader and the mock.
+
+**Bench.** `bench_robot` logs WARN every second and ERROR every two; `/robot1/bench_lifecycle`
+logs INFO every five seconds; the bag records `/rosout`. Rows (comparator section `logs`):
+`error` + `/bench_robot` returns at least 3 messages, all level 40 and name `bench_robot`;
+`warn` alone returns levels 30 and above only; `/bench_blocked` returns none and a note;
+`/robot1/bench_lifecycle` matches `robot1.bench_lifecycle`; the bag `/rosout` at `error` has
+at least 2; the bag `/clock` with `start_s` 2, `end_s` 4 and `count` 50 returns 50 samples
+within the bounds computed from `metadata.yaml`; `analyze_bag.start_ns` equals the recorded
+`starting_time`. The live rows use `timeout_s` 6, short enough that live lines alone give one or
+two ERRORs, so at least 3 means the depth-2000 reader received the transient_local buffer on
+that RMW. Each row prints its exact message count and a histogram of levels.

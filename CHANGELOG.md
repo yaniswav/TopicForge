@@ -21,9 +21,23 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   section 9.11): `clock_basis` (`wall`, `sim`, `none`, `mixed`), `stamp_age_median_s` and
   `stamp_age_p95_s` (arrival minus stamp, wall-stamped topics only) and `stamp_regression_count`.
   Additive, all with defaults. The bench gains `/imu/data`, `/pose_mixed` and `/stamps_regress`.
+- `sample_messages` filters `/rosout` (`rcl_interfaces/msg/Log`) with `min_log_level`
+  (`debug` .. `fatal`) and `node` (`/ns/name`, `name` or `ns.name`; exact or child logger, never a
+  prefix). A Log topic is read with a depth-2000 reader to receive the 10 s transient_local
+  buffer; with a filter the call streams until `timeout_s`, filters after decoding and returns the
+  NEWEST `count` matches in stamp order, with a `M of N matched` note. A filter on any other topic
+  is an error. `docs/CONTRACT.md` section 9.12.
+- `peek_bag_samples` gains `start_s` / `end_s` (bag-relative seconds on the record time,
+  `[start, end)`) and the same log filter (the FIRST `count` matches in range, bag order), and
+  `analyze_bag` returns `start_ns`, the record time of the bag's first message. The mock gains a
+  `/rosout` topic and bag topic. The bench logs WARN/ERROR/INFO, records `/rosout`, and the
+  comparator gets a `logs` section.
 
 ### Changed
 
+- `MiddlewareAdapter.sample_messages` gains keyword arguments `min_log_level` and `node`, and
+  `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and `node` (all default `None`),
+  like `capture_tf` in 0.7.2. Custom adapters must accept them.
 - `tools/list` shrinks from 118,884 to about 90 KB (`docs/CONTRACT.md` section 9.9), so the
   next tools fit under the new 100,000-byte test ceiling. Additive: `MessageSample.summary` is
   advertised as an open object keyed by `summary_type` (the five strict shapes are still built
