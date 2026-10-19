@@ -662,5 +662,9 @@ How a topic delivered its messages during one sampling call, with a verdict.
 | `observed_frequency_hz` | `float \| null` | yes | Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages. |
 | `sim_frequency_hz` | `float \| null` | yes | Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps. |
 | `trailing_gap_s` | `float \| null` | yes | Time from the last message to the end of a live observation; else `null`. |
+| `clock_basis` | `"wall" \| "sim" \| "none" \| "mixed"` | no | Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` (no stamps), `mixed` (several kinds, e.g. two publishers). |
+| `stamp_age_median_s` | `float \| null` | no | Median of arrival minus stamp, s, if `wall`; negative = publisher ahead. |
+| `stamp_age_p95_s` | `float \| null` | no | 95th percentile of that age (max under 20 messages). |
+| `stamp_regression_count` | `int` | no | Times a stamp went back versus the previous one. |
 | `verdict` | `"silent" \| "insufficient" \| "intermittent" \| "stable" \| "jittery" \| "erratic"` | yes | First match: `silent` (none), `insufficient` (under 5), `intermittent` (an interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), `erratic`. Describes this window, not a diagnosis. |
 | `verdict_note` | `str` | yes | The verdict in plain words. |

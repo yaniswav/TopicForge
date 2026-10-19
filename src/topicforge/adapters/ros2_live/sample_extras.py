@@ -58,7 +58,12 @@ def decode_with_summary(
     return message, summary
 
 
-def rate_of_run(run: EchoRun, count: int, stamps_ns: list[int] | None) -> TopicRate:
+def rate_of_run(
+    run: EchoRun,
+    count: int,
+    stamps_ns: list[int] | None,
+    stamped: list[tuple[int, int, str]] | None = None,
+) -> TopicRate:
     """Rate block of a streaming run, on the wall time each message was printed.
 
     Messages dropped for size count: they arrived. The trailing gap is measured
@@ -71,6 +76,7 @@ def rate_of_run(run: EchoRun, count: int, stamps_ns: list[int] | None) -> TopicR
         arrivals,
         basis="received_ns",
         stamps_ns=stamps_ns,
+        stamped=stamped,
         window_start_ns=run.started_ns or None,
         window_end_ns=run.ended_ns or None,
         stopped_on_deadline=len(run.documents) < count and run.exit_code is None,

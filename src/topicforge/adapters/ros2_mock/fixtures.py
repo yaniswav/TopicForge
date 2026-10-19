@@ -393,6 +393,7 @@ def mock_sample_rate(samples: list[MessageSample]) -> TopicRate | None:
         arrivals,
         basis="received_ns",
         stamps_ns=[s.timestamp_ns for s in samples] if stamped else None,
+        stamped=[(s.received_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.received_ns],
     )
 
 
@@ -916,4 +917,5 @@ def mock_bag_rate(samples: list[MessageSample]) -> TopicRate | None:
     from topicforge.services.summaries import compute_rate
 
     recorded = [s.recorded_ns for s in samples if s.recorded_ns is not None]
-    return compute_rate(recorded, basis="recorded_ns") if recorded else None
+    stamped = [(s.recorded_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.recorded_ns]
+    return compute_rate(recorded, basis="recorded_ns", stamped=stamped) if recorded else None

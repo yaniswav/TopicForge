@@ -872,3 +872,22 @@ Additive: new fields with defaults, no input change. `list_nodes` now costs two 
   `transition_event` topic; the comparator checks `lifecycle` and `by_namespace` on both
   distros.
 
+### 9.11 `TopicRate` clock fields (0.7.3)
+
+Additive; every field has a default, so older payloads still validate. They say what kind of
+clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
+
+- `clock_basis`: `wall` (stamps are dates, at least 1e18 ns), `sim` (a smaller non-zero stamp,
+  time since a simulation or robot start), `none` (no stamp: timestamp 0, or `stamp_source`
+  `none` / `recorded`) or `mixed` (more than one of those kinds among the messages, for example
+  two publishers on one topic, or one stamped and one unstamped message). Default `none`.
+- `stamp_age_median_s`, `stamp_age_p95_s`: `(basis - stamp) / 1e9` per message, where the basis
+  is `received_ns` (live) or `recorded_ns` (bag). Given only when `clock_basis` is `wall`,
+  else `null`. Signed: negative means the publisher clock is ahead of the observer's. The p95
+  is nearest-rank, and the maximum under 20 messages. An age of a few tens of milliseconds is
+  normal transport delay; seconds point to a skewed or wrong publisher clock.
+- `stamp_regression_count`: messages, in basis order, whose non-zero stamp is strictly lower
+  than the previous non-zero stamp. A topic with several publishers interleaves and reads high;
+  a simulation restart counts once. Default 0.
+- Computed by the pure `services/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
+  of the messages that were decoded; messages dropped for size or decode errors are not seen.

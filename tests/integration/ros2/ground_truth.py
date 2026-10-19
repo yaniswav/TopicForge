@@ -67,7 +67,17 @@ TF_CALL = {
     "target_frame": SCAN_FRAME,
 }
 
-# name -> (type, latched). One publisher each, from /bench_robot, no subscriber.
+# Clock topics (0.7.3), see `clock_truth`.
+IMU_PERIOD = 0.02
+# `/imu/data` is stamped with the wall clock, this long before it is published.
+IMU_WALL_AGE_S = 0.02
+# `/pose_mixed` has two publishers, one stamped in sim time, one in wall time.
+POSE_PERIOD = 0.1
+# `/stamps_regress`: every REGRESS_EVERY-th stamp is REGRESS_DIP_S behind the previous one.
+REGRESS_PERIOD = 0.2
+REGRESS_EVERY = 4
+REGRESS_DIP_S = 1.0
+# name -> (type, latched). One publisher each, except PUBLISHER_COUNTS, from /bench_robot, no subscriber.
 BENCH_TOPICS = {
     "/clock": ("rosgraph_msgs/msg/Clock", False),
     "/scan": ("sensor_msgs/msg/LaserScan", False),
@@ -77,7 +87,11 @@ BENCH_TOPICS = {
     "/robot_description_lite": ("std_msgs/msg/String", True),
     "/tf": ("tf2_msgs/msg/TFMessage", False),
     "/tf_static": ("tf2_msgs/msg/TFMessage", True),
+    "/imu/data": ("sensor_msgs/msg/Imu", False),
+    "/pose_mixed": ("geometry_msgs/msg/PoseStamped", False),
+    "/stamps_regress": ("geometry_msgs/msg/PoseStamped", False),
 }
+PUBLISHER_COUNTS = {"/pose_mixed": 2}
 # Present on every graph; the number of endpoints depends on hidden CLI and daemon nodes.
 INFRA_TOPICS = {
     "/parameter_events": "rcl_interfaces/msg/ParameterEvent",
@@ -127,6 +141,25 @@ def tf_truth() -> dict[str, Any]:
             SCAN_FRAME,
         ],
         "real_time_factor": 1.0,
+    }
+
+
+def clock_truth() -> dict[str, Any]:
+    """What `TopicRate.clock_basis` and the stamp fields must say per topic (0.7.3)."""
+    return {
+        "topics": {
+            "/scan": {"basis": "sim"},
+            "/cmd_vel_out": {"basis": "none"},
+            "/imu/data": {
+                "basis": "wall",
+                "age_median_s_range": [0.015, 0.2],
+                "age_p95_s_max": 0.5,
+                "published_age_s": IMU_WALL_AGE_S,
+            },
+            "/pose_mixed": {"basis": "mixed"},
+            "/stamps_regress": {"basis": "sim", "min_regressions": 2, "min_messages": 12},
+        },
+        "note": "wall = stamps are dates; the age is arrival minus stamp, so it also holds delivery",
     }
 
 
@@ -203,13 +236,14 @@ def _graph() -> dict[str, Any]:
             )
             continue
         type_name, latched = BENCH_TOPICS[name]
+        publishers = PUBLISHER_COUNTS.get(name, 1)
         topics.append(
             {
                 "name": name,
                 "types": [type_name],
-                "publisher_count": 1,
+                "publisher_count": publishers,
                 "subscription_count": 0,
-                "endpoints": [_endpoint(name, "/bench_robot", latched)],
+                "endpoints": [_endpoint(name, "/bench_robot", latched)] * publishers,
             }
         )
     topics.append(
@@ -284,6 +318,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
             "note": "timer periods; the bench stamps with seconds since start, so sim rate = wall rate",
         },
         "tf": tf_truth(),
+        "clock": clock_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

@@ -149,8 +149,9 @@ def _call(tool: str, args: dict, payload: Any, wall: float = 0.1) -> dict:
     }
 
 
-def _rate(hz: float, cv: float = 0.04, count: int = 12) -> dict:
+def _rate(hz: float, cv: float = 0.04, count: int = 12, clock: dict | None = None) -> dict:
     return {
+        **(clock or {}),
         "basis": "received_ns",
         "message_count": count,
         "startup_burst_count": 0,
@@ -170,6 +171,7 @@ def _samples(
     cv: float = 0.04,
     count: int = 12,
     steps_ns: list[int] | None = None,
+    clock: dict | None = None,
 ) -> dict:
     """Sample result; stamps step by 100 ms unless `steps_ns` (cycled) says otherwise."""
     stamps = [0] * count
@@ -185,7 +187,7 @@ def _samples(
     return _call(
         "sample_messages",
         {"topic": topic, "count": count},
-        {"topic": topic, "count": count, "samples": samples, "rate": _rate(hz, cv, count)},
+        {"topic": topic, "count": count, "samples": samples, "rate": _rate(hz, cv, count, clock)},
     )
 
 
@@ -240,7 +242,12 @@ def _bench_scan_sample(gt: dict, args: dict) -> dict:
     return _call(
         "sample_messages",
         args,
-        {"topic": "/scan", "count": 1, "samples": [sample], "rate": _rate(10.0)},
+        {
+            "topic": "/scan",
+            "count": 1,
+            "samples": [sample],
+            "rate": _rate(10.0, clock={"clock_basis": "sim"}),
+        },
     )
 
 
@@ -320,7 +327,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         info = {
             "name": topic["name"],
             "message_type": topic["types"][0],
-            "publisher_count": 1,
+            "publisher_count": topic["publisher_count"],
             "subscriber_count": 0,
             "publisher_qos": qos,
             "subscription_qos": None,
@@ -416,6 +423,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
                 {"role": "writer", "ros_topic": t["name"], "qos": {"reliability": "RELIABLE"}}
                 for t in before["topics"]
                 if t.get("counts") != "ignore"
+                for _ in range(t["publisher_count"])
             ]
         },
     )
@@ -431,7 +439,26 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     )
     out["08c_sample_scan_rate"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 12})
     out["20_sample_clock"] = _samples("/clock", "payload", {"clock": {}}, 50.0)
-    out["20_sample_cmd_vel_out"] = _samples("/cmd_vel_out", "none", {}, 5.0)
+    out["20_sample_cmd_vel_out"] = _samples(
+        "/cmd_vel_out", "none", {}, 5.0, clock={"clock_basis": "none"}
+    )
+    out["20_sample_imu_data"] = _samples(
+        "/imu/data",
+        "header",
+        {},
+        50.0,
+        clock={"clock_basis": "wall", "stamp_age_median_s": 0.04, "stamp_age_p95_s": 0.12},
+    )
+    out["20_sample_pose_mixed"] = _samples(
+        "/pose_mixed", "header", {}, 20.0, clock={"clock_basis": "mixed"}
+    )
+    out["20_sample_stamps_regress"] = _samples(
+        "/stamps_regress",
+        "header",
+        {},
+        5.0,
+        clock={"clock_basis": "sim", "stamp_regression_count": 3},
+    )
     out["20_sample_camera_image_raw"] = _samples("/camera/image_raw", "header", {}, 2.0)
     out["20_sample_scan_edge"] = _samples(
         "/scan_edge", "header", {"ranges": ["inf", "nan", "-inf", 1.5]}, 2.0
@@ -559,7 +586,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
     assert code == 0
     assert report["rate_cv"]["/scan"]["interval_cv"] == 0.04
     sections = {r["section"] for r in report["rows"]}
-    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf", "listing"}
+    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf", "clock", "listing"}
 
 
 @pytest.mark.parametrize(
@@ -607,6 +634,30 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         (
             lambda r: r["13_analyze_bag"]["parsed"][0]["topics"][0].update(message_count=99),
             "per-topic message counts",
+        ),
+        (
+            lambda r: r["20_sample_imu_data"]["parsed"][0]["rate"].update(clock_basis="sim"),
+            "/imu/data clock_basis",
+        ),
+        (
+            lambda r: r["20_sample_imu_data"]["parsed"][0]["rate"].update(
+                stamp_age_median_s=None, stamp_age_p95_s=None
+            ),
+            "/imu/data stamp_age_median_s",
+        ),
+        (
+            lambda r: r["20_sample_imu_data"]["parsed"][0]["rate"].update(stamp_age_p95_s=0.9),
+            "/imu/data stamp_age_p95_s",
+        ),
+        (
+            lambda r: r["20_sample_pose_mixed"]["parsed"][0]["rate"].update(clock_basis="sim"),
+            "/pose_mixed clock_basis",
+        ),
+        (
+            lambda r: r["20_sample_stamps_regress"]["parsed"][0]["rate"].update(
+                stamp_regression_count=0
+            ),
+            "/stamps_regress stamp_regression_count",
         ),
     ],
 )

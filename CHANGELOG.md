@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `ros2 service list -t` (`docs/CONTRACT.md` section 9.10). The mock `camera_driver` is a
   lifecycle node, which adds the topic `/camera_driver/transition_event` to the mock graph.
   The bench gains `/robot1/bench_lifecycle` and the comparator rows for both fields.
+- `TopicRate` clock fields on `sample_messages` and `peek_bag_samples` (`docs/CONTRACT.md`
+  section 9.11): `clock_basis` (`wall`, `sim`, `none`, `mixed`), `stamp_age_median_s` and
+  `stamp_age_p95_s` (arrival minus stamp, wall-stamped topics only) and `stamp_regression_count`.
+  Additive, all with defaults. The bench gains `/imu/data`, `/pose_mixed` and `/stamps_regress`.
 
 ### Changed
 

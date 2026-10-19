@@ -13,12 +13,12 @@ import time
 import ground_truth as model
 import rclpy
 from builtin_interfaces.msg import Time
-from geometry_msgs.msg import Transform, TransformStamped, Twist
+from geometry_msgs.msg import PoseStamped, Transform, TransformStamped, Twist
 from ground_truth import CAMERA_DELAY_SEC, N_BEAMS
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import Image, LaserScan
+from sensor_msgs.msg import Image, Imu, LaserScan
 from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
@@ -64,6 +64,47 @@ class BenchRobot(Node):
         self._tf_static_pub.publish(
             TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
         )
+        self._setup_clock_topics(qos)
+
+    # ---- clock topics (0.7.3): wall-stamped, mixed-clock and regressing stamps
+    def _setup_clock_topics(self, qos: QoSProfile) -> None:
+        """Topics whose stamps are on a known clock; truth in `ground_truth.clock_truth`."""
+        self._imu_pub = self.create_publisher(Imu, "/imu/data", qos)
+        self._pose_sim_pub = self.create_publisher(PoseStamped, "/pose_mixed", qos)
+        self._pose_wall_pub = self.create_publisher(PoseStamped, "/pose_mixed", qos)
+        self._regress_pub = self.create_publisher(PoseStamped, "/stamps_regress", qos)
+        self._regress_count = 0
+        self.create_timer(model.IMU_PERIOD, self._tick_imu)
+        self.create_timer(model.POSE_PERIOD, self._tick_pose_mixed)
+        self.create_timer(model.REGRESS_PERIOD, self._tick_regress)
+
+    @staticmethod
+    def _wall_time_msg(age_s: float = 0.0) -> Time:
+        return sim_time_msg(time.time() - age_s)
+
+    def _tick_imu(self) -> None:
+        msg = Imu()
+        msg.header.stamp = self._wall_time_msg(model.IMU_WALL_AGE_S)
+        msg.header.frame_id = "imu_link"
+        msg.orientation.w = 1.0
+        self._imu_pub.publish(msg)
+
+    def _tick_pose_mixed(self) -> None:
+        sim, wall = PoseStamped(), PoseStamped()
+        sim.header.stamp = sim_time_msg(self._now())
+        wall.header.stamp = self._wall_time_msg()
+        self._pose_sim_pub.publish(sim)
+        self._pose_wall_pub.publish(wall)
+
+    def _tick_regress(self) -> None:
+        """Simulated stamps, every `REGRESS_EVERY`th one `REGRESS_DIP_S` behind."""
+        self._regress_count += 1
+        stamp = self._now()
+        if self._regress_count % model.REGRESS_EVERY == 0:
+            stamp = max(stamp - model.REGRESS_DIP_S, 0.001)
+        msg = PoseStamped()
+        msg.header.stamp = sim_time_msg(stamp)
+        self._regress_pub.publish(msg)
 
     @staticmethod
     def _transform(parent: str, child: str, t: float) -> TransformStamped:
