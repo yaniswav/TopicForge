@@ -114,6 +114,10 @@
         "description": "Fully qualified node name, e.g. `/lidar_driver`.",
         "type": "string"
       },
+      "lifecycle": {
+        "description": "True when `service_servers` has `<full_name>/get_state` (GetState).",
+        "type": "boolean"
+      },
       "mode_effective": {
         "description": "`live` or `mock` (fixtures).",
         "enum": [

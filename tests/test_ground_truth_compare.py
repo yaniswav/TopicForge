@@ -324,7 +324,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
             "subscriber_count": 0,
             "publisher_qos": qos,
             "subscription_qos": None,
-            "publisher_nodes": ["/bench_robot"],
+            "publisher_nodes": [compare.node_full_name(ep)],
             "subscriber_nodes": [],
         }
         out["03_topic_info_" + compare.slug(topic["name"])] = _call(
@@ -335,10 +335,19 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         {},
         {
             "nodes": [
-                {"name": n.strip("/"), "namespace": "/", "full_name": n, "duplicate_count": 1}
+                {
+                    "name": n.rpartition("/")[2],
+                    "namespace": n.rpartition("/")[0] or "/",
+                    "full_name": n,
+                    "duplicate_count": 1,
+                    "lifecycle": n in before["lifecycle_nodes"],
+                }
                 for n in before["nodes"]
             ],
             "duplicates": [],
+            "lifecycle_count": len(before["lifecycle_nodes"]),
+            "lifecycle_note": None,
+            "by_namespace": dict(before["nodes_by_namespace"]),
         },
     )
     infra = [
@@ -348,8 +357,23 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     user = [
         {"name": t["name"], "type": t["types"][0]}
         for t in before["topics"]
-        if t.get("counts") != "ignore"
+        if t.get("counts") != "ignore" and not t["name"].startswith("/robot1/")
     ]
+    lifecycle_topic = next(t for t in before["topics"] if t["name"].startswith("/robot1/"))
+    out["03n_node_info_robot1_bench_lifecycle"] = _call(
+        "get_node_info",
+        {"node": "/robot1/bench_lifecycle"},
+        {
+            "full_name": "/robot1/bench_lifecycle",
+            "publishers": [
+                {"name": lifecycle_topic["name"], "type": lifecycle_topic["types"][0]},
+                *infra,
+            ],
+            "subscribers": [],
+            "use_sim_time": False,
+            "use_sim_time_note": None,
+        },
+    )
     out["03n_node_info_bench_robot"] = _call(
         "get_node_info",
         {"node": "/bench_robot"},
@@ -379,6 +403,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
             "participants": [
                 {"vendor": "fast", "name": "bench_robot", "is_observer": False},
                 {"vendor": "fast", "name": "bench_blocked", "is_observer": False},
+                {"vendor": "fast", "name": "bench_lifecycle", "is_observer": False},
                 {"vendor": "cyclone", "name": "topicforge", "is_observer": True},
             ]
         },
@@ -510,8 +535,15 @@ def test_bench_truth_describes_the_published_scan() -> None:
     assert truth["ros"] == {
         "distro": "jazzy",
         "rmw_implementation": "rmw_cyclonedds_cpp",
-        "use_sim_time": {"/bench_robot": False, "/bench_blocked": None},
+        "use_sim_time": {
+            "/bench_robot": False,
+            "/bench_blocked": None,
+            "/robot1/bench_lifecycle": False,
+        },
     }
+    before = truth["graph"]["before_capture"]
+    assert before["lifecycle_nodes"] == ["/robot1/bench_lifecycle"]
+    assert before["nodes_by_namespace"] == {"/": 2, "/robot1": 1}
     json.dumps(truth)
 
 
@@ -542,6 +574,14 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
             "use_sim_time per node (get_node_info)",
         ),
         (lambda r: r["02n_list_nodes"]["parsed"][0]["nodes"].pop(), "node set (list_nodes)"),
+        (
+            lambda r: r["02n_list_nodes"]["parsed"][0]["nodes"][2].update(lifecycle=False),
+            "lifecycle nodes (list_nodes)",
+        ),
+        (
+            lambda r: r["02n_list_nodes"]["parsed"][0].update(by_namespace={"/": 3}),
+            "nodes per namespace (list_nodes)",
+        ),
         (
             lambda r: r["20_sample_clock"]["parsed"][0]["samples"][0].update(stamp_source="none"),
             "/clock stamp_source",

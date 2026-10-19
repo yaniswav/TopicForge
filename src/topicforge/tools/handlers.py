@@ -223,12 +223,13 @@ def register_tools(
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on "
             "the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a "
-            "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`. `duplicates` "
-            "lists full names used by several nodes (a per-node tool then answers for one of "
+            "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` "
+            "(managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. "
+            "`duplicates` lists full names used by several nodes (a per-node tool then answers for one of "
             "them, unidentified). Nodes starting with an underscore are hidden and a node on "
             "another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. "
             "Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a "
-            "`ros2` CLI. Read-only; cheap (one CLI call)." + _ROS_LANE_NOTE
+            "`ros2` CLI. Read-only; cheap (two CLI calls)." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")

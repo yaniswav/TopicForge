@@ -9,9 +9,11 @@ robot description, so a mock call shows both behaviours.
 from __future__ import annotations
 
 from topicforge.adapters.common.nodes import (
+    LIFECYCLE_SERVICE_TYPE,
     build_node_info,
     build_node_listing,
     build_parameters,
+    lifecycle_node_names,
     unknown_node_error,
 )
 from topicforge.adapters.ros2_mock.fixtures import MOCK_TOPICS
@@ -66,6 +68,16 @@ MOCK_NODE_PARAMETERS: dict[str, dict[str, object]] = {
     },
 }
 
+# Lifecycle (managed) services of `camera_driver`, with `/camera_driver/transition_event`.
+_LIFECYCLE_SERVICES: tuple[tuple[str, str], ...] = (
+    ("change_state", "lifecycle_msgs/srv/ChangeState"),
+    ("get_available_states", "lifecycle_msgs/srv/GetAvailableStates"),
+    ("get_available_transitions", "lifecycle_msgs/srv/GetAvailableTransitions"),
+    ("get_state", LIFECYCLE_SERVICE_TYPE),
+    ("get_transition_graph", "lifecycle_msgs/srv/GetAvailableTransitions"),
+)
+MOCK_LIFECYCLE_NODES: frozenset[str] = frozenset({"/camera_driver"})
+
 _ACTION_SERVERS: dict[str, tuple[NodeInterface, ...]] = {
     "/nav_planner": (
         NodeInterface(name="/navigate_to_pose", type="nav2_msgs/action/NavigateToPose"),
@@ -80,7 +92,13 @@ def mock_node_names() -> list[str]:
 
 def mock_node_listing() -> NodeListing:
     """The mock `list_nodes` result."""
-    return build_node_listing(mock_node_names(), "mock")
+    services = {
+        f"{node}/{name}": [type_]
+        for node in MOCK_LIFECYCLE_NODES
+        for name, type_ in _LIFECYCLE_SERVICES
+    }
+    names = mock_node_names()
+    return build_node_listing(names, "mock", lifecycle=lifecycle_node_names(names, services))
 
 
 def _interfaces(node: str) -> dict[str, list[NodeInterface]]:
@@ -100,7 +118,11 @@ def _interfaces(node: str) -> dict[str, list[NodeInterface]]:
         "publishers": sorted([*publishers, event, log], key=lambda i: i.name),
         "subscribers": sorted([*subscribers, event], key=lambda i: i.name),
         "service_servers": [
-            NodeInterface(name=f"{node}/{name}", type=type_) for name, type_ in _PARAM_SERVICES
+            NodeInterface(name=f"{node}/{name}", type=type_)
+            for name, type_ in (
+                *_PARAM_SERVICES,
+                *(_LIFECYCLE_SERVICES if node in MOCK_LIFECYCLE_NODES else ()),
+            )
         ],
         "action_servers": list(_ACTION_SERVERS.get(node, ())),
     }

@@ -14,6 +14,7 @@ from topicforge.adapters.common.nodes import (
     MAX_PARAMETERS,
     build_node_listing,
     build_parameters,
+    lifecycle_node_names,
     split_full_name,
     unknown_node_error,
     use_sim_time_of,
@@ -157,3 +158,27 @@ def test_use_sim_time_unknown_always_says_why() -> None:
 def test_every_documented_secret_word_masks(key: str) -> None:
     (p,), _ = build_parameters({key: "v"})
     assert p.masked and p.value == MASKED_VALUE
+
+
+def test_listing_by_namespace_is_sorted_and_counts_distinct_names() -> None:
+    names = ["/z", "/robot2/a", "/a", "/a", "/robot1/b", "/robot1/c"]
+    listing = build_node_listing(names, "live")
+    assert list(listing.by_namespace) == ["/", "/robot1", "/robot2"]
+    assert listing.by_namespace == {"/": 2, "/robot1": 2, "/robot2": 1}
+
+
+def test_listing_lifecycle_defaults_to_false_and_counts() -> None:
+    plain = build_node_listing(["/a", "/b"], "live")
+    assert plain.lifecycle_count == 0 and not any(n.lifecycle for n in plain.nodes)
+    flagged = build_node_listing(["/a", "/b"], "live", lifecycle=frozenset({"/b"}))
+    assert [n.lifecycle for n in flagged.nodes] == [False, True]
+    assert flagged.lifecycle_count == 1
+
+
+def test_lifecycle_rule_needs_get_state_with_the_right_type() -> None:
+    services = {
+        "/a/get_state": ["lifecycle_msgs/srv/GetState"],
+        "/b/get_state": ["std_srvs/srv/Trigger"],
+        "/c/other": ["lifecycle_msgs/srv/GetState"],
+    }
+    assert lifecycle_node_names(["/a", "/b", "/c", "/d"], services) == {"/a"}

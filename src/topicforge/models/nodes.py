@@ -36,6 +36,13 @@ class NodeListItem(BaseModel):
             "Nodes using this exact full name; above 1, name-based tools answer for one of them."
         ),
     )
+    lifecycle: bool = Field(
+        default=False,
+        description=(
+            "True when the graph has `<full_name>/get_state` of type "
+            "`lifecycle_msgs/srv/GetState` (a managed node). The state itself is never read."
+        ),
+    )
 
 
 class NodeListing(BaseModel):
@@ -55,6 +62,15 @@ class NodeListing(BaseModel):
         description=(
             "Full names that appear more than once on the graph. Empty when every name is unique."
         )
+    )
+    lifecycle_count: int = Field(default=0, ge=0, description="Nodes with `lifecycle` true.")
+    lifecycle_note: str | None = Field(
+        default=None,
+        description="Why `lifecycle` could not be determined (service list failed), else `None`.",
+    )
+    by_namespace: dict[str, int] = Field(
+        default_factory=dict,
+        description=("Distinct full names per namespace (`/` is the root), sorted by namespace."),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     note: str | None = Field(default=None, description=_NOTE_DESC)
@@ -144,6 +160,10 @@ class NodeInfo(BaseModel):
     )
     use_sim_time_note: str | None = Field(
         default=None, description="Why `use_sim_time` is `None`. `None` when it is set."
+    )
+    lifecycle: bool = Field(
+        default=False,
+        description="True when `service_servers` has `<full_name>/get_state` (GetState).",
     )
     duplicate_count: int = Field(
         ge=1,

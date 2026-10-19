@@ -48,14 +48,19 @@ def _topic(
     subscribers: tuple[str, ...],
     durability: str = "volatile",
 ) -> TopicInfo:
-    """A mock topic whose both sides use `reliability` and `durability`, one endpoint per node."""
+    """A mock topic whose both sides use `reliability` and `durability`, one endpoint per node.
+
+    A side with no node has no QoS (`None`).
+    """
     return TopicInfo(
         name=name,
         message_type=message_type,
         publisher_count=len(publishers),
         subscriber_count=len(subscribers),
-        publisher_qos=_side(reliability, len(publishers), durability),
-        subscription_qos=_side(reliability, len(subscribers), durability),
+        publisher_qos=_side(reliability, len(publishers), durability) if publishers else None,
+        subscription_qos=(
+            _side(reliability, len(subscribers), durability) if subscribers else None
+        ),
         publisher_nodes=list(publishers),
         subscriber_nodes=list(subscribers),
         mode_effective="mock",
@@ -105,6 +110,13 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         ("/robot_state_publisher",),
         ("/nav_planner", "/camera_driver"),
         durability="transient_local",
+    ),
+    _topic(
+        "/camera_driver/transition_event",
+        "lifecycle_msgs/msg/TransitionEvent",
+        "reliable",
+        ("/camera_driver",),
+        (),
     ),
     _topic(
         "/camera/image_raw",
@@ -301,6 +313,21 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
                     }
                     for a, b in MOCK_STATIC_EDGES
                 ]
+            },
+        )
+    ],
+    "/camera_driver/transition_event": [
+        MessageSample(
+            topic="/camera_driver/transition_event",
+            message_type="lifecycle_msgs/msg/TransitionEvent",
+            timestamp_ns=0,
+            stamp_source="none",
+            received_ns=_arrival(0),
+            payload={
+                "timestamp": _BASE_TS_NS,
+                "transition": {"id": 3, "label": "activate"},
+                "start_state": {"id": 2, "label": "inactive"},
+                "goal_state": {"id": 3, "label": "active"},
             },
         )
     ],

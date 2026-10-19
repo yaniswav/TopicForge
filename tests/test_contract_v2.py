@@ -145,7 +145,7 @@ def test_every_mock_topic_lists_as_many_nodes_as_endpoints(inspector: Inspector)
             info.publisher_qos is not None
             and info.publisher_qos.endpoint_count == item.publisher_count
         )
-        assert info.subscription_qos is not None
+        assert (info.subscription_qos is not None) == (item.subscriber_count > 0)
 
 
 # ---- names -----------------------------------------------------------------

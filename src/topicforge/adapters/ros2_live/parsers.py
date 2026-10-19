@@ -24,6 +24,24 @@ _DURABILITY_VALUES = {"VOLATILE": "volatile", "TRANSIENT_LOCAL": "transient_loca
 _UNKNOWN_NODE = "_NODE_NAME_UNKNOWN_"
 
 
+_SERVICE_LINE = re.compile(r"^\s*(/\S+)\s+\[([^\]]*)\]\s*$")
+
+
+def parse_service_list(stdout: str) -> dict[str, list[str]]:
+    """Parse `ros2 service list -t` into `{service: [types]}`.
+
+    A line is `/name [pkg/srv/Type]`; some distros print several types separated by
+    commas. Lines that do not match (warnings, blank lines) are skipped.
+    """
+    services: dict[str, list[str]] = {}
+    for line in stdout.splitlines():
+        match = _SERVICE_LINE.match(line)
+        if match:
+            types = [t.strip() for t in match.group(2).split(",") if t.strip()]
+            services[match.group(1)] = types
+    return services
+
+
 @dataclass(frozen=True)
 class EndpointQos:
     """QoS of one endpoint from `ros2 topic info --verbose`.

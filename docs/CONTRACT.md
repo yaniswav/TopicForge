@@ -629,14 +629,15 @@ Everything below goes into the migration list and into `docs/MIGRATION.md`.
 Tools 13 and 14, shipped in 0.7.0. Both are additive, run in the ROS lane and are open-world.
 
 `list_nodes` returns `NodeListing {nodes, returned, total, truncated, duplicates,
-mode_effective, note}` from one `ros2 node list` call. A node is `{name, namespace,
-full_name, duplicate_count}`; `nodes` holds one entry per distinct full name and `duplicates`
+lifecycle_count, lifecycle_note, by_namespace, mode_effective, note}` from `ros2 node list`
+and, since 0.7.3, one `ros2 service list -t` (section 9.10). A node is `{name, namespace,
+full_name, duplicate_count, lifecycle}`; `nodes` holds one entry per distinct full name and `duplicates`
 the full names with `duplicate_count` above 1. Nodes whose name starts with an underscore
 are hidden by the CLI and are not listed.
 
 `get_node_info(node, timeout_s)` returns `NodeInfo {full_name, publishers, subscribers,
 service_servers, service_clients, action_servers, action_clients, parameters, parameters_note,
-use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. An interface is
+use_sim_time, use_sim_time_note, lifecycle, duplicate_count, mode_effective, note}`. An interface is
 `{name, type}`. It makes up to three CLI calls: `ros2 node list` (the node must exist,
 duplicates are counted), `ros2 node info` (a graph query that never waits for the node) and
 `ros2 param dump` bounded by `timeout_s` (1..20, default 8) and by what is left of the 45 s.
@@ -848,3 +849,26 @@ from every `outputSchema` (never from an `inputSchema`): a result always carries
 - `tests/test_summary_schema_compat.py` pins this: no summary model in any `$defs`, a valid
   `LaserScanSummary` passes the served schema, a wrong `summary_type` fails it, and mock
   `sample_messages` and `peek_bag_samples` results validate against it.
+
+### 9.10 `list_nodes` lifecycle and `by_namespace` (0.7.3)
+
+Additive: new fields with defaults, no input change. `list_nodes` now costs two CLI calls
+(`ros2 node list`, then `ros2 service list -t`).
+
+- `NodeListItem.lifecycle` (bool, default `false`) is `true` when the graph has the service
+  `<full_name>/get_state` of type `lifecycle_msgs/srv/GetState`, the rule of
+  `ros2 lifecycle nodes`. `NodeInfo.lifecycle` applies the same rule to the node's own
+  `service_servers`. The lifecycle state itself is never read: that would be a service call,
+  and the tool surface stays graph-only.
+- `NodeListing.lifecycle_count` (int, default 0) counts the flagged nodes.
+- `NodeListing.lifecycle_note` (str or `null`) is set when the service list failed or came
+  back empty although nodes exist. Then every `lifecycle` is `false` only because it is
+  unknown, never silently (1.3); the listing itself still succeeds.
+- `NodeListing.by_namespace` (object, default `{}`) maps each namespace (`/` is the root) to
+  the number of distinct full names in it, sorted by namespace.
+- Mock: `/camera_driver` is the lifecycle node (five lifecycle services and the topic
+  `/camera_driver/transition_event`, which adds one topic to the mock graph).
+- Bench: `/robot1/bench_lifecycle` (rclpy `LifecycleNode`, left unconfigured) and its
+  `transition_event` topic; the comparator checks `lifecycle` and `by_namespace` on both
+  distros.
+

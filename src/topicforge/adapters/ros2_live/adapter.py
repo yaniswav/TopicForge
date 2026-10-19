@@ -26,6 +26,7 @@ from topicforge.adapters.common.nodes import (
     build_node_info,
     build_node_listing,
     build_parameters,
+    lifecycle_node_names,
     offers_parameter_services,
     unknown_node_error,
 )
@@ -37,6 +38,7 @@ from topicforge.adapters.ros2_live.node_parsers import (
     parse_param_dump,
 )
 from topicforge.adapters.ros2_live.parsers import (
+    parse_service_list,
     parse_topic_endpoint_qos,
     parse_topic_list_verbose,
     side_nodes,
@@ -178,8 +180,29 @@ class Ros2CliAdapter:
         return BagService().peek_samples(path, topic, count)
 
     def list_nodes(self) -> NodeListing:
-        """Nodes on the graph from one `ros2 node list` call: names, namespaces, duplicates."""
-        return build_node_listing(self._node_names(), self.effective_mode)
+        """Nodes on the graph: names, namespaces, duplicates and which are lifecycle nodes.
+
+        Two CLI calls: `ros2 node list`, then `ros2 service list -t` for the lifecycle
+        flag. A failed service list does not fail the listing: it sets `lifecycle_note`.
+        """
+        names = self._node_names()
+        try:
+            services = parse_service_list(self._run([self._exe, "service", "list", "-t"]))
+        except AdapterError as exc:
+            return build_node_listing(
+                names,
+                self.effective_mode,
+                lifecycle_note=f"Lifecycle unknown, `ros2 service list` failed: {exc}",
+            )
+        note = None
+        if names and not services:
+            note = "Lifecycle unknown: `ros2 service list -t` printed no service."
+        return build_node_listing(
+            names,
+            self.effective_mode,
+            lifecycle=lifecycle_node_names(names, services),
+            lifecycle_note=note,
+        )
 
     def get_node_info(self, node: str, timeout_s: float = _DEFAULT_TIMEOUT_SEC) -> NodeInfo:
         """Interfaces and parameters of one node.

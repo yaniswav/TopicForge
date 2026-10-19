@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `list_nodes` flags lifecycle (managed) nodes: `NodeListItem.lifecycle`, plus
+  `NodeListing.lifecycle_count`, `lifecycle_note` (set when the service list failed, never a
+  silent false) and `by_namespace` (distinct node names per namespace). `NodeInfo.lifecycle`
+  likewise. A node is lifecycle when it serves `<full_name>/get_state` of type
+  `lifecycle_msgs/srv/GetState`; the state is never read. Costs one extra
+  `ros2 service list -t` (`docs/CONTRACT.md` section 9.10). The mock `camera_driver` is a
+  lifecycle node, which adds the topic `/camera_driver/transition_event` to the mock graph.
+  The bench gains `/robot1/bench_lifecycle` and the comparator rows for both fields.
+
 ### Changed
 
 - `tools/list` shrinks from 118,884 to about 90 KB (`docs/CONTRACT.md` section 9.9), so the
