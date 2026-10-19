@@ -290,7 +290,7 @@ def test_tool_listing_stays_small(tools: dict[str, Tool]) -> None:
         len(json.dumps(t.model_dump(by_alias=True, exclude_none=True), separators=(",", ":")))
         for t in tools.values()
     )
-    assert total < 120_000, total
+    assert total < 100_000, total
 
 
 def test_schemas_carry_no_generated_titles_but_keep_the_output_type_name(

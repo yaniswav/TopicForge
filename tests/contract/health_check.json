@@ -17,13 +17,11 @@
     "description": "Result of `health_check`. Always succeeds, even when the host is unhealthy.",
     "properties": {
       "contract_version": {
-        "default": 2,
         "description": "Output contract version; changes only when a field is renamed, removed or retyped.",
         "minimum": 1,
         "type": "integer"
       },
       "dds_backend": {
-        "default": "none",
         "description": "DDS backend serving: `mock`, `cyclone`, `fast`, or `none` (DDS module inactive).",
         "enum": [
           "mock",
@@ -44,7 +42,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "DDS domain id observed when the DDS module is active."
       },
       "dds_inactive_note": {
@@ -56,12 +53,10 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why `dds_backend` is `none` while ROS 2 serves (not selected, binding missing, or failed to start); else `null`."
       },
       "dds_security": {
         "const": "not_supported",
-        "default": "not_supported",
         "description": "DDS Security is not handled: protected endpoints and data are invisible.",
         "type": "string"
       },
@@ -71,7 +66,6 @@
         "type": "integer"
       },
       "middleware_available": {
-        "default": false,
         "description": "True when a DDS backend serves; else whether the configured binding is importable.",
         "type": "boolean"
       },
@@ -88,7 +82,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "now_ns": {
@@ -101,7 +94,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Server wall-clock time (ns since epoch) when this report was built."
       },
       "observed_domain_note": {
@@ -113,7 +105,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Which DDS domain is observed: only the one joined at startup; others are invisible."
       },
       "observer_started_ns": {
@@ -126,11 +117,9 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "ns when the DDS observer joined; nothing earlier was watched. `None` without one."
       },
       "payload_decoding": {
-        "default": "disabled",
         "description": "`disabled`: DDS user-topic payloads are not decoded.",
         "enum": [
           "disabled",
@@ -147,7 +136,6 @@
             "type": "null"
           }
         ],
-        "default": "user-topic payload decoding is switched off until it is validated on a real bus; builtin discovery topics are still readable",
         "description": "Reason for `payload_decoding`."
       },
       "requested_mode": {
@@ -163,11 +151,9 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`."
       },
       "rmw_source": {
-        "default": "none",
         "description": "`env`, `ros2_cli`, `distro_default` (not verified on the graph) or `none`.",
         "enum": [
           "env",
@@ -190,11 +176,9 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "`ROS_DISTRO` if set (disclosed by design under the local-trust model)."
       },
       "ros_backend": {
-        "default": "none",
         "description": "ROS 2 backend: `ros2_cli`, `mock` or `none`.",
         "enum": [
           "mock",
@@ -204,7 +188,6 @@
         "type": "string"
       },
       "ros_tools_available": {
-        "default": false,
         "description": "True when the ROS 2 tools can run (`ros_backend` is not `none`); on a DDS-only setup use `list_endpoints`.",
         "type": "boolean"
       },
@@ -221,7 +204,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Whether `/clock` had a publisher in the last graph read (a hint that stamps may be sim time). `None` in mock or without a recent read; `health_check` never runs `ros2`."
       },
       "tracker_cache_evictions": {
@@ -234,7 +216,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Discovery entries dropped from a full tracker cache (4096 each); non-zero means the bus is bigger than listed."
       },
       "tracker_errors": {
@@ -247,7 +228,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Tracker passes that raised; non-zero means gaps."
       },
       "tracker_last_pass_ns": {
@@ -260,7 +240,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "ns of the last tracker pass; far older than `now_ns` means stale lifecycle."
       },
       "tracker_passes": {
@@ -273,7 +252,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Completed discovery tracker passes since start."
       },
       "tracker_running": {
@@ -285,7 +263,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Whether the discovery tracker thread is alive (Cyclone); `None` without a tracker."
       }
     },

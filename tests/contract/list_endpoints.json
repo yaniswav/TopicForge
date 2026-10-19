@@ -82,7 +82,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "When the participant was lost, ns since epoch (upper bound)."
           },
           "guid": {
@@ -99,8 +98,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
         "required": [
@@ -121,7 +119,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Source timestamp of the announcement, on the announcer's clock; `None` if unavailable."
           },
           "dds_topic": {
@@ -136,7 +133,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "`None` for a live endpoint; for a departed one (`include_departed`) when its participant was lost (upper bound)."
           },
           "guid": {
@@ -157,11 +153,9 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "participant_vendor": {
-            "default": "unknown",
             "enum": [
               "cyclone",
               "fast",
@@ -186,7 +180,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Announced QoS; `None` when reliability or durability could not be resolved. A duration of `None` is infinite or unset."
           },
           "qos_summary": {
@@ -198,7 +191,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "One-line QoS, set only with `fields` `compact` (where `qos` is `None`)."
           },
           "role": {
@@ -218,7 +210,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "ROS 2 name of the topic, for example `/scan`. `None` when the endpoint is not a ROS 2 topic: see `ros_topic_note`."
           },
           "ros_topic_note": {
@@ -230,7 +221,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Why `ros_topic` is `None`. `None` when it is set."
           },
           "type_id": {
@@ -242,7 +232,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Compact XTypes type identifier (`COMPLETE:<hex>`), `None` when not announced."
           },
           "type_name": {
@@ -253,8 +242,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
         "required": [
@@ -281,7 +269,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "`XCDR1` / `XCDR2` accepted or offered; `None` when not announced."
           },
           "deadline_ns": {
@@ -294,7 +281,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Deadline in ns; `None` is infinite. A reader deadline shorter than the writer's is incompatible."
           },
           "destination_order": {
@@ -310,7 +296,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "DestinationOrder QoS. `None` when not announced."
           },
           "durability": {
@@ -336,7 +321,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "`KEEP_LAST` (ring of `history_depth`) or `KEEP_ALL`; `None` when discovery did not announce it (see `history_note`)."
           },
           "history_depth": {
@@ -349,7 +333,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Depth for `KEEP_LAST`; else `None`."
           },
           "history_note": {
@@ -361,7 +344,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Why `history` is `None`."
           },
           "latency_budget_ns": {
@@ -374,7 +356,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "LatencyBudget in ns (a hint); `0` is the default, `None` is infinite or not announced."
           },
           "liveliness_kind": {
@@ -391,7 +372,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "`AUTOMATIC`, or `MANUAL_*` (the app must assert liveliness within `liveliness_lease_ns`); `None` when not announced."
           },
           "liveliness_lease_ns": {
@@ -404,7 +384,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Liveliness lease in ns; `None` is infinite or not announced."
           },
           "ownership_kind": {
@@ -420,7 +399,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "With `EXCLUSIVE` only the writer with the highest `ownership_strength` delivers; `None` when not announced."
           },
           "ownership_strength": {
@@ -432,7 +410,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Writer strength under `EXCLUSIVE` ownership; `None` when not announced."
           },
           "partitions": {
@@ -447,7 +424,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Partition names; the default partition is `[\"\"]`, never `[]`. Endpoints match only if partitions intersect; `None` when unreadable."
           },
           "reliability": {
@@ -470,7 +446,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Policies announced but unreadable (e.g. `Deadline`): their fields are `None`, which does NOT mean infinite; the scan does not compare them."
           }
         },
@@ -513,7 +488,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "`no_reader` (writers only), `no_writer` (readers only), else `None`."
           },
           "partitions": {
@@ -536,7 +510,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "ROS 2 name of the topic, for example `/scan`. `None` for a DDS topic that is not a ROS 2 topic."
           },
           "type_names": {
@@ -571,7 +544,6 @@
         "type": "array"
       },
       "departed_endpoint_count": {
-        "default": 0,
         "description": "Departed endpoints matching the filters; listed in `endpoints` only with `include_departed`.",
         "minimum": 0,
         "type": "integer"
@@ -589,13 +561,11 @@
         "type": "array"
       },
       "excluded_observer_endpoint_count": {
-        "default": 0,
         "description": "TopicForge's own endpoints left out of `endpoints` (counted in `total`).",
         "minimum": 0,
         "type": "integer"
       },
       "fields": {
-        "default": "full",
         "description": "Detail level served: `compact` drops per-endpoint QoS detail, type id and notes.",
         "enum": [
           "full",
@@ -604,7 +574,6 @@
         "type": "string"
       },
       "hidden_internal_endpoint_count": {
-        "default": 0,
         "description": "Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) left out while `include_internal` is false.",
         "minimum": 0,
         "type": "integer"
@@ -633,7 +602,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Set when a `topic` filter matched nothing: the closest known topics."
       },
       "observer_guid": {
@@ -645,7 +613,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "GUID of TopicForge's own participant, `None` in mock."
       },
       "returned": {

@@ -501,3 +501,162 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
 | `latency_available` | `bool` | no | True when a sample carried both a publish and a receive timestamp. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `str \| null` | no | One sentence of context, or `None`. |
+
+## Message summaries
+
+`MessageSample.summary` is advertised in the tool schemas as an open object with a
+`summary_type` (`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`) or `null`.
+The server builds and validates the exact shapes below. `TopicRate` is the `rate`
+block of a sample result. See [CONTRACT.md](CONTRACT.md) section 9.9.
+
+### `LaserScanSummary`
+
+Summary of a `sensor_msgs/msg/LaserScan`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"laser_scan"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id`; every angle is in this sensor frame, not the base frame. |
+| `beam_count` | `int` | yes | Beams in `ranges`. |
+| `angle_min` | `float \| null` | yes | Bearing of beam 0, rad. |
+| `angle_max` | `float \| null` | yes | Bearing of the last beam, rad. |
+| `angle_increment` | `float \| null` | yes | Angle between beams, rad. |
+| `range_min` | `float \| null` | yes | Smallest valid range, m. |
+| `range_max` | `float \| null` | yes | Largest valid range, m. |
+| `finite_count` | `int` | yes | Beams with a finite range. |
+| `inf_count` | `int` | yes | Beams at `+inf`. |
+| `neg_inf_count` | `int` | yes | Beams at `-inf`. |
+| `nan_count` | `int` | yes | Beams at `nan`. |
+| `out_of_range_count` | `int` | yes | Finite ranges outside `range_min`..`range_max` (not valid). |
+| `closest_obstacle` | `ScanReturn \| null` | yes | Closest valid return of the scan; `null` with `note`. |
+| `sectors` | `ScanSectors` | yes | Closest valid return per sector. |
+| `note` | `str \| null` | no | One sentence when the summary is partial; else `null`. |
+
+### `OdometrySummary`
+
+Summary of a `nav_msgs/msg/Odometry`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"odometry"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` (frame of the pose). |
+| `child_frame_id` | `str \| null` | yes | `child_frame_id` (frame of the twist). |
+| `linear_speed` | `float \| null` | yes | Norm of `twist.twist.linear`, m/s. |
+| `angular_z` | `float \| null` | yes | `twist.twist.angular.z`, rad/s. |
+| `position_x` | `float \| null` | yes | `pose.pose.position.x`, m. |
+| `position_y` | `float \| null` | yes | `pose.pose.position.y`, m. |
+| `position_z` | `float \| null` | yes | `pose.pose.position.z`, m. |
+| `yaw` | `float \| null` | yes | Heading from the pose quaternion, radians. |
+| `note` | `str \| null` | no | One sentence when a value is missing; else `null`. |
+
+### `ImuSummary`
+
+Summary of a `sensor_msgs/msg/Imu`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"imu"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` of the IMU. |
+| `orientation_valid` | `bool` | yes | False when the IMU gives no orientation: `roll`, `pitch`, `yaw` are `null`. |
+| `roll` | `float \| null` | yes | Rotation about x, radians. |
+| `pitch` | `float \| null` | yes | Rotation about y, radians. |
+| `yaw` | `float \| null` | yes | Rotation about z, radians. |
+| `angular_velocity_norm` | `float \| null` | yes | Norm of `angular_velocity`, rad/s. |
+| `linear_acceleration_norm` | `float \| null` | yes | Norm of `linear_acceleration`, m/s^2. |
+| `note` | `str \| null` | no | One sentence when a value is unusable; else `null`. |
+
+### `ImageSummary`
+
+Summary of a `sensor_msgs/msg/Image`. Pixels are never read.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"image"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` of the camera. |
+| `width` | `int \| null` | yes | Pixels. |
+| `height` | `int \| null` | yes | Pixels. |
+| `encoding` | `str \| null` | yes | Pixel encoding, e.g. `rgb8`. |
+| `step` | `int \| null` | yes | Row length, bytes. |
+| `is_bigendian` | `bool \| null` | yes | Big-endian pixels. |
+| `data_length` | `int \| null` | yes | Pixel buffer size in bytes (see `data_length_basis`). |
+| `data_length_basis` | `"payload" \| "step_x_height" \| null` | yes | `payload` (counted) or `step_x_height` (array cut, so step times height). |
+| `note` | `str \| null` | no | One sentence when partial; else `null`. |
+
+### `PointCloud2Summary`
+
+Summary of a `sensor_msgs/msg/PointCloud2`. Points are never read.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"point_cloud2"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` of the cloud. |
+| `width` | `int \| null` | yes | Points per row. |
+| `height` | `int \| null` | yes | Rows (1: unorganized). |
+| `point_count` | `int \| null` | yes | `width` times `height`. |
+| `point_step` | `int \| null` | yes | Bytes per point. |
+| `row_step` | `int \| null` | yes | Bytes per row. |
+| `is_dense` | `bool \| null` | yes | True when no point is invalid. |
+| `fields` | `list[PointFieldSummary]` | yes | Point layout. |
+| `note` | `str \| null` | no | One sentence when partial; else `null`. |
+
+### `ScanSectors`
+
+Sector minima, defined by bearing in the sensor frame.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `front` | `ScanSector` | yes | Bearings within +-45 degrees of +x. |
+| `left` | `ScanSector` | yes | Bearings from 45 to 135 degrees. |
+| `right` | `ScanSector` | yes | Bearings from -135 to -45 degrees. |
+| `rear` | `ScanSector` | yes | Bearings beyond +-135 degrees. |
+
+### `ScanSector`
+
+The closest valid return inside one angular sector of the scan.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `beam_count` | `int` | yes | Beams inside the sector (0: not covered). |
+| `closest` | `ScanReturn \| null` | yes | Closest valid return in the sector; `null` with `note`. |
+| `note` | `str \| null` | no | Why `closest` is `null`; `null` when it is set. |
+
+### `ScanReturn`
+
+One beam of a laser scan: the shortest valid return of a set of beams.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `range` | `float` | yes | Distance, meters. |
+| `bearing` | `float` | yes | Beam direction in radians, sensor frame: 0 is +x, counter-clockwise positive. |
+| `beam_index` | `int` | yes | Index in `ranges`. |
+
+### `PointFieldSummary`
+
+One field of a point cloud (`sensor_msgs/msg/PointField`).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | `str` | yes | Field name, e.g. `x`. |
+| `datatype` | `str` | yes | Element type, e.g. `FLOAT32`. |
+| `offset` | `int \| null` | yes | Byte offset in a point. |
+| `count` | `int \| null` | yes | Elements per point. |
+
+### `TopicRate`
+
+How a topic delivered its messages during one sampling call, with a verdict.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `basis` | `"received_ns" \| "recorded_ns"` | yes | Clock the rate is measured on: `received_ns` (live) or `recorded_ns` (bag). |
+| `message_count` | `int` | yes | Messages the rate is computed from. |
+| `startup_burst_count` | `int` | yes | Leading messages set aside as a start-up drain (live only); still in `message_count`. |
+| `window_s` | `float` | yes | Observation length, seconds. |
+| `mean_interval_s` | `float \| null` | yes | Mean interval; `null` under 2 messages. |
+| `interval_median_s` | `float \| null` | yes | Median interval; `null` under 2 messages. |
+| `max_gap_s` | `float \| null` | yes | Longest interval; `null` under 2 messages. |
+| `interval_cv` | `float \| null` | yes | Interval standard deviation over mean; `null` under 2 messages. |
+| `observed_frequency_hz` | `float \| null` | yes | Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages. |
+| `sim_frequency_hz` | `float \| null` | yes | Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps. |
+| `trailing_gap_s` | `float \| null` | yes | Time from the last message to the end of a live observation; else `null`. |
+| `verdict` | `"silent" \| "insufficient" \| "intermittent" \| "stable" \| "jittery" \| "erratic"` | yes | First match: `silent` (none), `insufficient` (under 5), `intermittent` (an interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), `erratic`. Describes this window, not a diagnosis. |
+| `verdict_note` | `str` | yes | The verdict in plain words. |

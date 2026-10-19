@@ -7,7 +7,8 @@ property name and the one-line summary do not, and together they were about a
 tenth of the listing, which some clients truncate. This module removes the
 generated titles and the docstring of every nested model, and keeps the first
 paragraph of the docstring of the top-level one. Property
-names, types, constraints, defaults and field descriptions are untouched.
+names, types, constraints and field descriptions are untouched; `default` keywords
+are dropped from output schemas only (a result always carries the field).
 """
 
 from __future__ import annotations
@@ -17,6 +18,22 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 JsonDict = dict[str, Any]
+
+
+def drop_defaults(node: Any, *, in_properties: bool = False) -> None:
+    """Remove every `default` keyword from an output schema, in place.
+
+    A default says what a client may omit on input; a result always carries the field,
+    so the keyword only costs bytes. A field literally named `default` is kept.
+    """
+    if isinstance(node, dict):
+        if not in_properties:
+            node.pop("default", None)
+        for key, value in node.items():
+            drop_defaults(value, in_properties=(key == "properties" and not in_properties))
+    elif isinstance(node, list):
+        for item in node:
+            drop_defaults(item)
 
 
 def compact_schema(node: Any, *, in_properties: bool = False, keep_title: bool = False) -> None:
@@ -58,3 +75,4 @@ def compact_registered_tools(mcp: MCPServer) -> None:
         output = tool.output_schema
         if output is not None:
             compact_schema(output, keep_title=True)
+            drop_defaults(output)

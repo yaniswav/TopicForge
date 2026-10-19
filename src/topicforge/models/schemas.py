@@ -6,9 +6,9 @@ extra key fail in tests instead of reaching clients.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
 
 from topicforge.models.summaries import MessageSummary, TopicRate
 
@@ -779,6 +779,26 @@ class TopicInfo(BaseModel):
     )
 
 
+# The five summary shapes are validated strictly by the server but advertised as one open
+# object keyed by `summary_type`: listing them in every tool's schema cost about 26 KB of
+# tools/list. The shapes are documented in docs/TOOLS.md ("Message summaries").
+_SUMMARY_ADVERTISED: dict[str, object] = {
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "summary_type": {
+                    "type": "string",
+                    "enum": ["laser_scan", "odometry", "imu", "image", "point_cloud2"],
+                }
+            },
+            "required": ["summary_type"],
+        },
+        {"type": "null"},
+    ]
+}
+
+
 class MessageSample(BaseModel):
     """A single sampled message on a topic."""
 
@@ -816,7 +836,7 @@ class MessageSample(BaseModel):
             "(unparsable output)."
         ),
     )
-    summary: MessageSummary | None = Field(
+    summary: Annotated[MessageSummary | None, WithJsonSchema(_SUMMARY_ADVERTISED)] = Field(
         default=None,
         description=(
             "Condensed reading of the whole message (see `summary_type`); `null` for "

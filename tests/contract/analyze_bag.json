@@ -36,7 +36,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Recorded ns of the first message; `null` for text-only summaries or no messages."
           },
           "frequency_basis": {
@@ -52,7 +51,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "`topic_span` (accurate) or `bag_duration` (count over the whole bag, understates late topics); `null` without a rate."
           },
           "frequency_hz": {
@@ -65,11 +63,9 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Average Hz: (count - 1) over the topic's own time span (see `frequency_basis`); `null` under 2 messages, a zero span, or a latched start-up burst (all within 1 s)."
           },
           "kind": {
-            "default": "user",
             "description": "`user` (data, incl. `/tf` and `/clock`), `rosbag2_internal` or `ros_builtin` (e.g. `/rosout`).",
             "enum": [
               "user",
@@ -88,7 +84,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Recorded ns of the last message; same rules."
           },
           "latched": {
@@ -100,7 +95,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "True if recorded with transient_local durability, false if volatile, `null` without QoS information."
           },
           "message_count": {
@@ -148,7 +142,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 bag info` text."
       },
       "duration_s": {
@@ -178,7 +171,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`."
       },
       "path": {
@@ -194,7 +186,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "`mcap`, `sqlite3`, or other storage identifier when known."
       },
       "topics": {

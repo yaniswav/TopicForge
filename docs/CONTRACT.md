@@ -669,9 +669,9 @@ shows only added properties.
 ### 9.1 Listing size
 
 `tools/list` carries the description, input schema and output schema of every tool, and some
-clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 serves about 119 KB
-(measured 118,884 bytes against the 120,000 test ceiling), so the next tool needs the schema
-compaction planned for 0.7.3 first.
+clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 served about 119 KB
+(118,884 bytes). 0.7.3 serves about 90 KB (90,123 bytes, section 9.9) against a 100,000 test
+ceiling.
 How:
 
 - Pydantic's generated `title` is dropped from every property and nested model, and the
@@ -680,7 +680,7 @@ How:
 - Field descriptions are one sentence, and self-explanatory ones (`reader_guid`, `returned`)
   have none. The longer explanations are in this section and in section 4; the rules a client
   needs stay in the tool description.
-- `tests/test_friction_fixes.py` fails if the listing grows back over 120 KB.
+- `tests/test_friction_fixes.py` fails if the listing grows back over 100 KB.
 
 Rule for new fields: one sentence, no history, no restating the name.
 
@@ -827,3 +827,24 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
   message counts and frequencies are approximate (`truncated` says when messages were lost).
 - The mock `/tf_static` topic carries the fixed frames of the demo robot; mock `inspect_tf`
   is a fixed 5 s capture and ignores `window_s`.
+
+### 9.9 `summary` is advertised as an open object (0.7.3)
+
+Additive, a loosening of the advertised schema only. `MessageSample.summary` used to list the
+five summary models (`LaserScanSummary`, `OdometrySummary`, `ImuSummary`, `ImageSummary`,
+`PointCloud2Summary`, with `ScanReturn` and the other nested ones) in the `$defs` of every
+tool that returns a sample: about 26 KB of `tools/list`. It is now advertised as
+`object | null`, where the object requires `summary_type` (`laser_scan`, `odometry`, `imu`,
+`image`, `point_cloud2`) and allows any other property. `default` keywords were also dropped
+from every `outputSchema` (never from an `inputSchema`): a result always carries the field.
+
+- The shapes did not change. They are the ones of section 4 and the "Message summaries"
+  appendix of [TOOLS.md](TOOLS.md), generated from the models. Read `summary_type`, then the
+  fields of that shape.
+- The server still builds and validates the five models strictly (`extra="forbid"`); only
+  what it advertises is looser. A client that validates `structuredContent` against the
+  `outputSchema` can only see fewer failures, never new ones, so no client breaks. A client
+  that generated typed code from the five models now gets an untyped object for `summary`.
+- `tests/test_summary_schema_compat.py` pins this: no summary model in any `$defs`, a valid
+  `LaserScanSummary` passes the served schema, a wrong `summary_type` fails it, and mock
+  `sample_messages` and `peek_bag_samples` results validate against it.

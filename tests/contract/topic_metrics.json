@@ -47,11 +47,9 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "`1 / deadline` of the shortest writer Deadline announced: the promised rate, not the observed one; `None` when none announced."
       },
       "latency_available": {
-        "default": false,
         "description": "True when a sample carried both a publish and a receive timestamp.",
         "type": "boolean"
       },
@@ -65,7 +63,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Median publish-to-receive latency in ns; `None` unless `latency_available`."
       },
       "latency_ns_p95": {
@@ -78,7 +75,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "95th-percentile publish-to-receive latency (ns)."
       },
       "latency_ns_p99": {
@@ -91,7 +87,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "99th-percentile publish-to-receive latency (ns)."
       },
       "mode_effective": {
@@ -111,7 +106,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "observed_frequency_hz": {
@@ -123,7 +117,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "`samples_observed / window_actual_s`; `None` under 2 samples."
       },
       "samples_observed": {
@@ -132,18 +125,15 @@
         "type": "integer"
       },
       "sequence_gaps_count": {
-        "default": 0,
         "description": "Missing sequence numbers in the buffered samples; `0` also when none exist (see `sequence_numbers_available`).",
         "minimum": 0,
         "type": "integer"
       },
       "sequence_numbers_available": {
-        "default": false,
         "description": "True when a sequence number could be read from a sample.",
         "type": "boolean"
       },
       "status": {
-        "default": "ok",
         "description": "`ok`; `no_samples_yet` (empty buffer); `unsupported_user_topic` (payload not decoded: null fields are not measurements).",
         "enum": [
           "ok",

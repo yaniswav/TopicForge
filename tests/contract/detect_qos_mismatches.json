@@ -31,7 +31,6 @@
         "additionalProperties": false,
         "properties": {
           "late_joiner": {
-            "default": false,
             "description": "True for a VOLATILE writer whose reader joined over 1 s later on the same host: earlier samples are not delivered. Normal.",
             "type": "boolean"
           },
@@ -44,7 +43,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "One-line explanation, set together with `late_joiner`."
           },
           "reader_guid": {
@@ -61,8 +59,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "topic": {
             "type": "string"
@@ -75,8 +72,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "writer_guid": {
             "type": "string"
@@ -92,8 +88,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
         "required": [
@@ -130,8 +125,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "reader_participant_guid": {
             "anyOf": [
@@ -141,8 +135,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "reader_participant_name": {
             "anyOf": [
@@ -152,8 +145,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "reader_type_name": {
             "anyOf": [
@@ -163,8 +155,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "severity": {
             "description": "`incompatible` (blocked) or `risky` (may degrade; History only).",
@@ -199,8 +190,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "writer_participant_guid": {
             "anyOf": [
@@ -210,8 +200,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "writer_participant_name": {
             "anyOf": [
@@ -221,8 +210,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "writer_type_name": {
             "anyOf": [
@@ -232,8 +220,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
         "required": [
@@ -271,8 +258,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "reason": {
             "description": "`partition` (none in common) or `type_name` (different types); QoS rules are not evaluated.",
@@ -306,8 +292,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
         "required": [
@@ -406,7 +391,6 @@
         "type": "array"
       },
       "matched_total": {
-        "default": 0,
         "description": "Matched pairs before the size cap.",
         "minimum": 0,
         "type": "integer"
@@ -427,7 +411,6 @@
         "type": "array"
       },
       "not_matched_total": {
-        "default": 0,
         "description": "Not-matched pairs before the size cap.",
         "minimum": 0,
         "type": "integer"
@@ -441,7 +424,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "pairs_checked": {
@@ -471,7 +453,6 @@
         "type": "array"
       },
       "reports_total": {
-        "default": 0,
         "description": "Reports before the size cap.",
         "minimum": 0,
         "type": "integer"
@@ -485,7 +466,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One-line reading of the scan: counts of incompatible, not matched and matched pairs."
       },
       "topics_scanned": {
@@ -494,7 +474,6 @@
         "type": "integer"
       },
       "truncated": {
-        "default": false,
         "description": "True when `reports`, `matched` or `not_matched` hit the 200-entry cap (see `*_total`); narrow with `topic`.",
         "type": "boolean"
       }

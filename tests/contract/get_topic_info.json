@@ -83,7 +83,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "publisher_count": {
@@ -106,7 +105,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "QoS of the publishers. `None` when it was not read: see `publisher_qos_note`."
       },
       "publisher_qos_note": {
@@ -118,7 +116,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why `publisher_qos` is `None`. `None` when it is set."
       },
       "subscriber_count": {
@@ -141,7 +138,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "QoS of the subscriptions. `None` when it was not read: see `subscription_qos_note`."
       },
       "subscription_qos_note": {
@@ -153,7 +149,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why `subscription_qos` is `None`. `None` when it is set."
       }
     },

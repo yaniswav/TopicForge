@@ -227,7 +227,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "path": {
@@ -242,7 +241,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Frames from `source_frame` to `target_frame`."
       },
       "path_note": {
@@ -254,7 +252,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why `path` is `None`, or context."
       },
       "real_time_factor": {

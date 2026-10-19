@@ -68,7 +68,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Characters (string) or elements (list) the value had before the cut. `None` unless `truncated` is true."
           },
           "truncated": {
@@ -132,7 +131,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "parameters": {
@@ -147,7 +145,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none."
       },
       "parameters_note": {
@@ -159,7 +156,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why `parameters` is `None`, or what was masked or cut; `None` when complete."
       },
       "publishers": {
@@ -199,7 +195,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`."
       },
       "use_sim_time_note": {
@@ -211,7 +206,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Why `use_sim_time` is `None`. `None` when it is set."
       }
     },

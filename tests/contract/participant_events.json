@@ -62,7 +62,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Seconds between `timestamp_ns` and this response; `None` in mock mode."
           },
           "domain_id": {
@@ -89,8 +88,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "name": {
             "anyOf": [
@@ -100,8 +98,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "observed_ns": {
             "anyOf": [
@@ -113,11 +110,9 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Local ns when TopicForge noticed the event, never before a DDS-derived `timestamp_ns`; `None` when untracked."
           },
           "time_source": {
-            "default": "observed_local",
             "description": "`dds_source_timestamp` (DDS timestamp of the announcement or dispose; for `lost` an upper bound of the death) or `observed_local` (when TopicForge noticed, weakest).",
             "enum": [
               "dds_source_timestamp",
@@ -189,7 +184,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "restarts_by_name": {
@@ -208,7 +202,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Set when unnamed participants were left out of `restarts_by_name`."
       },
       "returned": {

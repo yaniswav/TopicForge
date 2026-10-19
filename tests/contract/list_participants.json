@@ -55,7 +55,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Source timestamp of the latest announcement, on the announcer's clock; `None` if unavailable."
           },
           "domain_id": {
@@ -73,7 +72,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Wall-clock ns of the first discovery sample seen; `None` without lifecycle tracking."
           },
           "guid": {
@@ -87,16 +85,13 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "is_observer": {
-            "default": false,
             "description": "True for TopicForge's own read-only observer participant.",
             "type": "boolean"
           },
           "is_topicforge_cli": {
-            "default": false,
             "description": "True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
             "type": "boolean"
           },
@@ -110,7 +105,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Wall-clock ns of the latest discovery sample; `None` without lifecycle tracking."
           },
           "lost_ns": {
@@ -123,7 +117,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Once `left`: ns upper bound of the death (exact after a clean shutdown; after a crash the lease expiry, up to one lease earlier: 10 s Cyclone, 20 s Fast, 100 s RTI). `None` while active."
           },
           "lost_time_source": {
@@ -139,7 +132,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Origin of `lost_ns`: `dds_source_timestamp` or `observed_local` (weakest); `None` while active."
           },
           "name": {
@@ -151,7 +143,6 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Announced EntityName (e.g. `lidar_driver`); `None` when the application set none (Dust DDS cannot)."
           },
           "node_names": {
@@ -162,7 +153,6 @@
             "type": "array"
           },
           "node_names_source": {
-            "default": "none",
             "description": "`ros_discovery_info`, `ros2_cli` or `none` (no link made).",
             "enum": [
               "ros_discovery_info",
@@ -172,13 +162,11 @@
             "type": "string"
           },
           "seen_count": {
-            "default": 1,
             "description": "Discovery observations of this GUID in this server's lifetime. Not a restart count: a restart is a new GUID (see `restarts_by_name`).",
             "minimum": 1,
             "type": "integer"
           },
           "status": {
-            "default": "unknown",
             "description": "`active`, `left` (seen earlier, since gone) or `unknown` (no lifecycle tracking).",
             "enum": [
               "active",
@@ -205,7 +193,6 @@
             "type": "string"
           },
           "vendor_source": {
-            "default": "none",
             "description": "`guid_prefix` when `vendor` was read from the GUID, else `none`.",
             "enum": [
               "guid_prefix",
@@ -248,7 +235,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "One sentence of context, or `None`."
       },
       "participants": {
@@ -280,7 +266,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "Set when unnamed participants were left out of `restarts_by_name`."
       },
       "returned": {

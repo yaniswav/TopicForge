@@ -267,6 +267,51 @@ def render_tool_section(tool: JsonDict) -> str:
     return "\n".join(lines) + "\n"
 
 
+SUMMARY_MODELS = (
+    "LaserScanSummary",
+    "OdometrySummary",
+    "ImuSummary",
+    "ImageSummary",
+    "PointCloud2Summary",
+    "ScanSectors",
+    "ScanSector",
+    "ScanReturn",
+    "PointFieldSummary",
+    "TopicRate",
+)
+
+
+def render_summaries_appendix() -> str:
+    """Markdown appendix with the strict shape of each message summary and of `TopicRate`.
+
+    The tool schemas advertise `MessageSample.summary` as an open object keyed by
+    `summary_type` (CONTRACT 9.9); the server still validates these shapes, so they
+    are documented here, generated from the models.
+    """
+    from topicforge.models import summaries
+
+    lines = [
+        "## Message summaries",
+        "",
+        "`MessageSample.summary` is advertised in the tool schemas as an open object with a",
+        "`summary_type` (`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`) or `null`.",
+        "The server builds and validates the exact shapes below. `TopicRate` is the `rate`",
+        "block of a sample result. See [CONTRACT.md](CONTRACT.md) section 9.9.",
+        "",
+    ]
+    for name in SUMMARY_MODELS:
+        schema = getattr(summaries, name).model_json_schema(mode="serialization")
+        doc = " ".join(str(schema.get("description", "")).split("\n\n")[0].split())
+        lines += [f"### `{name}`", ""]
+        if doc:
+            lines += [doc, ""]
+        lines += _table(
+            ["Field", "Type", "Required", "Description"], _field_rows(schema, with_default=False)
+        )
+        lines.append("")
+    return "\n".join(lines)
+
+
 def render_tools_doc(tools: list[JsonDict]) -> str:
     """Full text of docs/TOOLS.md for `tools`."""
     head = [
@@ -285,7 +330,8 @@ def render_tools_doc(tools: list[JsonDict]) -> str:
     for t in tools:
         world = "open" if (t["annotations"] or {}).get("openWorldHint") else "closed"
         head.append(f"| [`{t['name']}`](#{t['name']}) | {t['title']} | {world} |")
-    return "\n".join(head) + "\n\n" + "\n".join(render_tool_section(t) for t in tools)
+    body = "\n".join(render_tool_section(t) for t in tools)
+    return "\n".join(head) + "\n\n" + body + "\n" + render_summaries_appendix()
 
 
 def main(argv: list[str] | None = None) -> int:
