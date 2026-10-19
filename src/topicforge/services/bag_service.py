@@ -17,13 +17,16 @@ Humble when the bag does not record one.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common import annotate_raw
+from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
 from topicforge.adapters.common.cdr_decoder import stringify_non_finite
+from topicforge.adapters.common.log_filter import LogFilter, first_matches_note, require_log_topic
 from topicforge.adapters.common.stamps import payload_stamp
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import (
@@ -132,6 +135,7 @@ class BagService:
             message_count=reader_data["message_count"],
             topics=reader_data["topics"],
             anomalies=[],
+            start_ns=reader_data["start_ns"],
             mode_effective=mode_effective,  # type: ignore[arg-type]
             bag_format=bag_format,  # type: ignore[arg-type]
         )
@@ -143,12 +147,21 @@ class BagService:
         count: int,
         *,
         mode_effective: str = "live",
+        start_s: float | None = None,
+        end_s: float | None = None,
+        log_filter: LogFilter | None = None,
     ) -> SampleResult:
-        """Return up to `count` decoded samples for `topic` from `path`."""
+        """Return up to `count` decoded samples for `topic` from `path`.
+
+        `start_s` / `end_s` select on the record time, bag-relative seconds `[start, end)`.
+        `log_filter` keeps only the matching `rcl_interfaces/msg/Log` messages, the first
+        `count` of them in bag order.
+        """
         if not is_rosbags_available():
             raise AdapterError(_ROSBAGS_REQUIRED_MSG)
         if count < 0:
             raise AdapterError("count must be >= 0")
+        validate_range(start_s, end_s)
 
         resolved = Path(path)
         if not resolved.exists():
@@ -156,7 +169,9 @@ class BagService:
 
         clamped = min(count, MAX_SAMPLE_COUNT)
         try:
-            samples, note = _peek_with_rosbags(resolved, topic, clamped)
+            samples, note = _peek_with_rosbags(
+                resolved, topic, clamped, start_s=start_s, end_s=end_s, log_filter=log_filter
+            )
         except AdapterError:
             raise
         except Exception as exc:  # pragma: no cover: defensive
@@ -188,6 +203,30 @@ def _bag_rate(samples: list[MessageSample]) -> TopicRate:
         stamps_ns=[s.timestamp_ns for s in samples] if samples and stamped else None,
         stamped=[(s.recorded_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.recorded_ns],
     )
+
+
+_METADATA_START_NS = re.compile(r"starting_time:\s*nanoseconds_since_epoch:\s*(\d+)")
+
+
+def read_start_ns(path: Path) -> int | None:
+    """Record time in ns of the first message of the bag at `path`, `None` when unreadable.
+
+    Reads rosbag2 `metadata.yaml` (`starting_time`) when present, else the `rosbags`
+    reader. Never raises.
+    """
+    try:
+        meta = (path if path.is_dir() else path.parent) / "metadata.yaml"
+        if meta.is_file() and (m := _METADATA_START_NS.search(meta.read_text(errors="replace"))):
+            return int(m.group(1))
+        if not is_rosbags_available() or not path.exists():
+            return None
+        reader, _ = _open_reader(path)
+        with reader:
+            start = int(reader.start_time)
+        return start if start > 0 else None
+    except Exception as exc:
+        log.debug("could not read the start time of %s: %s", path, exc)
+        return None
 
 
 def read_topic_spans(path: Path) -> dict[str, TopicSpan] | None:
@@ -346,6 +385,7 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
         topics: list[BagTopicStats] = [build_topic_stats(span) for span in spans.values()]
 
     return {
+        "start_ns": int(start) if isinstance(start, int) and start > 0 else None,
         "duration_s": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
         "message_count": sum(t.message_count for t in topics),
         "topics": topics,
@@ -353,11 +393,22 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
 
 
 def _peek_with_rosbags(
-    resolved: Path, topic: str, count: int
+    resolved: Path,
+    topic: str,
+    count: int,
+    *,
+    start_s: float | None = None,
+    end_s: float | None = None,
+    log_filter: LogFilter | None = None,
 ) -> tuple[list[MessageSample], str | None]:
-    """Up to `count` decoded samples on `topic` and a note; `AdapterError` if the topic is absent."""
+    """Up to `count` decoded samples on `topic` and a note; `AdapterError` if the topic is absent.
+
+    The range `[start_s, end_s)` is bag-relative seconds on the record time. With a log
+    filter, the first `count` matching messages in range, in bag order.
+    """
     samples: list[MessageSample] = []
     capped: set[str] = set()
+    scanned = 0
     reader, typestore_desc = _open_reader(resolved)
     with reader:
         connections = [c for c in reader.connections if getattr(c, "topic", None) == topic]
@@ -368,12 +419,22 @@ def _peek_with_rosbags(
             )
 
         message_type = getattr(connections[0], "msgtype", "<unknown>")
+        if log_filter is not None:
+            require_log_topic(topic, message_type)
         whole = needs_whole_arrays(message_type)
         assumed = _lacks_embedded_definitions(reader)
-        for connection, timestamp, raw in reader.messages(connections=connections):
+        bag_start = int(reader.start_time)
+        duration_s = max(int(reader.end_time) - bag_start, 0) / 1_000_000_000
+        start, stop = window_ns(bag_start, start_s, end_s)
+        for connection, timestamp, raw in reader.messages(
+            connections=connections, start=start, stop=stop
+        ):
             if len(samples) >= count:
                 break
+            scanned += 1
             decoded = _decode_bag_message(reader, connection, raw, whole_arrays=whole)
+            if log_filter is not None and not log_filter.matches(decoded):
+                continue
             found = payload_stamp(decoded)
             cut_here: set[str] = set()
             payload = _cap_arrays(decoded, cut_here)
@@ -391,6 +452,10 @@ def _peek_with_rosbags(
             )
 
     notes: list[str] = []
+    if log_filter is not None:
+        notes.append(first_matches_note(len(samples), scanned, log_filter))
+    if text := range_note(start_s, end_s, duration_s=duration_s, got=len(samples)):
+        notes.append(text)
     if assumed:
         notes.append(
             "The bag stores no message definitions; samples were decoded with the "

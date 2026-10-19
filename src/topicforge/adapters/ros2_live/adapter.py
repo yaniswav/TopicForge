@@ -22,6 +22,14 @@ from pathlib import Path
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common.bag_kind import classify_bag_topic
+from topicforge.adapters.common.log_filter import (
+    LOG_READER_DEPTH,
+    LOG_STREAM_CAP,
+    LogFilter,
+    is_log_type,
+    newest_matches,
+    require_log_topic,
+)
 from topicforge.adapters.common.nodes import (
     build_node_info,
     build_node_listing,
@@ -85,6 +93,8 @@ _NO_PUBLISHER_WAIT_SEC = 3.0
 # takes up to ~2 s, and decoding may run until 1 s past the deadline.
 _PARSE_GRACE_SEC = 1.0
 _MIN_ECHO_SEC = 0.5
+# Share of a filtered `/rosout` read kept back from streaming, for decoding up to 2000 documents.
+_FILTER_DECODE_RESERVE_SEC = 0.5
 # Time `sample_messages` keeps back from the call budget for stopping the CLI
 # (about 2 s) and decoding (until 1 s past the deadline).
 _STOP_RESERVE_SEC = 3.0
@@ -169,7 +179,17 @@ class Ros2CliAdapter:
     ) -> EndpointListing:
         raise self._dds_inactive_error()
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+    def peek_bag_samples(
+        self,
+        path: str,
+        topic: str,
+        count: int,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        min_log_level: str | None = None,
+        node: str | None = None,
+    ) -> SampleResult:
         """Read decoded samples from a bag through `BagService` (the `rosbags` library).
 
         Raises `AdapterError` with an install hint when `rosbags` is missing;
@@ -177,7 +197,14 @@ class Ros2CliAdapter:
         """
         from topicforge.services.bag_service import BagService
 
-        return BagService().peek_samples(path, topic, count)
+        return BagService().peek_samples(
+            path,
+            topic,
+            count,
+            start_s=start_s,
+            end_s=end_s,
+            log_filter=LogFilter.of(min_log_level, node),
+        )
 
     def list_nodes(self) -> NodeListing:
         """Nodes on the graph: names, namespaces, duplicates and which are lifecycle nodes.
@@ -342,8 +369,15 @@ class Ros2CliAdapter:
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: str | None = None,
+        node: str | None = None,
     ) -> SampleResult:
         """Stream `ros2 topic echo` and keep up to `count` messages within `timeout_s`.
+
+        On a `rcl_interfaces/msg/Log` topic the reader asks for depth 2000, to receive
+        the transient_local buffer of `/rosout`. With `min_log_level` or `node` the
+        stream runs until `timeout_s` (at most 2000 messages), filters after decoding and
+        returns the NEWEST `count` matches in stamp order, with a note.
 
         `timeout_s` bounds the whole call, topic lookup included; the call
         returns within about `timeout_s` plus two seconds (stopping the CLI,
@@ -361,6 +395,9 @@ class Ros2CliAdapter:
         if timeout_s <= 0:
             raise AdapterError("busy: no time left in this call's budget for sampling, retry")
         info = self._topic_info(topic, min(_DEFAULT_TIMEOUT_SEC, timeout_s))
+        log_filter = LogFilter.of(min_log_level, node)
+        if log_filter is not None:
+            require_log_topic(topic, info.message_type)
         if count <= 0:
             return self._sample_result(topic, [], None)
 
@@ -376,9 +413,12 @@ class Ros2CliAdapter:
             max_array_length=None if whole else max_array_length,
             arrays_summary_only=arrays_summary_only,
         )
+        if log_filter is not None:
+            # Stream until the deadline, leaving the decode its share of the budget.
+            remaining = max(remaining - _FILTER_DECODE_RESERVE_SEC, _MIN_ECHO_SEC)
         run = stream_echo(
             cmd,
-            count=count,
+            count=count if log_filter is None else LOG_STREAM_CAP,
             deadline_s=remaining,
             max_document_chars=(
                 max(self._max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS)
@@ -394,6 +434,10 @@ class Ros2CliAdapter:
 
         parse_until = started + budget + _PARSE_GRACE_SEC
         samples, skipped = self._decode(run, topic, info, max_array_length, whole, parse_until)
+        if log_filter is not None:
+            return self._filtered_log_result(
+                topic, run, samples, skipped, count, log_filter, budget, has_publisher, info
+            )
         note = " ".join(
             part
             for part in (
@@ -411,6 +455,34 @@ class Ros2CliAdapter:
         )
         return self._sample_result(
             topic, samples, note or None, _rate(run, count, samples, skipped)
+        )
+
+    def _filtered_log_result(
+        self,
+        topic: str,
+        run: EchoRun,
+        samples: list[MessageSample],
+        skipped: int,
+        count: int,
+        log_filter: LogFilter,
+        budget: float,
+        has_publisher: bool,
+        info: TopicInfo,
+    ) -> SampleResult:
+        """Result of a filtered `/rosout` read: the newest `count` matches and a note."""
+        kept, note = newest_matches(
+            samples, count, log_filter, cap_hit=len(run.documents) >= LOG_STREAM_CAP
+        )
+        extras = [
+            _short_result_note(
+                run, len(samples), 1, budget, has_publisher, _publisher_durability(info)
+            )
+            if not run.documents
+            else None,
+            _dropped_note(run.oversized, skipped, self._max_message_chars),
+        ]
+        return self._sample_result(
+            topic, kept, " ".join(p for p in (note, *extras) if p) or None, None
         )
 
     def _decode(
@@ -479,6 +551,7 @@ class Ros2CliAdapter:
             "echo",
             "--no-lost-messages",
             *_echo_qos_args(info),
+            *_echo_depth_args(info),
             *_echo_array_args(max_array_length, arrays_summary_only),
             topic,
         ]
@@ -494,9 +567,10 @@ class Ros2CliAdapter:
         )
         # `ros2 bag info` has no per-topic times: add them when the bag is readable here.
         # Imported here because `services` imports this package.
-        from topicforge.services.bag_service import scan_topic_spans
+        from topicforge.services.bag_service import read_start_ns, scan_topic_spans
         from topicforge.services.bag_stats import overlay_spans
 
+        analysis = analysis.model_copy(update={"start_ns": read_start_ns(bag_path)})
         spans, note = scan_topic_spans(bag_path)
         if spans:
             topics = overlay_spans(analysis.topics, spans)
@@ -627,6 +701,13 @@ def _echo_qos_args(info: TopicInfo) -> list[str]:
         "transient_local" if qos is not None and qos.durability == "transient_local" else "volatile"
     )
     return ["--qos-reliability", reliability, "--qos-durability", durability]
+
+
+def _echo_depth_args(info: TopicInfo) -> list[str]:
+    """Deep `keep_last` history on a Log topic, to receive the `/rosout` buffer on connect."""
+    if not is_log_type(info.message_type):
+        return []
+    return ["--qos-history", "keep_last", "--qos-depth", str(LOG_READER_DEPTH)]
 
 
 def _publisher_durability(info: TopicInfo) -> str | None:

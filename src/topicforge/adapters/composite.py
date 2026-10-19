@@ -76,6 +76,8 @@ class CompositeAdapter:
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: str | None = None,
+        node: str | None = None,
     ) -> SampleResult:
         return self._ros.sample_messages(
             topic,
@@ -83,6 +85,8 @@ class CompositeAdapter:
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
             timeout_s=timeout_s,
+            min_log_level=min_log_level,
+            node=node,
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
@@ -159,6 +163,24 @@ class CompositeAdapter:
             topic, participant_guid, include_observer, include_departed, include_internal
         )
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+    def peek_bag_samples(
+        self,
+        path: str,
+        topic: str,
+        count: int,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        min_log_level: str | None = None,
+        node: str | None = None,
+    ) -> SampleResult:
         # Bag decoding is on the ROS half (MCAP and rosbags are ROS tooling).
-        return self._ros.peek_bag_samples(path, topic, count)
+        return self._ros.peek_bag_samples(
+            path,
+            topic,
+            count,
+            start_s=start_s,
+            end_s=end_s,
+            min_log_level=min_log_level,
+            node=node,
+        )

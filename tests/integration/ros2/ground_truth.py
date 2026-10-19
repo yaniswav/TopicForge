@@ -67,6 +67,12 @@ TF_CALL = {
     "target_frame": SCAN_FRAME,
 }
 
+# /rosout lines (0.7.3): WARN every LOG_WARN_PERIOD and ERROR every LOG_ERROR_PERIOD from
+# /bench_robot, INFO every LOG_INFO_PERIOD from the lifecycle node. See `logs_truth`.
+LOG_WARN_PERIOD = 1.0
+LOG_ERROR_PERIOD = 2.0
+LOG_INFO_PERIOD = 5.0
+
 # Clock topics (0.7.3), see `clock_truth`.
 IMU_PERIOD = 0.02
 # `/imu/data` is stamped with the wall clock, this long before it is published.
@@ -160,6 +166,29 @@ def clock_truth() -> dict[str, Any]:
             "/stamps_regress": {"basis": "sim", "min_regressions": 2, "min_messages": 12},
         },
         "note": "wall = stamps are dates; the age is arrival minus stamp, so it also holds delivery",
+    }
+
+
+def logs_truth() -> dict[str, Any]:
+    """What the log filter and the bag range must return (0.7.3).
+
+    The live calls use a short `timeout_s`, so only the 10 s transient_local buffer of
+    /rosout (read with depth 2000) can supply `min_error_msgs`: live lines alone would give
+    one or two. `scripts/ground_truth/compare.py` reports the exact counts either way.
+    """
+    return {
+        "topic": "/rosout",
+        "node": "/bench_robot",
+        "logger": "bench_robot",
+        "warn_period_s": LOG_WARN_PERIOD,
+        "error_period_s": LOG_ERROR_PERIOD,
+        "min_error_msgs": 3,
+        "lifecycle_node": LIFECYCLE_NODE,
+        "lifecycle_logger": LIFECYCLE_NODE.strip("/").replace("/", "."),
+        "info_period_s": LOG_INFO_PERIOD,
+        "blocked_node": "/bench_blocked",
+        "bag_min_errors": 2,
+        "bag_range": {"topic": "/clock", "start_s": 2, "end_s": 4, "count": 50},
     }
 
 
@@ -319,6 +348,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         },
         "tf": tf_truth(),
         "clock": clock_truth(),
+        "logs": logs_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

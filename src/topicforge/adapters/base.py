@@ -96,6 +96,8 @@ class MiddlewareAdapter(Protocol):
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: str | None = None,
+        node: str | None = None,
     ) -> SampleResult: ...
 
     def analyze_bag(self, path: str) -> BagAnalysis: ...
@@ -120,7 +122,17 @@ class MiddlewareAdapter(Protocol):
 
     def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics: ...
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult: ...
+    def peek_bag_samples(
+        self,
+        path: str,
+        topic: str,
+        count: int,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        min_log_level: str | None = None,
+        node: str | None = None,
+    ) -> SampleResult: ...
 
     def list_endpoints(
         self,

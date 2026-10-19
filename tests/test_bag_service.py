@@ -131,7 +131,7 @@ def test_bag_service_peek_surfaces_exception_type_in_error(
     fake_bag = tmp_path / "x.mcap"  # type: ignore[attr-defined]
     fake_bag.write_bytes(b"")
 
-    def _boom(_path, _topic, _count):
+    def _boom(_path, _topic, _count, **_kw):
         raise OSError("synthetic peek failure")
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)

@@ -65,6 +65,9 @@ class BenchRobot(Node):
             TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
         )
         self._setup_clock_topics(qos)
+        # /rosout lines for the log filter bench (truth: `ground_truth.logs_truth`).
+        self.create_timer(model.LOG_WARN_PERIOD, self._log_warn)
+        self.create_timer(model.LOG_ERROR_PERIOD, self._log_error)
 
     # ---- clock topics (0.7.3): wall-stamped, mixed-clock and regressing stamps
     def _setup_clock_topics(self, qos: QoSProfile) -> None:
@@ -81,6 +84,12 @@ class BenchRobot(Node):
     @staticmethod
     def _wall_time_msg(age_s: float = 0.0) -> Time:
         return sim_time_msg(time.time() - age_s)
+
+    def _log_warn(self) -> None:
+        self.get_logger().warning("bench warning")
+
+    def _log_error(self) -> None:
+        self.get_logger().error("bench error")
 
     def _tick_imu(self) -> None:
         msg = Imu()

@@ -19,6 +19,8 @@ except ImportError:  # Humble exports the class only as `rclpy.lifecycle.Node`
 def main() -> None:
     rclpy.init()
     node = LifecycleNode("bench_lifecycle", namespace="/robot1")
+    # An INFO line every 5 s: the namespaced logger name (`robot1.bench_lifecycle`).
+    node.create_timer(5.0, lambda: node.get_logger().info("bench lifecycle alive"))
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

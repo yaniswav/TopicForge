@@ -8,6 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
+from topicforge.adapters.common.bag_range import validate_range
+from topicforge.adapters.common.log_filter import LogFilter
 from topicforge.adapters.common.ros_discovery import cli_ghost_note
 from topicforge.adapters.common.tf_tree import build_tf_report
 from topicforge.constants import (
@@ -153,6 +155,8 @@ class Inspector:
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: str | None = None,
+        node: str | None = None,
     ) -> SampleResult:
         _validate_topic_name(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
@@ -160,6 +164,7 @@ class Inspector:
             raise AdapterError("count must be >= 0")
         _validate_max_array_length(max_array_length)
         _validate_timeout_s(timeout_s)
+        LogFilter.of(min_log_level, node)  # raises on a bad level or node before any I/O
         capped = min(n, MAX_SAMPLE_COUNT)
         result = self._adapter.sample_messages(
             topic,
@@ -167,6 +172,8 @@ class Inspector:
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
             timeout_s=timeout_s,
+            min_log_level=min_log_level,
+            node=node,
         )
         samples, notes = apply_sample_budget(result.samples, self._max_sample_bytes)
         if n > capped:
@@ -321,13 +328,33 @@ class Inspector:
             listing = listing.model_copy(update={"note": note})
         return compact_endpoints(listing) if fields == "compact" else listing
 
-    def peek_bag_samples(self, path: str, topic: str, count: int | None = None) -> SampleResult:
+    def peek_bag_samples(
+        self,
+        path: str,
+        topic: str,
+        count: int | None = None,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        min_log_level: str | None = None,
+        node: str | None = None,
+    ) -> SampleResult:
         clean_path = _validate_bag_path(path)
         _validate_topic_name_dds(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
         if n < 0:
             raise AdapterError("count must be >= 0")
-        result = self._adapter.peek_bag_samples(clean_path, topic, min(n, MAX_SAMPLE_COUNT))
+        validate_range(start_s, end_s)
+        LogFilter.of(min_log_level, node)
+        result = self._adapter.peek_bag_samples(
+            clean_path,
+            topic,
+            min(n, MAX_SAMPLE_COUNT),
+            start_s=start_s,
+            end_s=end_s,
+            min_log_level=min_log_level,
+            node=node,
+        )
         samples, notes = apply_sample_budget(result.samples, self._max_sample_bytes)
         if not notes:
             return result

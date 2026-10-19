@@ -112,6 +112,21 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         durability="transient_local",
     ),
     _topic(
+        "/rosout",
+        "rcl_interfaces/msg/Log",
+        "reliable",
+        (
+            "/nav_planner",
+            "/base_controller",
+            "/lidar_driver",
+            "/imu_driver",
+            "/camera_driver",
+            "/robot_state_publisher",
+        ),
+        (),
+        durability="transient_local",
+    ),
+    _topic(
         "/camera_driver/transition_event",
         "lifecycle_msgs/msg/TransitionEvent",
         "reliable",
@@ -192,6 +207,38 @@ def _mock_scan_ranges() -> list[object]:
 
 def _quaternion(yaw: float) -> dict[str, float]:
     return {"x": 0.0, "y": 0.0, "z": round(math.sin(yaw / 2), 6), "w": round(math.cos(yaw / 2), 6)}
+
+
+# /rosout fixture: (level, logger name, message), one every half second from the base time.
+# `nav_planner.costmap` is a child logger of the `/nav_planner` node.
+_MOCK_LOGS: tuple[tuple[int, str, str], ...] = (
+    (20, "nav_planner", "planner started"),
+    (30, "lidar_driver", "scan rate below 10 Hz"),
+    (20, "base_controller", "odometry reset"),
+    (40, "camera_driver", "frame drop detected"),
+    (30, "nav_planner", "costmap is stale"),
+    (40, "lidar_driver", "driver timeout"),
+    (50, "base_controller", "motor stall"),
+    (10, "imu_driver", "calibrating"),
+    (40, "nav_planner.costmap", "inflation layer failed"),
+    (20, "robot_state_publisher", "transforms published"),
+)
+_MOCK_LOG_PERIOD_NS = 500_000_000
+
+
+def _log_payload(i: int, decode_status: bool = False) -> dict[str, object]:
+    """Payload of the `i`-th fixture log message (`rcl_interfaces/msg/Log`)."""
+    level, name, msg = _MOCK_LOGS[i]
+    payload: dict[str, object] = {
+        "stamp": _stamp(_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS),
+        "level": level,
+        "name": name,
+        "msg": msg,
+        "file": f"{name}.cpp",
+        "function": "spin",
+        "line": 40 + i,
+    }
+    return {"_decode_status": "full", **payload} if decode_status else payload
 
 
 _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
@@ -315,6 +362,17 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
                 ]
             },
         )
+    ],
+    "/rosout": [
+        MessageSample(
+            topic="/rosout",
+            message_type="rcl_interfaces/msg/Log",
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS,
+            stamp_source="payload",
+            received_ns=_arrival(i),
+            payload=_log_payload(i),
+        )
+        for i in range(len(_MOCK_LOGS))
     ],
     "/camera_driver/transition_event": [
         MessageSample(
@@ -804,7 +862,8 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
     path="<mock>",
     storage_format="mcap",
     duration_s=42.5,
-    message_count=1288,
+    message_count=1298,
+    start_ns=_BASE_TS_NS,
     topics=[
         BagTopicStats(
             name="/cmd_vel",
@@ -829,6 +888,13 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
             message_type="tf2_msgs/msg/TFMessage",
             message_count=12,
             frequency_hz=0.28,
+        ),
+        BagTopicStats(
+            name="/rosout",
+            message_type="rcl_interfaces/msg/Log",
+            message_count=10,
+            frequency_hz=2.0,
+            frequency_basis="topic_span",
         ),
         BagTopicStats(
             name="/events/write_split",
@@ -899,11 +965,25 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
         )
         for i in range(5)
     ],
+    "/rosout": [
+        MessageSample(
+            topic="/rosout",
+            message_type="rcl_interfaces/msg/Log",
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS,
+            stamp_source="payload",
+            recorded_ns=_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS + 1_000_000,
+            payload=_log_payload(i, decode_status=True),
+        )
+        for i in range(len(_MOCK_LOGS))
+    ],
 }
 
 
-def mock_bag_samples_for(topic: str, count: int) -> list[MessageSample]:
-    """Up to `count` mock samples for `topic`, with their summaries; empty for an unknown topic."""
+def mock_bag_samples_for(topic: str, count: int | None = None) -> list[MessageSample]:
+    """Mock samples for `topic` (the first `count`, all when `None`), with their summaries.
+
+    Empty for an unknown topic.
+    """
     from topicforge.services.summaries import summarize_message
 
     return [

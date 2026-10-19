@@ -58,6 +58,8 @@ def test_options_are_forwarded_to_the_adapter() -> None:
         "max_array_length": 1024,
         "arrays_summary_only": True,
         "timeout_s": DEFAULT_SAMPLE_TIMEOUT_S,
+        "min_log_level": None,
+        "node": None,
     }
 
 
@@ -68,6 +70,8 @@ def test_defaults_match_the_cli_default() -> None:
         "max_array_length": 128,
         "arrays_summary_only": False,
         "timeout_s": DEFAULT_SAMPLE_TIMEOUT_S,
+        "min_log_level": None,
+        "node": None,
     }
 
 
@@ -142,7 +146,7 @@ def test_inspector_applies_the_configured_cap() -> None:
 
 def test_peek_bag_samples_is_capped_too() -> None:
     class _Bag(MockAdapter):
-        def peek_bag_samples(self, path: str, topic: str, count: int) -> Any:
+        def peek_bag_samples(self, path: str, topic: str, count: int, **_o: Any) -> Any:
             from topicforge.models import SampleResult
 
             return SampleResult(

@@ -927,6 +927,13 @@ class BagAnalysis(BaseModel):
         default_factory=list,
         description="Notes on gaps or clock jumps; mock mode only.",
     )
+    start_ns: int | None = Field(
+        default=None,
+        description=(
+            "Record time in ns of the bag's first message (rosbag2 `starting_time`): the zero "
+            "of `peek_bag_samples` `start_s` / `end_s`. `null` when unreadable."
+        ),
+    )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     note: str | None = Field(
         default=None,

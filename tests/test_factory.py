@@ -131,7 +131,9 @@ class _StubDdsAdapter:
             mode_effective="live",
         )
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+    def peek_bag_samples(
+        self, path: str, topic: str, count: int, **_options: object
+    ) -> SampleResult:
         raise AdapterError("DDS adapter does not handle bags")
 
 
