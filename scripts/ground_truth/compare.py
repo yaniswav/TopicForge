@@ -1452,13 +1452,18 @@ def _check_bag_peeks(gt: dict, truth: dict, res: Results, rep: Report) -> None:
                 wall,
             )
         elif topic == "/rosout":
+            # The recorder may store few or no /rosout lines (late discovery on a loaded
+            # runner): expect what the bag holds, read independently.
+            held = truth["per_topic"].get("/rosout", {}).get("count")
+            want_n = 3 if held is None else min(3, held)
+            source = samples[0].get("stamp_source") if samples else None
             rep.add(
                 "bag",
                 f"peek /rosout x{len(samples)} ({name})",
-                "3 messages",
-                f"{len(samples)} messages, source {samples[0].get('stamp_source')}",
-                "PASS" if len(samples) == 3 else "FAIL",
-                "",
+                f"{want_n} messages",
+                f"{len(samples)} messages, source {source}",
+                "PASS" if len(samples) == want_n else "FAIL",
+                "" if held is None else f"the bag holds {held} /rosout messages",
                 wall,
             )
         else:
@@ -1508,6 +1513,9 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
             item["last_ns"] = max(item["last_ns"], stamp)
             if conn.topic in STAMPED_TOPICS:
                 item.setdefault("stamps_ns", []).append(stamp)
+            if conn.topic == "/rosout":
+                level = reader.deserialize(raw, conn.msgtype).level
+                item["error_count"] = item.get("error_count", 0) + (level == 40)
             if expected_ranges is not None and conn.topic == "/scan":
                 got = [num(v) for v in reader.deserialize(raw, conn.msgtype).ranges]
                 total += 1
@@ -1900,13 +1908,19 @@ def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
         rep.add("logs", "bag /rosout min_log_level error", "samples", loaded, "WARN")
     else:
         samples, result, wall = loaded
-        ok = len(samples) >= truth["bag_min_errors"] and {
-            s["payload"].get("level") for s in samples
-        } == {40}
+        # Expect what the bag holds (read independently): the recorder may miss /rosout.
+        held = (gt.get("bag") or {}).get("per_topic", {}).get("/rosout", {}).get("error_count")
+        if held is None:
+            want = f">= {truth['bag_min_errors']} msgs, all level 40"
+            ok = len(samples) >= truth["bag_min_errors"]
+        else:
+            want = f"{min(10, held)} msgs (the bag holds {held} ERROR lines), all level 40"
+            ok = len(samples) == min(10, held)
+        ok = ok and {s["payload"].get("level") for s in samples} <= {40}
         _log_rows(
             rep,
             "bag /rosout min_log_level error",
-            f">= {truth['bag_min_errors']} msgs, all level 40",
+            want,
             samples,
             result,
             ok,

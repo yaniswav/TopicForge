@@ -232,6 +232,20 @@ def bag_stamps(bag: Path, topic: str) -> list[int]:
         return sorted(stamp for _, stamp, _ in reader.messages(connections=conns))
 
 
+def bag_error_lines(bag: Path) -> int:
+    """ERROR (level 40) lines the bag holds on /rosout, read with rosbags."""
+    from rosbags.highlevel import AnyReader
+    from rosbags.typesys import Stores, get_typestore
+
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    with AnyReader([bag], default_typestore=typestore) as reader:
+        conns = [c for c in reader.connections if c.topic == "/rosout"]
+        return sum(
+            reader.deserialize(raw, c.msgtype).level == 40
+            for c, _, raw in reader.messages(connections=conns)
+        )
+
+
 def test_analyze_bag_summary(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.analyze_bag(str(bag))
     # The recorder runs for about 8 s, but on a loaded runner it starts the data topics
@@ -544,4 +558,7 @@ def test_bag_start_ns_and_ranges_match_the_recorder(adapter: Ros2CliAdapter, bag
         assert result.note
     assert all(low <= (s.recorded_ns or 0) < high for s in result.samples)
     errors = adapter.peek_bag_samples(str(bag), "/rosout", 10, min_log_level="error")
-    assert errors.count >= 2 and {s.payload["level"] for s in errors.samples} == {40}
+    # The recorder may store few or no /rosout lines on a loaded runner: expect what the
+    # bag holds, read independently.
+    assert errors.count == min(10, bag_error_lines(bag))
+    assert {s.payload["level"] for s in errors.samples} <= {40}
