@@ -296,7 +296,11 @@ def _path(
     known = {f.name for f in frames}
     missing = [n for n in (src, dst) if n not in known]
     if missing:
-        return None, f"Unknown frame(s): {', '.join(missing)}.", [_no_path(src, dst, "unknown")]
+        return (
+            None,
+            f"Unknown frame(s): {', '.join(missing)}.",
+            [_no_path(src, dst, "unknown", missing)],
+        )
     chain = _bfs(edges, src, dst)
     if chain is None:
         why = f"in separate trees (roots {', '.join(roots)})" if len(roots) > 1 else "unconnected"
@@ -309,12 +313,12 @@ def _path(
     return chain, note, []
 
 
-def _no_path(src: str, dst: str, why: str) -> TfFinding:
-    text = (
-        f"No frame named {src} or {dst} was seen."
-        if why == "unknown"
-        else f"No path from {src} to {dst}: they are {why}."
-    )
+def _no_path(src: str, dst: str, why: str, missing: list[str] | None = None) -> TfFinding:
+    """A `no_path` finding; for unknown frames it names only the ones never seen."""
+    if why == "unknown" and missing:
+        text = f"No frame named {' or '.join(missing)} was seen."
+        return TfFinding(kind="no_path", frames=list(missing), text=text)
+    text = f"No path from {src} to {dst}: they are {why}."
     return TfFinding(kind="no_path", frames=[src, dst], text=text)
 
 
