@@ -1,4 +1,4 @@
-"""Clock basis, stamp age and stamp regressions (docs/CONTRACT.md section 9.10)."""
+"""Clock basis, stamp age and stamp regressions (docs/CONTRACT.md section 9.11)."""
 
 from __future__ import annotations
 
