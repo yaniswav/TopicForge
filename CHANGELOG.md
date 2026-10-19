@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- `tools/list` shrinks from 118,884 to about 90 KB (`docs/CONTRACT.md` section 9.9), so the
+  next tools fit under the new 100,000-byte test ceiling. Additive: `MessageSample.summary` is
+  advertised as an open object keyed by `summary_type` (the five strict shapes are still built
+  and validated by the server, and documented in `docs/TOOLS.md`), and `default` keywords are
+  dropped from output schemas only. Payloads are unchanged.
+- The ground-truth comparator checks the `tools/list` size (< 100,000 bytes).
+
+### Fixed
+
+- `inspect_tf`: the `no_path` finding for unknown frames named every requested frame, even one
+  that exists ("No frame named camera_optical_frame or base_laser was seen"). Its text and
+  `frames` now list only the missing ones, like `path_note`.
+
 ## [0.7.2] - 2026-10-18
 
 TF tree inspection, ROS 2 node names on DDS participants, and a flag for the `ros2` CLI

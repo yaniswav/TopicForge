@@ -1651,7 +1651,54 @@ def check_tf(gt: dict, res: Results, rep: Report) -> None:
 
 
 # ---------------------------------------------------------------------------- report
-SECTIONS = (check_graph, check_scan, check_stamps, check_rates, check_bag, check_dds, check_tf)
+LISTING_MAX_BYTES = 100_000
+
+
+def _drop_none(node: Any) -> Any:
+    """A copy of a JSON value without null-valued keys (the wire form omits them)."""
+    if isinstance(node, dict):
+        return {k: _drop_none(v) for k, v in node.items() if v is not None}
+    if isinstance(node, list):
+        return [_drop_none(v) for v in node]
+    return node
+
+
+@guard("listing")
+def check_listing(gt: dict, res: Results, rep: Report) -> None:
+    """The tools/list size that drive.py saved in `_tools.json`; some clients truncate it."""
+    file = res.path / "_tools.json"
+    if not file.is_file():
+        rep.add(
+            "listing",
+            "tools/list bytes",
+            f"< {LISTING_MAX_BYTES}",
+            "absent",
+            "WARN",
+            "no _tools.json",
+        )
+        return
+    tools = json.loads(file.read_text(encoding="utf-8"))
+    size = len(json.dumps(_drop_none(tools), separators=(",", ":")))
+    rep.add(
+        "listing",
+        "tools/list bytes",
+        f"< {LISTING_MAX_BYTES}",
+        size,
+        "PASS" if size < LISTING_MAX_BYTES else "FAIL",
+        f"{len(tools)} tools, compact JSON of the saved listing",
+    )
+
+
+SECTIONS = (
+    check_graph,
+    check_scan,
+    check_stamps,
+    check_rates,
+    check_bag,
+    check_dds,
+    check_tf,
+    check_listing,
+)
 
 
 def compare(gt: dict[str, Any], results: Path) -> tuple[Report, Results]:

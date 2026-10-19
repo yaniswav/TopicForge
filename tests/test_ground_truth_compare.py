@@ -282,6 +282,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     out: dict[str, Any] = {}
     before = gt["graph"]["before_capture"]
     out["_initialize"] = {"topicforge_version": "0.7.0-test"}
+    out["_tools"] = [{"name": "health_check", "description": "d", "output_schema": None}]
     out["01_health_check"] = _call(
         "health_check",
         {},
@@ -526,7 +527,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
     assert code == 0
     assert report["rate_cv"]["/scan"]["interval_cv"] == 0.04
     sections = {r["section"] for r in report["rows"]}
-    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf"}
+    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf", "listing"}
 
 
 @pytest.mark.parametrize(
@@ -998,3 +999,18 @@ def test_relaxation_does_not_touch_a_passing_wall_row() -> None:
     rows = _rows_for(_RATE, _KIT, 0.1)
     assert rows["wall"]["verdict"] == "PASS"
     assert "low RTF" not in rows["wall"]["note"]
+
+
+def test_listing_size_row_passes_fails_and_warns_when_absent(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def row(results: dict, sub: str) -> dict:
+        _, report = _run(tmp_path / sub, bench_truth, results)
+        return next(r for r in report["rows"] if r["metric"] == "tools/list bytes")
+
+    results = _bench_results(bench_truth)
+    assert row(results, "ok")["verdict"] == "PASS"
+    results["_tools"] = [{"name": "t", "description": "x" * 100_000}]
+    assert row(results, "big")["verdict"] == "FAIL"
+    del results["_tools"]
+    assert row(results, "absent")["verdict"] == "WARN"
