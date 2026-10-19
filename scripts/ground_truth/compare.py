@@ -1479,10 +1479,16 @@ def _check_bag_peeks(gt: dict, truth: dict, res: Results, rep: Report) -> None:
             )
 
 
+# Topics whose every recorded timestamp is kept (`stamps_ns`), so a time-range answer can be
+# counted exactly: the recorder starts the other topics late on a loaded runner.
+STAMPED_TOPICS = ("/clock",)
+
+
 def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -> dict[str, Any]:
     """Truth of a recorded bag read independently with rosbags (message timestamps, not metadata).
 
     `expected_ranges`, when given, is compared with every `/scan` message (tolerance RANGE_TOL).
+    The topics in `STAMPED_TOPICS` also carry the sorted list of their timestamps.
     """
     from rosbags.highlevel import AnyReader
     from rosbags.typesys import Stores, get_typestore
@@ -1500,6 +1506,8 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
             item["count"] += 1
             item["first_ns"] = min(item["first_ns"], stamp)
             item["last_ns"] = max(item["last_ns"], stamp)
+            if conn.topic in STAMPED_TOPICS:
+                item.setdefault("stamps_ns", []).append(stamp)
             if expected_ranges is not None and conn.topic == "/scan":
                 got = [num(v) for v in reader.deserialize(raw, conn.msgtype).ranges]
                 total += 1
@@ -1510,6 +1518,8 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
     last = max(v["last_ns"] for v in per.values())
     duration_ns = last - first
     for item in per.values():
+        if "stamps_ns" in item:
+            item["stamps_ns"].sort()
         span = (item["last_ns"] - item["first_ns"]) / 1e9
         item["rate_recorded_wall_hz"] = (item["count"] - 1) / span if span >= 1.0 else None
         item["count_over_bag_duration_hz"] = (
@@ -1914,14 +1924,23 @@ def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
     low, high = start_ns + int(rng["start_s"] * 1e9), start_ns + int(rng["end_s"] * 1e9)
     recorded = [s.get("recorded_ns") or 0 for s in samples]
     inside = all(low <= r < high for r in recorded)
+    # The recorder starts /clock late on a loaded runner, so the window may hold fewer than
+    # `count` messages: the truth is the number of recorded /clock stamps inside the window.
+    stamps = ((gt.get("bag") or {}).get("per_topic", {}).get(rng["topic"]) or {}).get("stamps_ns")
+    in_window = sum(low <= t < high for t in stamps) if stamps is not None else None
+    want = rng["count"] if in_window is None else min(rng["count"], in_window)
+    basis = "" if in_window is None else f" (min of {rng['count']} and {in_window} in the window)"
+    note = (result.get("note") or "")[:200]
+    ok = len(samples) == want and inside and (want > 0 or bool(note))
     rep.add(
         "logs",
-        f"bag /clock start_s {rng['start_s']} end_s {rng['end_s']} count {rng['count']}",
-        f"{rng['count']} samples with recorded_ns in [{low}, {high})",
+        f"bag /clock start_s {rng['start_s']} end_s {rng['end_s']}",
+        f"{want} samples{basis} with recorded_ns in [{low}, {high})"
+        + (" and a note" if want == 0 else ""),
         f"{len(samples)} samples; first {min(recorded, default=0) - start_ns} ns, "
         f"last {max(recorded, default=0) - start_ns} ns after start",
-        "PASS" if len(samples) == rng["count"] and inside else "FAIL",
-        (result.get("note") or "")[:200],
+        "PASS" if ok else "FAIL",
+        note,
         wall,
     )
 

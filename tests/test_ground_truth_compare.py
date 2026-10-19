@@ -488,6 +488,7 @@ def _bag_truth(gt: dict) -> None:
                 "last_ns": 10**10,
                 "rate_recorded_wall_hz": 49 / 9.0,
                 "count_over_bag_duration_hz": 5.0,
+                "stamps_ns": [10**9, *(3 * 10**9 + i * 10**7 for i in range(50)), 10**10],
             },
         },
     }
@@ -1169,6 +1170,44 @@ def test_too_few_buffered_errors_fail_and_the_row_reports_the_count(
     assert row["topicforge"].startswith("2 msgs")
 
 
+def _late_clock(truth: dict, in_window: int) -> None:
+    """The recorder started /clock late: only `in_window` stamps fall in [start+2 s, start+4 s)."""
+    first = 4 * 10**9 + 1 - in_window * 10**7 if in_window else 4 * 10**9
+    stamps = [first + i * 10**7 for i in range(in_window)] + [6 * 10**9]
+    truth["bag"]["per_topic"]["/clock"]["stamps_ns"] = stamps
+
+
+def test_a_late_clock_expects_the_stamps_inside_the_window(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    _late_clock(bench_truth, 20)
+
+    def got(results: dict) -> None:
+        _log_results(results, clock_count=20)
+        results["26_peek_bag_clock_range"]["parsed"][0]["samples"] = [
+            {"recorded_ns": 4 * 10**9 - (20 - i) * 10**7 + 1} for i in range(20)
+        ]
+
+    verdicts = _logs_report(tmp_path / "a", bench_truth, got)
+    assert verdicts["bag /clock start_s 2 end_s 4"] == "PASS"
+    full = _logs_report(tmp_path / "b", bench_truth)
+    assert full["bag /clock start_s 2 end_s 4"] == "FAIL"
+
+
+def test_an_empty_clock_window_expects_no_sample_and_a_note(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    _late_clock(bench_truth, 0)
+
+    def none(results: dict) -> None:
+        _log_results(results, clock_count=0)
+        results["26_peek_bag_clock_range"]["parsed"][0]["note"] = "no message in range"
+
+    assert _logs_report(tmp_path / "a", bench_truth, none)["bag /clock start_s 2 end_s 4"] == "PASS"
+    bare = _logs_report(tmp_path / "b", bench_truth, lambda r: _log_results(r, clock_count=0))
+    assert bare["bag /clock start_s 2 end_s 4"] == "FAIL"
+
+
 def test_a_wrong_range_count_or_start_ns_fails(tmp_path: Path, bench_truth: dict) -> None:
     def short(results: dict) -> None:
         _log_results(results, clock_count=40)
@@ -1176,4 +1215,4 @@ def test_a_wrong_range_count_or_start_ns_fails(tmp_path: Path, bench_truth: dict
 
     verdicts = _logs_report(tmp_path, bench_truth, short)
     assert verdicts["analyze_bag.start_ns"] == "FAIL"
-    assert verdicts["bag /clock start_s 2 end_s 4 count 50"] == "FAIL"
+    assert verdicts["bag /clock start_s 2 end_s 4"] == "FAIL"

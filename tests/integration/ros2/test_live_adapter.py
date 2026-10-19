@@ -221,15 +221,31 @@ def bag() -> Path:
     return BAG_PATH
 
 
+def bag_stamps(bag: Path, topic: str) -> list[int]:
+    """Recorded timestamps of one topic, read with rosbags (independent of the adapter)."""
+    from rosbags.highlevel import AnyReader
+    from rosbags.typesys import Stores, get_typestore
+
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    with AnyReader([bag], default_typestore=typestore) as reader:
+        conns = [c for c in reader.connections if c.topic == topic]
+        return sorted(stamp for _, stamp, _ in reader.messages(connections=conns))
+
+
 def test_analyze_bag_summary(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.analyze_bag(str(bag))
-    # The recorder runs for about 8 s, but on a loaded runner it starts late, so the
-    # span varies; the /scan count must follow the span at 10 Hz.
+    # The recorder runs for about 8 s, but on a loaded runner it starts the data topics
+    # late while /rosout (replayed at bag time 0) already spans the bag, so the /scan count
+    # must follow /scan's own recorded span at 10 Hz, not the bag duration.
     assert 4.0 <= result.duration_s <= 10.0
     by_name = {t.name: t for t in result.topics}
     assert set(by_name) >= {"/clock", "/scan", "/cmd_vel_out", "/camera/image_raw"}
     assert by_name["/scan"].message_type == "sensor_msgs/msg/LaserScan"
-    assert by_name["/scan"].message_count == pytest.approx(result.duration_s * 10, rel=0.3)
+    scan = bag_stamps(bag, "/scan")
+    assert by_name["/scan"].message_count == len(scan)
+    scan_span_s = (scan[-1] - scan[0]) / 1e9
+    assert scan_span_s <= result.duration_s + 0.1
+    assert len(scan) == pytest.approx(scan_span_s * 10 + 1, rel=0.3)
     assert result.storage_format == ("sqlite3" if IS_HUMBLE else "mcap")
 
 
@@ -518,8 +534,12 @@ def test_bag_start_ns_and_ranges_match_the_recorder(adapter: Ros2CliAdapter, bag
     starting = int(found.group(1))
     assert adapter.analyze_bag(str(bag)).start_ns == starting
     result = adapter.peek_bag_samples(str(bag), "/clock", 50, start_s=2, end_s=4)
-    assert result.count == 50
     low, high = starting + 2 * 10**9, starting + 4 * 10**9
+    # /clock can start seconds after the bag (late recorder): count what the bag holds.
+    in_window = sum(low <= t < high for t in bag_stamps(bag, "/clock"))
+    assert result.count == min(50, in_window)
+    if in_window == 0:
+        assert result.note
     assert all(low <= (s.recorded_ns or 0) < high for s in result.samples)
     errors = adapter.peek_bag_samples(str(bag), "/rosout", 10, min_log_level="error")
     assert errors.count >= 2 and {s.payload["level"] for s in errors.samples} == {40}
