@@ -694,6 +694,9 @@ MOCK_OBSERVER_GUID = "010f1c2a-3b4c-5d6e-7f80-000000000099"
 
 _PARTICIPANT_NAMES: dict[str, str | None] = {p.guid: p.name for p in MOCK_PARTICIPANTS}
 _PARTICIPANT_VENDORS: dict[str, str] = {p.guid: p.vendor for p in MOCK_PARTICIPANTS}
+# Participants that host a ROS 2 node named like them (see `node_fixtures`); the dust
+# participant is plain DDS, so its endpoint has no node.
+_NODE_PARTICIPANTS: frozenset[str] = frozenset({"lidar_driver", "nav_planner", "camera_driver"})
 
 
 def _mock_endpoint(
@@ -706,6 +709,7 @@ def _mock_endpoint(
     announced_offset_s: int,
 ) -> dict[str, object]:
     participant_guid = f"010f1c2a-3b4c-5d6e-7f80-{participant:012d}"
+    name = _PARTICIPANT_NAMES.get(participant_guid)
     ros_topic, ros_topic_note = ros_topic_of(topic)
     return {
         "guid": f"010f1c2a-3b4c-5d6e-7f80-{participant:04d}{index:08d}",
@@ -713,6 +717,7 @@ def _mock_endpoint(
         "participant_guid": participant_guid,
         "participant_name": _PARTICIPANT_NAMES.get(participant_guid),
         "participant_vendor": _PARTICIPANT_VENDORS.get(participant_guid, "unknown"),
+        "node_name": f"/{name}" if name in _NODE_PARTICIPANTS else None,
         "dds_topic": topic,
         "ros_topic": ros_topic,
         "ros_topic_note": ros_topic_note,
@@ -763,6 +768,11 @@ _MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
         16,
     ),
 )
+
+
+def mock_endpoint_count(participant_guid: str) -> int:
+    """Writers plus readers of the endpoint fixtures that belong to `participant_guid`."""
+    return sum(1 for rec in _MOCK_ENDPOINT_RECORDS if rec["participant_guid"] == participant_guid)
 
 
 def mock_mismatch_scan(topic: str | None) -> MismatchScan:

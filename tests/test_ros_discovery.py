@@ -392,3 +392,89 @@ def test_spawn_ring_is_bounded() -> None:
     ring = spawned_pids.recent_spawns()
     assert len(ring) == spawned_pids.MAX_SPAWNS and ring[-1][0] == spawned_pids.MAX_SPAWNS + 9
     spawned_pids.clear_spawns()
+
+
+# ----- endpoint gid -> node name -----
+
+
+def _encode_nodes(
+    nodes: list[tuple[str, str, list[bytes], list[bytes]]], gid: bytes, width: int
+) -> bytes:
+    """XCDR1 little-endian message whose nodes carry explicit reader and writer gids."""
+    enc = _Enc(True)
+    enc.buf += gid[:width].ljust(width, b"\x00")
+    enc.u32(len(nodes))
+    for ns, name, readers, writers in nodes:
+        enc.string(ns)
+        enc.string(name)
+        for gids in (readers, writers):
+            enc.u32(len(gids))
+            for g in gids:
+                enc.buf += g[:width].ljust(width, b"\x00")
+    return bytes([0, 1, 0, 0]) + bytes(enc.buf)
+
+
+_PREFIX = bytes.fromhex("010fe8e0f2017f1f00000000")
+
+
+def _guid(entity: int) -> bytes:
+    return _PREFIX + entity.to_bytes(4, "big")
+
+
+@pytest.mark.parametrize("width", [24, 16])
+def test_endpoint_guid_is_the_first_sixteen_bytes_of_a_gid(width: int) -> None:
+    data = _encode_nodes(
+        [
+            ("/", "bench_robot", [_guid(0x704)], [_guid(0x504)]),
+            ("/ns", "other", [], [_guid(0x904)]),
+        ],
+        _PREFIX + (0x1C1).to_bytes(4, "big"),
+        width,
+    )
+    info = decode_participant_entities(data)
+    assert info.gid_width == width
+    assert info.endpoint_nodes == {
+        "010fe8e0.f2017f1f.00000000.00000704": "/bench_robot",
+        "010fe8e0.f2017f1f.00000000.00000504": "/bench_robot",
+        "010fe8e0.f2017f1f.00000000.00000904": "/ns/other",
+    }
+
+
+@pytest.mark.parametrize("name", ["humble_two_nodes.hex", "jazzy_two_nodes.hex"])
+def test_the_real_captures_map_every_endpoint_inside_the_participant_prefix(name: str) -> None:
+    info = decode_participant_entities(bytes.fromhex(FIXTURE.with_name(name).read_text().strip()))
+    mapped = info.endpoint_nodes
+    assert len(mapped) == sum(len(n.reader_gids) + len(n.writer_gids) for n in info.nodes)
+    assert all(guid.startswith(info.prefix_key + ".") for guid in mapped)
+    assert set(mapped.values()) == {"/demo/talker", "/demo/sub/listener"}
+
+
+def test_the_cache_keeps_endpoint_nodes_after_the_final_empty_message() -> None:
+    cache = NodeNameCache()
+    gid = _PREFIX + (0x1C1).to_bytes(4, "big")
+    full = _encode_nodes([("/", "a", [], [_guid(0x504)])], gid, 16)
+    apply_info_samples(cache, [full])
+    assert cache.endpoint_nodes() == {"010fe8e0.f2017f1f.00000000.00000504": "/a"}
+    apply_info_samples(cache, [_encode_nodes([], gid, 16)])
+    assert cache.as_dict()["010fe8e0.f2017f1f.00000000"] == ()
+    assert cache.endpoint_nodes() == {"010fe8e0.f2017f1f.00000000.00000504": "/a"}
+
+
+def test_the_cache_replaces_endpoint_nodes_with_the_latest_message_and_stays_bounded() -> None:
+    cache = NodeNameCache(max_items=1)
+    gid = _PREFIX + (0x1C1).to_bytes(4, "big")
+    apply_info_samples(cache, [_encode_nodes([("/", "a", [], [_guid(1)])], gid, 16)])
+    apply_info_samples(cache, [_encode_nodes([("/", "a", [], [_guid(2)])], gid, 16)])
+    assert list(cache.endpoint_nodes()) == ["010fe8e0.f2017f1f.00000000.00000002"]
+    other = bytes(range(16))
+    apply_info_samples(cache, [_encode_nodes([("/", "b", [], [other])], other, 16)])
+    assert cache.endpoint_nodes() == {"00010203.04050607.08090a0b.0c0d0e0f": "/b"}
+
+
+def test_the_tracker_snapshot_carries_endpoint_nodes() -> None:
+    caches = DiscoveryCaches()
+    gid = _PREFIX + (0x1C1).to_bytes(4, "big")
+    _tracker_pass(caches, [_encode_nodes([("/", "bench_robot", [], [_guid(0x504)])], gid, 24)])
+    assert caches.snapshot(0).endpoint_nodes == {
+        "010fe8e0.f2017f1f.00000000.00000504": "/bench_robot"
+    }

@@ -59,6 +59,7 @@ from topicforge.adapters.common.endpoints import (
     participant_names,
     summarize_by_topic,
     type_id_text,
+    with_endpoint_counts,
 )
 from topicforge.adapters.common.lifecycle import MAX_EVENTS, LifecycleBuffer
 from topicforge.adapters.common.metrics_buffer import (
@@ -159,4 +160,5 @@ __all__ = [
     "user_topic_result",
     "validate_domain_id",
     "vendor_id_from_guid",
+    "with_endpoint_counts",
 ]

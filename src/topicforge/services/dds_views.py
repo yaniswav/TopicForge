@@ -92,6 +92,37 @@ def with_event_ages(events: list[ParticipantEvent], now_ns: int) -> list[Partici
     ]
 
 
+ENDPOINTLESS_AFTER_S = 10
+"""Seconds a participant must have been known before no endpoint at all is worth a note."""
+
+
+def endpointless_note(participants: Iterable[ParticipantInfo], now_ns: int) -> str | None:
+    """Say so when active participants announce no endpoint this server can see, else `None`.
+
+    Two causes fit and the data cannot tell them apart: a participant that really has no
+    endpoint, or DDS Security hiding them from an observer without an identity. TopicForge's
+    own participant and its `ros2` CLI processes are left out, and so is any participant
+    first seen less than `ENDPOINTLESS_AFTER_S` seconds ago (its endpoints may be in flight).
+    """
+    limit_ns = ENDPOINTLESS_AFTER_S * _NS_PER_S
+    count = sum(
+        1
+        for p in participants
+        if p.endpoint_count == 0
+        and p.status == "active"
+        and not p.is_observer
+        and not p.is_topicforge_cli
+        and p.first_seen_ns is not None
+        and now_ns - p.first_seen_ns > limit_ns
+    )
+    if not count:
+        return None
+    return (
+        f"{count} participant(s) announce no endpoint TopicForge can see: an endpoint-less "
+        "participant, or DDS Security hides them (TopicForge has no identity on this domain)."
+    )
+
+
 def domain_note(requested: int, observed: int | None) -> str | None:
     """Say so when a non-default `domain_id` differs from the joined domain, else `None`.
 

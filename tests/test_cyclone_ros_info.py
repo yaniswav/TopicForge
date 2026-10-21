@@ -109,3 +109,44 @@ def test_participant_pids_expose_the_announced_pid() -> None:
     adapter = CycloneDdsAdapter(domain_id=0)
     time.sleep(1.5)
     assert os.getpid() in adapter.participant_pids().values()
+
+
+# Same writer, but the node's writer gid is the info writer's own GUID, so the endpoint
+# shows up on the bus under the exact GUID the message claims for it.
+_MARKER = bytes.fromhex("ee" * 16)
+_SELF_GID_WRITER = _INFO_WRITER.replace(
+    "print(raw[:12].hex(), flush=True)",
+    "PAYLOAD = PAYLOAD.replace(bytes.fromhex(sys.argv[2]), bytes(w.guid.bytes))\n"
+    "print(raw[:12].hex(), flush=True)",
+)
+
+
+@pytest.mark.parametrize("width", [24, 16])
+def test_endpoints_get_the_node_that_claims_their_gid(width: int) -> None:
+    from tests.test_ros_discovery import _encode_nodes
+
+    payload = _encode_nodes([("/", "bench_robot", [], [_MARKER])], bytes(16), width)
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _SELF_GID_WRITER, payload.hex(), _MARKER.hex()],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    adapter = CycloneDdsAdapter(domain_id=0)
+    try:
+        assert proc.stdout is not None
+        assert proc.stdout.readline().strip(), "the writer process did not start"
+        found = None
+        for _ in range(150):
+            listing = adapter.list_endpoints(topic="ros_discovery_info", include_internal=True)
+            found = next((e for e in listing.endpoints if e.node_name), None)
+            if found is not None:
+                break
+            time.sleep(0.1)
+        assert found is not None, "no endpoint got a node name"
+        assert found.node_name == "/bench_robot" and found.role == "writer"
+        assert listing.by_topic[0].writer_nodes == ["/bench_robot"]
+        host = next(p for p in adapter.list_participants() if p.guid == found.participant_guid)
+        assert host.endpoint_count is not None and host.endpoint_count >= 1
+    finally:
+        proc.kill()
+        proc.wait()

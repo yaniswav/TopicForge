@@ -228,6 +228,10 @@ None.
 | `payload_decoding` | `"disabled" \| "enabled"` | no | `disabled`: DDS user-topic payloads are not decoded. |
 | `payload_decoding_note` | `string \| null` | no | Reason for `payload_decoding`. |
 | `dds_security` | `"not_supported"` | no | DDS Security is not handled: protected endpoints and data are invisible. |
+| `ros_security_enabled` | `boolean \| null` | no | `ROS_SECURITY_ENABLE` is `true`; `None` unless the ros2 CLI serves. |
+| `ros_security_strategy` | `"Enforce" \| "Permissive" \| null` | no | `ROS_SECURITY_STRATEGY` when set to a valid value. |
+| `ros_security_keystore_set` | `boolean \| null` | no | Whether a keystore variable is set (the path is never shown). |
+| `ros_security_note` | `string \| null` | no | Set when `ros_security_enabled`: what stays invisible. |
 | `rmw_implementation` | `string \| null` | no | ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`. |
 | `rmw_source` | `"env" \| "ros2_cli" \| "distro_default" \| "none"` | no | `env`, `ros2_cli`, `distro_default` (not verified on the graph) or `none`. |
 | `ros_backend` | `"mock" \| "ros2_cli" \| "none"` | no | ROS 2 backend: `ros2_cli`, `mock` or `none`. |

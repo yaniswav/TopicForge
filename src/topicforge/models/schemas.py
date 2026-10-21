@@ -254,6 +254,11 @@ class ParticipantInfo(BaseModel):
         default=False,
         description="True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
     )
+    endpoint_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Writers plus readers seen for this participant; `None` without an endpoint cache.",
+    )
 
 
 class NameLifecycle(BaseModel):
@@ -1109,6 +1114,19 @@ class HealthReport(BaseModel):
         default="not_supported",
         description=("DDS Security is not handled: protected endpoints and data are invisible."),
     )
+    ros_security_enabled: bool | None = Field(
+        default=None,
+        description="`ROS_SECURITY_ENABLE` is `true`; `None` unless the ros2 CLI serves.",
+    )
+    ros_security_strategy: Literal["Enforce", "Permissive"] | None = Field(
+        default=None, description="`ROS_SECURITY_STRATEGY` when set to a valid value."
+    )
+    ros_security_keystore_set: bool | None = Field(
+        default=None, description="Whether a keystore variable is set (the path is never shown)."
+    )
+    ros_security_note: str | None = Field(
+        default=None, description="Set when `ros_security_enabled`: what stays invisible."
+    )
     rmw_implementation: str | None = Field(
         default=None,
         description=(
@@ -1144,6 +1162,10 @@ class EndpointInfo(BaseModel):
     )
     participant_vendor: _DdsVendor = Field(
         default="unknown",
+    )
+    node_name: str | None = Field(
+        default=None,
+        description="ROS 2 node owning the endpoint (`ros_discovery_info`); `None` if not announced.",
     )
     dds_topic: str = Field()
     ros_topic: str | None = Field(
@@ -1234,6 +1256,12 @@ class TopicSummary(BaseModel):
     departed_readers: list[DepartedEndpoint] = Field(
         default_factory=list,
         description="Readers whose participant left, newest first.",
+    )
+    writer_nodes: list[str] = Field(
+        default_factory=list, description="Sorted ROS 2 nodes of the writers (`node_name`)."
+    )
+    reader_nodes: list[str] = Field(
+        default_factory=list, description="Sorted ROS 2 nodes of the readers (`node_name`)."
     )
     orphan: Literal["no_reader", "no_writer"] | None = Field(
         default=None,

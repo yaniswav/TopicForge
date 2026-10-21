@@ -29,6 +29,7 @@ from topicforge.models import (
     DepartedEndpoint,
     EndpointInfo,
     EndpointListing,
+    ParticipantInfo,
     QosProfile,
     TopicSummary,
 )
@@ -97,24 +98,28 @@ def endpoint_record(
     *,
     vendors_by_guid: Mapping[str, str] | None = None,
     qos_to_profile: Callable[[Any], QosProfile | None] = cyclone_qos_to_profile,
+    nodes_by_guid: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Flatten one endpoint discovery sample into the fields of `EndpointInfo`.
 
     `participants_by_guid` maps a formatted participant guid to its announced
-    name, `vendors_by_guid` to its vendor tag (`unknown` when absent). Never
-    raises on an odd sample: missing pieces become `None`.
+    name, `vendors_by_guid` to its vendor tag (`unknown` when absent) and
+    `nodes_by_guid` an endpoint guid to its ROS 2 node (from `ros_discovery_info`).
+    Never raises on an odd sample: missing pieces become `None`.
     """
     participant_guid = format_participant_key(getattr(sample, "participant_key", None))
     vendor = (vendors_by_guid or {}).get(participant_guid) or _vendor_from_participant_key(sample)
     is_observer = observer_guid is not None and participant_guid == observer_guid
     dds_topic = cyclone_extract_topic_name(sample) or "unknown"
     ros_topic, ros_topic_note = ros_topic_of(dds_topic)
+    guid = format_guid(cyclone_extract_guid(sample))
     return {
-        "guid": format_guid(cyclone_extract_guid(sample)),
+        "guid": guid,
         "role": role,
         "participant_guid": participant_guid,
         "participant_name": participants_by_guid.get(participant_guid),
         "participant_vendor": vendor,
+        "node_name": (nodes_by_guid or {}).get(guid),
         "dds_topic": dds_topic,
         "ros_topic": ros_topic,
         "ros_topic_note": ros_topic_note,
@@ -144,6 +149,11 @@ def _departed_of(endpoints: Iterable[EndpointInfo]) -> list[DepartedEndpoint]:
         for e in endpoints
     ]
     return sorted(found, key=lambda d: -(d.gone_ns or 0))
+
+
+def _nodes_of(endpoints: Iterable[EndpointInfo]) -> list[str]:
+    """Sorted distinct ROS 2 node names of `endpoints` (those without one are left out)."""
+    return sorted({e.node_name for e in endpoints if e.node_name})
 
 
 def summarize_by_topic(
@@ -177,6 +187,8 @@ def summarize_by_topic(
                 writer_count=writers,
                 reader_count=readers,
                 partitions=sorted({p for e in eps for p in _effective_partitions(e)}),
+                writer_nodes=_nodes_of(e for e in eps if e.role == "writer"),
+                reader_nodes=_nodes_of(e for e in eps if e.role == "reader"),
                 departed_writers=_departed_of(e for e in gone_eps if e.role == "writer"),
                 departed_readers=_departed_of(e for e in gone_eps if e.role == "reader"),
                 orphan=orphan,
@@ -260,6 +272,23 @@ def build_endpoint_listing(
     )
 
 
+def with_endpoint_counts(
+    participants: Iterable[ParticipantInfo],
+    publication_samples: Iterable[Any],
+    subscription_samples: Iterable[Any],
+) -> list[ParticipantInfo]:
+    """Copies of `participants` with `endpoint_count`: writers plus readers seen for each.
+
+    Counts every cached endpoint, ROS 2 plumbing included (a ROS 2 node always brings
+    a dozen), so zero means the participant announced nothing this server can see.
+    """
+    counts: dict[str, int] = {}
+    for sample in (*publication_samples, *subscription_samples):
+        key = format_participant_key(getattr(sample, "participant_key", None))
+        counts[key] = counts.get(key, 0) + 1
+    return [p.model_copy(update={"endpoint_count": counts.get(p.guid, 0)}) for p in participants]
+
+
 def _vendor_from_participant_key(sample: Any) -> str:
     """Vendor from the GUID prefix carried by the endpoint itself.
 
@@ -295,16 +324,21 @@ def endpoint_infos_from_samples(
     subscription_samples: Iterable[Any],
     *,
     observer_guid: str | None,
+    nodes_by_guid: Mapping[str, str] | None = None,
 ) -> list[EndpointInfo]:
     """Raw builtin samples in, every `EndpointInfo` out (no filtering, observer included)."""
     names = participant_names(participant_samples)
     vendors = participant_vendors(participant_samples)
     records = [
-        endpoint_record(s, "writer", names, observer_guid, vendors_by_guid=vendors)
+        endpoint_record(
+            s, "writer", names, observer_guid, vendors_by_guid=vendors, nodes_by_guid=nodes_by_guid
+        )
         for s in publication_samples
     ]
     records += [
-        endpoint_record(s, "reader", names, observer_guid, vendors_by_guid=vendors)
+        endpoint_record(
+            s, "reader", names, observer_guid, vendors_by_guid=vendors, nodes_by_guid=nodes_by_guid
+        )
         for s in subscription_samples
     ]
     return [EndpointInfo(**rec) for rec in records]
@@ -315,6 +349,7 @@ def departed_endpoint_records(
     names: Mapping[str, str | None],
     vendors: Mapping[str, str],
     observer_guid: str | None,
+    nodes_by_guid: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Records of endpoints whose participant left: `(role, sample, gone_ns, name)` in.
 
@@ -323,7 +358,14 @@ def departed_endpoint_records(
     """
     out = []
     for role, sample, gone_ns, name in departed:
-        rec = endpoint_record(sample, role, names, observer_guid, vendors_by_guid=vendors)  # type: ignore[arg-type]
+        rec = endpoint_record(
+            sample,
+            role,  # type: ignore[arg-type]
+            names,
+            observer_guid,
+            vendors_by_guid=vendors,
+            nodes_by_guid=nodes_by_guid,
+        )
         rec["participant_name"] = name or rec["participant_name"]
         rec["gone_ns"] = gone_ns
         out.append(rec)
@@ -336,12 +378,14 @@ def listing_from_samples(
     subscription_samples: Iterable[Any],
     *,
     departed: Iterable[tuple[str, Any, int, str | None]] = (),
+    nodes_by_guid: Mapping[str, str] | None = None,
     **listing_kwargs: Any,
 ) -> EndpointListing:
     """Raw builtin samples in, `EndpointListing` out: the whole pure pipeline.
 
     Keeps the sample source swappable (direct reads today, a cache filled by a
-    tracker thread later) without touching the logic. `listing_kwargs` are the
+    tracker thread later) without touching the logic. `nodes_by_guid` puts a ROS 2 node
+    name on each endpoint. `listing_kwargs` are the
     `build_endpoint_listing` keywords (`domain_id`, `mode_effective`,
     `observer_guid`, filters).
     """
@@ -349,14 +393,18 @@ def listing_from_samples(
     vendors = participant_vendors(participant_samples)
     observer = listing_kwargs.get("observer_guid")
     records = [
-        endpoint_record(s, "writer", names, observer, vendors_by_guid=vendors)
+        endpoint_record(
+            s, "writer", names, observer, vendors_by_guid=vendors, nodes_by_guid=nodes_by_guid
+        )
         for s in publication_samples
     ]
     records += [
-        endpoint_record(s, "reader", names, observer, vendors_by_guid=vendors)
+        endpoint_record(
+            s, "reader", names, observer, vendors_by_guid=vendors, nodes_by_guid=nodes_by_guid
+        )
         for s in subscription_samples
     ]
-    gone = departed_endpoint_records(departed, names, vendors, observer)
+    gone = departed_endpoint_records(departed, names, vendors, observer, nodes_by_guid)
     return build_endpoint_listing(records, departed_records=gone, **listing_kwargs)
 
 

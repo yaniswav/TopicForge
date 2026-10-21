@@ -31,6 +31,7 @@ from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from topicforge.adapters.common.dds_helpers import format_guid
 from topicforge.models import ParticipantInfo
 
 ROS_DISCOVERY_TOPIC = "ros_discovery_info"
@@ -86,6 +87,15 @@ class ParticipantEntities:
         """Fully qualified node names, in announcement order."""
         return [n.full_name for n in self.nodes]
 
+    @property
+    def endpoint_nodes(self) -> dict[str, str]:
+        """Node full name by endpoint GUID, over every reader and writer gid of every node."""
+        return {
+            endpoint_guid_of_gid(gid): node.full_name
+            for node in self.nodes
+            for gid in (*node.reader_gids, *node.writer_gids)
+        }
+
 
 def node_full_name(namespace: str, name: str) -> str:
     """Join a node namespace and name: `("/", "a")` -> `/a`, `("/ns", "a")` -> `/ns/a`."""
@@ -96,6 +106,15 @@ def prefix_key_of_bytes(gid: bytes) -> str:
     """First 12 bytes of a gid as three dotted 4-byte hex groups (a GUID prefix)."""
     data = gid[:12].ljust(12, b"\x00")
     return ".".join(data[i : i + 4].hex() for i in range(0, 12, 4))
+
+
+def endpoint_guid_of_gid(gid: bytes) -> str:
+    """The endpoint GUID inside a gid, rendered like `EndpointInfo.guid`.
+
+    Bytes 0-15 of a 24-byte (Humble) or 16-byte (Iron and later) gid are the RTPS GUID of
+    the reader or writer: the 12-byte participant prefix, then the 4-byte entity id.
+    """
+    return format_guid(gid[:16])
 
 
 def prefix_key_of_guid(guid: str) -> str:
@@ -227,7 +246,8 @@ class NodeNameCache:
 
     A participant shutting down cleanly announces an empty node list last, which
     would erase who it was; `last_dict` keeps the last non-empty list for the
-    participants that are gone.
+    participants that are gone. The same holds for the endpoint -> node map
+    (`endpoint_nodes`), which is what puts a node name on an endpoint.
 
     Not thread-safe by itself: the discovery tracker mutates it under its pass
     lock and readers copy it from `DiscoveryCaches.snapshot`.
@@ -235,17 +255,26 @@ class NodeNameCache:
 
     def __init__(self, max_items: int = MAX_CACHED_PARTICIPANTS) -> None:
         self._items: OrderedDict[str, tuple[tuple[str, ...], tuple[str, ...]]] = OrderedDict()
+        self._endpoints: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
         self._max = max_items
 
-    def put(self, key: str, names: Iterable[str]) -> None:
+    def put(
+        self, key: str, names: Iterable[str], endpoints: Mapping[str, str] | None = None
+    ) -> None:
+        """Replace the node names of `key`; `endpoints` maps endpoint GUID -> node full name."""
         current = tuple(names)
         previous = self._items.pop(key, ((), ()))[1]
         self._items[key] = (current, current or previous)
+        now = dict(endpoints or {})
+        before = self._endpoints.get(key, ({}, {}))[1]
+        self._endpoints[key] = (now, now or before)
         while len(self._items) > self._max:
-            self._items.popitem(last=False)
+            evicted, _ = self._items.popitem(last=False)
+            self._endpoints.pop(evicted, None)
 
     def remove(self, key: str) -> None:
         self._items.pop(key, None)
+        self._endpoints.pop(key, None)
 
     def as_dict(self) -> dict[str, tuple[str, ...]]:
         """Latest names per prefix key (possibly empty)."""
@@ -254,6 +283,10 @@ class NodeNameCache:
     def last_dict(self) -> dict[str, tuple[str, ...]]:
         """Last non-empty names per prefix key."""
         return {k: v[1] for k, v in self._items.items() if v[1]}
+
+    def endpoint_nodes(self) -> dict[str, str]:
+        """Node full name by endpoint GUID, over all participants (last non-empty map each)."""
+        return {guid: node for _, last in self._endpoints.values() for guid, node in last.items()}
 
 
 def apply_info_samples(cache: NodeNameCache, raws: Iterable[bytes]) -> int:
@@ -267,7 +300,7 @@ def apply_info_samples(cache: NodeNameCache, raws: Iterable[bytes]) -> int:
         info = try_decode_participant_entities(raw)
         if info is None:
             continue
-        cache.put(info.prefix_key, info.node_names)
+        cache.put(info.prefix_key, info.node_names, info.endpoint_nodes)
         decoded += 1
     return decoded
 
