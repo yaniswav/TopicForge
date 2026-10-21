@@ -12,13 +12,17 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | --- | --- |
 | `drive.py` | MCP stdio driver: runs `calls.json` in one session, saves one JSON per call (result, wall time) and the server's stderr |
 | `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes; `{"settle_s": 3}` entries sleep (before the DDS calls and at the end) |
+| `calls_graph_diff.json` | The four `graph_diff` calls of the bench only (the OmniSim kit does not run it): `{"spawn": ...}` starts `tests/integration/ros2/graph_change.py` between the steady call and the v2 call, and `drive.py` stops it when the session ends |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
 SHAPE (output shape changed; counted as a failure with `--strict-shape`, which CI uses), INFO.
 Sections and tolerances are listed at the top of `compare.py`: graph (topics, types, counts, QoS per
 side, nodes, `use_sim_time` per node), scan (geometry, every range, wall and sector minima), stamps
-(`stamp_source` per topic), rates (verdict, frequency, interval_cv), bag, dds.
+(`stamp_source` per topic), rates (verdict, frequency, interval_cv), bag, dds, tf, clock, logs and, from
+0.8.0, `graph_diff` (bench truth only): the first call has no baseline, the steady graph gives zero
+changes, after `graph_change.py` starts (node `/bench_v2`, topic `/scan_v2`, a second writer on
+`/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing.
 
 Machine-dependent rows (OmniSim kit runs on a shared host):
 

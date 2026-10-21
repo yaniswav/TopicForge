@@ -431,6 +431,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         "detect_qos_mismatches", {}, {"reports": [], "reports_total": 0, "matched_total": 6}
     )
     out["17_inspect_tf"] = _call("inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"]))
+    _graph_diff_results(gt, out)
     out["07_sample_scan_full"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 1})
     out["08_sample_scan_defaults"] = _call(
         "sample_messages",
@@ -494,7 +495,42 @@ def _bag_truth(gt: dict) -> None:
     }
 
 
+def _graph_diff_results(gt: dict, out: dict[str, Any], *, bag: bool = False) -> None:
+    """The four `graph_diff` answers of a healthy bench (`calls_graph_diff.json`)."""
+    truth = gt["graph_diff"]
+
+    def report(changes: list[dict], **extra: Any) -> dict[str, Any]:
+        return {
+            "baseline_id": "snap-1",
+            "changes": changes,
+            "removed_count": sum(c["change"] == "removed" for c in changes),
+            "builtin_changes_count": 2,
+            "not_compared": {"rates": "bag against bag only"},
+            **extra,
+        }
+
+    note = "No baseline yet: snapshot snap-1 stored; call again to compare with it."
+    out[truth["first"]["call"]] = _call(
+        "graph_diff", {}, report([], baseline_id=None, baseline=None, note=note)
+    )
+    out[truth["steady"]["call"]] = _call("graph_diff", {}, report([]))
+    planned = [{**c, "text": "t"} for c in truth["v2"]["changes"]]
+    out[truth["v2"]["call"]] = _call("graph_diff", {}, report(planned))
+    if bag:
+        out[truth["bag"]["call"]] = _call(
+            "graph_diff",
+            {"baseline": "/bag"},
+            report(
+                [{"kind": "topic", "change": "added", "name": "/tf", "text": "t"}],
+                baseline_id="/bag",
+                baseline={"source": "bag"},
+                not_compared={"nodes": "no graph", "rates": "bag only", "counts": "none"},
+            ),
+        )
+
+
 def _bag_results(gt: dict, out: dict[str, Any]) -> None:
+    _graph_diff_results(gt, out, bag=True)
     out["13_analyze_bag"] = _call(
         "analyze_bag",
         {"path": "/bag"},
@@ -620,6 +656,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         "tf",
         "clock",
         "logs",
+        "graph_diff",
         "listing",
     }
 
@@ -1216,3 +1253,132 @@ def test_a_wrong_range_count_or_start_ns_fails(tmp_path: Path, bench_truth: dict
     verdicts = _logs_report(tmp_path, bench_truth, short)
     assert verdicts["analyze_bag.start_ns"] == "FAIL"
     assert verdicts["bag /clock start_s 2 end_s 4"] == "FAIL"
+
+
+# ------------------------------------------------------------------ graph_diff (0.8.0)
+def _gd_run(tmp_path: Path, truth: dict, mutate: Any) -> tuple[int, list[str]]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    mutate(results)
+    code, report = _run(tmp_path / str(id(mutate)), truth, results, "--strict-shape")
+    return code, _metrics(report, "FAIL")
+
+
+def test_the_graph_diff_section_catches_each_kind_of_wrong_answer(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def parsed(r: dict, name: str) -> dict:
+        return r[name]["parsed"][0]
+
+    false_alarm = {"kind": "count", "change": "changed", "name": "/scan", "text": "t"}
+    cases = {
+        "first call": lambda r: parsed(r, "30_graph_diff_first").update(baseline_id="snap-0"),
+        "steady graph": lambda r: parsed(r, "31_graph_diff_steady")["changes"].append(false_alarm),
+        "v2: exactly": lambda r: parsed(r, "32_graph_diff_v2")["changes"].append(false_alarm),
+        "v2: exactly the": lambda r: parsed(r, "32_graph_diff_v2")["changes"].pop(0),
+        "/cmd_vel_out count": lambda r: parsed(r, "32_graph_diff_v2")["changes"][2].update(
+            after="3"
+        ),
+        "removed_count": lambda r: parsed(r, "33_graph_diff_bag").update(removed_count=1),
+        "no type or qos": lambda r: parsed(r, "33_graph_diff_bag")["changes"].append(
+            {"kind": "qos", "change": "changed", "name": "/scan", "text": "t"}
+        ),
+        "not_compared": lambda r: parsed(r, "33_graph_diff_bag").update(not_compared={}),
+    }
+    for needle, mutate in cases.items():
+        code, failed = _gd_run(tmp_path, bench_truth, mutate)
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+def test_a_missing_graph_diff_answer_is_a_warning_not_a_failure(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    for name in ("30_graph_diff_first", "32_graph_diff_v2"):
+        del results[name]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0
+    assert {"first call (graph_diff)", "graph v2 (graph_diff)"} <= set(_metrics(report, "WARN"))
+
+
+def test_the_kit_truth_has_no_graph_diff_section(
+    tmp_path: Path, omnisim: tuple[dict, dict]
+) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "graph_diff" for r in report["rows"])
+
+
+def test_bench_graph_diff_truth_names_what_graph_change_publishes() -> None:
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")["graph_diff"]
+    names = {c["name"] for c in truth["v2"]["changes"]}
+    assert names == {bench.GRAPH_V2_NODE, bench.GRAPH_V2_TOPIC, bench.GRAPH_V2_SHARED_TOPIC}
+    assert bench.GRAPH_V2_SHARED_TOPIC in bench.BENCH_TOPICS  # a topic the robot already writes
+    assert bench.GRAPH_V2_TOPIC not in bench.BENCH_TOPICS
+    assert bench.GRAPH_V2_NODE not in bench.BENCH_NODES
+    source = (ROOT / "tests" / "integration" / "ros2" / "graph_change.py").read_text("ascii")
+    for constant in ("GRAPH_V2_NODE", "GRAPH_V2_TOPIC", "GRAPH_V2_SHARED_TOPIC"):
+        assert f"model.{constant}" in source
+
+
+def test_graph_diff_calls_run_after_the_kit_calls_and_change_the_graph_in_between() -> None:
+    kit = json.loads((ROOT / "scripts" / "ground_truth" / "calls.json").read_text("utf-8"))
+    assert not any("spawn" in c or c.get("tool") == "graph_diff" for c in kit)
+    calls = json.loads(
+        (ROOT / "scripts" / "ground_truth" / "calls_graph_diff.json").read_text("utf-8")
+    )
+    names = [c.get("name") or ("spawn" if "spawn" in c else "settle") for c in calls]
+    assert names == [
+        "30_graph_diff_first",
+        "settle",
+        "31_graph_diff_steady",
+        "spawn",
+        "settle",
+        "32_graph_diff_v2",
+        "33_graph_diff_bag",
+        "settle",
+    ]
+    assert calls[1]["settle_s"] >= 3 and calls[4]["settle_s"] >= 5
+    assert calls[-1] == {"settle_s": 3}
+    assert calls[3]["spawn"].endswith("graph_change.py")
+    assert (ROOT / calls[3]["spawn"]).is_file()
+    assert calls[6]["args"] == {"baseline": "{BAG}"} and calls[6]["needs_bag"]
+    bench_script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
+    assert "calls_graph_diff.json" in bench_script
+
+
+# ---------------------------------------------------------------- drive.py: spawn
+_SLEEPER = "import time\ntime.sleep(60)\n"
+
+
+def test_drive_spawns_a_process_and_stops_it(tmp_path: Path) -> None:
+    script = tmp_path / "sleeper.py"
+    script.write_text(_SLEEPER, encoding="ascii")
+    with open(tmp_path / "err.log", "w", encoding="utf-8") as log:
+        proc = drive.spawn({"spawn": str(script), "python": sys.executable}, log)
+        assert proc.poll() is None
+        drive.stop_spawned([proc])
+    assert proc.poll() is not None
+
+
+def test_drive_stops_spawned_processes_when_the_session_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import subprocess
+
+    script = tmp_path / "sleeper.py"
+    script.write_text(_SLEEPER, encoding="ascii")
+    started: list[subprocess.Popen] = []
+
+    async def failing_session(args: Any, calls: Any, out: Any, errlog: Any, spawned: list) -> None:
+        proc = drive.spawn({"spawn": str(script), "python": sys.executable}, errlog)
+        spawned.append(proc)
+        started.append(proc)
+        raise RuntimeError("the session broke")
+
+    monkeypatch.setattr(drive, "run_session", failing_session)
+    log_path = tmp_path / "err.log"
+    with open(log_path, "w", encoding="utf-8") as log, pytest.raises(RuntimeError, match="broke"):
+        asyncio.run(drive.run(None, [], tmp_path, log))  # type: ignore[arg-type]
+    assert started and started[0].poll() is not None

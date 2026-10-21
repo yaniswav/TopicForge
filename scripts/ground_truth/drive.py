@@ -13,6 +13,7 @@ A calls file is a JSON list. Each entry is one of:
 
     {"list_tools": true}
     {"settle_s": 3}
+    {"spawn": "tests/integration/ros2/graph_change.py"}
     {"name": "02_list_topics", "tool": "list_topics", "args": {}, "timeout": 120}
     {"name": "03_topic_info_{slug}", "tool": "get_topic_info", "for_each": "topics",
      "args": {"topic": "{item}"}}
@@ -26,6 +27,10 @@ Entries run in order inside ONE MCP session, so put graph calls before sampling 
 `{"settle_s": N}` sleeps N seconds: every `ros2` CLI call (get_node_info, topic info) starts a
 process that stays a DDS participant for 0.3-2 s after it exits, so calls.json settles 3 s
 before the DDS calls and at the end, and no ghost participant reaches list_participants.
+`{"spawn": PATH}` starts `python3 PATH` (a relative PATH is taken from the current directory;
+an optional `"python"` key names another interpreter) and leaves it running for the rest of the
+session: the bench uses it to change the graph between two `graph_diff` calls. Every spawned
+process is terminated, then killed after 5 s, when the session ends, whatever the outcome.
 
 Each result goes to `<out>/<name>.json` as `{isError, content, parsed, structuredContent?,
 _call: {tool, args, wall_s, t_wall}}` (`{exception, _call}` when the call raised or timed
@@ -191,8 +196,44 @@ def open_session(params: Any, errlog: Any) -> Any:
     return _Session()
 
 
+def spawn(entry: dict[str, Any], errlog: Any) -> subprocess.Popen:
+    """Start the process of a `{"spawn": PATH}` entry; its output goes to the stderr log."""
+    python = entry.get("python") or shutil.which("python3") or sys.executable
+    return subprocess.Popen(
+        [python, str(entry["spawn"])], stdout=errlog, stderr=errlog, stdin=subprocess.DEVNULL
+    )
+
+
+def stop_spawned(spawned: list[subprocess.Popen]) -> None:
+    """Terminate every spawned process, kill the ones that ignore it for 5 s."""
+    for proc in spawned:
+        if proc.poll() is None:
+            proc.terminate()
+    for proc in spawned:
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 async def run(args: argparse.Namespace, calls: list[dict], out: Path, errlog: Any) -> None:
-    """Run every call in one MCP session and save the results."""
+    """Run every call in one MCP session and save the results; spawned processes always stop."""
+    spawned: list[subprocess.Popen] = []
+    try:
+        await run_session(args, calls, out, errlog, spawned)
+    finally:
+        stop_spawned(spawned)
+
+
+async def run_session(
+    args: argparse.Namespace,
+    calls: list[dict],
+    out: Path,
+    errlog: Any,
+    spawned: list[subprocess.Popen],
+) -> None:
+    """The MCP session of `run`; `spawned` collects the processes the calls file starts."""
     from mcp import StdioServerParameters
 
     env = dict(os.environ)
@@ -226,6 +267,10 @@ async def run(args: argparse.Namespace, calls: list[dict], out: Path, errlog: An
             if "settle_s" in entry:
                 print("settle", entry["settle_s"], flush=True)
                 await asyncio.sleep(float(entry["settle_s"]))
+                continue
+            if "spawn" in entry:
+                spawned.append(spawn(entry, errlog))
+                print("spawn", entry["spawn"], "pid", spawned[-1].pid, flush=True)
                 continue
             for call in expand(entry, saved, args.bag) if not entry.get("list_tools") else [entry]:
                 if call.get("list_tools"):

@@ -20,7 +20,9 @@ Sections: graph (topics, types, counts, QoS per side, nodes, use_sim_time per no
 (geometry, every range, wall and sector minima), stamps (stamp_source per topic), rates
 (verdict and frequency, simulated and wall time), bag, dds, tf (the `inspect_tf` tree; only the
 bench truth has one), clock (`clock_basis`, stamp age and regressions per
-topic; only the bench truth has one). Reads output contract 2 (0.7:
+topic; only the bench truth has one), graph_diff (the four `graph_diff` calls of
+`calls_graph_diff.json`: first call, steady graph, graph v2, bag baseline; only the bench truth
+has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -1998,6 +2000,143 @@ def check_listing(gt: dict, res: Results, rep: Report) -> None:
     )
 
 
+# ---------------------------------------------------------------------------- graph_diff
+# Self-contained: the `graph_diff` section of the truth (only the bench writes one) against the
+# four calls of `calls_graph_diff.json` (0.8.0). The steady call is the healthy line: a graph
+# diffed against itself must report nothing, and it has to pass before the v2 call means anything.
+def _graph_diff_report(res: Results, name: str) -> tuple[dict | None, float | None, str | None]:
+    """`(report, wall_s, error)` of one saved `graph_diff` call."""
+    data = res.load(name)
+    err = tool_err(data)
+    if err:
+        return None, res.times.get(name), err
+    return objs(data)[0], res.times.get(name), None
+
+
+def _change_keys(report: dict) -> list[tuple[str, str, str]]:
+    return sorted((c["kind"], c["change"], c["name"]) for c in report.get("changes") or [])
+
+
+def _gd_row(
+    rep: Report, metric: str, truth: Any, got: Any, ok: bool, wall: float | None, note: str = ""
+) -> None:
+    rep.add("graph_diff", metric, truth, got, "PASS" if ok else "FAIL", note, wall)
+
+
+def _gd_unavailable(rep: Report, metric: str, err: str, wall: float | None) -> None:
+    if err == "missing":
+        rep.add("graph_diff", metric, "a report", "absent", "WARN", "older server", wall)
+    else:
+        rep.add("graph_diff", metric, "a report", err, "FAIL", "", wall)
+
+
+def _check_gd_first(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err:
+        return _gd_unavailable(rep, "first call (graph_diff)", err, wall)
+    note = str(report.get("note") or "")
+    ok = report.get("baseline_id") is None and not report["changes"]
+    _gd_row(
+        rep,
+        "first call: no baseline, no change",
+        "no baseline",
+        report.get("baseline_id"),
+        ok and note.startswith("No baseline yet"),
+        wall,
+        note,
+    )
+
+
+def _check_gd_steady(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err:
+        return _gd_unavailable(rep, "steady graph (graph_diff)", err, wall)
+    got = _change_keys(report)
+    _gd_row(
+        rep,
+        "steady graph: zero changes",
+        truth["changes"],
+        got,
+        not got,
+        wall,
+        "any change here is a false alarm",
+    )
+    rep.add(
+        "graph_diff",
+        "steady graph: builtin_changes_count",
+        "-",
+        report.get("builtin_changes_count"),
+        "INFO",
+        "/rosout and /parameter_events counter changes, folded",
+        wall,
+    )
+
+
+def _check_gd_v2(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err:
+        return _gd_unavailable(rep, "graph v2 (graph_diff)", err, wall)
+    want = sorted((c["kind"], c["change"], c["name"]) for c in truth["changes"])
+    got = _change_keys(report)
+    _gd_row(
+        rep,
+        "v2: exactly the three planned changes",
+        want,
+        got,
+        got == want,
+        wall,
+        "any other change is a false alarm",
+    )
+    counts = [c for c in report["changes"] if c["kind"] == "count"]
+    for planned in (c for c in truth["changes"] if c["kind"] == "count"):
+        found = next((c for c in counts if c["name"] == planned["name"]), {})
+        pair = (found.get("field"), found.get("before"), found.get("after"))
+        wanted = (planned["field"], planned["before"], planned["after"])
+        _gd_row(rep, f"v2: {planned['name']} count", wanted, pair, pair == wanted, wall)
+
+
+def _check_gd_bag(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err == "missing":
+        return  # the bench ran without a bag
+    if err:
+        return _gd_unavailable(rep, "bag baseline (graph_diff)", err, wall)
+    baseline = (report.get("baseline") or {}).get("source")
+    _gd_row(rep, "bag baseline: source", "bag", baseline, baseline == "bag", wall)
+    _gd_row(
+        rep,
+        "bag baseline: removed_count",
+        truth["removed_count"],
+        report.get("removed_count"),
+        report.get("removed_count") == truth["removed_count"],
+        wall,
+        "every recorded topic is still live",
+    )
+    bad = sorted({c["kind"] for c in report["changes"]} & set(truth["absent_kinds"]))
+    _gd_row(rep, "bag baseline: no type or qos change", [], bad, not bad, wall)
+    missing = sorted(set(truth["not_compared"]) - set(report.get("not_compared") or {}))
+    _gd_row(
+        rep,
+        "bag baseline: not_compared names nodes and rates",
+        truth["not_compared"],
+        sorted(report.get("not_compared") or {}),
+        not missing,
+        wall,
+    )
+
+
+@guard("graph_diff")
+def check_graph_diff(gt: dict, res: Results, rep: Report) -> None:
+    """`graph_diff`: first call, steady graph, graph v2 and a bag baseline (0.8.0)."""
+    truth = gt.get("graph_diff")
+    if not truth:
+        return
+    _check_gd_first(truth["first"], res, rep)
+    _check_gd_steady(truth["steady"], res, rep)
+    _check_gd_v2(truth["v2"], res, rep)
+    _check_gd_bag(truth["bag"], res, rep)
+
+
 SECTIONS = (
     check_graph,
     check_scan,
@@ -2008,6 +2147,7 @@ SECTIONS = (
     check_tf,
     check_clock,
     check_logs,
+    check_graph_diff,
     check_listing,
 )
 

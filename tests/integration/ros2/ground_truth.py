@@ -126,6 +126,13 @@ STAMPS = {
 }
 SECTOR_EDGE_EPS = 1e-4
 
+# graph_diff (0.8.0): `graph_change.py` adds exactly these three differences, see `graph_diff_truth`.
+GRAPH_V2_NODE = "/bench_v2"
+GRAPH_V2_TOPIC = "/scan_v2"
+GRAPH_V2_TOPIC_TYPE = "sensor_msgs/msg/LaserScan"
+# A second writer, same QoS, on a topic /bench_robot already writes.
+GRAPH_V2_SHARED_TOPIC = "/cmd_vel_out"
+
 
 def tf_truth() -> dict[str, Any]:
     """What `inspect_tf` must report for the bench tree (see `TF_*` above)."""
@@ -147,6 +154,41 @@ def tf_truth() -> dict[str, Any]:
             SCAN_FRAME,
         ],
         "real_time_factor": 1.0,
+    }
+
+
+def graph_diff_truth() -> dict[str, Any]:
+    """What the four `graph_diff` calls of `calls.json` must answer (0.8.0).
+
+    `30` is the first call of the session (no baseline), `31` a second one with nothing changed
+    (the healthy line: zero changes, whatever the `/rosout` and `/parameter_events` counters do),
+    `32` follows the start of `graph_change.py` and must name exactly the three differences below
+    (any other change is a false alarm), `33` compares the live graph with the recorded bag.
+    """
+    return {
+        "first": {"call": "30_graph_diff_first"},
+        "steady": {"call": "31_graph_diff_steady", "changes": 0},
+        "v2": {
+            "call": "32_graph_diff_v2",
+            "changes": [
+                {"kind": "node", "change": "added", "name": GRAPH_V2_NODE},
+                {"kind": "topic", "change": "added", "name": GRAPH_V2_TOPIC},
+                {
+                    "kind": "count",
+                    "change": "changed",
+                    "name": GRAPH_V2_SHARED_TOPIC,
+                    "field": "publisher_count",
+                    "before": "1",
+                    "after": "2",
+                },
+            ],
+        },
+        "bag": {
+            "call": "33_graph_diff_bag",
+            "removed_count": 0,
+            "absent_kinds": ["type", "qos"],
+            "not_compared": ["nodes", "rates"],
+        },
     }
 
 
@@ -349,6 +391,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         "tf": tf_truth(),
         "clock": clock_truth(),
         "logs": logs_truth(),
+        "graph_diff": graph_diff_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }
