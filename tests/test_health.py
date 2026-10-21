@@ -20,6 +20,7 @@ from topicforge.config import Settings
 from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.server import build_app
 from topicforge.services import HealthService
+from topicforge.services.health import resolve_security
 
 
 class _NamedAdapter:
@@ -302,3 +303,67 @@ def test_clock_hint_expires(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter.get_topic_info("/clock")
     monkeypatch.setattr(live, "_CLOCK_HINT_TTL_SEC", -1.0)
     assert adapter.sim_clock_published() is None
+
+
+# ---------------------------------------------------------------------------
+# SROS2 environment: a fact about variables, never a verdict
+# ---------------------------------------------------------------------------
+
+_SECURE_ENV = {
+    "ROS_SECURITY_ENABLE": "true",
+    "ROS_SECURITY_STRATEGY": "Enforce",
+    "ROS_SECURITY_KEYSTORE": "/home/robot/secret/keystore",
+}
+
+
+def test_security_is_all_none_without_the_ros2_cli() -> None:
+    for backend in ("none", "mock"):
+        assert resolve_security(backend, _SECURE_ENV) == (None, None, None, None)
+
+
+def test_security_unset_environment() -> None:
+    assert resolve_security("ros2_cli", {}) == (False, None, False, None)
+
+
+def test_security_enabled_and_enforced_with_a_keystore() -> None:
+    result = resolve_security("ros2_cli", _SECURE_ENV)
+    assert result.enabled is True
+    assert result.strategy == "Enforce"
+    assert result.keystore_set is True
+    assert result.note is not None
+    assert "without an identity" in result.note and "SPDP" in result.note
+
+
+def test_security_enabled_permissive_without_a_keystore() -> None:
+    env = {"ROS_SECURITY_ENABLE": "true", "ROS_SECURITY_STRATEGY": "Permissive"}
+    assert resolve_security("ros2_cli", env)[:3] == (True, "Permissive", False)
+
+
+def test_security_only_the_exact_text_true_enables_it() -> None:
+    for text in ("True", "1", "yes", "false", ""):
+        result = resolve_security("ros2_cli", {"ROS_SECURITY_ENABLE": text})
+        assert result.enabled is False and result.note is None
+
+
+def test_security_strategy_and_legacy_keystore_variable() -> None:
+    env = {"ROS_SECURITY_STRATEGY": "enforce", "ROS_SECURITY_ROOT_DIRECTORY": "/k"}
+    result = resolve_security("ros2_cli", env)
+    assert result.strategy is None  # not one of the two documented values
+    assert result.keystore_set is True
+    assert resolve_security("ros2_cli", {"ROS_SECURITY_KEYSTORE": "  "}).keystore_set is False
+
+
+def test_the_keystore_path_never_reaches_the_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in _SECURE_ENV.items():
+        monkeypatch.setenv(name, value)
+    report = HealthService(_settings(), _adapter("ros2_cli")).report()
+    assert report.ros_security_enabled is True
+    assert report.ros_security_keystore_set is True
+    assert "secret" not in report.model_dump_json()
+
+
+def test_the_mock_report_says_nothing_about_security(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROS_SECURITY_ENABLE", "true")
+    report = HealthService(_settings(), MockAdapter()).report()
+    assert report.ros_security_enabled is None and report.ros_security_note is None
+    assert report.dds_security == "not_supported"

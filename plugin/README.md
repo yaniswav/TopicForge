@@ -4,10 +4,11 @@ TopicForge is a read-only MCP server for ROS 2 and DDS. This plugin bundles the 
 
 ## What is included
 
-- MCP server `topicforge`, started with `uvx` from the `topicforge` package on PyPI (version pinned to 0.7.2). It exposes fifteen read-only tools: `health_check`, `list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`, `list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, `peek_dds_samples`, `topic_metrics`, `inspect_tf`.
+- MCP server `topicforge`, started with `uvx` from the `topicforge` package on PyPI (version pinned to 0.8.0). It exposes sixteen read-only tools: `health_check`, `list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`, `list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, `peek_dds_samples`, `topic_metrics`, `inspect_tf`, `graph_diff`.
 - Skill `diagnose-dds-bus`: what to call, and in which order, when nodes do not talk, a topic gets no data, or a node crashed or restarts.
 - Skill `inspect-ros2-robot`: listing topics, sampling messages and reading bags, including large arrays and simulation time.
-- The server itself also offers both procedures as MCP prompts (`diagnose-dds-bus`, `inspect-ros2-robot`) and short server instructions, for clients that load MCP prompts instead of skills. The skills use output contract 2 (`health_check.contract_version` is 2, 0.7.0 and later).
+- Skill `diagnose-nav2`: the call order for a Nav2 stack that does not start, aborts goals or does not move the robot (lifecycle managers, bonds, goal status, TF, logs), and what TopicForge cannot see there.
+- The server itself also offers the three procedures as MCP prompts (`diagnose-dds-bus`, `inspect-ros2-robot`, `diagnose-nav2`) and short server instructions, for clients that load MCP prompts instead of skills. The skills use output contract 2 (`health_check.contract_version` is 2, 0.7.0 and later).
 
 ## Requirements
 
@@ -47,7 +48,7 @@ Without DDS, set `dds_backend` to `mock`, or use the standalone install `uvx top
 
 ## Other clients (Agent Plugins)
 
-This folder is also an [Agent Plugins](https://agent-plugins.org) 1.0.0 package, so Cursor and other compatible clients can load it: `plugin.json` is the manifest, `mcp.json` declares the server and `skills/` holds the two skills (shared with the Claude format above). The Claude files (`.claude-plugin/plugin.json`, `.mcp.json`) are left alone.
+This folder is also an [Agent Plugins](https://agent-plugins.org) 1.0.0 package, so Cursor and other compatible clients can load it: `plugin.json` is the manifest, `mcp.json` declares the server and `skills/` holds the three skills (shared with the Claude format above). The Claude files (`.claude-plugin/plugin.json`, `.mcp.json`) are left alone.
 
 The Agent Plugins format has no user-configuration prompt, so `mcp.json` uses fixed defaults: `TOPICFORGE_MODE=auto`, `TOPICFORGE_DDS_BACKEND=cyclone`, `TOPICFORGE_DDS_DOMAIN_ID=0`. To change them, edit the `env` block of `mcp.json` in the installed copy (backend `mock` serves fixtures, `auto` picks the best available; domain 0 to 232, fixed at startup) and restart the server.
 

@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Analyze bag"
   },
-  "description": "Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like path, and only mock detects anomalies. **Raises an MCP error** for a malformed or missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like path, and only mock detects anomalies. **Raises an MCP error** for a malformed or missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no side effects. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "path": {
@@ -27,49 +27,34 @@
         "additionalProperties": false,
         "properties": {
           "first_timestamp_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Recorded ns of the first message; `null` for text-only summaries or no messages."
+            "description": "Recorded ns of the first message; `null` for text-only summaries or no messages.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "frequency_basis": {
-            "anyOf": [
-              {
-                "enum": [
-                  "topic_span",
-                  "bag_duration"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "`topic_span` (accurate) or `bag_duration` (count over the whole bag, understates late topics); `null` without a rate.",
+            "enum": [
+              "topic_span",
+              "bag_duration",
+              null
             ],
-            "default": null,
-            "description": "`topic_span` (accurate) or `bag_duration` (count over the whole bag, understates late topics); `null` without a rate."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "frequency_hz": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Average Hz: (count - 1) over the topic's own time span (see `frequency_basis`); `null` under 2 messages, a zero span, or a latched start-up burst (all within 1 s)."
+            "description": "Average Hz: (count - 1) over the topic's own time span (see `frequency_basis`); `null` under 2 messages, a zero span, or a latched start-up burst (all within 1 s).",
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "kind": {
-            "default": "user",
             "description": "`user` (data, incl. `/tf` and `/clock`), `rosbag2_internal` or `ros_builtin` (e.g. `/rosout`).",
             "enum": [
               "user",
@@ -79,29 +64,19 @@
             "type": "string"
           },
           "last_timestamp_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Recorded ns of the last message; same rules."
+            "description": "Recorded ns of the last message; same rules.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "latched": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "True if recorded with transient_local durability, false if volatile, `null` without QoS information."
+            "description": "True if recorded with transient_local durability, false if volatile, `null` without QoS information.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "message_count": {
             "description": "Number of messages recorded on this topic across the bag.",
@@ -134,22 +109,18 @@
         "type": "array"
       },
       "bag_format": {
-        "anyOf": [
-          {
-            "enum": [
-              "mcap",
-              "db3",
-              "bag",
-              "unknown"
-            ],
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
+        "description": "Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 bag info` text.",
+        "enum": [
+          "mcap",
+          "db3",
+          "bag",
+          "unknown",
+          null
         ],
-        "default": null,
-        "description": "Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 bag info` text."
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "duration_s": {
         "description": "Bag duration in seconds.",
@@ -170,32 +141,29 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`."
+        "description": "Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "path": {
         "description": "Bag path as supplied.",
         "type": "string"
       },
+      "start_ns": {
+        "description": "Record time in ns of the bag's first message (rosbag2 `starting_time`): the zero of `peek_bag_samples` `start_s` / `end_s`. `null` when unreadable.",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
       "storage_format": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "`mcap`, `sqlite3`, or other storage identifier when known."
+        "description": "`mcap`, `sqlite3`, or other storage identifier when known.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "topics": {
         "description": "Per-topic statistics for every topic present in the bag.",

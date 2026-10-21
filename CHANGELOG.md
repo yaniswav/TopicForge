@@ -5,7 +5,158 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-10-21
+
+Graph diff, declared-against-real checks, DDS visibility and a Nav2 prompt. It also carries the
+0.7.3 work (schema compaction, clock fields, `/rosout` filters, bag ranges, lifecycle nodes),
+which was never published on its own: see "Folded in from 0.7.3" below. Additive only
+(`docs/CONTRACT.md` section 9). Validated on the Docker ROS 2 bench (Humble and Jazzy,
+rmw_fastrtps and rmw_cyclonedds) and by a blind evaluation of 14 runs (`docs/EVAL.md`).
+
+### Added
+
+- `graph_diff`, the sixteenth tool: "what changed since it last worked". Each call snapshots the
+  ROS 2 graph (nodes, topics, types, publisher and subscriber counts, writer QoS when a DDS backend
+  is up) or a bag (`bag_path`: topics, types, rates, latching), keeps it in an in-memory ring of 16
+  (`snap-N` ids, emptied on restart, nothing written to disk) and compares it with `baseline`:
+  `previous`, a snapshot id or a bag path, in one string. The result is a sorted list of node,
+  topic, type, qos, rate and count differences with what could not be compared named in
+  `not_compared` (nodes and counts only live against live, rates only bag against bag, writer QoS
+  only with a DDS backend). Endpoint-count noise on `/rosout` and `/parameter_events` is tallied in
+  `builtin_changes_count`, never reported. ROS lane, read-only, open world. `docs/CONTRACT.md`
+  section 9.14.
+- The mock robot ships a `snap-0` baseline derived from its fixtures minus a node, a topic and a
+  QoS: the first mock call reports exactly three changes, the second none, and the mock bag is
+  accepted as a baseline.
+- Bench: `drive.py` gains `{"spawn": PATH}` (the
+  process is stopped when the session ends), `tests/integration/ros2/graph_change.py` adds the
+  node `/bench_v2`, the topic `/scan_v2` and a second `/cmd_vel_out` writer, and
+  `scripts/ground_truth/calls_graph_diff.json` runs the first, steady, v2 and bag calls. The
+  comparator gets a `graph_diff` section: the steady graph must give zero changes, the v2 graph
+  exactly three, a bag baseline no removal and no type or QoS change.
+- The `diagnose-nav2` prompt (the third, with optional `symptom` and `namespace`) and the plugin
+  skill of the same name: a read-only call order for a Nav2 stack (node list and lifecycle flags,
+  `lifecycle_manager` parameters, `/bond` heartbeats, the hidden latched `_action/status` topics
+  read with `sample_messages`, `inspect_tf` map to base_link, filtered `/rosout`, the controller's
+  velocity output) and a list of what TopicForge cannot see (lifecycle state, costmaps, the
+  behavior tree). No tool added, 0 bytes in `tools/list`. `docs/CONTRACT.md` section 9.17. Nav2
+  itself was not run: the prompt is verified on its primitives, not on a real stack.
+- Bench for those primitives: the image adds
+  `example_interfaces` and `bond`, `publisher.py` serves a never-called action `/bench_fib` and
+  publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz), `calls_nav_primitives.json` runs
+  `40_action_status` and `41_bond`, and the comparator gets a `nav_primitives` section (one latched
+  sample with an empty `status_list`, the action in `get_node_info.action_servers`, the status
+  topic absent from `list_topics`, the bond id on every `/bond` sample).
+- DDS visibility (lot C), without any verdict on security. `health_check` reports
+  `ros_security_enabled`, `ros_security_strategy`, `ros_security_keystore_set` (never the path)
+  and, when enabled, `ros_security_note` (a secured node's participant stays visible through SPDP,
+  its endpoints and data do not), all `null` without the `ros2` CLI. `ParticipantInfo.endpoint_count`
+  counts the endpoints seen per participant, and `list_participants` notes the ones with none for
+  more than 10 s, naming both causes (endpoint-less, or hidden by DDS Security). `EndpointInfo.node_name`
+  names the ROS 2 node of each endpoint, read from the `ros_discovery_info` gids (bytes 0 to 15 of
+  the 24-byte or 16-byte gid are the endpoint GUID), and `TopicSummary.writer_nodes` and
+  `reader_nodes` roll it up: the answer to "who writes `/scan`" when every Fast DDS participant is
+  called `/`. `tools/list` grows by 1,078 bytes. `docs/CONTRACT.md` section 9.16. Bench:
+  a `visibility` section checks the `/scan` writer is `/bench_robot`, its
+  participant has at least 12 endpoints and the security fields are `false` and `null`. No SROS2
+  cell yet.
+- Declared against real (lot B), `docs/CONTRACT.md` section 9.15. `inspect_tf` reads the latched
+  `/robot_description` after the capture and compares the URDF links with the TF frames:
+  `urdf_source`, `urdf_link_count`, `declared_frames_missing`, `frames_not_in_urdf`, `urdf_note`
+  and a `declared_not_published` finding (a link nothing publishes, with a reminder that a
+  non-fixed joint needs `/joint_states`). It needs `robot_state_publisher` (a topic; a URDF held
+  only as a parameter is not read) and a missing or refused document is a note, never an error.
+  `get_node_info` takes `params_file`, a server-side ROS 2 parameter YAML (`.yaml`/`.yml`, 1 MiB,
+  `yaml.safe_load`, never sent to the CLI or the node, nothing written) and returns `param_diff`
+  (`different`, `declared_only`, `masked`), `param_diff_summary` and `param_diff_note`; secrets
+  are never echoed from the file. The comparison runs in the service, so the `MiddlewareAdapter`
+  protocol is unchanged, and it works in mock mode. The mock robot publishes `/robot_description`
+  with a `gripper_link` nothing publishes (`list_topics` gains one topic). `tools/list` grows by
+  1,377 bytes. Bench: the publisher
+  latches a URDF with an unpublished `arm_link` and declares three parameters,
+  `bench_params.yaml` disagrees on `max_range` and adds `extra_gain`, `calls_declared.json` runs
+  `03p_node_info_params`, and the comparator gets a `declared` section.
+- Evaluation tooling for the 0.8.0 campaign (lot E; results in `docs/EVAL.md`, "0.8.0
+  campaign (v2)"). `scripts/agent_eval/tf.py list --brief` prints one line per tool (name, inputs
+  with `*` on required ones, first sentence): 2,309 bytes against 35,514 for the full listing on
+  the mock server; `list --tool NAME` prints one tool in full and `--host` reaches a broker on
+  another machine. `broker.py` gains `--server-cmd` (any command that starts TopicForge, such as
+  `/opt/tfenv/bin/topicforge` in the bench image), `--mode`, `--dds-backend`, repeatable `--env`
+  and `--calls-log` (one JSON line per request, so the runner counts an agent's tool calls itself);
+  it still listens on 127.0.0.1 unless `--host 0.0.0.0` is given. `publisher.py --fault NAME`
+  turns the bench robot into a clean robot with one fault: `healthy`, `blocked_executor`,
+  `tf_stale`, `qos_mismatch` (a best_effort `/scan_edge` writer against a reliable
+  `/edge_viewer`), `restart_loop` (a node that dies every 6 s and is started again),
+  `declared_drift` and `graph_v1_v2`; the faults live in the bench, TopicForge stays read-only, and
+  `publisher.py` without the flag is unchanged. `scripts/agent_eval/ros2_scenarios.py` starts one
+  scenario (broker, robot, companions) and writes the agent's workspace and prompt, with a
+  `--variant prompt` that adds the text of `inspect-ros2-robot` or `diagnose-nav2`; the expected
+  diagnoses are in `scripts/agent_eval/TRUTH_ROS2.md`. The image copies `scripts/agent_eval`.
+
+### Changed
+
+- `tools/list` is 96,848 bytes with sixteen tools (118,884 with fifteen in 0.7.2), under the
+  100,000-byte test ceiling. `graph_diff` itself costs nothing net: two levers pay for it (`docs/CONTRACT.md`
+  section 9.13, wire-compatible): the `**Duration**` lane note is one sentence, and
+  `anyOf: [X, null]` is served as `type: [X, "null"]` in output schemas only. A new test validates
+  every mock result against the output schema the server serves.
+- The ROS lane now serves eight tools (`graph_diff` joins the seven `ros2` CLI tools). The
+  `MiddlewareAdapter` protocol is unchanged.
+- Bench: `test_a_short_latched_result_hints_count_one` waits 6 s instead of 3 (it got no sample once
+  on a loaded Jazzy and Fast DDS runner).
+
+### Folded in from 0.7.3 (never published separately)
+
+#### Added
+
+- `list_nodes` flags lifecycle (managed) nodes: `NodeListItem.lifecycle`, plus
+  `NodeListing.lifecycle_count`, `lifecycle_note` (set when the service list failed, never a
+  silent false) and `by_namespace` (distinct node names per namespace). `NodeInfo.lifecycle`
+  likewise. A node is lifecycle when it serves `<full_name>/get_state` of type
+  `lifecycle_msgs/srv/GetState`; the state is never read. Costs one extra
+  `ros2 service list -t` (`docs/CONTRACT.md` section 9.10). The mock `camera_driver` is a
+  lifecycle node, which adds the topic `/camera_driver/transition_event` to the mock graph.
+  The bench gains `/robot1/bench_lifecycle` and the comparator rows for both fields.
+- `TopicRate` clock fields on `sample_messages` and `peek_bag_samples` (`docs/CONTRACT.md`
+  section 9.11): `clock_basis` (`wall`, `sim`, `none`, `mixed`), `stamp_age_median_s` and
+  `stamp_age_p95_s` (arrival minus stamp, wall-stamped topics only) and `stamp_regression_count`.
+  Additive, all with defaults. The bench gains `/imu/data`, `/pose_mixed` and `/stamps_regress`.
+- `sample_messages` filters `/rosout` (`rcl_interfaces/msg/Log`) with `min_log_level`
+  (`debug` .. `fatal`) and `node` (`/ns/name`, `name` or `ns.name`; exact or child logger, never a
+  prefix). A Log topic is read with a depth-2000 reader to receive the 10 s transient_local
+  buffer; with a filter the call streams until `timeout_s`, filters after decoding and returns the
+  NEWEST `count` matches in stamp order, with a `M of N matched` note. A filter on any other topic
+  is an error. `docs/CONTRACT.md` section 9.12.
+- `peek_bag_samples` gains `start_s` / `end_s` (bag-relative seconds on the record time,
+  `[start, end)`) and the same log filter (the FIRST `count` matches in range, bag order), and
+  `analyze_bag` returns `start_ns`, the record time of the bag's first message. The mock gains a
+  `/rosout` topic and bag topic. The bench logs WARN/ERROR/INFO, records `/rosout`, and the
+  comparator gets a `logs` section.
+
+#### Changed
+
+- `MiddlewareAdapter.sample_messages` gains keyword arguments `min_log_level` and `node`, and
+  `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and `node` (all default `None`),
+  like `capture_tf` in 0.7.2. Custom adapters must accept them.
+- `tools/list` shrinks from 118,884 to about 95 KB (94,957 bytes, `docs/CONTRACT.md` section 9.9),
+  about 5 KB under the new 100,000-byte test ceiling, which is the headroom left before
+  `graph_diff`. Additive: `MessageSample.summary` is
+  advertised as an open object keyed by `summary_type` (the five strict shapes are still built
+  and validated by the server, and documented in `docs/TOOLS.md`), and `default` keywords are
+  dropped from output schemas only. Payloads are unchanged.
+- The ground-truth comparator checks the `tools/list` size (< 100,000 bytes).
+- The mock graph gained `/camera_driver/transition_event` and `/rosout`, so mock `list_topics`
+  totals change (two more topics).
+- A filtered bag read (`peek_bag_samples` with a log filter or a range) stops after 20 s or when
+  the call budget runs out and says so in `note`. A bag that starts at 0 (sim time) reports
+  `start_ns` 0, not `null`. The live `/rosout` depth-2000 reader is used only when a log filter
+  is set; an unfiltered read behaves as in 0.7.2.
+
+#### Fixed
+
+- `inspect_tf`: the `no_path` finding for unknown frames named every requested frame, even one
+  that exists ("No frame named camera_optical_frame or base_laser was seen"). Its text and
+  `frames` now list only the missing ones, like `path_note`.
 
 ## [0.7.2] - 2026-10-18
 

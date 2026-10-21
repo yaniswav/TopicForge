@@ -1,11 +1,13 @@
 """Pydantic schemas: the contract between TopicForge and MCP clients."""
 
+from topicforge.models.graph_diff import GraphChange, GraphDiff, GraphSnapshotRef
 from topicforge.models.nodes import (
     NodeInfo,
     NodeInterface,
     NodeListing,
     NodeListItem,
     NodeParameter,
+    ParamDiff,
 )
 from topicforge.models.schemas import (
     BagAnalysis,
@@ -52,6 +54,9 @@ __all__ = [
     "DepartedEndpoint",
     "EndpointInfo",
     "EndpointListing",
+    "GraphChange",
+    "GraphDiff",
+    "GraphSnapshotRef",
     "HealthReport",
     "ImageSummary",
     "ImuSummary",
@@ -69,6 +74,7 @@ __all__ = [
     "NodeParameter",
     "NotMatchedPair",
     "OdometrySummary",
+    "ParamDiff",
     "ParticipantEvent",
     "ParticipantEventListing",
     "ParticipantInfo",

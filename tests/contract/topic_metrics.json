@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Topic metrics"
   },
-  "description": "Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent window as a `TopicMetrics`. **Read `status` first**: `unsupported_user_topic` means the payload is not decoded, so no metric exists: every null or 0 is not a measurement; `no_samples_yet` is a builtin topic with nothing buffered; `ok` means computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how often it was called, not the publish rate: a coarse presence signal. `declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline announced in discovery (declared, not measured; null when none). Also `sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is outside 1..3600. Right after start the call waits up to 3 s for discovery. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent window as a `TopicMetrics`. **Read `status` first**: `unsupported_user_topic` means the payload is not decoded, so no metric exists: every null or 0 is not a measurement; `no_samples_yet` is a builtin topic with nothing buffered; `ok` means computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how often it was called, not the publish rate: a coarse presence signal. `declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline announced in discovery (declared, not measured; null when none). Also `sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is outside 1..3600. Right after start the call waits up to 3 s for discovery. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -39,60 +39,39 @@
     "description": "Temporal metrics for a single DDS topic over a recent window.",
     "properties": {
       "declared_frequency_hz": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "`1 / deadline` of the shortest writer Deadline announced: the promised rate, not the observed one; `None` when none announced."
+        "description": "`1 / deadline` of the shortest writer Deadline announced: the promised rate, not the observed one; `None` when none announced.",
+        "type": [
+          "number",
+          "null"
+        ]
       },
       "latency_available": {
-        "default": false,
         "description": "True when a sample carried both a publish and a receive timestamp.",
         "type": "boolean"
       },
       "latency_ns_p50": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Median publish-to-receive latency in ns; `None` unless `latency_available`."
+        "description": "Median publish-to-receive latency in ns; `None` unless `latency_available`.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "latency_ns_p95": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "95th-percentile publish-to-receive latency (ns)."
+        "description": "95th-percentile publish-to-receive latency (ns).",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "latency_ns_p99": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "99th-percentile publish-to-receive latency (ns)."
+        "description": "99th-percentile publish-to-receive latency (ns).",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "mode_effective": {
         "description": "`live` or `mock` (fixtures).",
@@ -103,28 +82,18 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "observed_frequency_hz": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "`samples_observed / window_actual_s`; `None` under 2 samples."
+        "description": "`samples_observed / window_actual_s`; `None` under 2 samples.",
+        "type": [
+          "number",
+          "null"
+        ]
       },
       "samples_observed": {
         "description": "Samples buffered in the window. `0` does NOT mean no publisher, only that no `peek_dds_samples` call captured one.",
@@ -132,18 +101,15 @@
         "type": "integer"
       },
       "sequence_gaps_count": {
-        "default": 0,
         "description": "Missing sequence numbers in the buffered samples; `0` also when none exist (see `sequence_numbers_available`).",
         "minimum": 0,
         "type": "integer"
       },
       "sequence_numbers_available": {
-        "default": false,
         "description": "True when a sequence number could be read from a sample.",
         "type": "boolean"
       },
       "status": {
-        "default": "ok",
         "description": "`ok`; `no_samples_yet` (empty buffer); `unsupported_user_topic` (payload not decoded: null fields are not measurements).",
         "enum": [
           "ok",

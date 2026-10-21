@@ -149,8 +149,9 @@ def _call(tool: str, args: dict, payload: Any, wall: float = 0.1) -> dict:
     }
 
 
-def _rate(hz: float, cv: float = 0.04, count: int = 12) -> dict:
+def _rate(hz: float, cv: float = 0.04, count: int = 12, clock: dict | None = None) -> dict:
     return {
+        **(clock or {}),
         "basis": "received_ns",
         "message_count": count,
         "startup_burst_count": 0,
@@ -170,6 +171,7 @@ def _samples(
     cv: float = 0.04,
     count: int = 12,
     steps_ns: list[int] | None = None,
+    clock: dict | None = None,
 ) -> dict:
     """Sample result; stamps step by 100 ms unless `steps_ns` (cycled) says otherwise."""
     stamps = [0] * count
@@ -185,7 +187,7 @@ def _samples(
     return _call(
         "sample_messages",
         {"topic": topic, "count": count},
-        {"topic": topic, "count": count, "samples": samples, "rate": _rate(hz, cv, count)},
+        {"topic": topic, "count": count, "samples": samples, "rate": _rate(hz, cv, count, clock)},
     )
 
 
@@ -240,12 +242,17 @@ def _bench_scan_sample(gt: dict, args: dict) -> dict:
     return _call(
         "sample_messages",
         args,
-        {"topic": "/scan", "count": 1, "samples": [sample], "rate": _rate(10.0)},
+        {
+            "topic": "/scan",
+            "count": 1,
+            "samples": [sample],
+            "rate": _rate(10.0, clock={"clock_basis": "sim"}),
+        },
     )
 
 
-def _tf_report(truth: dict) -> dict[str, Any]:
-    """A perfect `inspect_tf` answer for the bench's `tf` truth."""
+def _tf_report(truth: dict, declared: dict) -> dict[str, Any]:
+    """A perfect `inspect_tf` answer for the bench's `tf` and `declared.urdf` truth."""
     parents = {}
     for parent, child in [*truth["static_edges"], *truth["dynamic_edges"]]:
         parents.setdefault(child, []).append(parent)
@@ -266,6 +273,13 @@ def _tf_report(truth: dict) -> dict[str, Any]:
         )
     findings = [{"kind": "stale", "frames": ["map", "odom"], "text": "stale"}]
     findings += [
+        {
+            "kind": "declared_not_published",
+            "frames": declared["declared_frames_missing"],
+            "text": "d",
+        }
+    ]
+    findings += [
         {"kind": "two_parents", "frames": [child, *ps], "text": "two parents"}
         for child, ps in truth["two_parents"].items()
     ]
@@ -275,13 +289,22 @@ def _tf_report(truth: dict) -> dict[str, Any]:
         "findings": findings,
         "path": truth["path"],
         "real_time_factor": truth["real_time_factor"],
+        "urdf_source": declared["source"],
+        "urdf_link_count": declared["link_count"],
+        "declared_frames_missing": declared["declared_frames_missing"],
+        "frames_not_in_urdf": declared["frames_not_in_urdf"],
+        "urdf_note": None,
     }
+
+
+ACTION_TYPE = "example_interfaces/action/Fibonacci"
 
 
 def _bench_results(gt: dict) -> dict[str, Any]:
     out: dict[str, Any] = {}
     before = gt["graph"]["before_capture"]
     out["_initialize"] = {"topicforge_version": "0.7.0-test"}
+    out["_tools"] = [{"name": "health_check", "description": "d", "output_schema": None}]
     out["01_health_check"] = _call(
         "health_check",
         {},
@@ -290,6 +313,10 @@ def _bench_results(gt: dict) -> dict[str, Any]:
             "rmw_implementation": gt["ros"]["rmw_implementation"],
             "rmw_source": "env",
             "contract_version": 2,
+            "ros_security_enabled": False,
+            "ros_security_strategy": None,
+            "ros_security_keystore_set": False,
+            "ros_security_note": None,
         },
     )
     out["02_list_topics"] = _call(
@@ -319,11 +346,11 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         info = {
             "name": topic["name"],
             "message_type": topic["types"][0],
-            "publisher_count": 1,
+            "publisher_count": topic["publisher_count"],
             "subscriber_count": 0,
             "publisher_qos": qos,
             "subscription_qos": None,
-            "publisher_nodes": ["/bench_robot"],
+            "publisher_nodes": [compare.node_full_name(ep)],
             "subscriber_nodes": [],
         }
         out["03_topic_info_" + compare.slug(topic["name"])] = _call(
@@ -334,10 +361,19 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         {},
         {
             "nodes": [
-                {"name": n.strip("/"), "namespace": "/", "full_name": n, "duplicate_count": 1}
+                {
+                    "name": n.rpartition("/")[2],
+                    "namespace": n.rpartition("/")[0] or "/",
+                    "full_name": n,
+                    "duplicate_count": 1,
+                    "lifecycle": n in before["lifecycle_nodes"],
+                }
                 for n in before["nodes"]
             ],
             "duplicates": [],
+            "lifecycle_count": len(before["lifecycle_nodes"]),
+            "lifecycle_note": None,
+            "by_namespace": dict(before["nodes_by_namespace"]),
         },
     )
     infra = [
@@ -347,8 +383,23 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     user = [
         {"name": t["name"], "type": t["types"][0]}
         for t in before["topics"]
-        if t.get("counts") != "ignore"
+        if t.get("counts") != "ignore" and not t["name"].startswith("/robot1/")
     ]
+    lifecycle_topic = next(t for t in before["topics"] if t["name"].startswith("/robot1/"))
+    out["03n_node_info_robot1_bench_lifecycle"] = _call(
+        "get_node_info",
+        {"node": "/robot1/bench_lifecycle"},
+        {
+            "full_name": "/robot1/bench_lifecycle",
+            "publishers": [
+                {"name": lifecycle_topic["name"], "type": lifecycle_topic["types"][0]},
+                *infra,
+            ],
+            "subscribers": [],
+            "use_sim_time": False,
+            "use_sim_time_note": None,
+        },
+    )
     out["03n_node_info_bench_robot"] = _call(
         "get_node_info",
         {"node": "/bench_robot"},
@@ -356,6 +407,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
             "full_name": "/bench_robot",
             "publishers": user + infra,
             "subscribers": [],
+            "action_servers": [{"name": "/bench_fib", "type": ACTION_TYPE}],
             "use_sim_time": False,
             "use_sim_time_note": None,
         },
@@ -376,8 +428,15 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         {},
         {
             "participants": [
-                {"vendor": "fast", "name": "bench_robot", "is_observer": False},
+                {
+                    "vendor": "fast",
+                    "name": "bench_robot",
+                    "is_observer": False,
+                    "node_names": ["/bench_robot"],
+                    "endpoint_count": 31,
+                },
                 {"vendor": "fast", "name": "bench_blocked", "is_observer": False},
+                {"vendor": "fast", "name": "bench_lifecycle", "is_observer": False},
                 {"vendor": "cyclone", "name": "topicforge", "is_observer": True},
             ]
         },
@@ -390,13 +449,42 @@ def _bench_results(gt: dict) -> dict[str, Any]:
                 {"role": "writer", "ros_topic": t["name"], "qos": {"reliability": "RELIABLE"}}
                 for t in before["topics"]
                 if t.get("counts") != "ignore"
+                for _ in range(t["publisher_count"])
             ]
+        },
+    )
+    out["05s_list_endpoints_scan"] = _call(
+        "list_endpoints",
+        {"topic": "/scan"},
+        {
+            "endpoints": [
+                {"role": "writer", "ros_topic": "/scan", "node_name": "/bench_robot"},
+                {"role": "reader", "ros_topic": "/scan", "node_name": None},
+            ],
+            "by_topic": [
+                {"ros_topic": "/scan", "writer_nodes": ["/bench_robot"], "reader_nodes": []}
+            ],
         },
     )
     out["06_detect_qos_mismatches"] = _call(
         "detect_qos_mismatches", {}, {"reports": [], "reports_total": 0, "matched_total": 6}
     )
-    out["17_inspect_tf"] = _call("inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"]))
+    declared = gt["declared"]
+    out["17_inspect_tf"] = _call(
+        "inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"], declared["urdf"])
+    )
+    out[declared["params"]["call"]] = _call(
+        "get_node_info",
+        {"node": declared["params"]["node"]},
+        {
+            "full_name": declared["params"]["node"],
+            "param_diff": [dict(d) for d in declared["params"]["differences"]],
+            "param_diff_summary": f"{declared['params']['same']} same, 3 live_only",
+            "param_diff_note": None,
+        },
+    )
+    _graph_diff_results(gt, out)
+    _nav_results(gt, out)
     out["07_sample_scan_full"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 1})
     out["08_sample_scan_defaults"] = _call(
         "sample_messages",
@@ -405,7 +493,26 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     )
     out["08c_sample_scan_rate"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 12})
     out["20_sample_clock"] = _samples("/clock", "payload", {"clock": {}}, 50.0)
-    out["20_sample_cmd_vel_out"] = _samples("/cmd_vel_out", "none", {}, 5.0)
+    out["20_sample_cmd_vel_out"] = _samples(
+        "/cmd_vel_out", "none", {}, 5.0, clock={"clock_basis": "none"}
+    )
+    out["20_sample_imu_data"] = _samples(
+        "/imu/data",
+        "header",
+        {},
+        50.0,
+        clock={"clock_basis": "wall", "stamp_age_median_s": 0.04, "stamp_age_p95_s": 0.12},
+    )
+    out["20_sample_pose_mixed"] = _samples(
+        "/pose_mixed", "header", {}, 20.0, clock={"clock_basis": "mixed"}
+    )
+    out["20_sample_stamps_regress"] = _samples(
+        "/stamps_regress",
+        "header",
+        {},
+        5.0,
+        clock={"clock_basis": "sim", "stamp_regression_count": 3},
+    )
     out["20_sample_camera_image_raw"] = _samples("/camera/image_raw", "header", {}, 2.0)
     out["20_sample_scan_edge"] = _samples(
         "/scan_edge", "header", {"ranges": ["inf", "nan", "-inf", 1.5]}, 2.0
@@ -413,11 +520,29 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     return out
 
 
+def _nav_results(gt: dict, out: dict[str, Any]) -> None:
+    """The two `calls_nav_primitives.json` answers of a healthy bench."""
+    truth = gt["nav_primitives"]
+    status, bond = truth["action_status"], truth["bond"]
+    out[status["call"]] = _call(
+        "sample_messages",
+        {"topic": status["topic"], "count": 1},
+        {"topic": status["topic"], "count": 1, "samples": [{"payload": {"status_list": []}}]},
+    )
+    beats = [{"payload": {"id": bond["id"], "active": True}} for _ in range(5)]
+    out[bond["call"]] = _call(
+        "sample_messages",
+        {"topic": bond["topic"], "count": 5},
+        {"topic": bond["topic"], "count": 5, "samples": beats},
+    )
+
+
 def _bag_truth(gt: dict) -> None:
     gt["bag"] = {
         "storage_identifier": "sqlite3",
         "duration_ns": 10_000_000_000,
         "message_count": 150,
+        "starting_time_ns": 10**9,
         "scans_total": 100,
         "scans_equal_to_published_scan": 100,
         "per_topic": {
@@ -434,12 +559,48 @@ def _bag_truth(gt: dict) -> None:
                 "last_ns": 10**10,
                 "rate_recorded_wall_hz": 49 / 9.0,
                 "count_over_bag_duration_hz": 5.0,
+                "stamps_ns": [10**9, *(3 * 10**9 + i * 10**7 for i in range(50)), 10**10],
             },
         },
     }
 
 
+def _graph_diff_results(gt: dict, out: dict[str, Any], *, bag: bool = False) -> None:
+    """The four `graph_diff` answers of a healthy bench (`calls_graph_diff.json`)."""
+    truth = gt["graph_diff"]
+
+    def report(changes: list[dict], **extra: Any) -> dict[str, Any]:
+        return {
+            "baseline_id": "snap-1",
+            "changes": changes,
+            "removed_count": sum(c["change"] == "removed" for c in changes),
+            "builtin_changes_count": 2,
+            "not_compared": {"rates": "bag against bag only"},
+            **extra,
+        }
+
+    note = "No baseline yet: snapshot snap-1 stored; call again to compare with it."
+    out[truth["first"]["call"]] = _call(
+        "graph_diff", {}, report([], baseline_id=None, baseline=None, note=note)
+    )
+    out[truth["steady"]["call"]] = _call("graph_diff", {}, report([]))
+    planned = [{**c, "text": "t"} for c in truth["v2"]["changes"]]
+    out[truth["v2"]["call"]] = _call("graph_diff", {}, report(planned))
+    if bag:
+        out[truth["bag"]["call"]] = _call(
+            "graph_diff",
+            {"baseline": "/bag"},
+            report(
+                [{"kind": "topic", "change": "added", "name": "/tf", "text": "t"}],
+                baseline_id="/bag",
+                baseline={"source": "bag"},
+                not_compared={"nodes": "no graph", "rates": "bag only", "counts": "none"},
+            ),
+        )
+
+
 def _bag_results(gt: dict, out: dict[str, Any]) -> None:
+    _graph_diff_results(gt, out, bag=True)
     out["13_analyze_bag"] = _call(
         "analyze_bag",
         {"path": "/bag"},
@@ -447,6 +608,7 @@ def _bag_results(gt: dict, out: dict[str, Any]) -> None:
             "storage_format": "sqlite3",
             "duration_s": 10.0,
             "message_count": 150,
+            "start_ns": 10**9,
             "topics": [
                 {
                     "name": "/scan",
@@ -486,6 +648,27 @@ def _bag_results(gt: dict, out: dict[str, Any]) -> None:
             ]
         },
     )
+    _log_results(out)
+
+
+def _log(level: int, name: str, sec: int = 1) -> dict[str, Any]:
+    return {"payload": {"level": level, "name": name}, "timestamp_ns": sec * 10**9}
+
+
+def _log_results(out: dict[str, Any], clock_count: int = 50, error_count: int = 4) -> None:
+    """Results of the 0.7.3 log and bag-range calls, as a healthy bench gives them."""
+    errors = [_log(40, "bench_robot", 2 * i) for i in range(error_count)]
+    mixed = [_log(30, "bench_robot", 1), _log(40, "bench_robot", 2), _log(30, "bench_robot", 3)]
+    note = {"note": "matched"}
+    out["21_log_error_node"] = _call("sample_messages", {}, {"samples": errors, **note})
+    out["22_log_warn"] = _call("sample_messages", {}, {"samples": mixed, **note})
+    out["23_log_blocked_node"] = _call("sample_messages", {}, {"samples": [], **note})
+    out["24_log_lifecycle_node"] = _call(
+        "sample_messages", {}, {"samples": [_log(20, "robot1.bench_lifecycle")], **note}
+    )
+    out["25_peek_bag_rosout_error"] = _call("peek_bag_samples", {}, {"samples": errors[:3], **note})
+    clock = [{"recorded_ns": 3 * 10**9 + i * 10**7} for i in range(clock_count)]
+    out["26_peek_bag_clock_range"] = _call("peek_bag_samples", {}, {"samples": clock})
 
 
 @pytest.fixture
@@ -509,8 +692,15 @@ def test_bench_truth_describes_the_published_scan() -> None:
     assert truth["ros"] == {
         "distro": "jazzy",
         "rmw_implementation": "rmw_cyclonedds_cpp",
-        "use_sim_time": {"/bench_robot": False, "/bench_blocked": None},
+        "use_sim_time": {
+            "/bench_robot": False,
+            "/bench_blocked": None,
+            "/robot1/bench_lifecycle": False,
+        },
     }
+    before = truth["graph"]["before_capture"]
+    assert before["lifecycle_nodes"] == ["/robot1/bench_lifecycle"]
+    assert before["nodes_by_namespace"] == {"/": 2, "/robot1": 1}
     json.dumps(truth)
 
 
@@ -526,7 +716,22 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
     assert code == 0
     assert report["rate_cv"]["/scan"]["interval_cv"] == 0.04
     sections = {r["section"] for r in report["rows"]}
-    assert sections == {"graph", "scan", "stamps", "rates", "bag", "dds", "tf"}
+    assert sections == {
+        "graph",
+        "scan",
+        "stamps",
+        "rates",
+        "bag",
+        "dds",
+        "tf",
+        "clock",
+        "logs",
+        "graph_diff",
+        "nav_primitives",
+        "visibility",
+        "declared",
+        "listing",
+    }
 
 
 @pytest.mark.parametrize(
@@ -541,6 +746,44 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
             "use_sim_time per node (get_node_info)",
         ),
         (lambda r: r["02n_list_nodes"]["parsed"][0]["nodes"].pop(), "node set (list_nodes)"),
+        (
+            lambda r: r["40_action_status"]["parsed"][0]["samples"][0]["payload"].update(
+                status_list=[{"status": 2}]
+            ),
+            "sample (sample_messages)",
+        ),
+        (
+            lambda r: r["40_action_status"]["parsed"][0]["samples"].clear(),
+            "sample (sample_messages)",
+        ),
+        (
+            lambda r: r["03n_node_info_bench_robot"]["parsed"][0]["action_servers"].clear(),
+            "in action_servers of /bench_robot",
+        ),
+        (
+            lambda r: r["02_list_topics"]["parsed"][0]["topics"].append(
+                {
+                    "name": "/bench_fib/_action/status",
+                    "message_type": "action_msgs/msg/GoalStatusArray",
+                    "publisher_count": 1,
+                    "subscriber_count": 0,
+                }
+            ),
+            "absent from list_topics",
+        ),
+        (
+            lambda r: r["41_bond"]["parsed"][0]["samples"][0]["payload"].update(id="other"),
+            "samples carry the bond id",
+        ),
+        (lambda r: r["41_bond"]["parsed"][0]["samples"].clear(), "samples carry the bond id"),
+        (
+            lambda r: r["02n_list_nodes"]["parsed"][0]["nodes"][2].update(lifecycle=False),
+            "lifecycle nodes (list_nodes)",
+        ),
+        (
+            lambda r: r["02n_list_nodes"]["parsed"][0].update(by_namespace={"/": 3}),
+            "nodes per namespace (list_nodes)",
+        ),
         (
             lambda r: r["20_sample_clock"]["parsed"][0]["samples"][0].update(stamp_source="none"),
             "/clock stamp_source",
@@ -566,6 +809,30 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         (
             lambda r: r["13_analyze_bag"]["parsed"][0]["topics"][0].update(message_count=99),
             "per-topic message counts",
+        ),
+        (
+            lambda r: r["20_sample_imu_data"]["parsed"][0]["rate"].update(clock_basis="sim"),
+            "/imu/data clock_basis",
+        ),
+        (
+            lambda r: r["20_sample_imu_data"]["parsed"][0]["rate"].update(
+                stamp_age_median_s=None, stamp_age_p95_s=None
+            ),
+            "/imu/data stamp_age_median_s",
+        ),
+        (
+            lambda r: r["20_sample_imu_data"]["parsed"][0]["rate"].update(stamp_age_p95_s=0.9),
+            "/imu/data stamp_age_p95_s",
+        ),
+        (
+            lambda r: r["20_sample_pose_mixed"]["parsed"][0]["rate"].update(clock_basis="sim"),
+            "/pose_mixed clock_basis",
+        ),
+        (
+            lambda r: r["20_sample_stamps_regress"]["parsed"][0]["rate"].update(
+                stamp_regression_count=0
+            ),
+            "/stamps_regress stamp_regression_count",
         ),
     ],
 )
@@ -998,3 +1265,456 @@ def test_relaxation_does_not_touch_a_passing_wall_row() -> None:
     rows = _rows_for(_RATE, _KIT, 0.1)
     assert rows["wall"]["verdict"] == "PASS"
     assert "low RTF" not in rows["wall"]["note"]
+
+
+def test_listing_size_row_passes_fails_and_warns_when_absent(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def row(results: dict, sub: str) -> dict:
+        _, report = _run(tmp_path / sub, bench_truth, results)
+        return next(r for r in report["rows"] if r["metric"] == "tools/list bytes")
+
+    results = _bench_results(bench_truth)
+    assert row(results, "ok")["verdict"] == "PASS"
+    results["_tools"] = [{"name": "t", "description": "x" * 100_000}]
+    assert row(results, "big")["verdict"] == "FAIL"
+    del results["_tools"]
+    assert row(results, "absent")["verdict"] == "WARN"
+
+
+def _logs_report(tmp_path: Path, truth: dict, mutate: Any = None) -> dict[str, str]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    if mutate:
+        mutate(results)
+    _, report = _run(tmp_path, truth, results)
+    return {r["metric"]: r["verdict"] for r in report["rows"] if r["section"] == "logs"}
+
+
+def test_the_logs_section_passes_on_a_healthy_run(tmp_path: Path, bench_truth: dict) -> None:
+    verdicts = _logs_report(tmp_path, bench_truth)
+    assert len(verdicts) == 7
+    assert set(verdicts.values()) == {"PASS"}
+
+
+def test_too_few_buffered_errors_fail_and_the_row_reports_the_count(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def few(results: dict) -> None:
+        _log_results(results, error_count=2)
+
+    verdicts = _logs_report(tmp_path, bench_truth, few)
+    assert verdicts["live /rosout error + node /bench_robot"] == "FAIL"
+    rows = json.loads((tmp_path / "results" / "comparison.json").read_text())["rows"]
+    row = next(r for r in rows if r["metric"].startswith("live /rosout error"))
+    assert row["topicforge"].startswith("2 msgs")
+
+
+def _late_clock(truth: dict, in_window: int) -> None:
+    """The recorder started /clock late: only `in_window` stamps fall in [start+2 s, start+4 s)."""
+    first = 4 * 10**9 + 1 - in_window * 10**7 if in_window else 4 * 10**9
+    stamps = [first + i * 10**7 for i in range(in_window)] + [6 * 10**9]
+    truth["bag"]["per_topic"]["/clock"]["stamps_ns"] = stamps
+
+
+def test_a_late_clock_expects_the_stamps_inside_the_window(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    _late_clock(bench_truth, 20)
+
+    def got(results: dict) -> None:
+        _log_results(results, clock_count=20)
+        results["26_peek_bag_clock_range"]["parsed"][0]["samples"] = [
+            {"recorded_ns": 4 * 10**9 - (20 - i) * 10**7 + 1} for i in range(20)
+        ]
+
+    verdicts = _logs_report(tmp_path / "a", bench_truth, got)
+    assert verdicts["bag /clock start_s 2 end_s 4"] == "PASS"
+    full = _logs_report(tmp_path / "b", bench_truth)
+    assert full["bag /clock start_s 2 end_s 4"] == "FAIL"
+
+
+def test_an_empty_clock_window_expects_no_sample_and_a_note(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    _late_clock(bench_truth, 0)
+
+    def none(results: dict) -> None:
+        _log_results(results, clock_count=0)
+        results["26_peek_bag_clock_range"]["parsed"][0]["note"] = "no message in range"
+
+    assert _logs_report(tmp_path / "a", bench_truth, none)["bag /clock start_s 2 end_s 4"] == "PASS"
+    bare = _logs_report(tmp_path / "b", bench_truth, lambda r: _log_results(r, clock_count=0))
+    assert bare["bag /clock start_s 2 end_s 4"] == "FAIL"
+
+
+def test_a_wrong_range_count_or_start_ns_fails(tmp_path: Path, bench_truth: dict) -> None:
+    def short(results: dict) -> None:
+        _log_results(results, clock_count=40)
+        results["13_analyze_bag"]["parsed"][0]["start_ns"] = 5
+
+    verdicts = _logs_report(tmp_path, bench_truth, short)
+    assert verdicts["analyze_bag.start_ns"] == "FAIL"
+    assert verdicts["bag /clock start_s 2 end_s 4"] == "FAIL"
+
+
+# ------------------------------------------------------------------ graph_diff (0.8.0)
+def _gd_run(tmp_path: Path, truth: dict, mutate: Any) -> tuple[int, list[str]]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    mutate(results)
+    code, report = _run(tmp_path / str(id(mutate)), truth, results, "--strict-shape")
+    return code, _metrics(report, "FAIL")
+
+
+def test_the_graph_diff_section_catches_each_kind_of_wrong_answer(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def parsed(r: dict, name: str) -> dict:
+        return r[name]["parsed"][0]
+
+    false_alarm = {"kind": "count", "change": "changed", "name": "/scan", "text": "t"}
+    cases = {
+        "first call": lambda r: parsed(r, "30_graph_diff_first").update(baseline_id="snap-0"),
+        "steady graph": lambda r: parsed(r, "31_graph_diff_steady")["changes"].append(false_alarm),
+        "v2: exactly": lambda r: parsed(r, "32_graph_diff_v2")["changes"].append(false_alarm),
+        "v2: exactly the": lambda r: parsed(r, "32_graph_diff_v2")["changes"].pop(0),
+        "/cmd_vel_out count": lambda r: parsed(r, "32_graph_diff_v2")["changes"][2].update(
+            after="3"
+        ),
+        "removed_count": lambda r: parsed(r, "33_graph_diff_bag").update(removed_count=1),
+        "no type or qos": lambda r: parsed(r, "33_graph_diff_bag")["changes"].append(
+            {"kind": "qos", "change": "changed", "name": "/scan", "text": "t"}
+        ),
+        "not_compared": lambda r: parsed(r, "33_graph_diff_bag").update(not_compared={}),
+    }
+    for needle, mutate in cases.items():
+        code, failed = _gd_run(tmp_path, bench_truth, mutate)
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+# ------------------------------------------------------------------ visibility (0.8.0)
+def test_the_visibility_section_passes_on_a_healthy_bench(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    _, report = _run(tmp_path, bench_truth, _bench_results(bench_truth), "--strict-shape")
+    rows = [r for r in report["rows"] if r["section"] == "visibility"]
+    assert len(rows) == 5 and {r["verdict"] for r in rows} == {"PASS"}
+
+
+def test_the_visibility_section_catches_each_kind_of_wrong_answer(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def parsed(r: dict, name: str) -> dict:
+        return r[name]["parsed"][0]
+
+    cases = {
+        "writer node_name": lambda r: parsed(r, "05s_list_endpoints_scan")["endpoints"][0].update(
+            node_name=None
+        ),
+        "writer_nodes": lambda r: parsed(r, "05s_list_endpoints_scan")["by_topic"][0].update(
+            writer_nodes=["/"]
+        ),
+        "endpoint_count": lambda r: parsed(r, "04_list_participants")["participants"][0].update(
+            endpoint_count=3
+        ),
+        "ros_security_enabled": lambda r: parsed(r, "01_health_check").update(
+            ros_security_enabled=True
+        ),
+        "ros_security_note": lambda r: parsed(r, "01_health_check").update(
+            ros_security_note="TopicForge joins the domain without an identity"
+        ),
+    }
+    for needle, mutate in cases.items():
+        results = _bench_results(bench_truth)
+        mutate(results)
+        code, report = _run(tmp_path / needle, bench_truth, results, "--strict-shape")
+        failed = _metrics(report, "FAIL")
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+def test_an_older_server_without_the_visibility_calls_only_warns(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    del results["05s_list_endpoints_scan"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0 and "list_endpoints node_name" in _metrics(report, "WARN")
+
+
+def test_the_kit_truth_has_no_visibility_section(
+    tmp_path: Path, omnisim: tuple[dict, dict]
+) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "visibility" for r in report["rows"])
+
+
+def test_the_visibility_call_sits_in_the_kit_calls_and_names_the_scan_topic() -> None:
+    kit = json.loads((ROOT / "scripts" / "ground_truth" / "calls.json").read_text("utf-8"))
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")["visibility"]
+    call = next(c for c in kit if c.get("name") == truth["endpoints_call"])
+    assert call["tool"] == "list_endpoints" and call["args"] == {"topic": truth["topic"]}
+    assert truth["node"] in bench.BENCH_NODES and truth["writer_nodes"] == [truth["node"]]
+
+
+def test_a_missing_graph_diff_answer_is_a_warning_not_a_failure(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    for name in ("30_graph_diff_first", "32_graph_diff_v2"):
+        del results[name]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0
+    assert {"first call (graph_diff)", "graph v2 (graph_diff)"} <= set(_metrics(report, "WARN"))
+
+
+def test_the_kit_truth_has_no_graph_diff_section(
+    tmp_path: Path, omnisim: tuple[dict, dict]
+) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "graph_diff" for r in report["rows"])
+
+
+def test_bench_graph_diff_truth_names_what_graph_change_publishes() -> None:
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")["graph_diff"]
+    names = {c["name"] for c in truth["v2"]["changes"]}
+    assert names == {bench.GRAPH_V2_NODE, bench.GRAPH_V2_TOPIC, bench.GRAPH_V2_SHARED_TOPIC}
+    assert bench.GRAPH_V2_SHARED_TOPIC in bench.BENCH_TOPICS  # a topic the robot already writes
+    assert bench.GRAPH_V2_TOPIC not in bench.BENCH_TOPICS
+    assert bench.GRAPH_V2_NODE not in bench.BENCH_NODES
+    source = (ROOT / "tests" / "integration" / "ros2" / "graph_change.py").read_text("ascii")
+    for constant in ("GRAPH_V2_NODE", "GRAPH_V2_TOPIC", "GRAPH_V2_SHARED_TOPIC"):
+        assert f"model.{constant}" in source
+
+
+def test_graph_diff_calls_run_after_the_kit_calls_and_change_the_graph_in_between() -> None:
+    kit = json.loads((ROOT / "scripts" / "ground_truth" / "calls.json").read_text("utf-8"))
+    assert not any("spawn" in c or c.get("tool") == "graph_diff" for c in kit)
+    calls = json.loads(
+        (ROOT / "scripts" / "ground_truth" / "calls_graph_diff.json").read_text("utf-8")
+    )
+    names = [c.get("name") or ("spawn" if "spawn" in c else "settle") for c in calls]
+    assert names == [
+        "30_graph_diff_first",
+        "settle",
+        "31_graph_diff_steady",
+        "spawn",
+        "settle",
+        "32_graph_diff_v2",
+        "33_graph_diff_bag",
+        "settle",
+    ]
+    assert calls[1]["settle_s"] >= 3 and calls[4]["settle_s"] >= 5
+    assert calls[-1] == {"settle_s": 3}
+    assert calls[3]["spawn"].endswith("graph_change.py")
+    assert (ROOT / calls[3]["spawn"]).is_file()
+    assert calls[6]["args"] == {"baseline": "{BAG}"} and calls[6]["needs_bag"]
+    bench_script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
+    assert "calls_graph_diff.json" in bench_script
+
+
+def test_nav_primitives_calls_match_the_truth_and_stay_out_of_the_kit_run() -> None:
+    gt_dir = ROOT / "scripts" / "ground_truth"
+    kit = json.loads((gt_dir / "calls.json").read_text("utf-8"))
+    assert not any(str(c.get("name", "")).startswith(("40_", "41_")) for c in kit)
+    sampled = next(c for c in kit if c.get("name") == "20_sample_{slug}")
+    assert bench.BOND_TOPIC in sampled["exclude"]  # 41_bond reads it; no second reader
+    calls = json.loads((gt_dir / "calls_nav_primitives.json").read_text("utf-8"))
+    truth = bench.nav_primitives_truth()
+    named = {c["name"]: c for c in calls if "name" in c}
+    assert set(named) == {truth["action_status"]["call"], truth["bond"]["call"]}
+    status = named["40_action_status"]
+    assert status["args"] == {"topic": bench.ACTION_STATUS_TOPIC, "count": 1, "timeout_s": 8}
+    assert named["41_bond"]["args"]["topic"] == bench.BOND_TOPIC
+    assert calls[-1] == {"settle_s": 3}
+    assert bench.BENCH_TOPICS[bench.BOND_TOPIC] == ("bond/msg/Status", False)
+    assert bench.ACTION_STATUS_TOPIC not in bench.BENCH_TOPICS  # hidden: never in list_topics
+    entry = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
+    calls_line = next(x for x in entry.splitlines() if x.strip().startswith("--calls"))
+    assert calls_line.index("calls_nav_primitives.json") < calls_line.index("calls_graph_diff.json")
+    dockerfile = (ROOT / "tests" / "integration" / "ros2" / "Dockerfile").read_text("utf-8")
+    assert "ros-${DISTRO}-example-interfaces" in dockerfile and "ros-${DISTRO}-bond" in dockerfile
+
+
+# ---------------------------------------------------------------- drive.py: spawn
+_SLEEPER = "import time\ntime.sleep(60)\n"
+
+
+def test_drive_spawns_a_process_and_stops_it(tmp_path: Path) -> None:
+    script = tmp_path / "sleeper.py"
+    script.write_text(_SLEEPER, encoding="ascii")
+    with open(tmp_path / "err.log", "w", encoding="utf-8") as log:
+        proc = drive.spawn({"spawn": str(script), "python": sys.executable}, log)
+        assert proc.poll() is None
+        drive.stop_spawned([proc])
+    assert proc.poll() is not None
+
+
+def test_drive_stops_spawned_processes_when_the_session_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import subprocess
+
+    script = tmp_path / "sleeper.py"
+    script.write_text(_SLEEPER, encoding="ascii")
+    started: list[subprocess.Popen] = []
+
+    async def failing_session(args: Any, calls: Any, out: Any, errlog: Any, spawned: list) -> None:
+        proc = drive.spawn({"spawn": str(script), "python": sys.executable}, errlog)
+        spawned.append(proc)
+        started.append(proc)
+        raise RuntimeError("the session broke")
+
+    monkeypatch.setattr(drive, "run_session", failing_session)
+    log_path = tmp_path / "err.log"
+    with open(log_path, "w", encoding="utf-8") as log, pytest.raises(RuntimeError, match="broke"):
+        asyncio.run(drive.run(None, [], tmp_path, log))  # type: ignore[arg-type]
+    assert started and started[0].poll() is not None
+
+
+# ------------------------------------------------------------------ declared vs real (0.8.0)
+def _declared_run(tmp_path: Path, truth: dict, mutate: Any) -> tuple[int, list[str]]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    mutate(results)
+    code, report = _run(tmp_path / str(id(mutate)), truth, results, "--strict-shape")
+    return code, _metrics(report, "FAIL")
+
+
+def test_the_declared_section_catches_each_kind_of_wrong_answer(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def tf(r: dict) -> dict:
+        return r["17_inspect_tf"]["parsed"][0]
+
+    def params(r: dict) -> dict:
+        return r["03p_node_info_params"]["parsed"][0]
+
+    cases = {
+        "urdf_source": lambda r: tf(r).update(urdf_source="none"),
+        "urdf_link_count": lambda r: tf(r).update(urdf_link_count=3),
+        "declared_frames_missing": lambda r: tf(r).update(declared_frames_missing=[]),
+        "frames_not_in_urdf": lambda r: tf(r).update(frames_not_in_urdf=["map"]),
+        "declared_not_published finding": lambda r: tf(r).update(
+            findings=[f for f in tf(r)["findings"] if f["kind"] != "declared_not_published"]
+        ),
+        "param_diff entries": lambda r: params(r)["param_diff"].pop(),
+        "param_diff_summary": lambda r: params(r).update(param_diff_summary="0 same, 3 live_only"),
+    }
+    for needle, mutate in cases.items():
+        code, failed = _declared_run(tmp_path, bench_truth, mutate)
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+def test_a_wrong_param_value_or_status_fails(tmp_path: Path, bench_truth: dict) -> None:
+    def wrong_value(r: dict) -> None:
+        r["03p_node_info_params"]["parsed"][0]["param_diff"][1]["live"] = 11.0
+
+    def wrong_status(r: dict) -> None:
+        r["03p_node_info_params"]["parsed"][0]["param_diff"][0]["status"] = "different"
+
+    def no_diff(r: dict) -> None:
+        r["03p_node_info_params"]["parsed"][0]["param_diff"] = None
+
+    for mutate in (wrong_value, wrong_status, no_diff):
+        code, failed = _declared_run(tmp_path, bench_truth, mutate)
+        assert code == 1 and "param_diff entries (get_node_info)" in failed
+
+
+def test_the_tf_kinds_row_ignores_the_urdf_finding(tmp_path: Path, bench_truth: dict) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    code, report = _run(tmp_path, bench_truth, results, "--strict-shape")
+    assert code == 0 and "finding kinds (inspect_tf)" in _metrics(report, "PASS")
+
+
+def test_an_older_server_without_the_declared_fields_is_a_warning(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    for key in ("urdf_source", "urdf_link_count", "declared_frames_missing", "frames_not_in_urdf"):
+        del results["17_inspect_tf"]["parsed"][0][key]
+    del results["03p_node_info_params"]["parsed"][0]["param_diff"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0
+    assert {"URDF comparison (inspect_tf)", "param_diff (get_node_info)"} <= set(
+        _metrics(report, "WARN")
+    )
+
+
+def test_a_missing_declared_answer_is_a_warning_not_a_failure(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    del results["03p_node_info_params"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0 and "param_diff (get_node_info)" in _metrics(report, "WARN")
+
+
+def test_the_kit_truth_has_no_declared_section(tmp_path: Path, omnisim: tuple[dict, dict]) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "declared" for r in report["rows"])
+
+
+def test_bench_declared_truth_matches_what_the_real_code_computes() -> None:
+    """The truth is derived from the bench's own constants: run TopicForge's code on them."""
+    from topicforge.adapters.common.nodes import build_parameters
+    from topicforge.adapters.common.param_diff import build_param_diff
+    from topicforge.adapters.common.tf_tree import build_tf_report
+    from topicforge.adapters.common.urdf import parse_urdf
+    from topicforge.models import TfCapture, TfSample
+
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")
+    urdf_truth, params_truth = truth["declared"]["urdf"], truth["declared"]["params"]
+    model = parse_urdf(bench.urdf_text())
+    assert len(model.links) == urdf_truth["link_count"]
+    arm = model.joint_into(bench.URDF_UNPUBLISHED_LINK)
+    assert arm is not None and arm.type == "revolute"
+    edges = [*bench.TF_STATIC_EDGES, *bench.TF_STEADY_EDGES, bench.TF_FLAKY_EDGE]
+    samples = [TfSample(parent=p, child=c, stamp_ns=0, received_ns=0) for p, c in edges]
+    report = build_tf_report(
+        TfCapture(static=samples[:3], dynamic=samples[3:], window_actual_s=1.0),
+        2.0,
+        None,
+        None,
+        urdf=model,
+    )
+    assert report.declared_frames_missing == urdf_truth["declared_frames_missing"]
+    assert report.frames_not_in_urdf == urdf_truth["frames_not_in_urdf"]
+    assert [f.kind for f in report.findings if f.kind == "declared_not_published"]
+    # The file the bench reads, against the parameters /bench_robot declares (+ use_sim_time).
+    text = (ROOT / "tests" / "integration" / "ros2" / bench.PARAMS_FILE_NAME).read_text("ascii")
+    live = build_parameters({**bench.BENCH_PARAMS, "use_sim_time": False})[0]
+    diff, summary, note = build_param_diff(text, bench.PARAMS_NODE, live)
+    assert diff is not None and note is None
+    assert [d.model_dump() for d in diff] == params_truth["differences"]
+    assert (summary or "").startswith(f"{params_truth['same']} same,")
+
+
+def test_the_declared_call_runs_in_the_bench_only_and_reads_the_shipped_file() -> None:
+    kit = json.loads((ROOT / "scripts" / "ground_truth" / "calls.json").read_text("utf-8"))
+    assert not any(c.get("name") == "03p_node_info_params" for c in kit)
+    calls = json.loads(
+        (ROOT / "scripts" / "ground_truth" / "calls_declared.json").read_text("utf-8")
+    )
+    (call,) = [c for c in calls if "name" in c]
+    assert call["name"] == bench.PARAMS_CALL_NAME and call["tool"] == "get_node_info"
+    assert call["args"]["node"] == bench.PARAMS_NODE
+    assert call["args"]["params_file"].endswith("/tests/integration/ros2/" + bench.PARAMS_FILE_NAME)
+    assert calls[-1] == {"settle_s": 3}
+    script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
+    assert script.index("calls_declared.json") < script.index("calls_graph_diff.json")
+    sample = next(c for c in kit if c.get("name") == "20_sample_{slug}")
+    assert "/robot_description" in sample["exclude"]
+
+
+def test_the_bench_publisher_uses_the_truth_constants() -> None:
+    source = (ROOT / "tests" / "integration" / "ros2" / "publisher.py").read_text("ascii")
+    for needle in ("model.urdf_text()", "model.BENCH_PARAMS", '"/robot_description"'):
+        assert needle in source
+    assert bench.BENCH_TOPICS["/robot_description"] == ("std_msgs/msg/String", True)

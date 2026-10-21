@@ -36,6 +36,7 @@ from topicforge.constants import (
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
+    GraphDiff,
     HealthReport,
     MismatchScan,
     NodeInfo,
@@ -69,6 +70,8 @@ _NODE_TIMEOUT_PARAM_DESC = (
     "Seconds to wait for the parameter read, 1..20, default 8. A node that does not "
     "answer is reported in `parameters_note`, not as an error."
 )
+
+_PARAMS_FILE_PARAM_DESC = "Server path of a ROS 2 parameter `.yaml` (1 MiB max)."
 
 _TF_FRAME_PARAM_DESC = (
     "Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get "
@@ -110,6 +113,25 @@ _MAX_ARRAY_LENGTH_PARAM_DESC = (
     "images and clouds; a message over 1 MiB is dropped with a note)."
 )
 
+_LOG_LEVEL_PARAM_DESC = (
+    "`/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level "
+    "(debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error."
+)
+
+_LOG_NODE_PARAM_DESC = (
+    "`/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` "
+    "(also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error."
+)
+
+_START_S_PARAM_DESC = (
+    "Only messages recorded at or after this many seconds from the bag's first message "
+    "(`analyze_bag.start_ns`), default from the start."
+)
+
+_END_S_PARAM_DESC = (
+    "Only messages recorded before this bag-relative second (exclusive), default to the end."
+)
+
 _ARRAYS_SUMMARY_PARAM_DESC = (
     "When true, arrays become a type-and-length summary: use it to read the non-array "
     "fields of large messages. Default false."
@@ -121,6 +143,12 @@ _PATH_PARAM_DESC = (
     "live; mock accepts any well-formed path."
 )
 
+_BASELINE_PARAM_DESC = (
+    "`previous` (last snapshot), a `snap-N` id from `snapshot_ids`, or a bag path."
+)
+
+_BAG_SNAPSHOT_PARAM_DESC = "Snapshot this bag instead of the live graph."
+
 _SUMMARY_RATE_NOTE = (
     " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples "
     "carry a `summary` of the whole message (other types: null); `rate` gives frequency, "
@@ -129,15 +157,13 @@ _SUMMARY_RATE_NOTE = (
 )
 
 _ROS_LANE_NOTE = (
-    " **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole "
-    "call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock "
-    "it fails at once with a `busy` error (retry)."
+    " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; "
+    "`busy` error if the lock is held (retry)."
 )
 
 _DDS_LANE_NOTE = (
-    " **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole "
-    "call, lock wait included, ends within 45 s, and if another DDS call holds the lock it "
-    "fails at once with a `busy` error (retry)."
+    " **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; "
+    "`busy` error if the lock is held (retry)."
 )
 
 _NO_LOCK_NOTE = (
@@ -223,12 +249,13 @@ def register_tools(
         description=(
             "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on "
             "the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a "
-            "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`. `duplicates` "
-            "lists full names used by several nodes (a per-node tool then answers for one of "
+            "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` "
+            "(managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. "
+            "`duplicates` lists full names used by several nodes (a per-node tool then answers for one of "
             "them, unidentified). Nodes starting with an underscore are hidden and a node on "
             "another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. "
             "Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a "
-            "`ros2` CLI. Read-only; cheap (one CLI call)." + _ROS_LANE_NOTE
+            "`ros2` CLI. Read-only; cheap (two CLI calls)." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -249,16 +276,16 @@ def register_tools(
             "and the interfaces are still returned. A value whose name contains password, "
             "secret, token, api_key or credential is replaced by `<masked>` and a long value "
             "is cut (`truncated`, `original_size`), both said in `parameters_note`. With "
-            "several nodes of that name `duplicate_count` is above 1 and `note` warns. "
+            "`params_file`, `param_diff` lists declared values that differ on the node, are "
+            "`declared_only` or `masked`. With several nodes of that name `duplicate_count` is "
+            "above 1 and `note` warns. "
             "**Raises an MCP error** when the node is not on the graph (the message lists close "
             "matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only "
             "request TopicForge ever sends is a parameter read (list/get); it sends no other "
-            "request to a node. **Duration**: runs the `ros2` CLI behind the ROS lock, one "
-            "call at a time: up to three CLI calls (node list and node info, 8 s each at most; "
-            "then the parameter read, at most `timeout_s`, 20 s). The whole call, lock wait "
-            "included, ends within 45 s: if another `ros2` call holds the lock it fails at "
-            "once with a `busy` error (retry), and a call that waited has less time for the "
-            "parameter read."
+            "request to a node. **Duration**: `ros2` CLI behind the ROS lock, one call at a "
+            "time; up to three CLI calls (node list and info, 8 s each at most; the parameter "
+            "read, at most `timeout_s`, 20 s); ends within 45 s, less time for the read after "
+            "a wait; `busy` error if the lock is held (retry)."
         ),
     )
     @guarded("ros")
@@ -273,8 +300,9 @@ def register_tools(
                 le=MAX_NODE_TIMEOUT_S,
             ),
         ] = DEFAULT_NODE_TIMEOUT_S,
+        params_file: Annotated[str | None, Field(description=_PARAMS_FILE_PARAM_DESC)] = None,
     ) -> NodeInfo:
-        return inspector.get_node_info(node, timeout_s)
+        return inspector.get_node_info(node, timeout_s, params_file)
 
     @mcp.tool(
         annotations=read_only_annotations("Inspect TF tree", open_world=True),
@@ -287,7 +315,8 @@ def register_tools(
             "stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), "
             "`static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they "
             "hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and "
-            "`target_frame` for the `path` between them. **Empty `frames`** when nothing is "
+            "`target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF "
+            "links with no frame (`declared_not_published`). **Empty `frames`** when nothing is "
             "published (read `note`). The listening is capped (3000 messages): `echo` can drop "
             "messages at high rates, so the tree is exact but frequencies are approximate "
             "(`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed "
@@ -337,14 +366,16 @@ def register_tools(
             "65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap "
             "(`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns "
             "demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for "
-            "an unknown topic, or when the CLI fails. Read-only; never publishes."
+            "an unknown topic, or when the CLI fails. Read-only; never publishes. **Logs**: "
+            "`min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most "
+            "2000 messages) and return the NEWEST `count` matches in stamp order; "
+            "`peek_bag_samples` returns the FIRST matches."
             + (_SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
             + (
-                " **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time. "
-                "It returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and "
-                "decode; the whole call, lock wait included, ends within 45 s: a call that "
-                "cannot get the lock fails at once with a `busy` error (retry), and one that "
-                "waited has less time to collect."
+                " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; returns within "
+                "`timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; ends within "
+                "45 s, less time to collect after a wait; `busy` error if the lock is held "
+                "(retry)."
             )
         ),
     )
@@ -372,6 +403,11 @@ def register_tools(
                 le=MAX_SAMPLE_TIMEOUT_S,
             ),
         ] = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: Annotated[
+            Literal["debug", "info", "warn", "error", "fatal"] | None,
+            Field(description=_LOG_LEVEL_PARAM_DESC),
+        ] = None,
+        node: Annotated[str | None, Field(description=_LOG_NODE_PARAM_DESC)] = None,
     ) -> SampleResult:
         return inspector.sample_messages(
             topic,
@@ -379,6 +415,8 @@ def register_tools(
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
             timeout_s=timeout_s,
+            min_log_level=min_log_level,
+            node=node,
         )
 
     @mcp.tool(
@@ -404,6 +442,29 @@ def register_tools(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
     ) -> BagAnalysis:
         return inspector.analyze_bag(path)
+
+    @mcp.tool(
+        annotations=read_only_annotations("Diff the ROS 2 graph", open_world=True),
+        description=(
+            'ROS 2 graph only. Answer "what changed since it last worked": snapshot the graph '
+            "(or `bag_path`) and compare it with `baseline`, as a `GraphDiff`. `changes` are "
+            "node, topic, type, qos, rate and count differences; `added` = present now, absent "
+            "from the baseline. `not_compared` names what a pair cannot support: nodes and "
+            "counts need live against live, rates bag against bag, writer QoS a DDS backend. "
+            "`/rosout` and `/parameter_events` count noise is only tallied in "
+            "`builtin_changes_count`. The first call stores a snapshot and says so in `note`. "
+            "Snapshots stay in memory (16, lost on restart). **Raises an MCP error** for an "
+            "unknown id, a bad bag path or without a `ros2` CLI. **Mock mode**: the first call "
+            "reports 3 changes, the next 0. Read-only." + _ROS_LANE_NOTE
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "graph_diff")
+    def graph_diff(
+        baseline: Annotated[str, Field(description=_BASELINE_PARAM_DESC)] = "previous",
+        bag_path: Annotated[str | None, Field(description=_BAG_SNAPSHOT_PARAM_DESC)] = None,
+    ) -> GraphDiff:
+        return inspector.graph_diff(baseline, bag_path)
 
     # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone`, `fast` or
     # `mock`; with the `ros2_cli` adapter alone they raise AdapterError.
@@ -615,7 +676,10 @@ def register_tools(
             "Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, "
             "for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by "
             "extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the "
-            "**first** `count` messages of the topic in recording order, not the last. "
+            "**first** `count` messages of the topic in recording order, not the last "
+            "(`sample_messages` keeps the newest log matches). `start_s` / `end_s` limit it to "
+            "a bag-relative time range, empty with a `note` past the end; on `/rosout`, "
+            "`min_log_level` and `node` keep the first `count` matching logs in range. "
             "**Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level "
             "header (`stamp_source` `header`), else the time in the body of `Clock`, "
             "`TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); "
@@ -637,8 +701,23 @@ def register_tools(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
         topic: Annotated[str, Field(description=_TOPIC_PARAM_DESC)],
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
+        start_s: Annotated[float | None, Field(description=_START_S_PARAM_DESC, ge=0)] = None,
+        end_s: Annotated[float | None, Field(description=_END_S_PARAM_DESC, ge=0)] = None,
+        min_log_level: Annotated[
+            Literal["debug", "info", "warn", "error", "fatal"] | None,
+            Field(description=_LOG_LEVEL_PARAM_DESC),
+        ] = None,
+        node: Annotated[str | None, Field(description=_LOG_NODE_PARAM_DESC)] = None,
     ) -> SampleResult:
-        return inspector.peek_bag_samples(path, topic, count)
+        return inspector.peek_bag_samples(
+            path,
+            topic,
+            count,
+            start_s=start_s,
+            end_s=end_s,
+            min_log_level=min_log_level,
+            node=node,
+        )
 
     @mcp.tool(
         annotations=read_only_annotations("List DDS endpoints", open_world=True),

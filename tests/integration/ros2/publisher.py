@@ -3,22 +3,33 @@
 Everything is stamped with simulated time that starts at 0, and `/clock`
 is published by this same node. The numbers it publishes come from `ground_truth.py`, which
 also writes the matching `ground_truth.json` when the node starts.
+
+`--fault <name>` (see `faults.py`) turns the bench robot into a clean robot with one fault, for
+the agent evaluation: no ground truth is written, and the CI bench's own oddities (stale
+`map -> odom`, two parents, unpublished link, wall-stamped topics, WARN and ERROR lines) are
+gone. Without the flag nothing changes.
 """
 
 from __future__ import annotations
 
 import math
+import sys
 import time
 
+import faults
 import ground_truth as model
 import rclpy
+from action_msgs.msg import GoalStatusArray
+from bond.msg import Status as BondStatus
 from builtin_interfaces.msg import Time
-from geometry_msgs.msg import Transform, TransformStamped, Twist
+from example_interfaces.action import Fibonacci
+from geometry_msgs.msg import PoseStamped, Transform, TransformStamped, Twist
 from ground_truth import CAMERA_DELAY_SEC, N_BEAMS
+from rclpy.action import ActionServer
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import Image, LaserScan
+from sensor_msgs.msg import Image, Imu, LaserScan
 from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
@@ -29,26 +40,36 @@ def sim_time_msg(t: float) -> Time:
 
 
 class BenchRobot(Node):
-    def __init__(self) -> None:
+    def __init__(self, profile: faults.Profile | None = None) -> None:
         super().__init__("bench_robot")
+        self._profile = profile
         self._t0 = time.monotonic()
         qos = QoSProfile(depth=10)
         self._clock_pub = self.create_publisher(Clock, "/clock", qos)
         self._scan_pub = self.create_publisher(LaserScan, "/scan", qos)
         self._twist_pub = self.create_publisher(Twist, "/cmd_vel_out", qos)
         self._image_pub = self.create_publisher(Image, "/camera/image_raw", qos)
-        self._edge_pub = self.create_publisher(LaserScan, "/scan_edge", qos)
+        edge_qos = qos
+        if profile is not None and profile.edge_best_effort:
+            edge_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self._edge_pub = self.create_publisher(LaserScan, faults.EDGE_TOPIC, edge_qos)
         latched = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self._desc_pub = self.create_publisher(String, "/robot_description_lite", latched)
+        # What robot_state_publisher does: the URDF, latched (0.8.0, `ground_truth.urdf_text`).
+        self._urdf_pub = self.create_publisher(String, "/robot_description", latched)
+        # Declared parameters, for the `params_file` comparison (`ground_truth.BENCH_PARAMS`).
+        for name, value in model.BENCH_PARAMS.items():
+            self.declare_parameter(name, value)
         # tf2's own QoS: /tf is reliable and volatile with a deep queue, /tf_static latched.
         self._tf_pub = self.create_publisher(TFMessage, "/tf", QoSProfile(depth=100))
         self._tf_static_pub = self.create_publisher(TFMessage, "/tf_static", latched)
         self._tf_subscribers = 0
         self._tf_armed_at = 0.0
+        self._steady_edges = model.TF_STEADY_EDGES if profile is None else faults.steady_edges()
 
         self._image_data = bytes(640 * 480 * 3)
         self.create_timer(model.CLOCK_PERIOD, self._tick_clock)
@@ -61,9 +82,96 @@ class BenchRobot(Node):
         desc = String()
         desc.data = "bench_robot: differential drive, 2D lidar"
         self._desc_pub.publish(desc)
+        urdf = String()
+        urdf.data = model.urdf_text() if profile is None else faults.urdf_text(profile.urdf_drift)
+        self._urdf_pub.publish(urdf)
         self._tf_static_pub.publish(
             TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
         )
+        self._setup_nav_primitives(qos, latched)
+        if profile is None:
+            self._setup_clock_topics(qos)
+            # /rosout lines for the log filter bench (truth: `ground_truth.logs_truth`).
+            self.create_timer(model.LOG_WARN_PERIOD, self._log_warn)
+            self.create_timer(model.LOG_ERROR_PERIOD, self._log_error)
+
+    # ---- clock topics (0.7.3): wall-stamped, mixed-clock and regressing stamps
+    def _setup_clock_topics(self, qos: QoSProfile) -> None:
+        """Topics whose stamps are on a known clock; truth in `ground_truth.clock_truth`."""
+        self._imu_pub = self.create_publisher(Imu, "/imu/data", qos)
+        self._pose_sim_pub = self.create_publisher(PoseStamped, "/pose_mixed", qos)
+        self._pose_wall_pub = self.create_publisher(PoseStamped, "/pose_mixed", qos)
+        self._regress_pub = self.create_publisher(PoseStamped, "/stamps_regress", qos)
+        self._regress_count = 0
+        self.create_timer(model.IMU_PERIOD, self._tick_imu)
+        self.create_timer(model.POSE_PERIOD, self._tick_pose_mixed)
+        self.create_timer(model.REGRESS_PERIOD, self._tick_regress)
+
+    # ---- Nav2 primitives (0.8.0): truth in `ground_truth.nav_primitives_truth`
+    def _setup_nav_primitives(self, qos: QoSProfile, latched: QoSProfile) -> None:
+        """`/bond` heartbeats and an action server nothing ever calls.
+
+        An idle `ActionServer` publishes nothing on its `_action/status` topic until a goal
+        changes state, so one empty `GoalStatusArray` is published by hand with the status
+        topic's own QoS (reliable, transient local, depth 1): a sampler then finds the latched
+        message a Nav2 server has after its first goal. The topic is hidden from `ros2 topic list`.
+        """
+        self._bond_pub = self.create_publisher(BondStatus, model.BOND_TOPIC, qos)
+        self.create_timer(model.BOND_PERIOD, self._tick_bond)
+        self._fib_server = ActionServer(self, Fibonacci, model.ACTION_NAME, self._execute_fib)
+        self._status_pub = self.create_publisher(
+            GoalStatusArray, model.ACTION_STATUS_TOPIC, latched
+        )
+        self._status_pub.publish(GoalStatusArray())
+
+    def _execute_fib(self, goal_handle) -> Fibonacci.Result:
+        """Never reached: no client sends a goal. Aborts it if one ever does."""
+        goal_handle.abort()
+        return Fibonacci.Result()
+
+    def _tick_bond(self) -> None:
+        msg = BondStatus()
+        msg.header.stamp = sim_time_msg(self._now())
+        msg.id = model.BOND_ID
+        msg.instance_id = "bench_instance"
+        msg.active = True
+        msg.heartbeat_timeout = 4.0
+        msg.heartbeat_period = float(model.BOND_PERIOD)
+        self._bond_pub.publish(msg)
+
+    @staticmethod
+    def _wall_time_msg(age_s: float = 0.0) -> Time:
+        return sim_time_msg(time.time() - age_s)
+
+    def _log_warn(self) -> None:
+        self.get_logger().warning("bench warning")
+
+    def _log_error(self) -> None:
+        self.get_logger().error("bench error")
+
+    def _tick_imu(self) -> None:
+        msg = Imu()
+        msg.header.stamp = self._wall_time_msg(model.IMU_WALL_AGE_S)
+        msg.header.frame_id = "imu_link"
+        msg.orientation.w = 1.0
+        self._imu_pub.publish(msg)
+
+    def _tick_pose_mixed(self) -> None:
+        sim, wall = PoseStamped(), PoseStamped()
+        sim.header.stamp = sim_time_msg(self._now())
+        wall.header.stamp = self._wall_time_msg()
+        self._pose_sim_pub.publish(sim)
+        self._pose_wall_pub.publish(wall)
+
+    def _tick_regress(self) -> None:
+        """Simulated stamps, every `REGRESS_EVERY`th one `REGRESS_DIP_S` behind."""
+        self._regress_count += 1
+        stamp = self._now()
+        if self._regress_count % model.REGRESS_EVERY == 0:
+            stamp = max(stamp - model.REGRESS_DIP_S, 0.001)
+        msg = PoseStamped()
+        msg.header.stamp = sim_time_msg(stamp)
+        self._regress_pub.publish(msg)
 
     @staticmethod
     def _transform(parent: str, child: str, t: float) -> TransformStamped:
@@ -83,8 +191,10 @@ class BenchRobot(Node):
         if subscribers > 0 and self._tf_subscribers == 0:
             self._tf_armed_at = now
         self._tf_subscribers = subscribers
-        edges = list(model.TF_STEADY_EDGES)
-        if subscribers > 0 and now - self._tf_armed_at < model.TF_FLAKY_ACTIVE_S:
+        edges = list(self._steady_edges)
+        if self._profile is not None and not self._profile.map_odom_flaky:
+            edges.append(faults.MAP_ODOM_EDGE)  # a localization that never stops
+        elif subscribers > 0 and now - self._tf_armed_at < model.TF_FLAKY_ACTIVE_S:
             edges.append(model.TF_FLAKY_EDGE)
         self._tf_pub.publish(TFMessage(transforms=[self._transform(p, c, now) for p, c in edges]))
 
@@ -140,9 +250,12 @@ class BenchRobot(Node):
 
 
 def main() -> None:
-    model.write_truth()
-    rclpy.init()
-    node = BenchRobot()
+    fault, ros_args = faults.parse_fault_args(sys.argv[1:])
+    profile = None if fault is None else faults.profile_for(fault)
+    if profile is None:
+        model.write_truth()
+    rclpy.init(args=[sys.argv[0], *ros_args])
+    node = BenchRobot(profile)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

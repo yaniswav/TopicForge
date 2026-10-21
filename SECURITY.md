@@ -21,6 +21,11 @@ Consequences:
 - `analyze_bag` opens whatever path the MCP client passes (no
   workspace isolation, no symlink restriction). The threat model
   assumes the client is your trusted agent acting on your behalf.
+  The same holds for `get_node_info`'s `params_file` (a `.yaml` or
+  `.yml` file on the server, at most 1 MiB, read with
+  `yaml.safe_load`, secret-looking values masked): over the HTTP
+  transport, a client can learn whether such a file exists at a
+  path it names, so expose that transport only to clients you trust.
 - All `ros2` CLI invocations use an argument list, never
   `shell=True`. Most use `subprocess.run` with a timeout;
   `sample_messages` streams `ros2 topic echo` through `subprocess.Popen`
@@ -131,7 +136,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest release receives security patches: `0.7.0` at the
+Only the latest release receives security patches: `0.8.0` at the
 time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure

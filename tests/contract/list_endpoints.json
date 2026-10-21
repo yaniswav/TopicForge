@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List DDS endpoints"
   },
-  "description": "List every DDS endpoint (writer and reader) announced on the bus as an `EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. `rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS topic), `type_name`, `type_id`, the owning `participant_guid` with `participant_name`, and a structured `qos`. Use it instead of parsing `peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` `compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, `announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with `topic` or `participant_guid` to read one topic's full QoS. **Orphans**: `by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, `orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader nobody publishes to) and the union of partitions. In `qos`, a duration or policy of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers; which one owns an instance is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (listed in `endpoints` only with `include_departed`), so a topic that lost its only writer is explained in one call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching nothing returns a `note` with the closest topics. **This lists discovery facts, not data flow**: it cannot tell a silent or hung writer from a healthy one; pair it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless `include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. **Raises an MCP error** when no DDS module is active; mock returns a fixture. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "List every DDS endpoint (writer and reader) announced on the bus as an `EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. `rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS topic), `type_name`, `type_id`, the owning `participant_guid` with `participant_name`, and a structured `qos`. Use it instead of parsing `peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` `compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, `announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with `topic` or `participant_guid` to read one topic's full QoS. **Orphans**: `by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, `orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader nobody publishes to) and the union of partitions. In `qos`, a duration or policy of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers; which one owns an instance is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (listed in `endpoints` only with `include_departed`), so a topic that lost its only writer is explained in one call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching nothing returns a `note` with the closest topics. **This lists discovery facts, not data flow**: it cannot tell a silent or hung writer from a healthy one; pair it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless `include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. **Raises an MCP error** when no DDS module is active; mock returns a fixture. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -74,16 +74,11 @@
         "additionalProperties": false,
         "properties": {
           "gone_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "When the participant was lost, ns since epoch (upper bound)."
+            "description": "When the participant was lost, ns since epoch (upper bound).",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "guid": {
             "type": "string"
@@ -92,15 +87,10 @@
             "type": "string"
           },
           "participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -113,31 +103,21 @@
         "additionalProperties": false,
         "properties": {
           "announced_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Source timestamp of the announcement, on the announcer's clock; `None` if unavailable."
+            "description": "Source timestamp of the announcement, on the announcer's clock; `None` if unavailable.",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "dds_topic": {
             "type": "string"
           },
           "gone_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "`None` for a live endpoint; for a departed one (`include_departed`) when its participant was lost (upper bound)."
+            "description": "`None` for a live endpoint; for a departed one (`include_departed`) when its participant was lost (upper bound).",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "guid": {
             "type": "string"
@@ -146,22 +126,23 @@
             "description": "True when the endpoint belongs to TopicForge's own observer participant.",
             "type": "boolean"
           },
+          "node_name": {
+            "description": "ROS 2 node owning the endpoint (`ros_discovery_info`); `None` if not announced.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "participant_guid": {
             "type": "string"
           },
           "participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "participant_vendor": {
-            "default": "unknown",
             "enum": [
               "cyclone",
               "fast",
@@ -186,20 +167,14 @@
                 "type": "null"
               }
             ],
-            "default": null,
             "description": "Announced QoS; `None` when reliability or durability could not be resolved. A duration of `None` is infinite or unset."
           },
           "qos_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "One-line QoS, set only with `fields` `compact` (where `qos` is `None`)."
+            "description": "One-line QoS, set only with `fields` `compact` (where `qos` is `None`).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "role": {
             "description": "`writer` publishes the topic; `reader` subscribes to it.",
@@ -210,51 +185,31 @@
             "type": "string"
           },
           "ros_topic": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "ROS 2 name of the topic, for example `/scan`. `None` when the endpoint is not a ROS 2 topic: see `ros_topic_note`."
+            "description": "ROS 2 name of the topic, for example `/scan`. `None` when the endpoint is not a ROS 2 topic: see `ros_topic_note`.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "ros_topic_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Why `ros_topic` is `None`. `None` when it is set."
+            "description": "Why `ros_topic` is `None`. `None` when it is set.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Compact XTypes type identifier (`COMPLETE:<hex>`), `None` when not announced."
+            "description": "Compact XTypes type identifier (`COMPLETE:<hex>`), `None` when not announced.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -270,48 +225,34 @@
         "additionalProperties": false,
         "properties": {
           "data_representation": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "`XCDR1` / `XCDR2` accepted or offered; `None` when not announced."
+            "description": "`XCDR1` / `XCDR2` accepted or offered; `None` when not announced.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "deadline_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Deadline in ns; `None` is infinite. A reader deadline shorter than the writer's is incompatible."
+            "description": "Deadline in ns; `None` is infinite. A reader deadline shorter than the writer's is incompatible.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "destination_order": {
-            "anyOf": [
-              {
-                "enum": [
-                  "BY_RECEPTION_TIMESTAMP",
-                  "BY_SOURCE_TIMESTAMP"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "DestinationOrder QoS. `None` when not announced.",
+            "enum": [
+              "BY_RECEPTION_TIMESTAMP",
+              "BY_SOURCE_TIMESTAMP",
+              null
             ],
-            "default": null,
-            "description": "DestinationOrder QoS. `None` when not announced."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "durability": {
             "description": "`VOLATILE` keeps nothing for late joiners, `TRANSIENT_LOCAL` does; a TRANSIENT_LOCAL reader cannot match a VOLATILE writer.",
@@ -324,131 +265,89 @@
             "type": "string"
           },
           "history": {
-            "anyOf": [
-              {
-                "enum": [
-                  "KEEP_LAST",
-                  "KEEP_ALL"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "`KEEP_LAST` (ring of `history_depth`) or `KEEP_ALL`; `None` when discovery did not announce it (see `history_note`).",
+            "enum": [
+              "KEEP_LAST",
+              "KEEP_ALL",
+              null
             ],
-            "default": null,
-            "description": "`KEEP_LAST` (ring of `history_depth`) or `KEEP_ALL`; `None` when discovery did not announce it (see `history_note`)."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "history_depth": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Depth for `KEEP_LAST`; else `None`."
+            "description": "Depth for `KEEP_LAST`; else `None`.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "history_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Why `history` is `None`."
+            "description": "Why `history` is `None`.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "latency_budget_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "LatencyBudget in ns (a hint); `0` is the default, `None` is infinite or not announced."
+            "description": "LatencyBudget in ns (a hint); `0` is the default, `None` is infinite or not announced.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "liveliness_kind": {
-            "anyOf": [
-              {
-                "enum": [
-                  "AUTOMATIC",
-                  "MANUAL_BY_PARTICIPANT",
-                  "MANUAL_BY_TOPIC"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "`AUTOMATIC`, or `MANUAL_*` (the app must assert liveliness within `liveliness_lease_ns`); `None` when not announced.",
+            "enum": [
+              "AUTOMATIC",
+              "MANUAL_BY_PARTICIPANT",
+              "MANUAL_BY_TOPIC",
+              null
             ],
-            "default": null,
-            "description": "`AUTOMATIC`, or `MANUAL_*` (the app must assert liveliness within `liveliness_lease_ns`); `None` when not announced."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "liveliness_lease_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Liveliness lease in ns; `None` is infinite or not announced."
+            "description": "Liveliness lease in ns; `None` is infinite or not announced.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "ownership_kind": {
-            "anyOf": [
-              {
-                "enum": [
-                  "SHARED",
-                  "EXCLUSIVE"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "With `EXCLUSIVE` only the writer with the highest `ownership_strength` delivers; `None` when not announced.",
+            "enum": [
+              "SHARED",
+              "EXCLUSIVE",
+              null
             ],
-            "default": null,
-            "description": "With `EXCLUSIVE` only the writer with the highest `ownership_strength` delivers; `None` when not announced."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "ownership_strength": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Writer strength under `EXCLUSIVE` ownership; `None` when not announced."
+            "description": "Writer strength under `EXCLUSIVE` ownership; `None` when not announced.",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "partitions": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Partition names; the default partition is `[\"\"]`, never `[]`. Endpoints match only if partitions intersect; `None` when unreadable."
+            "description": "Partition names; the default partition is `[\"\"]`, never `[]`. Endpoints match only if partitions intersect; `None` when unreadable.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "reliability": {
             "description": "`RELIABLE` retries lost samples, `BEST_EFFORT` does not; a RELIABLE reader cannot match a BEST_EFFORT writer.",
@@ -459,19 +358,14 @@
             "type": "string"
           },
           "unknown_policies": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Policies announced but unreadable (e.g. `Deadline`): their fields are `None`, which does NOT mean infinite; the scan does not compare them."
+            "description": "Policies announced but unreadable (e.g. `Deadline`): their fields are `None`, which does NOT mean infinite; the scan does not compare them.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -501,20 +395,16 @@
             "type": "array"
           },
           "orphan": {
-            "anyOf": [
-              {
-                "enum": [
-                  "no_reader",
-                  "no_writer"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "`no_reader` (writers only), `no_writer` (readers only), else `None`.",
+            "enum": [
+              "no_reader",
+              "no_writer",
+              null
             ],
-            "default": null,
-            "description": "`no_reader` (writers only), `no_writer` (readers only), else `None`."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "partitions": {
             "description": "Union of the endpoints' partitions, sorted. `\"\"` is the default partition.",
@@ -527,17 +417,19 @@
             "minimum": 0,
             "type": "integer"
           },
+          "reader_nodes": {
+            "description": "Sorted ROS 2 nodes of the readers (`node_name`).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "ros_topic": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "ROS 2 name of the topic, for example `/scan`. `None` for a DDS topic that is not a ROS 2 topic."
+            "description": "ROS 2 name of the topic, for example `/scan`. `None` for a DDS topic that is not a ROS 2 topic.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type_names": {
             "items": {
@@ -548,6 +440,13 @@
           "writer_count": {
             "minimum": 0,
             "type": "integer"
+          },
+          "writer_nodes": {
+            "description": "Sorted ROS 2 nodes of the writers (`node_name`).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -561,7 +460,6 @@
       }
     },
     "additionalProperties": false,
-    "description": "Envelope returned by `list_endpoints`.",
     "properties": {
       "by_topic": {
         "description": "Roll-up over every matching endpoint.",
@@ -571,7 +469,6 @@
         "type": "array"
       },
       "departed_endpoint_count": {
-        "default": 0,
         "description": "Departed endpoints matching the filters; listed in `endpoints` only with `include_departed`.",
         "minimum": 0,
         "type": "integer"
@@ -589,13 +486,11 @@
         "type": "array"
       },
       "excluded_observer_endpoint_count": {
-        "default": 0,
         "description": "TopicForge's own endpoints left out of `endpoints` (counted in `total`).",
         "minimum": 0,
         "type": "integer"
       },
       "fields": {
-        "default": "full",
         "description": "Detail level served: `compact` drops per-endpoint QoS detail, type id and notes.",
         "enum": [
           "full",
@@ -604,7 +499,6 @@
         "type": "string"
       },
       "hidden_internal_endpoint_count": {
-        "default": 0,
         "description": "Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) left out while `include_internal` is false.",
         "minimum": 0,
         "type": "integer"
@@ -625,28 +519,18 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Set when a `topic` filter matched nothing: the closest known topics."
+        "description": "Set when a `topic` filter matched nothing: the closest known topics.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "observer_guid": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "GUID of TopicForge's own participant, `None` in mock."
+        "description": "GUID of TopicForge's own participant, `None` in mock.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "returned": {
         "minimum": 0,

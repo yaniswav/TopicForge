@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Peek bag samples"
   },
-  "description": "Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the **first** `count` messages of the topic in recording order, not the last. **Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level header (`stamp_source` `header`), else the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); `recorded_ns` is always the record time. Each `payload` carries `_decode_status` (`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the `rosbags` library** and needs the ROS 2 side of the runtime (an error on a DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded definitions (Humble `.db3`) is decoded with those of its recorded distro, or Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists them. **Read-only by architecture**. **Raises an MCP error** when the path does not exist, the topic is not in the bag, or `rosbags` is missing. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `recorded_ns` (the bag record time of the returned messages). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS call is busy); the time follows the bag's size and how deep the first samples are.",
+  "description": "Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the **first** `count` messages of the topic in recording order, not the last (`sample_messages` keeps the newest log matches). `start_s` / `end_s` limit it to a bag-relative time range, empty with a `note` past the end; on `/rosout`, `min_log_level` and `node` keep the first `count` matching logs in range. **Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level header (`stamp_source` `header`), else the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); `recorded_ns` is always the record time. Each `payload` carries `_decode_status` (`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the `rosbags` library** and needs the ROS 2 side of the runtime (an error on a DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded definitions (Humble `.db3`) is decoded with those of its recorded distro, or Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists them. **Read-only by architecture**. **Raises an MCP error** when the path does not exist, the topic is not in the bag, or `rosbags` is missing. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `recorded_ns` (the bag record time of the returned messages). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS call is busy); the time follows the bag's size and how deep the first samples are.",
   "inputSchema": {
     "properties": {
       "count": {
@@ -15,10 +15,67 @@
         "minimum": 0,
         "type": "integer"
       },
+      "end_s": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only messages recorded before this bag-relative second (exclusive), default to the end."
+      },
+      "min_log_level": {
+        "anyOf": [
+          {
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "error",
+              "fatal"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "`/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level (debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error."
+      },
+      "node": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "`/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` (also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error."
+      },
       "path": {
         "description": "Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked live; mock accepts any well-formed path.",
         "minLength": 1,
         "type": "string"
+      },
+      "start_s": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only messages recorded at or after this many seconds from the bag's first message (`analyze_bag.start_ns`), default from the start."
       },
       "topic": {
         "description": "Fully qualified ROS 2 topic name starting with `/`, e.g. `/cmd_vel`. Segments are letters, digits and underscores (not starting with a digit); anything else is rejected before reaching the `ros2` CLI.",
@@ -34,383 +91,6 @@
   "name": "peek_bag_samples",
   "outputSchema": {
     "$defs": {
-      "ImageSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "data_length": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Pixel buffer size in bytes (see `data_length_basis`)."
-          },
-          "data_length_basis": {
-            "anyOf": [
-              {
-                "enum": [
-                  "payload",
-                  "step_x_height"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`payload` (counted) or `step_x_height` (array cut, so step times height)."
-          },
-          "encoding": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Pixel encoding, e.g. `rgb8`."
-          },
-          "frame_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`header.frame_id` of the camera."
-          },
-          "height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Pixels."
-          },
-          "is_bigendian": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Big-endian pixels."
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "One sentence when partial; else `null`."
-          },
-          "step": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Row length, bytes."
-          },
-          "summary_type": {
-            "const": "image",
-            "type": "string"
-          },
-          "width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Pixels."
-          }
-        },
-        "required": [
-          "summary_type",
-          "frame_id",
-          "width",
-          "height",
-          "encoding",
-          "step",
-          "is_bigendian",
-          "data_length",
-          "data_length_basis"
-        ],
-        "type": "object"
-      },
-      "ImuSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "angular_velocity_norm": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Norm of `angular_velocity`, rad/s."
-          },
-          "frame_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`header.frame_id` of the IMU."
-          },
-          "linear_acceleration_norm": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Norm of `linear_acceleration`, m/s^2."
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "One sentence when a value is unusable; else `null`."
-          },
-          "orientation_valid": {
-            "description": "False when the IMU gives no orientation: `roll`, `pitch`, `yaw` are `null`.",
-            "type": "boolean"
-          },
-          "pitch": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Rotation about y, radians."
-          },
-          "roll": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Rotation about x, radians."
-          },
-          "summary_type": {
-            "const": "imu",
-            "type": "string"
-          },
-          "yaw": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Rotation about z, radians."
-          }
-        },
-        "required": [
-          "summary_type",
-          "frame_id",
-          "orientation_valid",
-          "roll",
-          "pitch",
-          "yaw",
-          "angular_velocity_norm",
-          "linear_acceleration_norm"
-        ],
-        "type": "object"
-      },
-      "LaserScanSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "angle_increment": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Angle between beams, rad."
-          },
-          "angle_max": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Bearing of the last beam, rad."
-          },
-          "angle_min": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Bearing of beam 0, rad."
-          },
-          "beam_count": {
-            "description": "Beams in `ranges`.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "closest_obstacle": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ScanReturn"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Closest valid return of the scan; `null` with `note`."
-          },
-          "finite_count": {
-            "description": "Beams with a finite range.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "frame_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`header.frame_id`; every angle is in this sensor frame, not the base frame."
-          },
-          "inf_count": {
-            "description": "Beams at `+inf`.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "nan_count": {
-            "description": "Beams at `nan`.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "neg_inf_count": {
-            "description": "Beams at `-inf`.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "One sentence when the summary is partial; else `null`."
-          },
-          "out_of_range_count": {
-            "description": "Finite ranges outside `range_min`..`range_max` (not valid).",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "range_max": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Largest valid range, m."
-          },
-          "range_min": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Smallest valid range, m."
-          },
-          "sectors": {
-            "$ref": "#/$defs/ScanSectors",
-            "description": "Closest valid return per sector."
-          },
-          "summary_type": {
-            "const": "laser_scan",
-            "type": "string"
-          }
-        },
-        "required": [
-          "summary_type",
-          "frame_id",
-          "beam_count",
-          "angle_min",
-          "angle_max",
-          "angle_increment",
-          "range_min",
-          "range_max",
-          "finite_count",
-          "inf_count",
-          "neg_inf_count",
-          "nan_count",
-          "out_of_range_count",
-          "closest_obstacle",
-          "sectors"
-        ],
-        "type": "object"
-      },
       "MessageSample": {
         "additionalProperties": false,
         "properties": {
@@ -423,28 +103,18 @@
             "type": "object"
           },
           "received_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only)."
+            "description": "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only).",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "recorded_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Bag record time in ns (`peek_bag_samples` only)."
+            "description": "Bag record time in ns (`peek_bag_samples` only).",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "stamp_source": {
             "description": "Origin of `timestamp_ns`: `header`, `payload`, `recorded` (bag record time), `dds_source` or `none` (0).",
@@ -458,42 +128,26 @@
             "type": "string"
           },
           "summary": {
-            "anyOf": [
-              {
-                "discriminator": {
-                  "mapping": {
-                    "image": "#/$defs/ImageSummary",
-                    "imu": "#/$defs/ImuSummary",
-                    "laser_scan": "#/$defs/LaserScanSummary",
-                    "odometry": "#/$defs/OdometrySummary",
-                    "point_cloud2": "#/$defs/PointCloud2Summary"
-                  },
-                  "propertyName": "summary_type"
-                },
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/LaserScanSummary"
-                  },
-                  {
-                    "$ref": "#/$defs/OdometrySummary"
-                  },
-                  {
-                    "$ref": "#/$defs/ImuSummary"
-                  },
-                  {
-                    "$ref": "#/$defs/ImageSummary"
-                  },
-                  {
-                    "$ref": "#/$defs/PointCloud2Summary"
-                  }
-                ]
-              },
-              {
-                "type": "null"
+            "description": "Condensed reading of the whole message (see `summary_type`); `null` for other types and DDS peeks.",
+            "properties": {
+              "summary_type": {
+                "enum": [
+                  "laser_scan",
+                  "odometry",
+                  "imu",
+                  "image",
+                  "point_cloud2"
+                ],
+                "type": "string"
               }
+            },
+            "required": [
+              "summary_type"
             ],
-            "default": null,
-            "description": "Condensed reading of the whole message (see `summary_type`); `null` for other types and DDS peeks."
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "timestamp_ns": {
             "description": "Publisher-clock ns: `header.stamp`, else the time in the body of `Clock`, `TFMessage` or `Log`, else 0 (see `stamp_source`); not the arrival time.",
@@ -511,376 +165,6 @@
         ],
         "type": "object"
       },
-      "OdometrySummary": {
-        "additionalProperties": false,
-        "properties": {
-          "angular_z": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`twist.twist.angular.z`, rad/s."
-          },
-          "child_frame_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`child_frame_id` (frame of the twist)."
-          },
-          "frame_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`header.frame_id` (frame of the pose)."
-          },
-          "linear_speed": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Norm of `twist.twist.linear`, m/s."
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "One sentence when a value is missing; else `null`."
-          },
-          "position_x": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`pose.pose.position.x`, m."
-          },
-          "position_y": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`pose.pose.position.y`, m."
-          },
-          "position_z": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`pose.pose.position.z`, m."
-          },
-          "summary_type": {
-            "const": "odometry",
-            "type": "string"
-          },
-          "yaw": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Heading from the pose quaternion, radians."
-          }
-        },
-        "required": [
-          "summary_type",
-          "frame_id",
-          "child_frame_id",
-          "linear_speed",
-          "angular_z",
-          "position_x",
-          "position_y",
-          "position_z",
-          "yaw"
-        ],
-        "type": "object"
-      },
-      "PointCloud2Summary": {
-        "additionalProperties": false,
-        "properties": {
-          "fields": {
-            "description": "Point layout.",
-            "items": {
-              "$ref": "#/$defs/PointFieldSummary"
-            },
-            "type": "array"
-          },
-          "frame_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`header.frame_id` of the cloud."
-          },
-          "height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Rows (1: unorganized)."
-          },
-          "is_dense": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "True when no point is invalid."
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "One sentence when partial; else `null`."
-          },
-          "point_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`width` times `height`."
-          },
-          "point_step": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Bytes per point."
-          },
-          "row_step": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Bytes per row."
-          },
-          "summary_type": {
-            "const": "point_cloud2",
-            "type": "string"
-          },
-          "width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Points per row."
-          }
-        },
-        "required": [
-          "summary_type",
-          "frame_id",
-          "width",
-          "height",
-          "point_count",
-          "point_step",
-          "row_step",
-          "is_dense",
-          "fields"
-        ],
-        "type": "object"
-      },
-      "PointFieldSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Elements per point."
-          },
-          "datatype": {
-            "description": "Element type, e.g. `FLOAT32`.",
-            "type": "string"
-          },
-          "name": {
-            "description": "Field name, e.g. `x`.",
-            "type": "string"
-          },
-          "offset": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Byte offset in a point."
-          }
-        },
-        "required": [
-          "name",
-          "datatype",
-          "offset",
-          "count"
-        ],
-        "type": "object"
-      },
-      "ScanReturn": {
-        "additionalProperties": false,
-        "properties": {
-          "beam_index": {
-            "description": "Index in `ranges`.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "bearing": {
-            "description": "Beam direction in radians, sensor frame: 0 is +x, counter-clockwise positive.",
-            "type": "number"
-          },
-          "range": {
-            "description": "Distance, meters.",
-            "type": "number"
-          }
-        },
-        "required": [
-          "range",
-          "bearing",
-          "beam_index"
-        ],
-        "type": "object"
-      },
-      "ScanSector": {
-        "additionalProperties": false,
-        "properties": {
-          "beam_count": {
-            "description": "Beams inside the sector (0: not covered).",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "closest": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ScanReturn"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Closest valid return in the sector; `null` with `note`."
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Why `closest` is `null`; `null` when it is set."
-          }
-        },
-        "required": [
-          "beam_count",
-          "closest"
-        ],
-        "type": "object"
-      },
-      "ScanSectors": {
-        "additionalProperties": false,
-        "properties": {
-          "front": {
-            "$ref": "#/$defs/ScanSector",
-            "description": "Bearings within +-45 degrees of +x."
-          },
-          "left": {
-            "$ref": "#/$defs/ScanSector",
-            "description": "Bearings from 45 to 135 degrees."
-          },
-          "rear": {
-            "$ref": "#/$defs/ScanSector",
-            "description": "Bearings beyond +-135 degrees."
-          },
-          "right": {
-            "$ref": "#/$defs/ScanSector",
-            "description": "Bearings from -135 to -45 degrees."
-          }
-        },
-        "required": [
-          "front",
-          "left",
-          "right",
-          "rear"
-        ],
-        "type": "object"
-      },
       "TopicRate": {
         "additionalProperties": false,
         "properties": {
@@ -892,49 +176,43 @@
             ],
             "type": "string"
           },
-          "interval_cv": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+          "clock_basis": {
+            "description": "Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` (no stamps), `mixed` (several kinds, e.g. two publishers).",
+            "enum": [
+              "wall",
+              "sim",
+              "none",
+              "mixed"
             ],
-            "description": "Interval standard deviation over mean; `null` under 2 messages."
+            "type": "string"
+          },
+          "interval_cv": {
+            "description": "Interval standard deviation over mean; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "interval_median_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Median interval; `null` under 2 messages."
+            "description": "Median interval; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "max_gap_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Longest interval; `null` under 2 messages."
+            "description": "Longest interval; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "mean_interval_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Mean interval; `null` under 2 messages."
+            "description": "Mean interval; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "message_count": {
             "description": "Messages the rate is computed from.",
@@ -942,26 +220,37 @@
             "type": "integer"
           },
           "observed_frequency_hz": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages."
+            "description": "Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "sim_frequency_hz": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps."
+            "description": "Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps.",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stamp_age_median_s": {
+            "description": "Median of arrival minus stamp, s, if `wall`; negative = publisher ahead.",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stamp_age_p95_s": {
+            "description": "95th percentile of that age (max under 20 messages).",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stamp_regression_count": {
+            "description": "Times a stamp went back versus the previous one.",
+            "minimum": 0,
+            "type": "integer"
           },
           "startup_burst_count": {
             "description": "Leading messages set aside as a start-up drain (live only); still in `message_count`.",
@@ -969,15 +258,11 @@
             "type": "integer"
           },
           "trailing_gap_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Time from the last message to the end of a live observation; else `null`."
+            "description": "Time from the last message to the end of a live observation; else `null`.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "verdict": {
             "description": "First match: `silent` (none), `insufficient` (under 5), `intermittent` (an interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), `erratic`. Describes this window, not a diagnosis.",
@@ -1036,16 +321,11 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Why `samples` is empty or limited, when not obvious; else `None`."
+        "description": "Why `samples` is empty or limited, when not obvious; else `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "rate": {
         "anyOf": [
@@ -1056,7 +336,6 @@
             "type": "null"
           }
         ],
-        "default": null,
         "description": "How the topic delivered the messages, with a verdict; `null` for `peek_dds_samples`. Use `count` >= 10."
       },
       "samples": {

@@ -59,6 +59,7 @@ from topicforge.adapters.common import (
     take_bounded,
     user_topic_result,
     validate_domain_id,
+    with_endpoint_counts,
 )
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
@@ -375,13 +376,25 @@ class CycloneDdsAdapter:
         max_array_length: int | None = DEFAULT_MAX_ARRAY_LENGTH,
         arrays_summary_only: bool = False,
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+        min_log_level: str | None = None,
+        node: str | None = None,
     ) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
-    def peek_bag_samples(self, path: str, topic: str, count: int) -> SampleResult:
+    def peek_bag_samples(
+        self,
+        path: str,
+        topic: str,
+        count: int,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        min_log_level: str | None = None,
+        node: str | None = None,
+    ) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     @property
@@ -407,7 +420,8 @@ class CycloneDdsAdapter:
             p.model_copy(update={"is_observer": True}) if p.guid == observer else p
             for p in snap.participant_infos
         ]
-        return with_node_names(infos, snap.node_names, snap.node_names_last)
+        named = with_node_names(infos, snap.node_names, snap.node_names_last)
+        return with_endpoint_counts(named, snap.publications, snap.subscriptions)
 
     def participant_pids(self) -> dict[str, int]:
         """Pid announced by each cached participant (`__Pid` property), keyed by guid."""
@@ -467,6 +481,7 @@ class CycloneDdsAdapter:
             include_observer=include_observer,
             include_departed=include_departed,
             include_internal=include_internal,
+            nodes_by_guid=snap.endpoint_nodes,
             departed=[(r.role, r.sample, r.gone_ns, r.participant_name) for _, r in snap.departed],
         )
 

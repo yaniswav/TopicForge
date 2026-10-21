@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Inspect TF tree"
   },
-  "description": "ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "source_frame": {
@@ -81,40 +81,29 @@
         "additionalProperties": false,
         "properties": {
           "age_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Seconds its stamp trails the newest `/tf` stamp; `None` if static or root."
+            "description": "Seconds its stamp trails the newest `/tf` stamp; `None` if static or root.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "kind": {
-            "anyOf": [
-              {
-                "enum": [
-                  "static",
-                  "dynamic",
-                  "both"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "description": "Source of the frame's transforms; `None` for a root.",
+            "enum": [
+              "static",
+              "dynamic",
+              "both",
+              null
             ],
-            "description": "Source of the frame's transforms; `None` for a root."
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "last_stamp_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "integer",
+              "null"
             ]
           },
           "message_count": {
@@ -125,37 +114,25 @@
             "type": "string"
           },
           "observed_frequency_hz": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Rate on arrival (wall) time."
+            "description": "Rate on arrival (wall) time.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "parent": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "`None` for a root; with two parents, the latest seen."
+            "description": "`None` for a root; with two parents, the latest seen.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sim_frequency_hz": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Rate on header stamps."
+            "description": "Rate on header stamps.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "stale": {
             "description": "`age_s` above `stale_after_s`.",
@@ -179,6 +156,13 @@
     "additionalProperties": false,
     "description": "The TF tree as captured: frames, roots, findings and an optional path.",
     "properties": {
+      "declared_frames_missing": {
+        "description": "URDF links with no TF frame.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "dynamic_count": {
         "description": "Frames with a dynamic transform.",
         "type": "integer"
@@ -197,6 +181,13 @@
         "description": "Sorted by name.",
         "items": {
           "$ref": "#/$defs/TfFrame"
+        },
+        "type": "array"
+      },
+      "frames_not_in_urdf": {
+        "description": "TF frames not in the URDF (`map`, `odom` are normal).",
+        "items": {
+          "type": "string"
         },
         "type": "array"
       },
@@ -219,65 +210,42 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "path": {
-        "anyOf": [
-          {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Frames from `source_frame` to `target_frame`."
+        "description": "Frames from `source_frame` to `target_frame`.",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
       },
       "path_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Why `path` is `None`, or context."
+        "description": "Why `path` is `None`, or context.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "real_time_factor": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Stamp time over wall time: about 1 on a real robot, other on sim."
+        "description": "Stamp time over wall time: about 1 on a real robot, other on sim.",
+        "type": [
+          "number",
+          "null"
+        ]
       },
       "reference_ns": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Newest `/tf` stamp: the clock for `age_s`."
+        "description": "Newest `/tf` stamp: the clock for `age_s`.",
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "roots": {
         "description": "Frames with no parent; one in a sound tree.",
@@ -290,13 +258,9 @@
         "type": "integer"
       },
       "stamp_span_s": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
+        "type": [
+          "number",
+          "null"
         ]
       },
       "static_count": {
@@ -310,6 +274,25 @@
       "truncated": {
         "description": "Messages were dropped or the cap was hit.",
         "type": "boolean"
+      },
+      "urdf_link_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "urdf_note": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "urdf_source": {
+        "enum": [
+          "robot_description",
+          "none"
+        ],
+        "type": "string"
       },
       "window_actual_s": {
         "type": "number"

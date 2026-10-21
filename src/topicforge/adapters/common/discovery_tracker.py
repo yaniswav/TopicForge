@@ -161,6 +161,8 @@ class DiscoverySnapshot:
     node_names: dict[str, tuple[str, ...]] = field(default_factory=dict)
     node_names_last: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Node names per participant prefix key, from `ros_discovery_info`."""
+    endpoint_nodes: dict[str, str] = field(default_factory=dict)
+    """Node full name by endpoint GUID, from the same messages (reader and writer gids)."""
 
 
 @dataclass
@@ -197,6 +199,7 @@ class DiscoveryCaches:
                 participant_infos=self.lifecycle.snapshot_participants(domain_id=domain_id),
                 node_names=self.ros_nodes.as_dict(),
                 node_names_last=self.ros_nodes.last_dict(),
+                endpoint_nodes=self.ros_nodes.endpoint_nodes(),
             )
 
     def evictions(self) -> int:

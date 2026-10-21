@@ -48,14 +48,19 @@ def _topic(
     subscribers: tuple[str, ...],
     durability: str = "volatile",
 ) -> TopicInfo:
-    """A mock topic whose both sides use `reliability` and `durability`, one endpoint per node."""
+    """A mock topic whose both sides use `reliability` and `durability`, one endpoint per node.
+
+    A side with no node has no QoS (`None`).
+    """
     return TopicInfo(
         name=name,
         message_type=message_type,
         publisher_count=len(publishers),
         subscriber_count=len(subscribers),
-        publisher_qos=_side(reliability, len(publishers), durability),
-        subscription_qos=_side(reliability, len(subscribers), durability),
+        publisher_qos=_side(reliability, len(publishers), durability) if publishers else None,
+        subscription_qos=(
+            _side(reliability, len(subscribers), durability) if subscribers else None
+        ),
         publisher_nodes=list(publishers),
         subscriber_nodes=list(subscribers),
         mode_effective="mock",
@@ -107,6 +112,36 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         durability="transient_local",
     ),
     _topic(
+        "/robot_description",
+        "std_msgs/msg/String",
+        "reliable",
+        ("/robot_state_publisher",),
+        (),
+        durability="transient_local",
+    ),
+    _topic(
+        "/rosout",
+        "rcl_interfaces/msg/Log",
+        "reliable",
+        (
+            "/nav_planner",
+            "/base_controller",
+            "/lidar_driver",
+            "/imu_driver",
+            "/camera_driver",
+            "/robot_state_publisher",
+        ),
+        (),
+        durability="transient_local",
+    ),
+    _topic(
+        "/camera_driver/transition_event",
+        "lifecycle_msgs/msg/TransitionEvent",
+        "reliable",
+        ("/camera_driver",),
+        (),
+    ),
+    _topic(
         "/camera/image_raw",
         "sensor_msgs/msg/Image",
         "best_effort",
@@ -141,6 +176,25 @@ MOCK_STATIC_EDGES: tuple[tuple[str, str], ...] = (
     ("base_link", "camera_link"),
     ("base_link", "imu_link"),
     ("camera_link", "camera_optical_frame"),
+)
+
+# The URDF on /robot_description: every frame of the mock tree plus `gripper_link`, a link on a
+# revolute joint that nothing publishes (the one `declared_not_published` finding of the mock).
+MOCK_URDF = (
+    '<?xml version="1.0"?>'
+    '<robot name="mock_diffbot">'
+    '<link name="base_link"/><link name="laser"/><link name="camera_link"/>'
+    '<link name="imu_link"/><link name="camera_optical_frame"/><link name="gripper_link"/>'
+    '<joint name="laser_joint" type="fixed"><parent link="base_link"/><child link="laser"/></joint>'
+    '<joint name="camera_joint" type="fixed">'
+    '<parent link="base_link"/><child link="camera_link"/></joint>'
+    '<joint name="imu_joint" type="fixed"><parent link="base_link"/><child link="imu_link"/></joint>'
+    '<joint name="optical_joint" type="fixed">'
+    '<parent link="camera_link"/><child link="camera_optical_frame"/></joint>'
+    '<joint name="gripper_joint" type="revolute">'
+    '<parent link="base_link"/><child link="gripper_link"/>'
+    '<limit lower="0" upper="1" effort="1" velocity="1"/></joint>'
+    "</robot>"
 )
 
 # The mock robot publishes /scan, /odom, /imu/data and /cmd_vel at 10 Hz; a mock
@@ -180,6 +234,38 @@ def _mock_scan_ranges() -> list[object]:
 
 def _quaternion(yaw: float) -> dict[str, float]:
     return {"x": 0.0, "y": 0.0, "z": round(math.sin(yaw / 2), 6), "w": round(math.cos(yaw / 2), 6)}
+
+
+# /rosout fixture: (level, logger name, message), one every half second from the base time.
+# `nav_planner.costmap` is a child logger of the `/nav_planner` node.
+_MOCK_LOGS: tuple[tuple[int, str, str], ...] = (
+    (20, "nav_planner", "planner started"),
+    (30, "lidar_driver", "scan rate below 10 Hz"),
+    (20, "base_controller", "odometry reset"),
+    (40, "camera_driver", "frame drop detected"),
+    (30, "nav_planner", "costmap is stale"),
+    (40, "lidar_driver", "driver timeout"),
+    (50, "base_controller", "motor stall"),
+    (10, "imu_driver", "calibrating"),
+    (40, "nav_planner.costmap", "inflation layer failed"),
+    (20, "robot_state_publisher", "transforms published"),
+)
+_MOCK_LOG_PERIOD_NS = 500_000_000
+
+
+def _log_payload(i: int, decode_status: bool = False) -> dict[str, object]:
+    """Payload of the `i`-th fixture log message (`rcl_interfaces/msg/Log`)."""
+    level, name, msg = _MOCK_LOGS[i]
+    payload: dict[str, object] = {
+        "stamp": _stamp(_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS),
+        "level": level,
+        "name": name,
+        "msg": msg,
+        "file": f"{name}.cpp",
+        "function": "spin",
+        "line": 40 + i,
+    }
+    return {"_decode_status": "full", **payload} if decode_status else payload
 
 
 _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
@@ -304,6 +390,42 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             },
         )
     ],
+    "/robot_description": [
+        MessageSample(
+            topic="/robot_description",
+            message_type="std_msgs/msg/String",
+            timestamp_ns=0,
+            stamp_source="none",
+            received_ns=_BASE_TS_NS,
+            payload={"data": MOCK_URDF},
+        )
+    ],
+    "/rosout": [
+        MessageSample(
+            topic="/rosout",
+            message_type="rcl_interfaces/msg/Log",
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS,
+            stamp_source="payload",
+            received_ns=_arrival(i),
+            payload=_log_payload(i),
+        )
+        for i in range(len(_MOCK_LOGS))
+    ],
+    "/camera_driver/transition_event": [
+        MessageSample(
+            topic="/camera_driver/transition_event",
+            message_type="lifecycle_msgs/msg/TransitionEvent",
+            timestamp_ns=0,
+            stamp_source="none",
+            received_ns=_arrival(0),
+            payload={
+                "timestamp": _BASE_TS_NS,
+                "transition": {"id": 3, "label": "activate"},
+                "start_state": {"id": 2, "label": "inactive"},
+                "goal_state": {"id": 3, "label": "active"},
+            },
+        )
+    ],
     "/camera/image_raw": [
         MessageSample(
             topic="/camera/image_raw",
@@ -366,6 +488,7 @@ def mock_sample_rate(samples: list[MessageSample]) -> TopicRate | None:
         arrivals,
         basis="received_ns",
         stamps_ns=[s.timestamp_ns for s in samples] if stamped else None,
+        stamped=[(s.received_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.received_ns],
     )
 
 
@@ -608,6 +731,9 @@ MOCK_OBSERVER_GUID = "010f1c2a-3b4c-5d6e-7f80-000000000099"
 
 _PARTICIPANT_NAMES: dict[str, str | None] = {p.guid: p.name for p in MOCK_PARTICIPANTS}
 _PARTICIPANT_VENDORS: dict[str, str] = {p.guid: p.vendor for p in MOCK_PARTICIPANTS}
+# Participants that host a ROS 2 node named like them (see `node_fixtures`); the dust
+# participant is plain DDS, so its endpoint has no node.
+_NODE_PARTICIPANTS: frozenset[str] = frozenset({"lidar_driver", "nav_planner", "camera_driver"})
 
 
 def _mock_endpoint(
@@ -620,6 +746,7 @@ def _mock_endpoint(
     announced_offset_s: int,
 ) -> dict[str, object]:
     participant_guid = f"010f1c2a-3b4c-5d6e-7f80-{participant:012d}"
+    name = _PARTICIPANT_NAMES.get(participant_guid)
     ros_topic, ros_topic_note = ros_topic_of(topic)
     return {
         "guid": f"010f1c2a-3b4c-5d6e-7f80-{participant:04d}{index:08d}",
@@ -627,6 +754,7 @@ def _mock_endpoint(
         "participant_guid": participant_guid,
         "participant_name": _PARTICIPANT_NAMES.get(participant_guid),
         "participant_vendor": _PARTICIPANT_VENDORS.get(participant_guid, "unknown"),
+        "node_name": f"/{name}" if name in _NODE_PARTICIPANTS else None,
         "dds_topic": topic,
         "ros_topic": ros_topic,
         "ros_topic_note": ros_topic_note,
@@ -677,6 +805,11 @@ _MOCK_ENDPOINT_RECORDS: tuple[dict[str, object], ...] = (
         16,
     ),
 )
+
+
+def mock_endpoint_count(participant_guid: str) -> int:
+    """Writers plus readers of the endpoint fixtures that belong to `participant_guid`."""
+    return sum(1 for rec in _MOCK_ENDPOINT_RECORDS if rec["participant_guid"] == participant_guid)
 
 
 def mock_mismatch_scan(topic: str | None) -> MismatchScan:
@@ -776,7 +909,8 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
     path="<mock>",
     storage_format="mcap",
     duration_s=42.5,
-    message_count=1288,
+    message_count=1298,
+    start_ns=_BASE_TS_NS,
     topics=[
         BagTopicStats(
             name="/cmd_vel",
@@ -801,6 +935,13 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
             message_type="tf2_msgs/msg/TFMessage",
             message_count=12,
             frequency_hz=0.28,
+        ),
+        BagTopicStats(
+            name="/rosout",
+            message_type="rcl_interfaces/msg/Log",
+            message_count=10,
+            frequency_hz=2.0,
+            frequency_basis="topic_span",
         ),
         BagTopicStats(
             name="/events/write_split",
@@ -871,11 +1012,25 @@ MOCK_BAG_SAMPLES: dict[str, list[MessageSample]] = {
         )
         for i in range(5)
     ],
+    "/rosout": [
+        MessageSample(
+            topic="/rosout",
+            message_type="rcl_interfaces/msg/Log",
+            timestamp_ns=_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS,
+            stamp_source="payload",
+            recorded_ns=_BASE_TS_NS + i * _MOCK_LOG_PERIOD_NS + 1_000_000,
+            payload=_log_payload(i, decode_status=True),
+        )
+        for i in range(len(_MOCK_LOGS))
+    ],
 }
 
 
-def mock_bag_samples_for(topic: str, count: int) -> list[MessageSample]:
-    """Up to `count` mock samples for `topic`, with their summaries; empty for an unknown topic."""
+def mock_bag_samples_for(topic: str, count: int | None = None) -> list[MessageSample]:
+    """Mock samples for `topic` (the first `count`, all when `None`), with their summaries.
+
+    Empty for an unknown topic.
+    """
     from topicforge.services.summaries import summarize_message
 
     return [
@@ -889,4 +1044,5 @@ def mock_bag_rate(samples: list[MessageSample]) -> TopicRate | None:
     from topicforge.services.summaries import compute_rate
 
     recorded = [s.recorded_ns for s in samples if s.recorded_ns is not None]
-    return compute_rate(recorded, basis="recorded_ns") if recorded else None
+    stamped = [(s.recorded_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.recorded_ns]
+    return compute_rate(recorded, basis="recorded_ns", stamped=stamped) if recorded else None

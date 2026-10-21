@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${DISTRO}-rmw-cyclonedds-cpp \
         ros-${DISTRO}-ros2bag \
         ros-${DISTRO}-rosbag2-storage-default-plugins \
+        ros-${DISTRO}-example-interfaces \
+        ros-${DISTRO}-bond \
         ros-${DISTRO}-sensor-msgs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,6 +19,7 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY tests ./tests
 COPY scripts/ground_truth ./scripts/ground_truth
+COPY scripts/agent_eval ./scripts/agent_eval
 
 # A venv keeps TopicForge off the PEP 668 system interpreter (Jazzy) and off
 # the old system pip (Humble). The sed strips CRLF from a Windows checkout.

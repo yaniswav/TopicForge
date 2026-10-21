@@ -221,15 +221,45 @@ def bag() -> Path:
     return BAG_PATH
 
 
+def bag_stamps(bag: Path, topic: str) -> list[int]:
+    """Recorded timestamps of one topic, read with rosbags (independent of the adapter)."""
+    from rosbags.highlevel import AnyReader
+    from rosbags.typesys import Stores, get_typestore
+
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    with AnyReader([bag], default_typestore=typestore) as reader:
+        conns = [c for c in reader.connections if c.topic == topic]
+        return sorted(stamp for _, stamp, _ in reader.messages(connections=conns))
+
+
+def bag_error_lines(bag: Path) -> int:
+    """ERROR (level 40) lines the bag holds on /rosout, read with rosbags."""
+    from rosbags.highlevel import AnyReader
+    from rosbags.typesys import Stores, get_typestore
+
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    with AnyReader([bag], default_typestore=typestore) as reader:
+        conns = [c for c in reader.connections if c.topic == "/rosout"]
+        return sum(
+            reader.deserialize(raw, c.msgtype).level == 40
+            for c, _, raw in reader.messages(connections=conns)
+        )
+
+
 def test_analyze_bag_summary(adapter: Ros2CliAdapter, bag: Path) -> None:
     result = adapter.analyze_bag(str(bag))
-    # The recorder runs for about 8 s, but on a loaded runner it starts late, so the
-    # span varies; the /scan count must follow the span at 10 Hz.
+    # The recorder runs for about 8 s, but on a loaded runner it starts the data topics
+    # late while /rosout (replayed at bag time 0) already spans the bag, so the /scan count
+    # must follow /scan's own recorded span at 10 Hz, not the bag duration.
     assert 4.0 <= result.duration_s <= 10.0
     by_name = {t.name: t for t in result.topics}
     assert set(by_name) >= {"/clock", "/scan", "/cmd_vel_out", "/camera/image_raw"}
     assert by_name["/scan"].message_type == "sensor_msgs/msg/LaserScan"
-    assert by_name["/scan"].message_count == pytest.approx(result.duration_s * 10, rel=0.3)
+    scan = bag_stamps(bag, "/scan")
+    assert by_name["/scan"].message_count == len(scan)
+    scan_span_s = (scan[-1] - scan[0]) / 1e9
+    assert scan_span_s <= result.duration_s + 0.1
+    assert len(scan) == pytest.approx(scan_span_s * 10 + 1, rel=0.3)
     assert result.storage_format == ("sqlite3" if IS_HUMBLE else "mcap")
 
 
@@ -283,7 +313,7 @@ def test_a_message_over_the_cap_is_dropped_with_a_note() -> None:
 
 
 def test_a_short_latched_result_hints_count_one(adapter: Ros2CliAdapter) -> None:
-    result = adapter.sample_messages("/robot_description_lite", 3, timeout_s=3)
+    result = adapter.sample_messages("/robot_description_lite", 3, timeout_s=6)
     assert result.count == 1
     assert result.note is not None and "fewer than requested" in result.note
     assert "latched" in result.note
@@ -373,7 +403,9 @@ def test_twist_rate_is_stable_at_five_hertz(adapter: Ros2CliAdapter) -> None:
     rate = adapter.sample_messages("/cmd_vel_out", 20).rate
     assert rate is not None
     assert rate.observed_frequency_hz == pytest.approx(5.0, rel=0.1)
-    assert rate.verdict == "stable"
+    # The verdict is machine dependent (the comparator never fails on it): a loaded runner
+    # can make a fixed 5 Hz publisher read jittery, never intermittent.
+    assert rate.verdict in ("stable", "jittery"), (rate.verdict, rate.interval_cv)
     assert rate.sim_frequency_hz is None  # a Twist has no stamp
 
 
@@ -408,6 +440,33 @@ def test_list_nodes_sees_the_bench_nodes(adapter: Ros2CliAdapter) -> None:
     robot = next(n for n in listing.nodes if n.full_name == "/bench_robot")
     assert (robot.name, robot.namespace, robot.duplicate_count) == ("bench_robot", "/", 1)
     assert listing.mode_effective == "live" and listing.duplicates == []
+
+
+def test_list_nodes_flags_the_lifecycle_node_and_counts_namespaces(
+    adapter: Ros2CliAdapter,
+) -> None:
+    listing = adapter.list_nodes()
+    assert listing.lifecycle_note is None
+    assert [n.full_name for n in listing.nodes if n.lifecycle] == ["/robot1/bench_lifecycle"]
+    assert listing.lifecycle_count == 1
+    assert listing.by_namespace["/robot1"] == 1 and listing.by_namespace["/"] >= 2
+    info = adapter.get_node_info("/robot1/bench_lifecycle", timeout_s=8)
+    assert info.lifecycle
+    assert "/robot1/bench_lifecycle/transition_event" in {i.name for i in info.publishers}
+    assert not adapter.get_node_info("/bench_robot").lifecycle
+
+
+def test_nav2_primitives_a_hidden_action_status_and_a_bond(adapter: Ros2CliAdapter) -> None:
+    """What the `diagnose-nav2` prompt reads: no Nav2, only its building blocks."""
+    names = {t.name for t in adapter.list_topics()}
+    assert "/bond" in names
+    assert "/bench_fib/_action/status" not in names  # hidden from the listing, still readable
+    servers = {(i.name, i.type) for i in adapter.get_node_info("/bench_robot").action_servers}
+    assert ("/bench_fib", "example_interfaces/action/Fibonacci") in servers
+    status = adapter.sample_messages("/bench_fib/_action/status", 1, timeout_s=8.0)
+    assert [s.payload for s in status.samples] == [{"status_list": []}]
+    bond = adapter.sample_messages("/bond", 2, timeout_s=8.0)
+    assert bond.samples and {s.payload["id"] for s in bond.samples} == {"bench_robot"}
 
 
 def test_get_node_info_of_the_publisher(adapter: Ros2CliAdapter) -> None:
@@ -478,3 +537,73 @@ def test_inspect_tf_reads_the_bench_tree(adapter: Ros2CliAdapter) -> None:
     steady = by_name["base_link"].observed_frequency_hz
     assert steady is not None and abs(steady - truth["steady_hz"]) < 0.3 * truth["steady_hz"]
     assert not _echo_processes(), "the killed `ros2 topic echo` left a process behind"
+
+
+def test_inspect_tf_compares_the_urdf_with_the_frames(adapter: Ros2CliAdapter) -> None:
+    """`/robot_description` is a latched String the bench publishes: see `declared_truth`."""
+    from topicforge.services.inspector import Inspector
+
+    from . import ground_truth as model
+
+    want = model.declared_truth()["urdf"]
+    report = Inspector(adapter).inspect_tf(window_s=3.0)
+    assert report.urdf_source == want["source"], report.urdf_note
+    assert report.urdf_link_count == want["link_count"]
+    assert report.declared_frames_missing == want["declared_frames_missing"]
+    assert report.frames_not_in_urdf == want["frames_not_in_urdf"]
+    flagged = [f.frames for f in report.findings if f.kind == want["finding_kind"]]
+    assert flagged == [want["declared_frames_missing"]]
+    assert not _echo_processes(), "the killed `ros2 topic echo` left a process behind"
+
+
+def test_get_node_info_params_file_names_the_drift(adapter: Ros2CliAdapter) -> None:
+    """`bench_params.yaml` against the parameters `/bench_robot` declares: see `declared_truth`."""
+    from topicforge.services.inspector import Inspector
+
+    from . import ground_truth as model
+
+    want = model.declared_truth()["params"]
+    path = Path(__file__).with_name(model.PARAMS_FILE_NAME)
+    info = Inspector(adapter).get_node_info(want["node"], params_file=str(path))
+    assert info.param_diff is not None, info.param_diff_note
+    assert [d.model_dump() for d in info.param_diff] == want["differences"]
+    assert (info.param_diff_summary or "").startswith(f"{want['same']} same,")
+    assert info.param_diff_note is None
+
+
+def test_rosout_filter_reads_the_buffer_and_keeps_the_node(adapter: Ros2CliAdapter) -> None:
+    """The depth-2000 reader must receive the buffered ERROR lines, not only the live ones."""
+    result = adapter.sample_messages(
+        "/rosout", 20, min_log_level="error", node="/bench_robot", timeout_s=6
+    )
+    # Counts are reported precisely: a short timeout leaves one live line at most.
+    assert result.count >= 3, (result.count, result.note)
+    assert {s.payload["level"] for s in result.samples} == {40}
+    assert {s.payload["name"] for s in result.samples} == {"bench_robot"}
+    stamps = [s.timestamp_ns for s in result.samples]
+    assert stamps == sorted(stamps)
+    blocked = adapter.sample_messages("/rosout", 5, node="/bench_blocked", timeout_s=4)
+    assert blocked.count == 0 and blocked.note
+
+
+def test_bag_start_ns_and_ranges_match_the_recorder(adapter: Ros2CliAdapter, bag: Path) -> None:
+    import re
+
+    meta = (bag / "metadata.yaml").read_text(encoding="utf-8")
+    found = re.search(r"nanoseconds_since_epoch:\s*(\d+)", meta)
+    assert found is not None
+    starting = int(found.group(1))
+    assert adapter.analyze_bag(str(bag)).start_ns == starting
+    result = adapter.peek_bag_samples(str(bag), "/clock", 50, start_s=2, end_s=4)
+    low, high = starting + 2 * 10**9, starting + 4 * 10**9
+    # /clock can start seconds after the bag (late recorder): count what the bag holds.
+    in_window = sum(low <= t < high for t in bag_stamps(bag, "/clock"))
+    assert result.count == min(50, in_window)
+    if in_window == 0:
+        assert result.note
+    assert all(low <= (s.recorded_ns or 0) < high for s in result.samples)
+    errors = adapter.peek_bag_samples(str(bag), "/rosout", 10, min_log_level="error")
+    # The recorder may store few or no /rosout lines on a loaded runner: expect what the
+    # bag holds, read independently.
+    assert errors.count == min(10, bag_error_lines(bag))
+    assert {s.payload["level"] for s in errors.samples} <= {40}

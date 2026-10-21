@@ -1,0 +1,11 @@
+[
+  {"name": "30_graph_diff_first", "tool": "graph_diff", "timeout": 90},
+  {"settle_s": 3},
+  {"name": "31_graph_diff_steady", "tool": "graph_diff", "timeout": 90},
+  {"spawn": "tests/integration/ros2/graph_change.py"},
+  {"settle_s": 5},
+  {"name": "32_graph_diff_v2", "tool": "graph_diff", "timeout": 90},
+  {"name": "33_graph_diff_bag", "tool": "graph_diff", "needs_bag": true, "timeout": 120,
+   "args": {"baseline": "{BAG}"}},
+  {"settle_s": 3}
+]

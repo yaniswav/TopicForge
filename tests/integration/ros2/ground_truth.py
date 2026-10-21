@@ -15,11 +15,17 @@ Everything is deterministic and exact by construction:
   edge beam goes to the narrower sector, with a 1e-4 rad tolerance);
 - rates are the timer periods, and the bench stamps everything with seconds since start on
   the same monotonic clock, so the simulated rate equals the wall rate;
-- topics, types, counts and QoS are what `publisher.py` and `blocked_node.py` create;
+- topics, types, counts and QoS are what `publisher.py`, `blocked_node.py` and
+  `lifecycle_node.py` create (the last one a managed node in `/robot1`);
+- `/bond` and the action server `/bench_fib` are the Nav2 primitives (`nav_primitives`);
 - the TF tree is the `tf` section: three static edges on `/tf_static`, three steady edges
   on `/tf` (one of them gives `tool` a second parent), and one edge (`map -> odom`) that
   is published for `TF_FLAKY_ACTIVE_S` after each new subscriber of `/tf` and then stops,
-  so any capture longer than that sees it go stale.
+  so any capture longer than that sees it go stale;
+- the declared side (0.8.0, `declared_truth`): `/robot_description` carries a URDF whose links
+  are the static frames plus `arm_link`, a link on a revolute joint that nothing publishes, and
+  `/bench_robot` declares three parameters of which `bench_params.yaml` states one differently
+  and adds one the node does not have.
 """
 
 from __future__ import annotations
@@ -59,6 +65,7 @@ TF_STATIC_EDGES = (
 TF_STEADY_EDGES = (("odom", "base_link"), ("base_link", "tool"), ("odom", "tool"))
 TF_FLAKY_EDGE = ("map", "odom")
 # The `inspect_tf` call of `scripts/ground_truth/calls.json`: the window outlasts the flaky edge.
+TF_CALL_NAME = "17_inspect_tf"
 TF_CALL = {
     "window_s": 12,
     "stale_after_s": 2.0,
@@ -66,7 +73,23 @@ TF_CALL = {
     "target_frame": SCAN_FRAME,
 }
 
-# name -> (type, latched). One publisher each, from /bench_robot, no subscriber.
+# /rosout lines (0.7.3): WARN every LOG_WARN_PERIOD and ERROR every LOG_ERROR_PERIOD from
+# /bench_robot, INFO every LOG_INFO_PERIOD from the lifecycle node. See `logs_truth`.
+LOG_WARN_PERIOD = 1.0
+LOG_ERROR_PERIOD = 2.0
+LOG_INFO_PERIOD = 5.0
+
+# Clock topics (0.7.3), see `clock_truth`.
+IMU_PERIOD = 0.02
+# `/imu/data` is stamped with the wall clock, this long before it is published.
+IMU_WALL_AGE_S = 0.02
+# `/pose_mixed` has two publishers, one stamped in sim time, one in wall time.
+POSE_PERIOD = 0.1
+# `/stamps_regress`: every REGRESS_EVERY-th stamp is REGRESS_DIP_S behind the previous one.
+REGRESS_PERIOD = 0.2
+REGRESS_EVERY = 4
+REGRESS_DIP_S = 1.0
+# name -> (type, latched). One publisher each, except PUBLISHER_COUNTS, from /bench_robot, no subscriber.
 BENCH_TOPICS = {
     "/clock": ("rosgraph_msgs/msg/Clock", False),
     "/scan": ("sensor_msgs/msg/LaserScan", False),
@@ -74,15 +97,27 @@ BENCH_TOPICS = {
     "/camera/image_raw": ("sensor_msgs/msg/Image", False),
     "/scan_edge": ("sensor_msgs/msg/LaserScan", False),
     "/robot_description_lite": ("std_msgs/msg/String", True),
+    "/robot_description": ("std_msgs/msg/String", True),
     "/tf": ("tf2_msgs/msg/TFMessage", False),
     "/tf_static": ("tf2_msgs/msg/TFMessage", True),
+    "/imu/data": ("sensor_msgs/msg/Imu", False),
+    "/pose_mixed": ("geometry_msgs/msg/PoseStamped", False),
+    "/stamps_regress": ("geometry_msgs/msg/PoseStamped", False),
+    "/bond": ("bond/msg/Status", False),
 }
+PUBLISHER_COUNTS = {"/pose_mixed": 2}
 # Present on every graph; the number of endpoints depends on hidden CLI and daemon nodes.
 INFRA_TOPICS = {
     "/parameter_events": "rcl_interfaces/msg/ParameterEvent",
     "/rosout": "rcl_interfaces/msg/Log",
 }
-BENCH_NODES = {"/bench_robot": False, "/bench_blocked": None}
+# A managed node in a namespace: `list_nodes` must flag it `lifecycle` (it serves
+# `<name>/get_state` of type lifecycle_msgs/srv/GetState) and count it under `/robot1`.
+# Its only topic is `<name>/transition_event`, published by rclpy, never by `/bench_robot`.
+LIFECYCLE_NODE = "/robot1/bench_lifecycle"
+LIFECYCLE_TOPIC = f"{LIFECYCLE_NODE}/transition_event"
+LIFECYCLE_TOPIC_TYPE = "lifecycle_msgs/msg/TransitionEvent"
+BENCH_NODES = {"/bench_robot": False, "/bench_blocked": None, LIFECYCLE_NODE: False}
 PERIODS = {
     "/clock": CLOCK_PERIOD,
     "/scan": SCAN_PERIOD,
@@ -98,6 +133,35 @@ STAMPS = {
     "/cmd_vel_out": "none",
 }
 SECTOR_EDGE_EPS = 1e-4
+
+# Nav2 primitives (0.8.0): what the `diagnose-nav2` prompt reads, without Nav2. `/bond` is a
+# `bond/msg/Status` heartbeat for the bond id `BOND_ID` (Nav2 uses the node name as the id), and
+# `/bench_fib` an action server that nothing calls: its `_action/status` topic is hidden from
+# `list_topics` and latched, and `status_list` is empty because no goal ever ran.
+BOND_TOPIC = "/bond"
+BOND_ID = "bench_robot"
+BOND_PERIOD = 1.0
+ACTION_NAME = "/bench_fib"
+ACTION_TYPE = "example_interfaces/action/Fibonacci"
+ACTION_STATUS_TOPIC = f"{ACTION_NAME}/_action/status"
+ACTION_NODE = "/bench_robot"
+# Declared against real (0.8.0), see `declared_truth`. The URDF on `/robot_description` has the
+# links of TF_STATIC_EDGES plus this one, hanging from a revolute joint nothing publishes.
+URDF_UNPUBLISHED_LINK = "arm_link"
+# Parameters `/bench_robot` declares, and the ones `bench_params.yaml` states for it (the file
+# is read by the server, never sent to the node).
+BENCH_PARAMS: dict[str, Any] = {"scan_period": 0.1, "frame_id": "laser", "max_range": 10.0}
+PARAMS_FILE_NAME = "bench_params.yaml"
+PARAMS_FILE_DECLARED: dict[str, Any] = {"max_range": 12.0, "frame_id": "laser", "extra_gain": 1.5}
+PARAMS_CALL_NAME = "03p_node_info_params"
+PARAMS_NODE = "/bench_robot"
+
+# graph_diff (0.8.0): `graph_change.py` adds exactly these three differences, see `graph_diff_truth`.
+GRAPH_V2_NODE = "/bench_v2"
+GRAPH_V2_TOPIC = "/scan_v2"
+GRAPH_V2_TOPIC_TYPE = "sensor_msgs/msg/LaserScan"
+# A second writer, same QoS, on a topic /bench_robot already writes.
+GRAPH_V2_SHARED_TOPIC = "/cmd_vel_out"
 
 
 def tf_truth() -> dict[str, Any]:
@@ -120,6 +184,201 @@ def tf_truth() -> dict[str, Any]:
             SCAN_FRAME,
         ],
         "real_time_factor": 1.0,
+    }
+
+
+def urdf_links() -> list[str]:
+    """Link names of the bench URDF: the static frames, then the unpublished arm link."""
+    names: list[str] = []
+    for parent, child in TF_STATIC_EDGES:
+        for name in (parent, child):
+            if name not in names:
+                names.append(name)
+    return [*names, URDF_UNPUBLISHED_LINK]
+
+
+def urdf_text() -> str:
+    """The URDF `publisher.py` latches on `/robot_description` (minimal: links and joints)."""
+    parts = ['<?xml version="1.0"?>', '<robot name="bench_robot">']
+    parts += [f'<link name="{name}"/>' for name in urdf_links()]
+    for parent, child in TF_STATIC_EDGES:
+        parts.append(
+            f'<joint name="{child}_joint" type="fixed">'
+            f'<parent link="{parent}"/><child link="{child}"/></joint>'
+        )
+    parts.append(
+        f'<joint name="{URDF_UNPUBLISHED_LINK}_joint" type="revolute">'
+        f'<parent link="base_link"/><child link="{URDF_UNPUBLISHED_LINK}"/>'
+        '<limit lower="0" upper="1" effort="1" velocity="1"/></joint>'
+    )
+    parts.append("</robot>")
+    return "".join(parts)
+
+
+def declared_truth() -> dict[str, Any]:
+    """What the declared-against-real answers must say (0.8.0).
+
+    `urdf` is read from the `17_inspect_tf` answer (the URDF is compared on every call), `params`
+    from `03p_node_info_params` (`get_node_info` with `params_file`). The differences are exactly
+    `max_range` (the file says 12.0, the node 10.0) and `extra_gain` (the file only); `frame_id`
+    is the one parameter that agrees, and the node's others (`scan_period`, `use_sim_time`, ...)
+    are counted as `live_only`.
+    """
+    links = urdf_links()
+    differences = []
+    for name in sorted(PARAMS_FILE_DECLARED):
+        declared = PARAMS_FILE_DECLARED[name]
+        if name not in BENCH_PARAMS:
+            differences.append(
+                {"name": name, "status": "declared_only", "declared": declared, "live": None}
+            )
+        elif BENCH_PARAMS[name] != declared:
+            differences.append(
+                {
+                    "name": name,
+                    "status": "different",
+                    "declared": declared,
+                    "live": BENCH_PARAMS[name],
+                }
+            )
+    return {
+        "urdf": {
+            "call": TF_CALL_NAME,
+            "source": "robot_description",
+            "link_count": len(links),
+            "declared_frames_missing": [URDF_UNPUBLISHED_LINK],
+            "frames_not_in_urdf": sorted(
+                {n for e in tf_truth()["dynamic_edges"] for n in e} - set(links)
+            ),
+            "finding_kind": "declared_not_published",
+        },
+        "params": {
+            "call": PARAMS_CALL_NAME,
+            "node": PARAMS_NODE,
+            "differences": differences,
+            "same": len(PARAMS_FILE_DECLARED) - len(differences),
+        },
+    }
+
+
+def graph_diff_truth() -> dict[str, Any]:
+    """What the four `graph_diff` calls of `calls.json` must answer (0.8.0).
+
+    `30` is the first call of the session (no baseline), `31` a second one with nothing changed
+    (the healthy line: zero changes, whatever the `/rosout` and `/parameter_events` counters do),
+    `32` follows the start of `graph_change.py` and must name exactly the three differences below
+    (any other change is a false alarm), `33` compares the live graph with the recorded bag.
+    """
+    return {
+        "first": {"call": "30_graph_diff_first"},
+        "steady": {"call": "31_graph_diff_steady", "changes": 0},
+        "v2": {
+            "call": "32_graph_diff_v2",
+            "changes": [
+                {"kind": "node", "change": "added", "name": GRAPH_V2_NODE},
+                {"kind": "topic", "change": "added", "name": GRAPH_V2_TOPIC},
+                {
+                    "kind": "count",
+                    "change": "changed",
+                    "name": GRAPH_V2_SHARED_TOPIC,
+                    "field": "publisher_count",
+                    "before": "1",
+                    "after": "2",
+                },
+            ],
+        },
+        "bag": {
+            "call": "33_graph_diff_bag",
+            "removed_count": 0,
+            "absent_kinds": ["type", "qos"],
+            "not_compared": ["nodes", "rates"],
+        },
+    }
+
+
+def nav_primitives_truth() -> dict[str, Any]:
+    """What `40_action_status` and `41_bond` of `calls_nav_primitives.json` must show (0.8.0).
+
+    A hidden `_action/status` topic read by `sample_messages` (one latched sample, an empty
+    `status_list`), the action listed in `get_node_info.action_servers` of its node, and the
+    status topic absent from `list_topics`; `/bond` samples all carry the bond id.
+    """
+    return {
+        "action_status": {
+            "call": "40_action_status",
+            "topic": ACTION_STATUS_TOPIC,
+            "samples": 1,
+            "status_list": [],
+            "action": ACTION_NAME,
+            "action_type": ACTION_TYPE,
+            "node": ACTION_NODE,
+            "listed_call": "02_list_topics",
+            "node_info_call": "03n_node_info_bench_robot",
+        },
+        "bond": {"call": "41_bond", "topic": BOND_TOPIC, "id": BOND_ID},
+    }
+
+
+def visibility_truth() -> dict[str, Any]:
+    """What the DDS visibility fields must say on the bench (0.8.0).
+
+    `/bench_robot` writes `/scan`, so `list_endpoints(topic="/scan")` has to name it as the
+    writer's node on every RMW (Fast DDS names all its participants `/`, so the node name is the
+    only link), its participant carries the node's parameter services, `/rosout`, the graph
+    plumbing and the topics, which is well over `min_endpoint_count`, and the bench environment
+    sets no SROS2 variable.
+    """
+    return {
+        "endpoints_call": "05s_list_endpoints_scan",
+        "topic": "/scan",
+        "writer_nodes": ["/bench_robot"],
+        "participants_call": "04_list_participants",
+        "node": "/bench_robot",
+        "min_endpoint_count": 12,
+        "health_call": "01_health_check",
+        "ros_security_enabled": False,
+    }
+
+
+def clock_truth() -> dict[str, Any]:
+    """What `TopicRate.clock_basis` and the stamp fields must say per topic (0.7.3)."""
+    return {
+        "topics": {
+            "/scan": {"basis": "sim"},
+            "/cmd_vel_out": {"basis": "none"},
+            "/imu/data": {
+                "basis": "wall",
+                "age_median_s_range": [0.015, 0.2],
+                "age_p95_s_max": 0.5,
+                "published_age_s": IMU_WALL_AGE_S,
+            },
+            "/pose_mixed": {"basis": "mixed"},
+            "/stamps_regress": {"basis": "sim", "min_regressions": 2, "min_messages": 12},
+        },
+        "note": "wall = stamps are dates; the age is arrival minus stamp, so it also holds delivery",
+    }
+
+
+def logs_truth() -> dict[str, Any]:
+    """What the log filter and the bag range must return (0.7.3).
+
+    The live calls use a short `timeout_s`, so only the 10 s transient_local buffer of
+    /rosout (read with depth 2000) can supply `min_error_msgs`: live lines alone would give
+    one or two. `scripts/ground_truth/compare.py` reports the exact counts either way.
+    """
+    return {
+        "topic": "/rosout",
+        "node": "/bench_robot",
+        "logger": "bench_robot",
+        "warn_period_s": LOG_WARN_PERIOD,
+        "error_period_s": LOG_ERROR_PERIOD,
+        "min_error_msgs": 3,
+        "lifecycle_node": LIFECYCLE_NODE,
+        "lifecycle_logger": LIFECYCLE_NODE.strip("/").replace("/", "."),
+        "info_period_s": LOG_INFO_PERIOD,
+        "blocked_node": "/bench_blocked",
+        "bag_min_errors": 2,
+        "bag_range": {"topic": "/clock", "start_s": 2, "end_s": 4, "count": 50},
     }
 
 
@@ -169,10 +428,11 @@ def sector_minima() -> dict[str, dict[str, Any]]:
 
 
 def _endpoint(topic: str, node: str, latched: bool) -> dict[str, Any]:
+    namespace, _, name = node.rpartition("/")
     return {
-        "node_name": node.strip("/"),
-        "node_namespace": "/",
-        "topic_type": BENCH_TOPICS[topic][0],
+        "node_name": name,
+        "node_namespace": namespace or "/",
+        "topic_type": LIFECYCLE_TOPIC_TYPE if topic == LIFECYCLE_TOPIC else BENCH_TOPICS[topic][0],
         "endpoint_type": "PUBLISHER",
         "reliability": "RELIABLE",
         "durability": "TRANSIENT_LOCAL" if latched else "VOLATILE",
@@ -195,16 +455,42 @@ def _graph() -> dict[str, Any]:
             )
             continue
         type_name, latched = BENCH_TOPICS[name]
+        publishers = PUBLISHER_COUNTS.get(name, 1)
         topics.append(
             {
                 "name": name,
                 "types": [type_name],
-                "publisher_count": 1,
+                "publisher_count": publishers,
                 "subscription_count": 0,
-                "endpoints": [_endpoint(name, "/bench_robot", latched)],
+                "endpoints": [_endpoint(name, "/bench_robot", latched)] * publishers,
             }
         )
-    return {"nodes": sorted(BENCH_NODES), "use_sim_time": dict(BENCH_NODES), "topics": topics}
+    topics.append(
+        {
+            "name": LIFECYCLE_TOPIC,
+            "types": [LIFECYCLE_TOPIC_TYPE],
+            "publisher_count": 1,
+            "subscription_count": 0,
+            "endpoints": [_endpoint(LIFECYCLE_TOPIC, LIFECYCLE_NODE, False)],
+        }
+    )
+    topics.sort(key=lambda t: t["name"])
+    return {
+        "nodes": sorted(BENCH_NODES),
+        "use_sim_time": dict(BENCH_NODES),
+        "lifecycle_nodes": [LIFECYCLE_NODE],
+        "nodes_by_namespace": nodes_by_namespace(),
+        "topics": topics,
+    }
+
+
+def nodes_by_namespace() -> dict[str, int]:
+    """Distinct bench nodes per namespace (`/` is the root), sorted, as `list_nodes` counts."""
+    counts: dict[str, int] = {}
+    for node in BENCH_NODES:
+        namespace = node.rpartition("/")[0] or "/"
+        counts[namespace] = counts.get(namespace, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def build_truth(distro: str, rmw: str) -> dict[str, Any]:
@@ -251,6 +537,12 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
             "note": "timer periods; the bench stamps with seconds since start, so sim rate = wall rate",
         },
         "tf": tf_truth(),
+        "clock": clock_truth(),
+        "logs": logs_truth(),
+        "graph_diff": graph_diff_truth(),
+        "nav_primitives": nav_primitives_truth(),
+        "visibility": visibility_truth(),
+        "declared": declared_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

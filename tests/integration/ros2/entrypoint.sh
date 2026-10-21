@@ -17,7 +17,10 @@ PUB_PID=$!
 # A node with a stuck executor, for the `get_node_info` timeout test.
 python3 "$HERE/blocked_node.py" > /bench/blocked.log 2>&1 &
 BLOCKED_PID=$!
-trap 'kill $PUB_PID $BLOCKED_PID 2>/dev/null' EXIT
+# A managed node in /robot1, for the `list_nodes` lifecycle flag and by_namespace.
+python3 "$HERE/lifecycle_node.py" > /bench/lifecycle.log 2>&1 &
+LIFECYCLE_PID=$!
+trap 'kill $PUB_PID $BLOCKED_PID $LIFECYCLE_PID 2>/dev/null' EXIT
 
 for _ in $(seq 1 60); do
     ros2 topic list 2>/dev/null | grep -qx /scan && break
@@ -33,11 +36,15 @@ for _ in $(seq 1 30); do
     ros2 node list 2>/dev/null | grep -qx /bench_blocked && break
     sleep 0.5
 done
+for _ in $(seq 1 30); do
+    ros2 node list 2>/dev/null | grep -qx /robot1/bench_lifecycle && break
+    sleep 0.5
+done
 
 echo "bench: recording bag (8 s)"
 # `ros2 bag record` has no --duration on Humble: stop it with SIGINT.
 timeout -s INT 8 ros2 bag record -o "$BAG" \
-    /clock /scan /cmd_vel_out /camera/image_raw /robot_description_lite \
+    /clock /scan /cmd_vel_out /camera/image_raw /robot_description_lite /rosout \
     > /bench/record.log 2>&1
 sleep 2
 if [ ! -e "$BAG/metadata.yaml" ]; then
@@ -60,7 +67,11 @@ PYTEST_RC=$?
 echo "bench: ground truth (drive.py, compare.py)"
 GT=scripts/ground_truth
 rm -rf "$OUT/results"
+# calls_declared.json (get_node_info with params_file), calls_nav_primitives.json (the Nav2
+# primitives) and calls_graph_diff.json (it starts graph_change.py, which changes the graph, so it
+# runs last) are bench-only: the OmniSim kit runs calls.json alone.
 /opt/tfenv/bin/python "$GT/drive.py" --out "$OUT/results" --bag "$BAG" \
+    --calls "$GT/calls.json" "$GT/calls_declared.json" "$GT/calls_nav_primitives.json" "$GT/calls_graph_diff.json" \
     --server-cmd /opt/tfenv/bin/topicforge --mode live --dds-backend cyclone \
     --env TOPICFORGE_LOG_LEVEL=WARNING > "$OUT/drive.log" 2>&1
 DRIVE_RC=$?
@@ -69,7 +80,7 @@ tail -n 5 "$OUT/drive.log"
     --results "$OUT/results" --bag-truth "$BAG" --strict-shape \
     --out "$OUT/COMPARISON.md"
 COMPARE_RC=$?
-cp /bench/ground_truth.json /bench/publisher.log /bench/record.log "$OUT/" 2>/dev/null
+cp /bench/ground_truth.json /bench/publisher.log /bench/lifecycle.log /bench/record.log "$OUT/" 2>/dev/null
 cp "$BAG/metadata.yaml" "$OUT/bag_metadata.yaml" 2>/dev/null
 echo "bench: pytest rc=$PYTEST_RC drive rc=$DRIVE_RC compare rc=$COMPARE_RC"
 [ "$PYTEST_RC" -eq 0 ] && [ "$DRIVE_RC" -eq 0 ] && [ "$COMPARE_RC" -eq 0 ]

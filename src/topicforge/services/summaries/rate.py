@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 from topicforge.models.summaries import RateVerdict, TopicRate
+from topicforge.services.summaries.clock import compute_clock
 
 _NS_PER_S = 1_000_000_000
 
@@ -28,6 +29,7 @@ def compute_rate(
     *,
     basis: Literal["received_ns", "recorded_ns"],
     stamps_ns: Sequence[int] | None = None,
+    stamped: Sequence[tuple[int, int, str]] | None = None,
     window_start_ns: int | None = None,
     window_end_ns: int | None = None,
     stopped_on_deadline: bool = False,
@@ -38,7 +40,8 @@ def compute_rate(
     them the window is the span of the arrivals. The trailing interval (last
     message to `window_end_ns`) is measured, and counted for `intermittent`,
     only when `stopped_on_deadline` is true. `stamps_ns` are the messages' own
-    stamps, given only when every message has one, to get `sim_frequency_hz`.
+    stamps, given only when every message has one, to get `sim_frequency_hz`. `stamped` holds `(basis_ns, stamp_ns, stamp_source)`
+    per message, for the clock fields (see `clock.py`).
     """
     times = sorted(arrivals_ns)
     n = len(times)
@@ -54,6 +57,7 @@ def compute_rate(
     median_ns = statistics.median(intervals) if intervals else None
     cv = _cv(intervals, mean_ns)
     span_ns = kept[-1] - kept[0] if len(kept) >= 2 else 0
+    clock = compute_clock(stamped or ())
     verdict, note = _verdict(
         len(kept), window_s, intervals, median_ns, trailing_ns, cv, mean_ns, span_ns
     )
@@ -69,6 +73,10 @@ def compute_rate(
         observed_frequency_hz=_frequency(len(kept), span_ns),
         sim_frequency_hz=_sim_frequency(stamps_ns),
         trailing_gap_s=_seconds(trailing_ns),
+        clock_basis=clock.basis,
+        stamp_age_median_s=clock.age_median_s,
+        stamp_age_p95_s=clock.age_p95_s,
+        stamp_regression_count=clock.regression_count,
         verdict=verdict,
         verdict_note=note,
     )

@@ -23,6 +23,7 @@ from topicforge.adapters.ros2_live.process_runner import ProcessResult
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
 from topicforge.server import build_app
+from topicforge.services.inspector import Inspector
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ros2_node"
 _MODULE = "topicforge.adapters.ros2_live.adapter"
@@ -61,6 +62,7 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> FakeCli:
     fake = FakeCli(
         {
             "node list": _ok(_read("node_list_plain.txt")),
+            "service list": _ok(_read("service_list_types.txt")),
             "node info": _ok(_read("node_info_humble.txt")),
             "param dump": _ok(_read("param_dump_humble.yaml")),
         }
@@ -77,13 +79,45 @@ def _info(adapter: Ros2CliAdapter, node: str = "/nav_planner", timeout_s: float 
 # ----- list_nodes -----
 
 
-def test_list_nodes_is_one_cli_call(cli: FakeCli) -> None:
+def test_list_nodes_is_two_cli_calls(cli: FakeCli) -> None:
     cli.replies["node list"] = _ok(_read("node_list_duplicates.txt"))
     listing = Ros2CliAdapter().list_nodes()
-    assert [c[1:] for c in (call[0] for call in cli.calls)] == [["node", "list"]]
+    assert [c[1:] for c in (call[0] for call in cli.calls)] == [
+        ["node", "list"],
+        ["service", "list", "-t"],
+    ]
     assert listing.mode_effective == "live"
     assert listing.duplicates == ["/lidar_driver"]
     assert {n.full_name: n.namespace for n in listing.nodes}["/robot1/base_controller"] == "/robot1"
+
+
+def test_list_nodes_flags_lifecycle_nodes_and_counts_namespaces(cli: FakeCli) -> None:
+    cli.replies["node list"] = _ok(
+        "/camera_driver\n/fake\n/lidar_driver\n/robot1/lifecycle_node\n/robot1/plain\n"
+    )
+    listing = Ros2CliAdapter().list_nodes()
+    assert {n.full_name for n in listing.nodes if n.lifecycle} == {
+        "/camera_driver",
+        "/robot1/lifecycle_node",
+    }  # `/fake/get_state` has the wrong type
+    assert listing.lifecycle_count == 2 and listing.lifecycle_note is None
+    assert listing.by_namespace == {"/": 3, "/robot1": 2}
+
+
+def test_a_failed_service_list_is_a_note_not_a_silent_false(cli: FakeCli) -> None:
+    cli.replies["service list"] = ProcessResult(
+        returncode=1, stdout="", stderr="boom\n", timed_out=False, truncated=False
+    )
+    listing = Ros2CliAdapter().list_nodes()
+    assert listing.lifecycle_count == 0 and listing.total == 2
+    assert listing.lifecycle_note is not None and "service list" in listing.lifecycle_note
+    cli.replies["service list"] = TIMED_OUT
+    assert Ros2CliAdapter().list_nodes().lifecycle_note is not None
+
+
+def test_an_empty_service_list_with_nodes_is_a_note(cli: FakeCli) -> None:
+    cli.replies["service list"] = _ok("")
+    assert Ros2CliAdapter().list_nodes().lifecycle_note is not None
 
 
 def test_list_nodes_failure_is_an_adapter_error(cli: FakeCli) -> None:
@@ -296,6 +330,19 @@ def test_composite_routes_both_tools_to_the_ros_half() -> None:
     assert dds.calls == []
 
 
+def test_mock_camera_driver_is_the_lifecycle_node() -> None:
+    mock = MockAdapter()
+    listing = mock.list_nodes()
+    assert [n.full_name for n in listing.nodes if n.lifecycle] == ["/camera_driver"]
+    assert listing.lifecycle_count == 1 and listing.lifecycle_note is None
+    assert listing.by_namespace == {"/": 6}
+    info = mock.get_node_info("/camera_driver")
+    assert info.lifecycle
+    assert "/camera_driver/get_state" in [s.name for s in info.service_servers]
+    assert "/camera_driver/transition_event" in [p.name for p in info.publishers]
+    assert not mock.get_node_info("/lidar_driver").lifecycle
+
+
 def test_mock_nodes_match_the_mock_topics() -> None:
     mock = MockAdapter()
     names = {n.full_name for n in mock.list_nodes().nodes}
@@ -381,3 +428,142 @@ def test_both_tools_use_the_ros_lane_and_are_open_world() -> None:
     assert "the only request TopicForge ever sends is a parameter read" in (
         tools["get_node_info"].description
     )
+
+
+# ----- params_file: the declared parameters against the running node -----
+
+_LIDAR_FILE = (
+    "lidar_driver:\n"
+    "  ros__parameters:\n"
+    "    frame_id: laser\n"
+    "    scan_frequency: 20.0\n"
+    "    extra_gain: 1.5\n"
+)
+
+
+def _params_file(tmp_path: Path, text: str = _LIDAR_FILE, name: str = "params.yaml") -> str:
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def test_mock_param_diff_names_the_changed_and_the_missing_parameter(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=_params_file(tmp_path)
+    )
+    assert info.param_diff is not None
+    assert [(d.name, d.status, d.declared, d.live) for d in info.param_diff] == [
+        ("extra_gain", "declared_only", 1.5, None),
+        ("scan_frequency", "different", 20.0, 10.0),
+    ]
+    assert info.param_diff_summary == "1 same, 1 live_only" and info.param_diff_note is None
+    assert info.parameters is not None  # the rest of the result is untouched
+
+
+def test_without_params_file_the_three_fields_stay_null() -> None:
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver")
+    assert (info.param_diff, info.param_diff_summary, info.param_diff_note) == (None, None, None)
+
+
+def test_a_missing_file_is_a_note_not_an_error(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=str(tmp_path / "absent.yaml")
+    )
+    assert info.param_diff is None and "is not a file" in (info.param_diff_note or "")
+    assert info.full_name == "/lidar_driver"
+
+
+def test_a_directory_is_not_a_file(tmp_path: Path) -> None:
+    folder = tmp_path / "dir.yaml"
+    folder.mkdir()
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=str(folder))
+    assert info.param_diff is None and "is not a file" in (info.param_diff_note or "")
+
+
+def test_a_file_over_one_mebibyte_is_not_parsed(tmp_path: Path) -> None:
+    big = _params_file(tmp_path, "# " + "x" * (1024 * 1024 + 1) + "\n")
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=big)
+    assert info.param_diff is None and "larger than 1048576 bytes" in (info.param_diff_note or "")
+
+
+def test_a_file_that_is_not_utf8_is_a_note(tmp_path: Path) -> None:
+    path = tmp_path / "latin.yaml"
+    path.write_bytes(b"a: \xe9\xff\n")
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=str(path))
+    assert info.param_diff is None and "not UTF-8" in (info.param_diff_note or "")
+
+
+def test_invalid_yaml_is_a_note(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=_params_file(tmp_path, "a: [unclosed\n")
+    )
+    assert info.param_diff is None and "not valid YAML" in (info.param_diff_note or "")
+
+
+def test_a_file_without_a_section_for_the_node_says_so(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/camera_driver", params_file=_params_file(tmp_path)
+    )
+    assert info.param_diff is None and "no section for /camera_driver" in (
+        info.param_diff_note or ""
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("", "non-empty"),
+        ("  ", "non-empty"),
+        ("params.txt", ".yaml or .yml"),
+        ("/etc/passwd", ".yaml or .yml"),
+        ("a\x00.yaml", "null bytes"),
+    ],
+)
+def test_a_bad_params_file_path_is_rejected_before_any_io(value: str, message: str) -> None:
+    with pytest.raises(AdapterError, match=message):
+        Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=value)
+
+
+def test_live_params_file_is_read_by_the_server_and_never_given_to_the_cli(
+    cli: FakeCli, tmp_path: Path
+) -> None:
+    text = "nav_planner:\n  ros__parameters:\n    goal_tolerance: 9.0\n"
+    path = _params_file(tmp_path, text)
+    info = Inspector(Ros2CliAdapter()).get_node_info("/nav_planner", params_file=path)
+    assert info.param_diff is not None
+    assert [(d.name, d.status) for d in info.param_diff] == [("goal_tolerance", "different")]
+    assert not any(path in " ".join(call) for call, _, _ in cli.calls)
+    assert len(cli.ran("param dump")) == 1  # the same single read as without the file
+
+
+def test_when_the_node_does_not_answer_there_is_no_diff_and_a_note(
+    cli: FakeCli, tmp_path: Path
+) -> None:
+    cli.replies["param dump"] = TIMED_OUT
+    info = Inspector(Ros2CliAdapter()).get_node_info(
+        "/nav_planner",
+        params_file=_params_file(tmp_path, "nav_planner:\n  ros__parameters:\n    a: 1\n"),
+    )
+    assert info.parameters is None and info.param_diff is None
+    assert "were not read" in (info.param_diff_note or "")
+
+
+def test_get_node_info_over_mcp_with_params_file(tmp_path: Path) -> None:
+    data = _call(
+        "get_node_info", {"node": "/lidar_driver", "params_file": _params_file(tmp_path)}
+    ).structured_content
+    assert [d["name"] for d in data["param_diff"]] == ["extra_gain", "scan_frequency"]
+    assert data["param_diff_summary"] == "1 same, 1 live_only"
+
+
+def test_params_file_errors_reach_the_client() -> None:
+    with pytest.raises(ToolError, match=r".yaml or .yml"):
+        _call("get_node_info", {"node": "/lidar_driver", "params_file": "/etc/passwd"})
+
+
+def test_the_node_tool_never_writes_the_params_file(tmp_path: Path) -> None:
+    path = Path(_params_file(tmp_path))
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=str(path))
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["params.yaml"]

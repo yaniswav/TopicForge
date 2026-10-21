@@ -6,9 +6,9 @@ extra key fail in tests instead of reaching clients.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
 
 from topicforge.models.summaries import MessageSummary, TopicRate
 
@@ -253,6 +253,11 @@ class ParticipantInfo(BaseModel):
     is_topicforge_cli: bool = Field(
         default=False,
         description="True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
+    )
+    endpoint_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Writers plus readers seen for this participant; `None` without an endpoint cache.",
     )
 
 
@@ -779,6 +784,26 @@ class TopicInfo(BaseModel):
     )
 
 
+# The five summary shapes are validated strictly by the server but advertised as one open
+# object keyed by `summary_type`: listing them in every tool's schema cost about 26 KB of
+# tools/list. The shapes are documented in docs/TOOLS.md ("Message summaries").
+_SUMMARY_ADVERTISED: dict[str, object] = {
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "summary_type": {
+                    "type": "string",
+                    "enum": ["laser_scan", "odometry", "imu", "image", "point_cloud2"],
+                }
+            },
+            "required": ["summary_type"],
+        },
+        {"type": "null"},
+    ]
+}
+
+
 class MessageSample(BaseModel):
     """A single sampled message on a topic."""
 
@@ -816,7 +841,7 @@ class MessageSample(BaseModel):
             "(unparsable output)."
         ),
     )
-    summary: MessageSummary | None = Field(
+    summary: Annotated[MessageSummary | None, WithJsonSchema(_SUMMARY_ADVERTISED)] = Field(
         default=None,
         description=(
             "Condensed reading of the whole message (see `summary_type`); `null` for "
@@ -907,6 +932,13 @@ class BagAnalysis(BaseModel):
         default_factory=list,
         description="Notes on gaps or clock jumps; mock mode only.",
     )
+    start_ns: int | None = Field(
+        default=None,
+        description=(
+            "Record time in ns of the bag's first message (rosbag2 `starting_time`): the zero "
+            "of `peek_bag_samples` `start_s` / `end_s`. `null` when unreadable."
+        ),
+    )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     note: str | None = Field(
         default=None,
@@ -959,8 +991,8 @@ class HealthReport(BaseModel):
 
     mode: str = Field(
         description=(
-            "Mode actually serving: `mock` or `live` (`live` with `ros_backend` `none`:"
-            " DDS tools only). May differ from `requested_mode` after a fallback."
+            "Mode serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools "
+            "only); may differ from `requested_mode` after a fallback."
         )
     )
     requested_mode: str = Field(description="Mode requested by configuration (may be `auto`).")
@@ -974,7 +1006,7 @@ class HealthReport(BaseModel):
         default=2,
         ge=1,
         description=(
-            "Output contract version; changes only when a field is renamed, removed or retyped."
+            "Output contract version; changes when a field is renamed, removed or retyped."
         ),
     )
     max_sample_count: int = Field(
@@ -994,10 +1026,7 @@ class HealthReport(BaseModel):
     )
     dds_inactive_note: str | None = Field(
         default=None,
-        description=(
-            "Why `dds_backend` is `none` while ROS 2 serves (not selected, binding "
-            "missing, or failed to start); else `null`."
-        ),
+        description=("Why `dds_backend` is `none` while ROS 2 serves; else `null`."),
     )
     dds_domain_id: int | None = Field(
         default=None,
@@ -1052,8 +1081,8 @@ class HealthReport(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Discovery entries dropped from a full tracker cache (4096 each); non-zero "
-            "means the bus is bigger than listed."
+            "Discovery entries dropped from a full tracker cache; non-zero means the bus "
+            "is bigger than listed."
         ),
     )
     ros_tools_available: bool = Field(
@@ -1066,9 +1095,8 @@ class HealthReport(BaseModel):
     sim_clock_published: bool | None = Field(
         default=None,
         description=(
-            "Whether `/clock` had a publisher in the last graph read (a hint that "
-            "stamps may be sim time). `None` in mock or without a recent read; "
-            "`health_check` never runs `ros2`."
+            "Whether `/clock` had a publisher at the last graph read (stamps may be sim "
+            "time); `None` in mock or without a recent read."
         ),
     )
     payload_decoding: Literal["disabled", "enabled"] = Field(
@@ -1085,6 +1113,19 @@ class HealthReport(BaseModel):
     dds_security: Literal["not_supported"] = Field(
         default="not_supported",
         description=("DDS Security is not handled: protected endpoints and data are invisible."),
+    )
+    ros_security_enabled: bool | None = Field(
+        default=None,
+        description="`ROS_SECURITY_ENABLE` is `true`; `None` unless the ros2 CLI serves.",
+    )
+    ros_security_strategy: Literal["Enforce", "Permissive"] | None = Field(
+        default=None, description="`ROS_SECURITY_STRATEGY` when set to a valid value."
+    )
+    ros_security_keystore_set: bool | None = Field(
+        default=None, description="Whether a keystore variable is set (the path is never shown)."
+    )
+    ros_security_note: str | None = Field(
+        default=None, description="Set when `ros_security_enabled`: what stays invisible."
     )
     rmw_implementation: str | None = Field(
         default=None,
@@ -1121,6 +1162,10 @@ class EndpointInfo(BaseModel):
     )
     participant_vendor: _DdsVendor = Field(
         default="unknown",
+    )
+    node_name: str | None = Field(
+        default=None,
+        description="ROS 2 node owning the endpoint (`ros_discovery_info`); `None` if not announced.",
     )
     dds_topic: str = Field()
     ros_topic: str | None = Field(
@@ -1211,6 +1256,12 @@ class TopicSummary(BaseModel):
     departed_readers: list[DepartedEndpoint] = Field(
         default_factory=list,
         description="Readers whose participant left, newest first.",
+    )
+    writer_nodes: list[str] = Field(
+        default_factory=list, description="Sorted ROS 2 nodes of the writers (`node_name`)."
+    )
+    reader_nodes: list[str] = Field(
+        default_factory=list, description="Sorted ROS 2 nodes of the readers (`node_name`)."
     )
     orphan: Literal["no_reader", "no_writer"] | None = Field(
         default=None,

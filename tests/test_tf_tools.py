@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from typing import Any
 
 import pytest
@@ -277,9 +278,9 @@ def test_mock_tf_topics_match_the_fixed_frames() -> None:
     }
 
 
-def test_mock_report_has_exactly_one_stale_finding() -> None:
+def test_mock_report_has_one_stale_and_one_declared_not_published_finding() -> None:
     report = Inspector(MockAdapter()).inspect_tf()
-    assert [f.kind for f in report.findings] == ["stale"]
+    assert [f.kind for f in report.findings] == ["stale", "declared_not_published"]
     assert report.findings[0].frames == ["map", "odom"]
     assert report.roots == ["map"] and report.stale_count == 1
     assert report.mode_effective == "mock" and report.window_s == 5.0
@@ -344,7 +345,7 @@ def test_inspect_tf_over_mcp() -> None:
     assert data["mode_effective"] == "mock"
     # 4.0 s old stays stale at 3.5 s; a larger limit clears it.
     clear = asyncio.run(_app().call_tool("inspect_tf", {"stale_after_s": 10}))
-    assert clear.structured_content["findings"] == []
+    assert [f["kind"] for f in clear.structured_content["findings"]] == ["declared_not_published"]
 
 
 def test_inspect_tf_errors_reach_the_client() -> None:
@@ -512,3 +513,131 @@ def test_parse_grace_drops_the_oldest_documents_first(monkeypatch: pytest.Monkey
     assert dropped == 3 and len(samples) == 2
     assert [s.received_ns for s in samples] == sorted(s.received_ns for s in samples)
     assert samples[-1].received_ns == 5 * NS
+
+
+# ----- declared against published (/robot_description) -----
+
+
+def test_mock_report_compares_the_urdf_with_the_frames() -> None:
+    report = Inspector(MockAdapter()).inspect_tf()
+    assert report.urdf_source == "robot_description" and report.urdf_link_count == 6
+    assert report.declared_frames_missing == ["gripper_link"]
+    assert report.frames_not_in_urdf == ["map", "odom"]
+    assert report.urdf_note is None
+    finding = report.findings[-1]
+    assert finding.kind == "declared_not_published" and finding.frames == ["gripper_link"]
+    assert "/joint_states" in finding.text  # gripper_link hangs from a revolute joint
+
+
+def test_the_mock_urdf_is_served_on_a_latched_topic() -> None:
+    mock = MockAdapter()
+    info = mock.get_topic_info("/robot_description")
+    assert info.message_type == "std_msgs/msg/String"
+    assert info.publisher_qos is not None and info.publisher_qos.durability == "transient_local"
+    assert info.publisher_nodes == ["/robot_state_publisher"]
+    sample = mock.sample_messages("/robot_description", 1, max_array_length=None).samples[0]
+    assert sample.payload["data"].startswith("<?xml") and "gripper_link" in sample.payload["data"]
+
+
+class _UrdfAdapter(MockAdapter):
+    """The mock robot with a scripted answer for `/robot_description`."""
+
+    def __init__(self, answer: Any) -> None:
+        self._answer = answer
+        self.sample_calls: list[tuple[Any, ...]] = []
+
+    def sample_messages(self, topic: str, count: int, **kwargs: Any) -> Any:
+        if topic != "/robot_description":
+            return super().sample_messages(topic, count, **kwargs)
+        self.sample_calls.append((topic, count, kwargs))
+        if isinstance(self._answer, Exception):
+            raise self._answer
+        return self._answer
+
+
+def _string_result(text: str | None, note: str | None = None) -> Any:
+    from topicforge.models import MessageSample, SampleResult
+
+    samples = (
+        []
+        if text is None
+        else [
+            MessageSample(
+                topic="/robot_description",
+                message_type="std_msgs/msg/String",
+                timestamp_ns=0,
+                stamp_source="none",
+                payload={"data": text},
+            )
+        ]
+    )
+    return SampleResult(
+        topic="/robot_description",
+        count=len(samples),
+        samples=samples,
+        mode_effective="mock",
+        note=note,
+    )
+
+
+def test_a_missing_robot_description_topic_is_a_note_not_an_error() -> None:
+    adapter = _UrdfAdapter(AdapterError("Topic not found or empty info: '/robot_description'"))
+    report = Inspector(adapter).inspect_tf()
+    assert report.urdf_source == "none" and report.urdf_link_count is None
+    assert "robot_state_publisher" in (report.urdf_note or "")
+    assert report.declared_frames_missing == [] and report.frames_not_in_urdf == []
+    assert [f.kind for f in report.findings] == ["stale"]
+
+
+def test_the_urdf_is_read_once_uncut_and_within_six_seconds() -> None:
+    adapter = _UrdfAdapter(_string_result("<robot><link name='base_link'/></robot>"))
+    Inspector(adapter).inspect_tf()
+    ((_, count, kwargs),) = adapter.sample_calls
+    assert count == 1 and kwargs["max_array_length"] is None and kwargs["timeout_s"] <= 6.0
+
+
+def test_a_silent_publisher_keeps_the_adapter_note() -> None:
+    adapter = _UrdfAdapter(_string_result(None, "0 of 1 messages within 6 s"))
+    report = Inspector(adapter).inspect_tf()
+    assert report.urdf_source == "none" and "0 of 1 messages" in (report.urdf_note or "")
+
+
+def test_a_robot_description_with_a_doctype_is_refused_with_a_note() -> None:
+    bomb = '<!DOCTYPE robot [<!ENTITY a "aaaa">]><robot><link name="x"/></robot>'
+    report = Inspector(_UrdfAdapter(_string_result(bomb))).inspect_tf()
+    assert report.urdf_source == "none" and "DOCTYPE" in (report.urdf_note or "")
+
+
+def test_a_failure_other_than_absence_is_still_a_note() -> None:
+    report = Inspector(_UrdfAdapter(AdapterError("busy: retry"))).inspect_tf()
+    assert report.urdf_source == "none" and "busy" in (report.urdf_note or "")
+
+
+def test_no_budget_left_skips_the_urdf_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge import budget
+
+    adapter = _UrdfAdapter(_string_result("<robot><link name='x'/></robot>"))
+    with budget.deadline_at(time.monotonic() + 1.0):
+        report = Inspector(adapter).inspect_tf()
+    assert adapter.sample_calls == []
+    assert report.urdf_source == "none" and "budget" in (report.urdf_note or "")
+
+
+def test_an_empty_tree_does_not_report_every_link_missing() -> None:
+    from topicforge.adapters.common.tf_tree import build_tf_report
+    from topicforge.adapters.common.urdf import parse_urdf
+    from topicforge.models import TfCapture
+
+    empty = TfCapture(window_actual_s=1.0)
+    report = build_tf_report(
+        empty, 2.0, None, None, urdf=parse_urdf("<robot><link name='a'/></robot>")
+    )
+    assert report.declared_frames_missing == [] and "not compared" in (report.urdf_note or "")
+    assert all(f.kind != "declared_not_published" for f in report.findings)
+
+
+def test_the_inspect_tf_result_over_mcp_carries_the_urdf_fields() -> None:
+    data = asyncio.run(_app().call_tool("inspect_tf", {})).structured_content
+    assert data["urdf_source"] == "robot_description"
+    assert data["declared_frames_missing"] == ["gripper_link"]
+    assert data["frames_not_in_urdf"] == ["map", "odom"]

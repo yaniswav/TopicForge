@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "DDS participant events"
   },
-  "description": "Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, `observed_ns`, `age_s` (seconds before the response; live only), optional `name` (announced name), `hostname` and `domain_id`. `time_source` is `dds_source_timestamp` (timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` timestamp is an upper bound of the death: exact after a clean shutdown, the lease expiry after a crash, so the process died up to one lease earlier (10 s Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. **Restarts**: a restarted node is a new participant (one `lost` and one `discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` and `departures` per name over the window, so do not count GUIDs by hand. Capped at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows what happened since it started watching (`health_check.observer_started_ns`). **Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, `observed_ns`, `age_s` (seconds before the response; live only), optional `name` (announced name), `hostname` and `domain_id`. `time_source` is `dds_source_timestamp` (timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` timestamp is an upper bound of the death: exact after a clean shutdown, the lease expiry after a crash, so the process died up to one lease earlier (10 s Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. **Restarts**: a restarted node is a new participant (one `lost` and one `discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` and `departures` per name over the window, so do not count GUIDs by hand. Capped at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows what happened since it started watching (`health_check.observer_started_ns`). **Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -53,17 +53,12 @@
         "additionalProperties": false,
         "properties": {
           "age_s": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Seconds between `timestamp_ns` and this response; `None` in mock mode."
+            "description": "Seconds between `timestamp_ns` and this response; `None` in mock mode.",
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "domain_id": {
             "maximum": 232,
@@ -82,42 +77,26 @@
             "type": "string"
           },
           "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "observed_ns": {
-            "anyOf": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Local ns when TopicForge noticed the event, never before a DDS-derived `timestamp_ns`; `None` when untracked."
+            "description": "Local ns when TopicForge noticed the event, never before a DDS-derived `timestamp_ns`; `None` when untracked.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "time_source": {
-            "default": "observed_local",
             "description": "`dds_source_timestamp` (DDS timestamp of the announcement or dispose; for `lost` an upper bound of the death) or `observed_local` (when TopicForge noticed, weakest).",
             "enum": [
               "dds_source_timestamp",
@@ -158,7 +137,6 @@
       }
     },
     "additionalProperties": false,
-    "description": "Envelope returned by `participant_events`.",
     "properties": {
       "domain_id": {
         "description": "DDS domain observed (joined at startup).",
@@ -181,16 +159,11 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "restarts_by_name": {
         "additionalProperties": {
@@ -200,16 +173,11 @@
         "type": "object"
       },
       "restarts_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Set when unnamed participants were left out of `restarts_by_name`."
+        "description": "Set when unnamed participants were left out of `restarts_by_name`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "returned": {
         "minimum": 0,

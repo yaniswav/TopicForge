@@ -17,13 +17,11 @@
     "description": "Result of `health_check`. Always succeeds, even when the host is unhealthy.",
     "properties": {
       "contract_version": {
-        "default": 2,
-        "description": "Output contract version; changes only when a field is renamed, removed or retyped.",
+        "description": "Output contract version; changes when a field is renamed, removed or retyped.",
         "minimum": 1,
         "type": "integer"
       },
       "dds_backend": {
-        "default": "none",
         "description": "DDS backend serving: `mock`, `cyclone`, `fast`, or `none` (DDS module inactive).",
         "enum": [
           "mock",
@@ -34,34 +32,23 @@
         "type": "string"
       },
       "dds_domain_id": {
-        "anyOf": [
-          {
-            "maximum": 232,
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "DDS domain id observed when the DDS module is active."
+        "description": "DDS domain id observed when the DDS module is active.",
+        "maximum": 232,
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "dds_inactive_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Why `dds_backend` is `none` while ROS 2 serves (not selected, binding missing, or failed to start); else `null`."
+        "description": "Why `dds_backend` is `none` while ROS 2 serves; else `null`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "dds_security": {
         "const": "not_supported",
-        "default": "not_supported",
         "description": "DDS Security is not handled: protected endpoints and data are invisible.",
         "type": "string"
       },
@@ -71,66 +58,44 @@
         "type": "integer"
       },
       "middleware_available": {
-        "default": false,
         "description": "True when a DDS backend serves; else whether the configured binding is importable.",
         "type": "boolean"
       },
       "mode": {
-        "description": "Mode actually serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools only). May differ from `requested_mode` after a fallback.",
+        "description": "Mode serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools only); may differ from `requested_mode` after a fallback.",
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "now_ns": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Server wall-clock time (ns since epoch) when this report was built."
+        "description": "Server wall-clock time (ns since epoch) when this report was built.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "observed_domain_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Which DDS domain is observed: only the one joined at startup; others are invisible."
+        "description": "Which DDS domain is observed: only the one joined at startup; others are invisible.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "observer_started_ns": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "ns when the DDS observer joined; nothing earlier was watched. `None` without one."
+        "description": "ns when the DDS observer joined; nothing earlier was watched. `None` without one.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "payload_decoding": {
-        "default": "disabled",
         "description": "`disabled`: DDS user-topic payloads are not decoded.",
         "enum": [
           "disabled",
@@ -139,35 +104,24 @@
         "type": "string"
       },
       "payload_decoding_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": "user-topic payload decoding is switched off until it is validated on a real bus; builtin discovery topics are still readable",
-        "description": "Reason for `payload_decoding`."
+        "description": "Reason for `payload_decoding`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "requested_mode": {
         "description": "Mode requested by configuration (may be `auto`).",
         "type": "string"
       },
       "rmw_implementation": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`."
+        "description": "ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "rmw_source": {
-        "default": "none",
         "description": "`env`, `ros2_cli`, `distro_default` (not verified on the graph) or `none`.",
         "enum": [
           "env",
@@ -182,19 +136,13 @@
         "type": "boolean"
       },
       "ros2_distro": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "`ROS_DISTRO` if set (disclosed by design under the local-trust model)."
+        "description": "`ROS_DISTRO` if set (disclosed by design under the local-trust model).",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "ros_backend": {
-        "default": "none",
         "description": "ROS 2 backend: `ros2_cli`, `mock` or `none`.",
         "enum": [
           "mock",
@@ -203,8 +151,40 @@
         ],
         "type": "string"
       },
+      "ros_security_enabled": {
+        "description": "`ROS_SECURITY_ENABLE` is `true`; `None` unless the ros2 CLI serves.",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "ros_security_keystore_set": {
+        "description": "Whether a keystore variable is set (the path is never shown).",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "ros_security_note": {
+        "description": "Set when `ros_security_enabled`: what stays invisible.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ros_security_strategy": {
+        "description": "`ROS_SECURITY_STRATEGY` when set to a valid value.",
+        "enum": [
+          "Enforce",
+          "Permissive",
+          null
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "ros_tools_available": {
-        "default": false,
         "description": "True when the ROS 2 tools can run (`ros_backend` is not `none`); on a DDS-only setup use `list_endpoints`.",
         "type": "boolean"
       },
@@ -213,80 +193,50 @@
         "type": "string"
       },
       "sim_clock_published": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Whether `/clock` had a publisher in the last graph read (a hint that stamps may be sim time). `None` in mock or without a recent read; `health_check` never runs `ros2`."
+        "description": "Whether `/clock` had a publisher at the last graph read (stamps may be sim time); `None` in mock or without a recent read.",
+        "type": [
+          "boolean",
+          "null"
+        ]
       },
       "tracker_cache_evictions": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Discovery entries dropped from a full tracker cache (4096 each); non-zero means the bus is bigger than listed."
+        "description": "Discovery entries dropped from a full tracker cache; non-zero means the bus is bigger than listed.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "tracker_errors": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Tracker passes that raised; non-zero means gaps."
+        "description": "Tracker passes that raised; non-zero means gaps.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "tracker_last_pass_ns": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "ns of the last tracker pass; far older than `now_ns` means stale lifecycle."
+        "description": "ns of the last tracker pass; far older than `now_ns` means stale lifecycle.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "tracker_passes": {
-        "anyOf": [
-          {
-            "minimum": 0,
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Completed discovery tracker passes since start."
+        "description": "Completed discovery tracker passes since start.",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "tracker_running": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Whether the discovery tracker thread is alive (Cyclone); `None` without a tracker."
+        "description": "Whether the discovery tracker thread is alive (Cyclone); `None` without a tracker.",
+        "type": [
+          "boolean",
+          "null"
+        ]
       }
     },
     "required": [

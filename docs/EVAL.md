@@ -156,3 +156,165 @@ a size question that a wording change would not fix.
 python scripts/agent_eval/run_external.py --cli codex --scenario healthy_bus \
     --out <runs dir> --bus-python <venv python with topicforge[dds] and dust-dds==0.16.0>
 ```
+
+## 0.8.0 campaign (v2)
+
+**Status: run on 2026-10-21** (branch `release/0.8.0`, 14 runs: 7 scenarios x 2 variants, one
+Sonnet agent per run, ROS 2 Jazzy in WSL Ubuntu 24.04, Fast DDS for the robot, Cyclone for the
+observer). Results below.
+
+### What it is for
+
+The first round (above) was DDS only. The second one runs on a ROS 2 graph and is the exit gate
+of 0.8.0. It has to produce:
+
+1. the proof of `graph_diff` (flagship 1): an agent names the three changes between two launch
+   versions and reports nothing else;
+2. the proof of the declared-against-real checks (flagship 3): an agent names the URDF link
+   nothing publishes and the parameters a file states differently;
+3. no invented `critical` on a robot that has nothing wrong;
+4. the measure that decides 0.9.0, "`diagnose` as a tool or as a prompt": how many tool calls an
+   agent needs with a TopicForge prompt alone. The threshold (at most 6 calls with the prompt
+   alone) is a proposal, to be confirmed before the first run.
+
+### Method
+
+Same blindness as the first round: the agent gets a user question and `tf.py`, nothing else (no
+repository, no `TRUTH_ROS2.md`, no scenario code). Changes from the first round:
+
+- **Catalogue.** The agent starts with `python tf.py <port> list --brief`: one line per tool
+  (name, inputs, first sentence), 2,309 bytes on the mock server against 35,514 bytes for the
+  full `list`, which the first round's agents found too long. `list --tool NAME` prints one
+  tool in full.
+- **Calls are counted by the broker**, not reported by the agent (`calls.jsonl`, summarized in
+  `summary.json`): `tool_calls` (every request that is not a catalogue listing), `list_calls`,
+  `errors`, the sequence of tools and the bytes returned.
+- **Scenarios** run on the bench robot (`publisher.py --fault NAME`), as a clean robot with one
+  fault, never on the CI bench itself (which has seeded faults of its own and cannot stand for a
+  healthy robot). The faults live in the bench publisher; TopicForge stays read-only.
+- **Two variants** of every run. `tools`: the agent knows only the tools. `prompt`: the same
+  agent, question and tools, plus the text of an MCP prompt that the broker fetches from the
+  server (`inspect-ros2-robot`, or `diagnose-nav2` with `--prompt diagnose-nav2`). The number of
+  tool calls of the two variants is the measure for item 4.
+
+### Scenarios
+
+| Scenario | Fault | Decisive tool | Evidence it supports |
+|---|---|---|---|
+| `healthy` | none | any | no invented `critical` |
+| `blocked_executor` | `/bench_blocked` is on the graph and its executor never runs again | `get_node_info` | |
+| `tf_stale` | `map -> odom` stops after 3 s (the capture-window mechanism of the CI bench) | `inspect_tf` | |
+| `qos_mismatch` | `/scan_edge` writer best_effort, `/edge_viewer` reader reliable | `detect_qos_mismatches`, `get_topic_info` | |
+| `restart_loop` | `/path_planner` dies every 6 s with an ERROR and is started again | `participant_events`, `sample_messages` on `/rosout` | |
+| `declared_drift` | URDF link `arm_link` never published; a parameter file with `max_range` and `extra_gain` that differ | `inspect_tf`, `get_node_info` with `params_file` | flagship 3 |
+| `graph_v1_v2` | after a baseline snapshot, node `/bench_v2`, topic `/scan_v2` and a second `/cmd_vel_out` writer appear | `graph_diff` | flagship 1 |
+
+What a correct answer names, and what counts as a false alarm, is in
+`scripts/agent_eval/TRUTH_ROS2.md`, in the style of `TRUTH.md`. The user question of each
+scenario is in `scripts/agent_eval/ros2_scenarios.py` (`QUESTIONS`) and is printed by the runner.
+
+The `diagnose-nav2` prompt is optional in this campaign (`tf_stale` and `restart_loop` are the
+two scenarios whose steps it contains). The bench has no Nav2 stack, so that prompt is measured
+on its primitives (`/bond`, the latched `_action/status` topic, `inspect_tf`, `/rosout`), not on
+Nav2 itself, and its call counts say nothing about a real stack.
+
+### Running one scenario
+
+The runner needs a Linux or WSL host (or the bench image) with ROS 2 sourced. It starts the
+broker first, then the robot and the fault, waits for the fault to be in place, writes the
+agent's workspace and prompt, and prints `READY` with the question. On a host:
+
+```
+source /opt/ros/humble/setup.bash
+python3 -m venv ~/tfenv && ~/tfenv/bin/pip install -e ".[bags]"
+~/tfenv/bin/python scripts/agent_eval/ros2_scenarios.py tf_stale --out eval_runs
+```
+
+In the bench image (the broker listens on `0.0.0.0` inside the container, the port is published
+on the host's loopback only, and `eval_runs` on the host receives the workspace):
+
+```
+docker build -f tests/integration/ros2/Dockerfile --build-arg DISTRO=humble -t topicforge-ros2:humble .
+docker run --rm -p 127.0.0.1:8801:8801 -v "$PWD/eval_runs:/bench/eval" topicforge-ros2:humble \
+    bash -c "source /opt/ros/humble/setup.bash && /opt/tfenv/bin/python scripts/agent_eval/ros2_scenarios.py tf_stale --host 0.0.0.0 --out /bench/eval"
+```
+
+Options: `--variant prompt` (with `--prompt diagnose-nav2` for the other prompt), `--port`,
+`--domain`, `--dds-backend`, `--max-minutes`; `--print-only` prints the plan and the question
+without starting anything. The scenario names are `healthy`, `blocked_executor`, `tf_stale`,
+`qos_mismatch`, `restart_loop`, `declared_drift` and `graph_v1_v2`.
+
+For each run the orchestrator:
+
+1. starts the runner and waits for the `READY` line;
+2. gives an agent `eval_runs/<scenario>-<variant>/prompt.txt` as its instructions and
+   `eval_runs/<scenario>-<variant>/work/` as its working folder (it holds `tf.py` and a README
+   only), and tells it that it may run nothing but `tf.py`;
+3. when the agent has answered, creates `eval_runs/<scenario>-<variant>/stop`; the runner stops
+   every process and writes `summary.json` next to the transcript;
+4. grades the answer against `TRUTH_ROS2.md` and records the row below.
+
+`restart_loop` is graded against `restarts_at_question` in `summary.json` (plus or minus one).
+
+### What is recorded per run
+
+| Field | Source |
+|---|---|
+| grade (correct, partially correct, wrong, false alarm) | the grader, against `TRUTH_ROS2.md` |
+| `tool_calls`, `list_calls`, `errors`, call sequence, bytes returned | `summary.json` (broker log) |
+| agent time and tokens | the agent runtime |
+| the agent's feedback on the tools | the closing section the prompt asks for |
+
+### Results
+
+Calls are `tool_calls` from the broker (catalogue listings not counted). Graded against
+`TRUTH_ROS2.md`.
+
+| Scenario | `tools`: grade, calls | `prompt` (`inspect-ros2-robot`): grade, calls |
+|---|---|---|
+| `healthy` | correct, no false alarm, 19 | correct, no false alarm, 18 |
+| `blocked_executor` | correct, 14 | correct, 18 |
+| `tf_stale` | correct (`map -> odom`, `/bench_robot`), 10 | correct, 13 |
+| `qos_mismatch` | correct, 2 | correct, 3 |
+| `restart_loop` | partially correct: loop and count (25 at its call), no cause, 15 | correct: loop, count (11 at its call), cause "costmap not received" from `/rosout`, 12 |
+| `declared_drift` | correct, 2 | correct, 7 |
+| `graph_v1_v2` | correct, 1 (`graph_diff` alone) | correct, 2 |
+
+| Criterion | Result |
+|---|---|
+| flagship 1: three changes named, no false alarm (`graph_v1_v2`) | met in both variants, one `graph_diff` call |
+| flagship 3: `arm_link`, `max_range`, `extra_gain` named, no false alarm (`declared_drift`) | met in both variants |
+| no invented `critical` on `healthy` | met in both variants (observations only: `/scan_edge` degenerate test scan, no subscribers, security off) |
+| calls with the prompt alone, over the scenarios (threshold proposed: at most 6) | not met: median 12, 2 of 7 runs at 6 or fewer; the prompt did not lower the call count (sum 73 against 63) |
+
+What the runs taught:
+
+- The prompt helped on content, not on effort: it is what sent the agent to `/rosout` with
+  `min_log_level` and `node`, which found the cause in `restart_loop`. On open questions
+  (`healthy`, `blocked_executor`) both variants sampled every topic (9 `sample_messages`).
+- `inspect_tf` with its defaults (5 s window, `stale_after_s` 2) reported `tf_stale` as healthy
+  on the first call in both variants; the agents found the stale edge only with a longer window.
+- Repeated feedback across runs: `restarts_by_name` keyed on `/` lumps every node together
+  (`restarts_by_node` is the useful field and sits last); participant `name` is `/` for every
+  Fast DDS participant; `min_log_level` rejects upper case (`WARN`) and the prompt does not say
+  so; `detect_qos_mismatches` is noisy on a healthy bus (`ros_discovery_info` pairs, one "no
+  reader" hint per topic) and its reports carry GUID prefixes, not node names; the `/rosout`
+  note mixes "0 of 0 log messages" with the latched-topic hint; `param_diff_summary` counts
+  `same` and `live_only` entries it does not name.
+- Harness: `restarts_at_question` is counted at `READY`, not at the agent's first call, so it
+  under-counts when the agent starts late (5 at `READY`, 25 at the agent's call in the `tools`
+  run). The `restart_loop` grades above use the count at the agent's call, from the cycle.
+
+### Limits
+
+- The scenarios and their answers were written by the author, on a simulated robot that is
+  one node plus a few small ones. The bench is not a real robot and has no Nav2.
+- `tf_stale` stops `map -> odom` after each new `/tf` subscriber, because TopicForge sees `/tf`
+  only through a capture window: an edge that stopped before the call would not be seen at all
+  and would read as a missing frame.
+- `graph_v1_v2` depends on a baseline snapshot taken by the runner before the change; the
+  agent's own first `graph_diff` call is compared with it.
+- Claude agents only, a few runs per cell: a count, not a rate. The blindness rests on the
+  working folder and the prompt rules, not on an enforced boundary.
+- The first round's questions and these ones are different, so the two are comparable in kind
+  only.

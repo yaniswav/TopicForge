@@ -411,7 +411,7 @@ replaces `rate_hz`, `sim_frequency_hz` is the same computation on the messages' 
 bag, where there is no end of window and so `trailing_gap_s` is always `null`. Messages
 dropped for size still count. `interval_cv` uses the population standard deviation.
 
-On `received_ns` the measuring subscriber is a fresh `ros2 topic echo`, whose reader keeps 5 messages (the `sensor_data` depth; the adapter overrides reliability and durability only) between the match and its first callback, then prints them in one go. On a fast topic that reads as a run of near-zero intervals at the start and inflates the frequency: the Docker bench read `/clock` (50 Hz) at 91.3 Hz over 12 messages, 11 intervals in 0.1205 s instead of 0.220 s, exactly five periods short. The block sets aside the leading run of intervals under a quarter of the median interval, never more than half of them, reports it as `startup_burst_count`, and computes the intervals, `observed_frequency_hz`, `interval_cv` and the verdict on the rest; `message_count` still counts them and their stamps still feed `sim_frequency_hz`. `recorded_ns` is never trimmed: what the recorder saw is the data. Kept messages spanning less than about a second stay coarse on both bases (one late message moves the frequency by several percent and the cv over 11 intervals by 0.2); the tool description asks for `count` 50 on a topic above 20 Hz. To check a configured publish rate, `sim_frequency_hz` is the number when the messages are stamped; `observed_frequency_hz` is what reached the subscriber.
+On `received_ns` the measuring subscriber is a fresh `ros2 topic echo`, whose reader keeps 5 messages (2000 on a `rcl_interfaces/msg/Log` topic, section 9.12) (the `sensor_data` depth; the adapter overrides reliability and durability only) between the match and its first callback, then prints them in one go. On a fast topic that reads as a run of near-zero intervals at the start and inflates the frequency: the Docker bench read `/clock` (50 Hz) at 91.3 Hz over 12 messages, 11 intervals in 0.1205 s instead of 0.220 s, exactly five periods short. The block sets aside the leading run of intervals under a quarter of the median interval, never more than half of them, reports it as `startup_burst_count`, and computes the intervals, `observed_frequency_hz`, `interval_cv` and the verdict on the rest; `message_count` still counts them and their stamps still feed `sim_frequency_hz`. `recorded_ns` is never trimmed: what the recorder saw is the data. Kept messages spanning less than about a second stay coarse on both bases (one late message moves the frequency by several percent and the cv over 11 intervals by 0.2); the tool description asks for `count` 50 on a topic above 20 Hz. To check a configured publish rate, `sim_frequency_hz` is the number when the messages are stamped; `observed_frequency_hz` is what reached the subscriber.
 
 `interval_cv` is the coefficient of variation of the intervals between consecutive
 messages (standard deviation divided by mean). `trailing_gap_s` is the interval between
@@ -629,14 +629,15 @@ Everything below goes into the migration list and into `docs/MIGRATION.md`.
 Tools 13 and 14, shipped in 0.7.0. Both are additive, run in the ROS lane and are open-world.
 
 `list_nodes` returns `NodeListing {nodes, returned, total, truncated, duplicates,
-mode_effective, note}` from one `ros2 node list` call. A node is `{name, namespace,
-full_name, duplicate_count}`; `nodes` holds one entry per distinct full name and `duplicates`
+lifecycle_count, lifecycle_note, by_namespace, mode_effective, note}` from `ros2 node list`
+and, since 0.8.0, one `ros2 service list -t` (section 9.10). A node is `{name, namespace,
+full_name, duplicate_count, lifecycle}`; `nodes` holds one entry per distinct full name and `duplicates`
 the full names with `duplicate_count` above 1. Nodes whose name starts with an underscore
 are hidden by the CLI and are not listed.
 
 `get_node_info(node, timeout_s)` returns `NodeInfo {full_name, publishers, subscribers,
 service_servers, service_clients, action_servers, action_clients, parameters, parameters_note,
-use_sim_time, use_sim_time_note, duplicate_count, mode_effective, note}`. An interface is
+use_sim_time, use_sim_time_note, lifecycle, duplicate_count, mode_effective, note}`. An interface is
 `{name, type}`. It makes up to three CLI calls: `ros2 node list` (the node must exist,
 duplicates are counted), `ros2 node info` (a graph query that never waits for the node) and
 `ros2 param dump` bounded by `timeout_s` (1..20, default 8) and by what is left of the 45 s.
@@ -669,9 +670,9 @@ shows only added properties.
 ### 9.1 Listing size
 
 `tools/list` carries the description, input schema and output schema of every tool, and some
-clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 serves about 119 KB
-(measured 118,884 bytes against the 120,000 test ceiling), so the next tool needs the schema
-compaction planned for 0.7.3 first.
+clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 served about 119 KB
+(118,884 bytes). The compaction of section 9.9 brought it to 94,957 bytes with fifteen tools;
+0.8.0 serves 96,848 bytes with sixteen (sections 9.13, 9.15, 9.16) against a 100,000 test ceiling.
 How:
 
 - Pydantic's generated `title` is dropped from every property and nested model, and the
@@ -680,7 +681,7 @@ How:
 - Field descriptions are one sentence, and self-explanatory ones (`reader_guid`, `returned`)
   have none. The longer explanations are in this section and in section 4; the rules a client
   needs stay in the tool description.
-- `tests/test_friction_fixes.py` fails if the listing grows back over 120 KB.
+- `tests/test_friction_fixes.py` fails if the listing grows back over 100 KB.
 
 Rule for new fields: one sentence, no history, no restating the name.
 
@@ -819,7 +820,7 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
   `sim_frequency_hz` the stamps, `real_time_factor` is their ratio (about 1 on a real robot).
 - `findings.kind` is an open set (1.9): `stale`, `two_parents`, `disconnected` (more than one
   root), `static_and_dynamic` (a frame on both topics), `cycle`, `no_path` (unknown or
-  unconnected frames). A sound tree has none.
+  unconnected frames); 0.8.0 adds `declared_not_published` (9.15). A sound tree has none.
 - Ages are measured against the newest `/tf` stamp, so one publisher with a future stamp or a
   zero stamp skews the staleness of every other frame: a frame can read as stale because
   another one runs ahead. Check `stamp_span_s` and the stamps when many frames go stale at once.
@@ -827,3 +828,431 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
   message counts and frequencies are approximate (`truncated` says when messages were lost).
 - The mock `/tf_static` topic carries the fixed frames of the demo robot; mock `inspect_tf`
   is a fixed 5 s capture and ignores `window_s`.
+
+### 9.9 `summary` is advertised as an open object (0.8.0, planned as 0.7.3)
+
+Additive, a loosening of the advertised schema only. `MessageSample.summary` used to list the
+five summary models (`LaserScanSummary`, `OdometrySummary`, `ImuSummary`, `ImageSummary`,
+`PointCloud2Summary`, with `ScanReturn` and the other nested ones) in the `$defs` of every
+tool that returns a sample: about 26 KB of `tools/list`. It is now advertised as
+`object | null`, where the object requires `summary_type` (`laser_scan`, `odometry`, `imu`,
+`image`, `point_cloud2`) and allows any other property. `default` keywords were also dropped
+from every `outputSchema` (never from an `inputSchema`): a result always carries the field.
+
+- The shapes did not change. They are the ones of section 4 and the "Message summaries"
+  appendix of [TOOLS.md](TOOLS.md), generated from the models. Read `summary_type`, then the
+  fields of that shape.
+- The server still builds and validates the five models strictly (`extra="forbid"`); only
+  what it advertises is looser. A client that validates `structuredContent` against the
+  `outputSchema` can only see fewer failures, never new ones, so no client breaks. A client
+  that generated typed code from the five models now gets an untyped object for `summary`.
+- `tests/test_summary_schema_compat.py` pins this: no summary model in any `$defs`, a valid
+  `LaserScanSummary` passes the served schema, a wrong `summary_type` fails it, and mock
+  `sample_messages` and `peek_bag_samples` results validate against it.
+
+### 9.10 `list_nodes` lifecycle and `by_namespace` (0.8.0, planned as 0.7.3)
+
+Additive: new fields with defaults, no input change. `list_nodes` now costs two CLI calls
+(`ros2 node list`, then `ros2 service list -t`).
+
+- `NodeListItem.lifecycle` (bool, default `false`) is `true` when the graph has the service
+  `<full_name>/get_state` of type `lifecycle_msgs/srv/GetState`, the rule of
+  `ros2 lifecycle nodes`. `NodeInfo.lifecycle` applies the same rule to the node's own
+  `service_servers`. The lifecycle state itself is never read: that would be a service call,
+  and the tool surface stays graph-only.
+- `NodeListing.lifecycle_count` (int, default 0) counts the flagged nodes.
+- `NodeListing.lifecycle_note` (str or `null`) is set when the service list failed or came
+  back empty although nodes exist. Then every `lifecycle` is `false` only because it is
+  unknown, never silently (1.3); the listing itself still succeeds.
+- `NodeListing.by_namespace` (object, default `{}`) maps each namespace (`/` is the root) to
+  the number of distinct full names in it, sorted by namespace.
+- Mock: `/camera_driver` is the lifecycle node (five lifecycle services and the topic
+  `/camera_driver/transition_event`, which adds one topic to the mock graph).
+- Bench: `/robot1/bench_lifecycle` (rclpy `LifecycleNode`, left unconfigured) and its
+  `transition_event` topic; the comparator checks `lifecycle` and `by_namespace` on both
+  distros.
+
+### 9.11 `TopicRate` clock fields (0.8.0, planned as 0.7.3)
+
+Additive; every field has a default, so older payloads still validate. They say what kind of
+clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
+
+- `clock_basis`: `wall` (stamps are dates, at least 1e18 ns), `sim` (a smaller non-zero stamp,
+  time since a simulation or robot start), `none` (no stamp: timestamp 0, or `stamp_source`
+  `none` / `recorded`) or `mixed` (more than one of those kinds among the messages, for example
+  two publishers on one topic, or one stamped and one unstamped message). Default `none`.
+- `stamp_age_median_s`, `stamp_age_p95_s`: `(basis - stamp) / 1e9` per message, where the basis
+  is `received_ns` (live) or `recorded_ns` (bag). Given only when `clock_basis` is `wall`,
+  else `null`. Signed: negative means the publisher clock is ahead of the observer's. The p95
+  is nearest-rank, and the maximum under 20 messages. An age of a few tens of milliseconds is
+  normal transport delay; seconds point to a skewed or wrong publisher clock.
+- `stamp_regression_count`: messages, in basis order, whose non-zero stamp is strictly lower
+  than the previous non-zero stamp. A topic with several publishers interleaves and reads high;
+  a simulation restart counts once. Default 0.
+- Computed by the pure `services/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
+  of the messages that were decoded; messages dropped for size or decode errors are not seen.
+
+### 9.12 `/rosout` filter and bag ranges (0.8.0, planned as 0.7.3)
+
+Additive; every new input is optional and every new field has a default.
+
+**`sample_messages`: `min_log_level`, `node`.** Both apply to `rcl_interfaces/msg/Log` topics
+(`/rosout`) only; on any other topic the call raises ("filter `rcl_interfaces/msg/Log`
+topics"). An unknown level or an empty node is an error too.
+
+- Levels are the ROS 2 constants, `debug` 10, `info` 20, `warn` 30, `error` 40, `fatal` 50, and
+  the test is `level >= threshold`.
+- `node` takes `/ns/name`, `name` or `ns.name`. It is normalized (leading `/` removed, `/` to
+  `.`) and compared with the log message's `name` field, which is the node's full name with the
+  namespace separated by dots (`/robot1/driver` logs as `robot1.driver`). A log matches when
+  `name == n` or `name` starts with `n + "."` (a child logger such as `driver.camera`). It
+  never matches a free prefix (`drive` does not match `driver`) and it is case-sensitive.
+  `node` matches the log `name` field, not the node's real identity: a node that logs under a
+  custom logger name will not match its own `node` value.
+- Live reader. With a filter, a `Log` topic is read with `--qos-history keep_last
+  --qos-depth 2000`, because the `/rosout` writer is `RELIABLE`, `TRANSIENT_LOCAL`, `KEEP_LAST`
+  1000 with a 10 s lifespan, and the CLI default depth of 5 would drop most of that buffer.
+  Without a filter nothing changes from 0.7.2: the CLI default reader, the first `count`
+  messages, `rate` as before.
+- With a filter the call streams until `timeout_s` (at most 2000 messages), filters AFTER
+  decoding, and returns the NEWEST `count` matches, oldest first (stamp order, arrival order
+  for equal stamps). `note` says how many matched, for example `6 of 12 log messages read
+  matched min_log_level=error, node=/bench_robot; the newest 3 are returned in stamp order.`,
+  explains an empty result, and, when the 2000-message cap was hit, says the result is the
+  newest of the first 2000 read (newer logs may be unread: use a narrower `node` or a higher
+  `min_log_level`). `rate` is `null`
+  (a replayed buffer has no meaningful rate).
+- Mock: `/rosout` is a mock topic (10 fixture lines from six nodes) with the same rules.
+
+**`peek_bag_samples`: `start_s`, `end_s`, `min_log_level`, `node`.**
+
+- `start_s` and `end_s` are bag-relative seconds, zero at the bag's first recorded message
+  (`BagAnalysis.start_ns`, the rosbag2 `starting_time`), applied to `recorded_ns` as the
+  half-open interval `[start, end)` through the `rosbags` reader. Both default to the whole bag.
+  `end_s` must exceed `start_s`; both must be finite and not negative. A range past the end of
+  the bag returns no sample and a `note` ("start_s ... is past the end of the bag").
+- The same log filter, applied after decoding, with the same rules for level and node.
+  A bag read returns the FIRST `count` matches in range, in bag order. This is the opposite of
+  the live rule (newest): the live stream has no beginning to start from, the bag does. Both
+  tool descriptions say so. A filtered or ranged bag read can decode far more messages than it
+  returns, so it stops at 20 s or when the call budget runs out, checked every 64 messages, and
+  the `note` says `scan stopped after X s / N messages, K matches so far: narrow start_s/end_s
+  or the filter`.
+- `BagAnalysis.start_ns: int | None` (default `null`): record time of the first message, read
+  from `metadata.yaml` (`starting_time`) or the `rosbags` reader; `null` only when unreadable.
+  A bag that starts at 0 (sim time) reports `0`.
+
+**Adapter protocol.** `MiddlewareAdapter.sample_messages` gains keyword arguments
+`min_log_level` and `node`; `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and
+`node` (all default `None`). CHANGELOG, "Changed".
+
+**Code.** The pure rules are in `adapters/common/log_filter.py` (levels, node match, notes) and
+`adapters/common/bag_range.py` (range validation, `[start, end)` in ns), shared by the live
+adapter, the bag reader and the mock.
+
+**Bench.** `bench_robot` logs WARN every second and ERROR every two; `/robot1/bench_lifecycle`
+logs INFO every five seconds; the bag records `/rosout`. Rows (comparator section `logs`):
+`error` + `/bench_robot` returns at least 3 messages, all level 40 and name `bench_robot`;
+`warn` alone returns levels 30 and above only; `/bench_blocked` returns none and a note;
+`/robot1/bench_lifecycle` matches `robot1.bench_lifecycle`; the bag `/rosout` at `error` has
+at least 2; the bag `/clock` with `start_s` 2, `end_s` 4 and `count` 50 returns 50 samples
+within the bounds computed from `metadata.yaml`; `analyze_bag.start_ns` equals the recorded
+`starting_time`. The live rows use `timeout_s` 6, short enough that live lines alone give one or
+two ERRORs, so at least 3 means the depth-2000 reader received the transient_local buffer on
+that RMW. Each row prints its exact message count and a histogram of levels.
+
+### 9.13 `tools/list` size: two compaction levers (0.8.0)
+
+Additive and wire-compatible: no field is added, removed or retyped, and no payload changes.
+`tools/list` went from 94,957 bytes (fifteen tools, after section 9.9) to 94,393 bytes with
+`graph_diff` (sixteen tools), under the 100,000-byte test ceiling, which does not move. Sections
+9.15 (+1,377) and 9.16 (+1,078) bring the 0.8.0 total to 96,848 bytes.
+
+- **Lane notes.** The `**Duration**` sentence every locked tool carries is one sentence
+  now: ``**Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s;
+  `busy` error if the lock is held (retry).`` (DDS tools name the DDS binding and lock). The
+  facts are the ones of section 1.7, and `tests/test_tool_descriptions.py` still requires
+  `45 s`, `` `busy` ``, the lock name and, for `sample_messages`, `` `timeout_s` `` and
+  `at most 40`.
+- **Nullable fold, output schemas only.** `anyOf: [X, {"type": "null"}]` is served as
+  `type: [X, "null"]` when `X` is a plain typed schema (a string, number, array or object with
+  its own keywords). A `$ref` or a nested combinator is left as it was, and an `enum` of `X`
+  gains `null` so the folded schema still accepts one. Input schemas are never folded: clients
+  already read their `anyOf` form. The two forms accept exactly the same values, so a client
+  that validates `structuredContent` against the `outputSchema` sees no difference; one that
+  generates types from the schema reads `string | null` for what used to be an `anyOf`.
+  `MessageSample.summary` (9.9) becomes `type: ["object", "null"]` with its `required` and
+  `properties` beside it, which is the same set of accepted values.
+- An output schema description that only says "Envelope returned by `<tool>`." is dropped, and
+  a few `HealthReport` field descriptions are shorter (same facts).
+- `tests/test_output_schema_validation.py` calls every tool in mock mode and validates the
+  structured result against the schema `list_tools` serves, with `jsonschema`. It is the net
+  under any further compaction.
+- Reserve, if a later tool needs bytes: serve a subset of tools (`ros`, `dds`, `all`). It is not
+  used in 0.8.0.
+
+### 9.14 `graph_diff` (tool 16)
+
+The sixteenth tool served (the slot numbered 16 in the plan stays reserved for `get_image`, which
+needs rclpy). Additive, ROS lane, open-world, read-only. It answers "what changed since it last
+worked". Inputs: `baseline` (string, default `previous`) and `bag_path` (string or `null`). It
+returns `GraphDiff`.
+
+**Calls.** Each call takes one snapshot of the current side, stores it, and compares it with the
+baseline. The current side is the live graph, or the bag at `bag_path`. `baseline` is one string:
+
+- `previous`: the last snapshot taken before this call. With none yet the call stores a snapshot
+  and returns `baseline` and `baseline_id` `null`, no `changes`, and a `note` ("No baseline yet:
+  snapshot snap-1 stored ...").
+- `snap-N`: a snapshot id from `snapshot_ids`. An id that is not held raises an error that lists
+  the held ids ("unknown snapshot id 'snap-9'; held snapshots: snap-1, snap-2"), and nothing is
+  stored.
+- anything else: a bag path (same validation as `analyze_bag`), snapshotted for this call and
+  not kept in the ring. Its `id` in `baseline_id` is the path.
+
+The baseline is resolved before the new snapshot is taken, so a bad value stores nothing.
+
+**The ring.** Sixteen snapshots in memory, in the server process. Ids are `snap-N`, N counting up
+from 1 for the life of the process and never reused; the oldest snapshot is dropped past sixteen.
+A restart empties it. Nothing is written to disk.
+
+**What a snapshot holds.**
+
+| Side | Holds | Source |
+| --- | --- | --- |
+| live | nodes (full names), topics with type, publisher and subscriber counts, writer QoS | `list_nodes` and `list_topics` (the `ros2` CLI), `list_endpoints` read from the discovery cache |
+| bag | topics with type, rate (`frequency_hz`), latching | `analyze_bag`; `rosbag2_internal` topics are left out |
+
+Writer QoS is the set of `reliability/durability` pairs of the topic's writers (lowercase,
+sorted, comma-separated), never the depth. It is present only when a DDS backend is active, read
+without a binding call and without the DDS lock; otherwise `not_compared.qos` says so. A bag
+holds latching only (`transient_local` or `volatile`).
+
+**Comparisons.** Only what both sides can support is compared; the rest is named in
+`not_compared` (key, then the reason), never silently skipped.
+
+| `kind` | Compared when | `change`, `field` |
+| --- | --- | --- |
+| `node` | live against live | `added`, `removed` |
+| `topic` | always | `added`, `removed` (`after` or `before` holds the message type) |
+| `type` | always | `changed`, `message_type` |
+| `qos` | both sides hold the same kind of QoS: live writer QoS (`writer_qos`) or bag latching (`latched`) | `changed` |
+| `rate` | bag against bag | `changed`, `frequency_hz`; past 20 percent relative (exactly 20 percent is not a change) |
+| `count` | live against live | `changed`, `publisher_count` or `subscriber_count` (strings in `before` and `after`) |
+
+`added` means present in the current snapshot and absent from the baseline. When one side is a
+bag, `note` says what that means: a bag holds only the recorded topics, so with a bag baseline
+`added` is present live and absent from the bag. `changes` is sorted by kind (the order of the
+table), then name. `added_count`, `removed_count` and `changed_count` count `changes`.
+
+**Noise.** Endpoint counts on `/rosout` and `/parameter_events` move with every node and every
+CLI call: a change in one of their counters is tallied in `builtin_changes_count` and never
+appears in `changes`. A `subscriber_count` change in a snapshot taken less than 5 s after a
+TopicForge `ros2` CLI call (from the runner's ring of spawned pids) carries "A TopicForge `ros2`
+CLI reader may linger 2 s" in its `text`. A healthy graph diffed against itself gives zero
+changes (bench row `31_graph_diff_steady`).
+
+**Mock.** The ring starts with `snap-0`, built on the first call from the mock fixtures minus
+three things: the node `/imu_driver`, the topic `/imu/data`, and the `/scan` writer QoS (it had
+`reliable/volatile`, the fixture says `best_effort/volatile`). The first mock call therefore
+reports exactly three changes (a node, a topic and a QoS), the second none. `MOCK_BAG_ANALYSIS`
+(any well-formed bag path in mock mode) is accepted as a baseline.
+
+**Fields.** `GraphSnapshotRef` has `id`, `source` (`live` or `bag`), `taken_ns`, `path` (`null`
+for live), `node_count` (`null` for a bag), `topic_count`, `has_qos`, `has_rates`. `GraphChange`
+has `kind`, `change`, `name`, `field` (`null` when added or removed), `before`, `after` (`null`
+when not applicable) and `text`. `GraphDiff` has `snapshot_id`, `baseline_id`, `current`,
+`baseline`, `changes`, the three counts, `not_compared`, `builtin_changes_count`, `snapshot_ids`
+(oldest first), `mode_effective` and `note`.
+
+**Read-only.** It sends nothing `list_nodes` and `list_topics` do not already send; the
+discovery cache is read, not the binding; a bag is read through the existing path validation.
+
+**Bench.** `calls_graph_diff.json` (run after `calls.json`): `30_graph_diff_first` (no baseline),
+settle 3 s, `31_graph_diff_steady` (zero changes: the healthy line), `graph_change.py` started by
+`drive.py` (`{"spawn": ...}`, stopped when the session ends), settle 5 s, `32_graph_diff_v2`
+(exactly three changes: node `/bench_v2` added, topic `/scan_v2` added, `/cmd_vel_out`
+`publisher_count` 1 to 2; any other change is a false alarm) and `33_graph_diff_bag` (`baseline`
+is the recorded bag: `removed_count` 0, no `type` or `qos` change, `not_compared` names `nodes`
+and `rates`). Comparator section `graph_diff`. Written for the four Docker cells; not run in the
+session that added it.
+
+### 9.15 Declared against real: URDF in `inspect_tf`, `params_file` in `get_node_info` (0.8.0)
+
+Additive: no tool is added, no field changes, every new field has a default. The question is
+"does the robot run what its description says", and both halves are answered from a topic and a
+file the server reads, never by asking a node for anything new.
+
+**`inspect_tf` and `/robot_description`.** After the TF capture, if the call budget allows, the
+server reads one message of `/robot_description` (`std_msgs/msg/String`, latched, published by
+`robot_state_publisher`): uncut, at most 6 s, and only when at least 2 s remain once a 3 s stop
+reserve is kept back from the 45 s budget. The read is a plain `sample_messages` through the
+adapter, so it follows the same QoS rule as any latched topic. The document is parsed by
+`adapters/common/urdf.py` (`ElementTree`; links are the direct `<link name>` children of
+`<robot>`, joints their `type`, `<parent link>` and `<child link>`). A document that declares a
+`DOCTYPE` or an `ENTITY`, is not a `<robot>`, has no link, is not well-formed XML or exceeds
+4,000,000 characters is refused with a note. Nothing about the URDF can make the call fail: an
+absent topic, a silent publisher, a late answer or a refused document gives `urdf_source` `none`
+and a `urdf_note`; the TF tree is the result and the URDF only a comparison.
+
+New `TfReport` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `urdf_source` | `robot_description` when a URDF was read and compared, else `none` (default) |
+| `urdf_link_count` | links in the URDF, `null` when none was read |
+| `declared_frames_missing` | URDF links with no TF frame, in URDF order |
+| `frames_not_in_urdf` | TF frames that are not a link, sorted. Informative: `map` and `odom` are legitimate |
+| `urdf_note` | why `urdf_source` is `none`, or that no frame was captured so nothing was compared |
+
+A link has a frame when a frame is named like it or `<prefix>/<link>` (a `frame_prefix`; a leading
+`/` is ignored). One finding `declared_not_published` (`kind` stays an open set, 1.9) lists every
+missing link in `frames`; its `text` says that `robot_state_publisher` puts fixed joints on
+`/tf_static` and the others on `/tf`, and names the links under a non-fixed joint, which have a
+frame only while `/joint_states` is published. With no TF frame captured at all nothing is
+compared (no finding, a note), so an empty capture does not read as "every link is missing".
+`/robot_description` is a topic only: a URDF held solely as a `robot_description` parameter is not
+read (`get_node_info` cuts long values) and gives `urdf_source` `none`; reading it is 0.8.1.
+`docs/TOOLS.md` says that a robot needs `robot_state_publisher` for this.
+
+**`get_node_info(params_file=...)`.** `params_file` is a path on the machine the server runs on, to
+a ROS 2 parameter file (`.yaml` or `.yml`, a regular file, at most 1 MiB, read with
+`yaml.safe_load`). It is read by the server and never passed to the `ros2` CLI or to the node;
+nothing is written. A path that is empty, has a null byte or another extension raises an error
+before any I/O; every other problem (missing file, not UTF-8, invalid YAML, too large, no section
+for the node) is a `param_diff_note` with `param_diff` `null`, and the interfaces and parameters
+of the node are returned as usual. The comparison is `adapters/common/param_diff.py`, done in the
+service: the `MiddlewareAdapter` protocol does not change, and it works in mock mode.
+
+- Sections of the file that apply to a node, least specific first, later wins: `/**` (or `**`),
+  `/<namespace>/**`, the bare node name, the fully qualified name; each needs a `ros__parameters`
+  mapping. Any other key with a wildcard is named in the note, never guessed. Names are flattened
+  with `.` between levels, as `get_node_info` does.
+- Equality: an integer and a float are equal when their values are; booleans, strings and `null`
+  compare exactly (a boolean is never an integer); lists element by element with the same rules.
+  A live value the node cut for its size is compared with the file value cut the same way. A
+  document whose aliases expand past 100,000 values is refused.
+- A name that looks like a secret (`password`, `secret`, `token`, `api_key`, `credential`) is
+  never shown from the file: the entry is `masked` with `<masked>` on both sides.
+- New `NodeInfo` fields, all `null` without `params_file`: `param_diff` (`null` when no comparison
+  could be made, an empty list when everything agrees), `param_diff_summary`, `param_diff_note`.
+  `ParamDiff` has `name`, `status` (`different`; `declared_only`: absent on the node; `masked`),
+  `declared` and `live` (`null` for `declared_only`). Entries are sorted by name and capped at 200
+  (the note counts the rest). Parameters that agree (`same`) and parameters only the node has
+  (`live_only`) are counted in `param_diff_summary` (`"1 same, 3 live_only"`), not listed.
+- The node parameter list stops at 500 entries (`get_node_info`); at that size the note warns
+  that `declared_only` may be wrong.
+
+**Mock.** `/robot_description` is a latched `std_msgs/msg/String` from `/robot_state_publisher`
+(`list_topics` counts one more topic, `get_topic_info` and `sample_messages` serve it). Its URDF has
+the links of the mock tree plus `gripper_link` on a revolute joint that nothing publishes, so mock
+`inspect_tf` reports `declared_frames_missing` `["gripper_link"]`, `frames_not_in_urdf`
+`["map", "odom"]` and one `declared_not_published` finding beside the `stale` one.
+
+**Size.** `tools/list` grows by 1,377 bytes for the five `TfReport` fields,
+the three `NodeInfo` fields, `ParamDiff`, the `params_file` input and two sentences of
+description.
+
+**Bench.** `publisher.py` latches the URDF (`base_link`, `base_laser`, `camera_link`,
+`camera_optical_frame`, plus `arm_link`, never published) on `/robot_description` and declares
+`scan_period` 0.1, `frame_id` `laser` and `max_range` 10.0 on `/bench_robot`;
+`tests/integration/ros2/bench_params.yaml` states `max_range` 12.0, `frame_id` `laser` and
+`extra_gain` 1.5. `calls_declared.json` (bench only) runs `03p_node_info_params`. Comparator
+section `declared`: `urdf_source` `robot_description`, `declared_frames_missing` `["arm_link"]`,
+`frames_not_in_urdf` `["map", "odom", "tool"]`, one `declared_not_published` finding, and
+`param_diff` exactly `extra_gain` `declared_only` and `max_range` `different` (12.0 against
+10.0), summary starting `1 same,`. Written for the four Docker cells; not run in the session that
+added it.
+
+### 9.16 DDS visibility: SROS2 environment, `endpoint_count`, `node_name` (0.8.0)
+
+Additive: new optional fields, no input change. About 1,100 bytes of `tools/list`. Nothing here
+says a bus is secured or unsecured: it reports environment variables and what discovery shows.
+
+**`health_check`.** Four fields, all `null` unless the `ros2` CLI serves (`ros_backend` is
+`ros2_cli`; the same rule as `rmw_implementation`, so the mock and a DDS-only setup say nothing
+about an environment they do not run in), read from the server's own environment by the pure
+`resolve_security` in `services/health.py`:
+
+- `ros_security_enabled` (bool): `ROS_SECURITY_ENABLE` is exactly `true`, as rcl reads it.
+- `ros_security_strategy` (`Enforce`, `Permissive` or `null`): `ROS_SECURITY_STRATEGY` when it
+  holds one of the two documented values, `null` when unset or anything else.
+- `ros_security_keystore_set` (bool): `ROS_SECURITY_KEYSTORE`, or the older
+  `ROS_SECURITY_ROOT_DIRECTORY`, is non-empty. The path itself is never reported.
+- `ros_security_note` (string or `null`): set only when `ros_security_enabled` is true:
+  "TopicForge joins the domain without an identity: participants of secured nodes stay visible
+  through SPDP, their endpoints and data do not". A server started without these variables
+  while the robot has them reports `false`: the variables describe this process, not the graph.
+
+`dds_security` stays `not_supported`.
+
+**`ParticipantInfo.endpoint_count`** (int or `null`): writers plus readers the discovery cache
+holds for the participant, ROS 2 plumbing included (a ROS 2 node always brings a dozen: its
+parameter services, `/rosout`, `ros_discovery_info`). `null` when the backend keeps no endpoint
+cache (mock excepted: it counts its fixtures; Fast DDS has never run). When an active participant
+that is not the observer and not a TopicForge `ros2` CLI process has had `endpoint_count` 0 for
+more than 10 s since first seen, `ParticipantListing.note` adds "N participant(s) announce no
+endpoint TopicForge can see: an endpoint-less participant, or DDS Security hides them (TopicForge
+has no identity on this domain)." Two causes, no verdict: the data cannot tell them apart.
+
+**`EndpointInfo.node_name`** (string or `null`): the ROS 2 node that owns the endpoint, resolved
+from the `ros_discovery_info` cache. Each message lists, per node, the gids of its readers and
+writers; a gid is 24 bytes on Humble and 16 on Iron and later, and its bytes 0 to 15 are the RTPS
+GUID of the endpoint (12-byte participant prefix, 4-byte entity id), which is the `guid` of the
+endpoint. `null` for an endpoint no node claims (a plain DDS application, a participant whose
+message was not seen, the TopicForge observer). It is the only link between an endpoint and a
+node when every participant is called `/` (Fast DDS). The map outlives a participant that
+announced an empty node list on shutdown, so departed endpoints keep their node.
+`TopicSummary.writer_nodes` and `reader_nodes` list the distinct `node_name` of the listed writers
+and readers, sorted (empty when none is known).
+
+**Mock.** Participants count their fixture endpoints (`lidar_driver` 2, `nav_planner` 3,
+`camera_driver` 1, the Dust participant 1) and the endpoints of the three that host a node carry
+its name; the Dust endpoint has none.
+
+**Bench.** `visibility` section of the bench truth (`05s_list_endpoints_scan` is a
+`list_endpoints(topic="/scan")` call in `calls.json`): the `/scan` writer's `node_name` and
+`writer_nodes` are `/bench_robot`, the participant that hosts `/bench_robot` has an
+`endpoint_count` of at least 12, `ros_security_enabled` is `false` and `ros_security_note` is
+`null`. Written for the four Docker cells; not run in the session that added it. Not covered: a
+bus with SROS2 enabled (a SROS2 cell is planned for 0.8.1) and RTI.
+
+### 9.17 The `diagnose-nav2` prompt and hidden topics (0.8.0)
+
+A third MCP prompt, `diagnose-nav2` (optional `symptom` and `namespace`, both only focus the
+text), with a plugin skill of the same name under `plugin/skills/` in the same wording. It adds
+nothing to `tools/list` (prompts are listed apart) and no tool. The server `instructions` name
+it next to the other two. It is a call order, not a diagnosis engine: the model reads the tool
+outputs and says what they show.
+
+**Order.** `health_check` (a `mock` server is the demo robot, which has no Nav2: say so),
+`list_nodes` (the Nav2 servers are managed nodes, `lifecycle` true; the state is never read),
+`get_node_info` of the `lifecycle_manager_*` (`parameters`: `node_names`, `autostart`,
+`bond_timeout`), `sample_messages("/bond", count 50)` (a `bond/msg/Status` per bond end, `id`
+the node name: a name of `node_names` that never appears is not bonded), `get_node_info` of
+`bt_navigator` then `sample_messages("<action>/_action/status", count 1)` (latched
+`action_msgs/msg/GoalStatusArray`, `status_list[].status` 1 accepted to 6 aborted),
+`inspect_tf(map, base_link)`, `/rosout` filtered with `min_log_level` and `node`, and the
+controller's velocity output while a goal executes. Count 50 is the tool's cap: with several
+bonds at several messages per second each, 20 messages could miss a node.
+
+**Hidden topics are readable.** `list_topics` does not list the `_action/status` and
+`_action/feedback` topics of an action (the `ros2` CLI hides them), but `sample_messages` reads
+any topic by name, and a latched one gives its last message. The prompt says so, because an
+agent that trusts `list_topics` alone concludes there is no such topic. A server that has not
+handled a goal since it started may hold no status message: the prompt tells the model to say
+that, not to call it a failure.
+
+**Read-only.** The text names no write verb (`tests/test_prompts.py` fails if a prompt contains
+`service call`, `lifecycle set`, `action send_goal` or `topic pub`), and it ends with what
+TopicForge cannot see: lifecycle state, costmaps, the behavior tree and its recoveries, whether
+the robot moves.
+
+**Bench.** The prompt is verified on its primitives, not on Nav2. `calls_nav_primitives.json`
+(between `calls.json` and `calls_graph_diff.json`): `40_action_status` reads
+`/bench_fib/_action/status` (an action server nothing calls; the bench publishes one empty
+latched status by hand, since an idle server publishes none) and must return one sample with
+`status_list` `[]`; `/bench_fib` must be in `action_servers` of `/bench_robot`; the status topic
+must be absent from `list_topics`; `41_bond` reads `/bond` (`bond/msg/Status`, id `bench_robot`,
+1 Hz) and every sample must carry the id. Comparator section `nav_primitives`. Written for the
+four Docker cells; not run in the session that added it, and Nav2 itself was never run.

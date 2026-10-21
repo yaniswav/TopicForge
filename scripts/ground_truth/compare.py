@@ -19,7 +19,15 @@ no longer has the expected shape; reported, never a crash), INFO (informative).
 Sections: graph (topics, types, counts, QoS per side, nodes, use_sim_time per node), scan
 (geometry, every range, wall and sector minima), stamps (stamp_source per topic), rates
 (verdict and frequency, simulated and wall time), bag, dds, tf (the `inspect_tf` tree; only the
-bench truth has one). Reads output contract 2 (0.7:
+bench truth has one), clock (`clock_basis`, stamp age and regressions per
+topic; only the bench truth has one), graph_diff (the four `graph_diff` calls of
+`calls_graph_diff.json`: first call, steady graph, graph v2, bag baseline; only the bench truth
+has one), nav_primitives (the Nav2 building blocks of the `diagnose-nav2` prompt, from
+`calls_nav_primitives.json`: a hidden latched `_action/status` sample, the action in
+`get_node_info.action_servers`, `/bond` samples; only the bench truth has one). Reads output contract 2 (0.7:
+has one), declared (the URDF links against the TF frames in the `17_inspect_tf` answer, and
+`param_diff` in the `03p_node_info_params` answer of `calls_declared.json`; only the bench truth
+has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -380,7 +388,7 @@ def _check_topic_qos(truth: dict[str, dict], res: Results, rep: Report) -> None:
                 "subscriber_count", 0
             ):
                 bad.append(f"{name}: more nodes than endpoints ({len(pn)}/{len(sn)})")
-            want_p = sorted(node_full_name(e) for e in pubs)
+            want_p = sorted({node_full_name(e) for e in pubs})
             if pn and want_p and sorted(pn) != want_p:
                 bad.append(f"{name}: publisher_nodes {sorted(pn)} vs {want_p}")
     rep.add(
@@ -454,6 +462,39 @@ def _expected_interfaces(gt: dict) -> dict[str, dict[str, set]]:
     return out
 
 
+def _check_node_groups(
+    before: dict, data: Any, listed: list[dict], truth_nodes: list[str], rep: Report, wall: Any
+) -> None:
+    """`lifecycle` and `by_namespace` of list_nodes, when the truth states them (bench only)."""
+    summary = (objs(data) or [{}])[0]
+    if "lifecycle_nodes" in before:
+        want = sorted(before["lifecycle_nodes"])
+        got = sorted(n["full_name"] for n in listed if n.get("lifecycle"))
+        note = summary.get("lifecycle_note")
+        ok = got == want and summary.get("lifecycle_count") == len(want) and not note
+        rep.add(
+            "graph",
+            "lifecycle nodes (list_nodes)",
+            want,
+            got if not note else f"{got} ({note})",
+            "PASS" if ok else "FAIL",
+            "a node serving <name>/get_state of type lifecycle_msgs/srv/GetState",
+            wall,
+        )
+    if "nodes_by_namespace" in before:
+        want_ns = before["nodes_by_namespace"]
+        got_ns = summary.get("by_namespace")
+        rep.add(
+            "graph",
+            "nodes per namespace (list_nodes)",
+            want_ns,
+            got_ns,
+            "PASS" if got_ns == want_ns and list(got_ns) == sorted(got_ns) else "FAIL",
+            f"{len(truth_nodes)} nodes, sorted by namespace, / is the root",
+            wall,
+        )
+
+
 def _check_nodes(gt: dict, res: Results, rep: Report) -> None:
     before = gt["graph"]["before_capture"]
     truth_nodes = sorted(before.get("nodes") or [])
@@ -494,6 +535,7 @@ def _check_nodes(gt: dict, res: Results, rep: Report) -> None:
         "",
         wall,
     )
+    _check_node_groups(before, data, listed, truth_nodes, rep, wall)
     want_iface = _expected_interfaces(gt)
     want_sim = before.get("use_sim_time") or {}
     bad_iface: list[str] = []
@@ -1417,13 +1459,18 @@ def _check_bag_peeks(gt: dict, truth: dict, res: Results, rep: Report) -> None:
                 wall,
             )
         elif topic == "/rosout":
+            # The recorder may store few or no /rosout lines (late discovery on a loaded
+            # runner): expect what the bag holds, read independently.
+            held = truth["per_topic"].get("/rosout", {}).get("count")
+            want_n = 3 if held is None else min(3, held)
+            source = samples[0].get("stamp_source") if samples else None
             rep.add(
                 "bag",
                 f"peek /rosout x{len(samples)} ({name})",
-                "3 messages",
-                f"{len(samples)} messages, source {samples[0].get('stamp_source')}",
-                "PASS" if len(samples) == 3 else "FAIL",
-                "",
+                f"{want_n} messages",
+                f"{len(samples)} messages, source {source}",
+                "PASS" if len(samples) == want_n else "FAIL",
+                "" if held is None else f"the bag holds {held} /rosout messages",
                 wall,
             )
         else:
@@ -1444,10 +1491,16 @@ def _check_bag_peeks(gt: dict, truth: dict, res: Results, rep: Report) -> None:
             )
 
 
+# Topics whose every recorded timestamp is kept (`stamps_ns`), so a time-range answer can be
+# counted exactly: the recorder starts the other topics late on a loaded runner.
+STAMPED_TOPICS = ("/clock",)
+
+
 def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -> dict[str, Any]:
     """Truth of a recorded bag read independently with rosbags (message timestamps, not metadata).
 
     `expected_ranges`, when given, is compared with every `/scan` message (tolerance RANGE_TOL).
+    The topics in `STAMPED_TOPICS` also carry the sorted list of their timestamps.
     """
     from rosbags.highlevel import AnyReader
     from rosbags.typesys import Stores, get_typestore
@@ -1465,6 +1518,11 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
             item["count"] += 1
             item["first_ns"] = min(item["first_ns"], stamp)
             item["last_ns"] = max(item["last_ns"], stamp)
+            if conn.topic in STAMPED_TOPICS:
+                item.setdefault("stamps_ns", []).append(stamp)
+            if conn.topic == "/rosout":
+                level = reader.deserialize(raw, conn.msgtype).level
+                item["error_count"] = item.get("error_count", 0) + (level == 40)
             if expected_ranges is not None and conn.topic == "/scan":
                 got = [num(v) for v in reader.deserialize(raw, conn.msgtype).ranges]
                 total += 1
@@ -1475,6 +1533,8 @@ def build_bag_truth(bag_dir: Path, expected_ranges: list[float] | None = None) -
     last = max(v["last_ns"] for v in per.values())
     duration_ns = last - first
     for item in per.values():
+        if "stamps_ns" in item:
+            item["stamps_ns"].sort()
         span = (item["last_ns"] - item["first_ns"]) / 1e9
         item["rate_recorded_wall_hz"] = (item["count"] - 1) / span if span >= 1.0 else None
         item["count_over_bag_duration_hz"] = (
@@ -1545,7 +1605,8 @@ def _tf_frame_rows(truth: dict, frames: dict[str, dict], rep: Report, wall: floa
 
 def _tf_finding_rows(truth: dict, report: dict, rep: Report, wall: float | None) -> None:
     findings = report.get("findings") or []
-    kinds = sorted({f.get("kind") for f in findings})
+    # `declared_not_published` comes from the URDF, not the tree: the `declared` section owns it.
+    kinds = sorted({f.get("kind") for f in findings} - {DECLARED_FINDING_KIND})
     want_kinds = sorted(truth["finding_kinds"])
     rep.add(
         "tf",
@@ -1650,8 +1711,818 @@ def check_tf(gt: dict, res: Results, rep: Report) -> None:
     _tf_rate_rows(truth, report, rep, wall)
 
 
+# ---------------------------------------------------------------------------- clock
+@guard("clock")
+def check_clock(gt: dict, res: Results, rep: Report) -> None:
+    """`TopicRate.clock_basis` and the stamp fields per topic (0.7.3); bench truth only."""
+    topics = (gt.get("clock") or {}).get("topics") or {}
+    best: dict[str, tuple[dict, float | None]] = {}
+    for topic, result, wall in _rate_blocks(res):
+        rate = result.get("rate")
+        if rate and topic in topics:
+            known = best.get(topic)
+            if known is None or (rate.get("message_count") or 0) >= (
+                known[0].get("message_count") or 0
+            ):
+                best[topic] = (rate, wall)
+    for topic, want in sorted(topics.items()):
+        if topic not in best:
+            rep.add("clock", f"{topic} rate block", "sampled", "absent", "WARN", "not sampled")
+            continue
+        rate, wall = best[topic]
+        if "clock_basis" not in rate:
+            rep.add("clock", f"{topic} clock_basis", want["basis"], "absent", "WARN", "pre-0.7.3")
+            continue
+        _clock_rows(topic, want, rate, rep, wall)
+
+
+def _clock_rows(topic: str, want: dict, rate: dict, rep: Report, wall: float | None) -> None:
+    basis = rate["clock_basis"]
+    rep.add(
+        "clock",
+        f"{topic} clock_basis",
+        want["basis"],
+        basis,
+        "PASS" if basis == want["basis"] else "FAIL",
+        "",
+        wall,
+    )
+    median, p95 = rate.get("stamp_age_median_s"), rate.get("stamp_age_p95_s")
+    if want["basis"] != "wall":
+        ok = median is None and p95 is None
+        rep.add(
+            "clock",
+            f"{topic} stamp age",
+            "null (not wall)",
+            [median, p95],
+            "PASS" if ok else "FAIL",
+            "",
+            wall,
+        )
+    else:
+        low, high = want["age_median_s_range"]
+        ok = isinstance(median, (int, float)) and low <= median <= high
+        rep.add(
+            "clock",
+            f"{topic} stamp_age_median_s",
+            f"{low}..{high}",
+            median,
+            "PASS" if ok else "FAIL",
+            f"published {want.get('published_age_s')} s behind; the age also holds delivery",
+            wall,
+        )
+        ok = isinstance(p95, (int, float)) and p95 < want["age_p95_s_max"]
+        rep.add(
+            "clock",
+            f"{topic} stamp_age_p95_s",
+            f"< {want['age_p95_s_max']}",
+            p95,
+            "PASS" if ok else "FAIL",
+            "",
+            wall,
+        )
+    if "min_regressions" in want:
+        count, got = rate.get("message_count") or 0, rate.get("stamp_regression_count")
+        ok = isinstance(got, int) and got >= want["min_regressions"]
+        rep.add(
+            "clock",
+            f"{topic} stamp_regression_count (n={count})",
+            f">= {want['min_regressions']}",
+            got,
+            "PASS" if ok else ("FAIL" if count >= want.get("min_messages", 12) else "WARN"),
+            "a stamp that goes back every 4th message",
+            wall,
+        )
+
+
+# ---------------------------------------------------------------------------- logs
+# `/rosout` filter and bag ranges (0.7.3), bench truth only. The live calls use a short
+# `timeout_s` so the 10 s transient_local buffer must supply most lines: every row reports
+# the exact counts (and the level histogram) so a CI run shows whether the depth-2000
+# reader really gets the buffer on this RMW.
+LOG_LEVEL_NAMES = {10: "debug", 20: "info", 30: "warn", 40: "error", 50: "fatal"}
+_STARTING_TIME = re.compile(r"starting_time:\s*nanoseconds_since_epoch:\s*(\d+)")
+
+
+def _log_samples(res: Results, name: str) -> tuple[list[dict], dict, float | None] | str:
+    """`(samples, result, wall)` of a saved `sample_messages` / `peek_bag_samples`, else the error."""
+    data = res.load(name)
+    if data is None:
+        return "not run"
+    err = tool_err(data)
+    if err:
+        return err[:200]
+    result = objs(data)[0]
+    return result["samples"], result, res.times.get(name)
+
+
+def _level_counts(samples: list[dict]) -> dict[str, int]:
+    counts = collections.Counter(s["payload"].get("level") for s in samples)
+    return {LOG_LEVEL_NAMES.get(k, str(k)): v for k, v in sorted(counts.items(), key=str)}
+
+
+def _log_rows(
+    rep: Report,
+    metric: str,
+    want: str,
+    samples: list[dict],
+    result: dict,
+    ok: bool,
+    wall: float | None,
+    warn_if_few: bool = False,
+) -> None:
+    got = f"{len(samples)} msgs {_level_counts(samples)}"
+    note = (result.get("note") or "")[:220]
+    rep.add(
+        "logs", metric, want, got, "PASS" if ok else ("WARN" if warn_if_few else "FAIL"), note, wall
+    )
+
+
+@guard("logs")
+def check_logs(gt: dict, res: Results, rep: Report) -> None:
+    truth = gt.get("logs")
+    if not truth:
+        return
+    _check_live_logs(truth, res, rep)
+    _check_bag_logs(gt, truth, res, rep)
+
+
+def _check_live_logs(truth: dict, res: Results, rep: Report) -> None:
+    logger = truth["logger"]
+    for name, metric in (
+        ("21_log_error_node", "live /rosout error + node /bench_robot"),
+        ("22_log_warn", "live /rosout min_log_level warn"),
+        ("23_log_blocked_node", "live /rosout node /bench_blocked"),
+        ("24_log_lifecycle_node", "live /rosout node /robot1/bench_lifecycle"),
+    ):
+        loaded = _log_samples(res, name)
+        if isinstance(loaded, str):
+            rep.add("logs", metric, "samples", loaded, "WARN" if loaded == "not run" else "FAIL")
+            continue
+        samples, result, wall = loaded
+        names = {s["payload"].get("name") for s in samples}
+        levels = [s["payload"].get("level") for s in samples]
+        stamps = [s["timestamp_ns"] for s in samples]
+        ordered = stamps == sorted(stamps)
+        if name == "21_log_error_node":
+            want = f">= {truth['min_error_msgs']} msgs, all level 40, name {logger}"
+            ok = (
+                len(samples) >= truth["min_error_msgs"]
+                and set(levels) == {40}
+                and names == {logger}
+                and ordered
+            )
+            _log_rows(rep, metric, want, samples, result, ok, wall)
+        elif name == "22_log_warn":
+            ok = bool(samples) and min(levels) >= 30 and ordered
+            _log_rows(rep, metric, "levels >= 30 only, stamp order", samples, result, ok, wall)
+        elif name == "23_log_blocked_node":
+            ok = not samples and bool(result.get("note"))
+            _log_rows(rep, metric, "0 msgs and a note", samples, result, ok, wall)
+        else:
+            want = f">= 1 msg, all name {truth['lifecycle_logger']}"
+            ok = bool(samples) and names == {truth["lifecycle_logger"]}
+            _log_rows(rep, metric, want, samples, result, ok, wall)
+
+
+def _starting_time_ns(gt: dict) -> tuple[int | None, str]:
+    """`starting_time` of the bench bag: from its metadata.yaml, else the first message."""
+    bag = gt.get("bag") or {}
+    meta = Path(str(bag.get("bag_dir", ""))) / "metadata.yaml"
+    if meta.is_file():
+        found = _STARTING_TIME.search(meta.read_text(encoding="utf-8"))
+        if found:
+            return int(found.group(1)), "metadata.yaml"
+    first = bag.get("starting_time_ns")
+    return (int(first), "first message") if first is not None else (None, "none")
+
+
+def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
+    start_ns, source = _starting_time_ns(gt)
+    analysis = res.load("13_analyze_bag")
+    if analysis is not None and not tool_err(analysis) and start_ns is not None:
+        got = objs(analysis)[0].get("start_ns")
+        rep.add(
+            "logs",
+            "analyze_bag.start_ns",
+            f"{start_ns} ({source})",
+            got,
+            "PASS" if got == start_ns else "FAIL",
+            "",
+            res.times.get("13_analyze_bag"),
+        )
+    loaded = _log_samples(res, "25_peek_bag_rosout_error")
+    if isinstance(loaded, str):
+        rep.add("logs", "bag /rosout min_log_level error", "samples", loaded, "WARN")
+    else:
+        samples, result, wall = loaded
+        # Expect what the bag holds (read independently): the recorder may miss /rosout.
+        held = (gt.get("bag") or {}).get("per_topic", {}).get("/rosout", {}).get("error_count")
+        if held is None:
+            want = f">= {truth['bag_min_errors']} msgs, all level 40"
+            ok = len(samples) >= truth["bag_min_errors"]
+        else:
+            want = f"{min(10, held)} msgs (the bag holds {held} ERROR lines), all level 40"
+            ok = len(samples) == min(10, held)
+        ok = ok and {s["payload"].get("level") for s in samples} <= {40}
+        _log_rows(
+            rep,
+            "bag /rosout min_log_level error",
+            want,
+            samples,
+            result,
+            ok,
+            wall,
+        )
+    rng = truth["bag_range"]
+    loaded = _log_samples(res, "26_peek_bag_clock_range")
+    if isinstance(loaded, str):
+        rep.add("logs", "bag /clock start_s 2 end_s 4", "samples", loaded, "WARN")
+        return
+    samples, result, wall = loaded
+    if start_ns is None:
+        rep.add("logs", "bag /clock range", "bag start", "unknown", "WARN", "", wall)
+        return
+    low, high = start_ns + int(rng["start_s"] * 1e9), start_ns + int(rng["end_s"] * 1e9)
+    recorded = [s.get("recorded_ns") or 0 for s in samples]
+    inside = all(low <= r < high for r in recorded)
+    # The recorder starts /clock late on a loaded runner, so the window may hold fewer than
+    # `count` messages: the truth is the number of recorded /clock stamps inside the window.
+    stamps = ((gt.get("bag") or {}).get("per_topic", {}).get(rng["topic"]) or {}).get("stamps_ns")
+    in_window = sum(low <= t < high for t in stamps) if stamps is not None else None
+    want = rng["count"] if in_window is None else min(rng["count"], in_window)
+    basis = "" if in_window is None else f" (min of {rng['count']} and {in_window} in the window)"
+    note = (result.get("note") or "")[:200]
+    ok = len(samples) == want and inside and (want > 0 or bool(note))
+    rep.add(
+        "logs",
+        f"bag /clock start_s {rng['start_s']} end_s {rng['end_s']}",
+        f"{want} samples{basis} with recorded_ns in [{low}, {high})"
+        + (" and a note" if want == 0 else ""),
+        f"{len(samples)} samples; first {min(recorded, default=0) - start_ns} ns, "
+        f"last {max(recorded, default=0) - start_ns} ns after start",
+        "PASS" if ok else "FAIL",
+        note,
+        wall,
+    )
+
+
 # ---------------------------------------------------------------------------- report
-SECTIONS = (check_graph, check_scan, check_stamps, check_rates, check_bag, check_dds, check_tf)
+LISTING_MAX_BYTES = 100_000
+
+
+def _drop_none(node: Any) -> Any:
+    """A copy of a JSON value without null-valued keys (the wire form omits them)."""
+    if isinstance(node, dict):
+        return {k: _drop_none(v) for k, v in node.items() if v is not None}
+    if isinstance(node, list):
+        return [_drop_none(v) for v in node]
+    return node
+
+
+@guard("listing")
+def check_listing(gt: dict, res: Results, rep: Report) -> None:
+    """The tools/list size that drive.py saved in `_tools.json`; some clients truncate it."""
+    file = res.path / "_tools.json"
+    if not file.is_file():
+        rep.add(
+            "listing",
+            "tools/list bytes",
+            f"< {LISTING_MAX_BYTES}",
+            "absent",
+            "WARN",
+            "no _tools.json",
+        )
+        return
+    tools = json.loads(file.read_text(encoding="utf-8"))
+    size = len(json.dumps(_drop_none(tools), separators=(",", ":")))
+    rep.add(
+        "listing",
+        "tools/list bytes",
+        f"< {LISTING_MAX_BYTES}",
+        size,
+        "PASS" if size < LISTING_MAX_BYTES else "FAIL",
+        f"{len(tools)} tools, compact JSON of the saved listing",
+    )
+
+
+# ---------------------------------------------------------------------------- graph_diff
+# Self-contained: the `graph_diff` section of the truth (only the bench writes one) against the
+# four calls of `calls_graph_diff.json` (0.8.0). The steady call is the healthy line: a graph
+# diffed against itself must report nothing, and it has to pass before the v2 call means anything.
+def _graph_diff_report(res: Results, name: str) -> tuple[dict | None, float | None, str | None]:
+    """`(report, wall_s, error)` of one saved `graph_diff` call."""
+    data = res.load(name)
+    err = tool_err(data)
+    if err:
+        return None, res.times.get(name), err
+    return objs(data)[0], res.times.get(name), None
+
+
+def _change_keys(report: dict) -> list[tuple[str, str, str]]:
+    return sorted((c["kind"], c["change"], c["name"]) for c in report.get("changes") or [])
+
+
+def _gd_row(
+    rep: Report, metric: str, truth: Any, got: Any, ok: bool, wall: float | None, note: str = ""
+) -> None:
+    rep.add("graph_diff", metric, truth, got, "PASS" if ok else "FAIL", note, wall)
+
+
+def _gd_unavailable(rep: Report, metric: str, err: str, wall: float | None) -> None:
+    if err == "missing":
+        rep.add("graph_diff", metric, "a report", "absent", "WARN", "older server", wall)
+    else:
+        rep.add("graph_diff", metric, "a report", err, "FAIL", "", wall)
+
+
+def _check_gd_first(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err:
+        return _gd_unavailable(rep, "first call (graph_diff)", err, wall)
+    note = str(report.get("note") or "")
+    ok = report.get("baseline_id") is None and not report["changes"]
+    _gd_row(
+        rep,
+        "first call: no baseline, no change",
+        "no baseline",
+        report.get("baseline_id"),
+        ok and note.startswith("No baseline yet"),
+        wall,
+        note,
+    )
+
+
+def _check_gd_steady(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err:
+        return _gd_unavailable(rep, "steady graph (graph_diff)", err, wall)
+    got = _change_keys(report)
+    _gd_row(
+        rep,
+        "steady graph: zero changes",
+        truth["changes"],
+        got,
+        not got,
+        wall,
+        "any change here is a false alarm",
+    )
+    rep.add(
+        "graph_diff",
+        "steady graph: builtin_changes_count",
+        "-",
+        report.get("builtin_changes_count"),
+        "INFO",
+        "/rosout and /parameter_events counter changes, folded",
+        wall,
+    )
+
+
+def _check_gd_v2(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err:
+        return _gd_unavailable(rep, "graph v2 (graph_diff)", err, wall)
+    want = sorted((c["kind"], c["change"], c["name"]) for c in truth["changes"])
+    got = _change_keys(report)
+    _gd_row(
+        rep,
+        "v2: exactly the three planned changes",
+        want,
+        got,
+        got == want,
+        wall,
+        "any other change is a false alarm",
+    )
+    counts = [c for c in report["changes"] if c["kind"] == "count"]
+    for planned in (c for c in truth["changes"] if c["kind"] == "count"):
+        found = next((c for c in counts if c["name"] == planned["name"]), {})
+        pair = (found.get("field"), found.get("before"), found.get("after"))
+        wanted = (planned["field"], planned["before"], planned["after"])
+        _gd_row(rep, f"v2: {planned['name']} count", wanted, pair, pair == wanted, wall)
+
+
+def _check_gd_bag(truth: dict, res: Results, rep: Report) -> None:
+    report, wall, err = _graph_diff_report(res, truth["call"])
+    if err == "missing":
+        return  # the bench ran without a bag
+    if err:
+        return _gd_unavailable(rep, "bag baseline (graph_diff)", err, wall)
+    baseline = (report.get("baseline") or {}).get("source")
+    _gd_row(rep, "bag baseline: source", "bag", baseline, baseline == "bag", wall)
+    _gd_row(
+        rep,
+        "bag baseline: removed_count",
+        truth["removed_count"],
+        report.get("removed_count"),
+        report.get("removed_count") == truth["removed_count"],
+        wall,
+        "every recorded topic is still live",
+    )
+    bad = sorted({c["kind"] for c in report["changes"]} & set(truth["absent_kinds"]))
+    _gd_row(rep, "bag baseline: no type or qos change", [], bad, not bad, wall)
+    missing = sorted(set(truth["not_compared"]) - set(report.get("not_compared") or {}))
+    _gd_row(
+        rep,
+        "bag baseline: not_compared names nodes and rates",
+        truth["not_compared"],
+        sorted(report.get("not_compared") or {}),
+        not missing,
+        wall,
+    )
+
+
+@guard("graph_diff")
+def check_graph_diff(gt: dict, res: Results, rep: Report) -> None:
+    """`graph_diff`: first call, steady graph, graph v2 and a bag baseline (0.8.0)."""
+    truth = gt.get("graph_diff")
+    if not truth:
+        return
+    _check_gd_first(truth["first"], res, rep)
+    _check_gd_steady(truth["steady"], res, rep)
+    _check_gd_v2(truth["v2"], res, rep)
+    _check_gd_bag(truth["bag"], res, rep)
+
+
+# ---------------------------------------------------------------------------- nav_primitives
+# Self-contained: the `nav_primitives` section of the truth (only the bench writes one) against
+# `40_action_status` and `41_bond` of `calls_nav_primitives.json` (0.8.0). These are the
+# building blocks of the `diagnose-nav2` prompt, not Nav2: a hidden latched `_action/status`
+# topic read by `sample_messages`, the action in `get_node_info.action_servers`, and `/bond`.
+def _nav_samples(res: Results, name: str) -> tuple[list[dict] | None, float | None, str | None]:
+    """`(samples, wall_s, error)` of one saved `sample_messages` call."""
+    data = res.load(name)
+    err = tool_err(data)
+    if err:
+        return None, res.times.get(name), err
+    return objs(data)[0].get("samples") or [], res.times.get(name), None
+
+
+def _nav_row(
+    rep: Report, metric: str, truth: Any, got: Any, ok: bool, wall: float | None, note: str = ""
+) -> None:
+    rep.add("nav_primitives", metric, truth, got, "PASS" if ok else "FAIL", note, wall)
+
+
+def _nav_unavailable(rep: Report, metric: str, err: str, wall: float | None) -> None:
+    if err == "missing":
+        rep.add("nav_primitives", metric, "a result", "absent", "WARN", "older run", wall)
+    else:
+        rep.add("nav_primitives", metric, "a result", err, "FAIL", "", wall)
+
+
+def _check_nav_status_sample(truth: dict, res: Results, rep: Report) -> None:
+    samples, wall, err = _nav_samples(res, truth["call"])
+    metric = f"{truth['topic']} sample (sample_messages)"
+    if err:
+        return _nav_unavailable(rep, metric, err, wall)
+    lists = [(s.get("payload") or {}).get("status_list") for s in samples]
+    ok = len(samples) == truth["samples"] and lists == [truth["status_list"]] * len(samples)
+    _nav_row(
+        rep,
+        metric,
+        f"{truth['samples']} sample, status_list {truth['status_list']}",
+        f"{len(samples)} sample(s), status_list {lists}",
+        ok,
+        wall,
+        "a hidden, latched topic; no goal ever ran, so the list is empty",
+    )
+
+
+def _check_nav_action_server(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["node_info_call"])
+    err = tool_err(data)
+    metric = f"{truth['action']} in action_servers of {truth['node']} (get_node_info)"
+    if err:
+        return _nav_unavailable(rep, metric, err, res.times.get(truth["node_info_call"]))
+    servers = {(i["name"], i["type"]) for i in (objs(data) or [{}])[0].get("action_servers") or []}
+    want = (truth["action"], truth["action_type"])
+    _nav_row(
+        rep,
+        metric,
+        want,
+        sorted(servers),
+        want in servers,
+        res.times.get(truth["node_info_call"]),
+    )
+
+
+def _check_nav_hidden_topic(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["listed_call"])
+    err = tool_err(data)
+    metric = f"{truth['topic']} absent from list_topics"
+    if err:
+        return _nav_unavailable(rep, metric, err, res.times.get(truth["listed_call"]))
+    names = {t["name"] for t in listing(data, "topics")}
+    _nav_row(
+        rep,
+        metric,
+        "hidden",
+        "listed" if truth["topic"] in names else "hidden",
+        truth["topic"] not in names,
+        res.times.get(truth["listed_call"]),
+        "`_action` topics are hidden by ros2 topic list, but sample_messages reads them",
+    )
+
+
+def _check_nav_bond(truth: dict, res: Results, rep: Report) -> None:
+    samples, wall, err = _nav_samples(res, truth["call"])
+    metric = f"{truth['topic']} samples carry the bond id"
+    if err:
+        return _nav_unavailable(rep, metric, err, wall)
+    ids = sorted({str((s.get("payload") or {}).get("id")) for s in samples})
+    _nav_row(
+        rep,
+        metric,
+        [truth["id"]],
+        ids if samples else "no sample",
+        bool(samples) and ids == [truth["id"]],
+        wall,
+        f"{len(samples)} sample(s) of bond/msg/Status",
+    )
+
+
+@guard("nav_primitives")
+def check_nav_primitives(gt: dict, res: Results, rep: Report) -> None:
+    """The Nav2 building blocks of the `diagnose-nav2` prompt, read from the bench (0.8.0)."""
+    truth = gt.get("nav_primitives")
+    if not truth:
+        return
+    status = truth["action_status"]
+    _check_nav_status_sample(status, res, rep)
+    _check_nav_action_server(status, res, rep)
+    _check_nav_hidden_topic(status, res, rep)
+    _check_nav_bond(truth["bond"], res, rep)
+
+
+# ---------------------------------------------------------------------------- visibility
+# Self-contained: the `visibility` section of the truth (only the bench writes one) against the
+# health, participant and endpoint calls it names (0.8.0). The node name is what ties an endpoint
+# to a ROS 2 node when every participant is called `/` (Fast DDS), so it has to hold on both RMWs.
+def _check_vis_endpoints(truth: dict, res: Results, rep: Report) -> None:
+    name = truth["endpoints_call"]
+    data = res.load(name)
+    err = tool_err(data)
+    wall = res.times.get(name)
+    if data is None or err:
+        verdict, got = ("WARN", "absent") if data is None else ("FAIL", err)
+        rep.add(
+            "visibility", "list_endpoints node_name", truth["writer_nodes"], got, verdict, "", wall
+        )
+        return
+    writers = [e for e in listing(data, "endpoints") if e.get("role") == "writer"]
+    got_nodes = sorted({e["node_name"] for e in writers if e.get("node_name")})
+    rep.add(
+        "visibility",
+        f"{truth['topic']} writer node_name",
+        truth["writer_nodes"],
+        got_nodes,
+        "PASS"
+        if got_nodes == truth["writer_nodes"] and all(e.get("node_name") for e in writers)
+        else "FAIL",
+        f"{len(writers)} writer(s); the node name comes from ros_discovery_info",
+        wall,
+    )
+    summaries = [s for s in listing(data, "by_topic") if s.get("ros_topic") == truth["topic"]]
+    got_summary = sorted(summaries[0].get("writer_nodes") or []) if summaries else None
+    rep.add(
+        "visibility",
+        f"{truth['topic']} writer_nodes",
+        truth["writer_nodes"],
+        got_summary,
+        "PASS" if got_summary == truth["writer_nodes"] else "FAIL",
+        "",
+        wall,
+    )
+
+
+def _check_vis_participant(truth: dict, res: Results, rep: Report) -> None:
+    name = truth["participants_call"]
+    data = res.load(name)
+    err = tool_err(data)
+    wall = res.times.get(name)
+    metric = f"{truth['node']} participant endpoint_count"
+    if data is None or err:
+        verdict, got = ("WARN", "absent") if data is None else ("FAIL", err)
+        rep.add("visibility", metric, f">= {truth['min_endpoint_count']}", got, verdict, "", wall)
+        return
+    hosts = [
+        p for p in listing(data, "participants") if truth["node"] in (p.get("node_names") or [])
+    ]
+    counts = [p.get("endpoint_count") for p in hosts]
+    ok = bool(hosts) and all(
+        isinstance(c, int) and c >= truth["min_endpoint_count"] for c in counts
+    )
+    rep.add(
+        "visibility",
+        metric,
+        f">= {truth['min_endpoint_count']}",
+        counts or "no participant hosts the node",
+        "PASS" if ok else "FAIL",
+        "writers plus readers, plumbing included",
+        wall,
+    )
+
+
+def _check_vis_health(truth: dict, res: Results, rep: Report) -> None:
+    name = truth["health_call"]
+    data = res.load(name)
+    wall = res.times.get(name)
+    if data is None or tool_err(data):
+        return  # the graph section already reports the missing health_check
+    health = (objs(data) or [{}])[0]
+    got = health.get("ros_security_enabled", "absent")
+    rep.add(
+        "visibility",
+        "health ros_security_enabled",
+        truth["ros_security_enabled"],
+        got,
+        "PASS" if got is truth["ros_security_enabled"] else "FAIL",
+        "the bench sets no ROS_SECURITY_* variable",
+        wall,
+    )
+    note = health.get("ros_security_note")
+    rep.add(
+        "visibility",
+        "health ros_security_note",
+        None,
+        note,
+        "PASS" if note is None else "FAIL",
+        "",
+        wall,
+    )
+
+
+@guard("visibility")
+def check_visibility(gt: dict, res: Results, rep: Report) -> None:
+    """DDS visibility: endpoint node names, participant endpoint counts, SROS2 health (0.8.0)."""
+    truth = gt.get("visibility")
+    if not truth:
+        return
+    _check_vis_endpoints(truth, res, rep)
+    _check_vis_participant(truth, res, rep)
+    _check_vis_health(truth, res, rep)
+
+
+# ---------------------------------------------------------------------------- declared
+# Self-contained: the `declared` section of the truth (only the bench writes one). The URDF side
+# reads the `17_inspect_tf` answer (`inspect_tf` compares `/robot_description` on every call), the
+# parameter side the `03p_node_info_params` answer (`get_node_info` with `params_file`).
+DECLARED_FINDING_KIND = "declared_not_published"
+
+
+def _dc_row(
+    rep: Report, metric: str, truth: Any, got: Any, ok: bool, wall: float | None, note: str = ""
+) -> None:
+    rep.add("declared", metric, truth, got, "PASS" if ok else "FAIL", note, wall)
+
+
+def _dc_unavailable(rep: Report, metric: str, err: str, wall: float | None) -> None:
+    if err == "missing":
+        rep.add("declared", metric, "a report", "absent", "WARN", "older server", wall)
+    else:
+        rep.add("declared", metric, "a report", err, "FAIL", "", wall)
+
+
+def _check_declared_urdf(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["call"])
+    wall = res.times.get(truth["call"])
+    err = tool_err(data)
+    if err:
+        return _dc_unavailable(rep, "URDF comparison (inspect_tf)", err, wall)
+    report = objs(data)[0]
+    note = str(report.get("urdf_note") or "")
+    got_source = report.get("urdf_source")
+    if got_source is None:
+        return rep.add(
+            "declared",
+            "URDF comparison (inspect_tf)",
+            "urdf_source",
+            "absent",
+            "WARN",
+            "older server",
+            wall,
+        )
+    _dc_row(
+        rep,
+        "urdf_source (inspect_tf)",
+        truth["source"],
+        got_source,
+        got_source == truth["source"],
+        wall,
+        note,
+    )
+    count = report.get("urdf_link_count")
+    _dc_row(
+        rep,
+        "urdf_link_count (inspect_tf)",
+        truth["link_count"],
+        count,
+        count == truth["link_count"],
+        wall,
+    )
+    missing = sorted(report.get("declared_frames_missing") or [])
+    _dc_row(
+        rep,
+        "declared_frames_missing (inspect_tf)",
+        truth["declared_frames_missing"],
+        missing,
+        missing == sorted(truth["declared_frames_missing"]),
+        wall,
+        "a link of the URDF that nothing publishes",
+    )
+    extra = sorted(report.get("frames_not_in_urdf") or [])
+    _dc_row(
+        rep,
+        "frames_not_in_urdf (inspect_tf)",
+        truth["frames_not_in_urdf"],
+        extra,
+        extra == sorted(truth["frames_not_in_urdf"]),
+        wall,
+        "the moving frames of the model: informative, not a fault",
+    )
+    found = [f for f in report.get("findings") or [] if f.get("kind") == truth["finding_kind"]]
+    got = [f.get("frames") for f in found]
+    _dc_row(
+        rep,
+        "declared_not_published finding (inspect_tf)",
+        [truth["declared_frames_missing"]],
+        got,
+        got == [truth["declared_frames_missing"]],
+        wall,
+        "one finding naming every link",
+    )
+
+
+def _diff_rows(entries: list[dict]) -> list[tuple[str, str, Any, Any]]:
+    return sorted((e["name"], e["status"], e.get("declared"), e.get("live")) for e in entries)
+
+
+def _check_declared_params(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["call"])
+    wall = res.times.get(truth["call"])
+    err = tool_err(data)
+    if err:
+        return _dc_unavailable(rep, "param_diff (get_node_info)", err, wall)
+    info = objs(data)[0]
+    if "param_diff" not in info:
+        return rep.add(
+            "declared",
+            "param_diff (get_node_info)",
+            "param_diff",
+            "absent",
+            "WARN",
+            "older server",
+            wall,
+        )
+    got = info.get("param_diff")
+    want = _diff_rows(truth["differences"])
+    _dc_row(
+        rep,
+        "param_diff entries (get_node_info)",
+        want,
+        None if got is None else _diff_rows(got),
+        got is not None and _diff_rows(got) == want,
+        wall,
+        str(info.get("param_diff_note") or ""),
+    )
+    summary = str(info.get("param_diff_summary") or "")
+    _dc_row(
+        rep,
+        "param_diff_summary (get_node_info)",
+        f"{truth['same']} same, N live_only",
+        summary,
+        summary.startswith(f"{truth['same']} same,"),
+        wall,
+        "same and live_only are counted, not listed",
+    )
+
+
+@guard("declared")
+def check_declared(gt: dict, res: Results, rep: Report) -> None:
+    """URDF links against TF frames and a parameter file against the node (0.8.0)."""
+    truth = gt.get("declared")
+    if not truth:
+        return
+    _check_declared_urdf(truth["urdf"], res, rep)
+    _check_declared_params(truth["params"], res, rep)
+
+
+SECTIONS = (
+    check_graph,
+    check_scan,
+    check_stamps,
+    check_rates,
+    check_bag,
+    check_dds,
+    check_tf,
+    check_clock,
+    check_logs,
+    check_graph_diff,
+    check_nav_primitives,
+    check_visibility,
+    check_declared,
+    check_listing,
+)
 
 
 def compare(gt: dict[str, Any], results: Path) -> tuple[Report, Results]:

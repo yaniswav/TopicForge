@@ -195,3 +195,16 @@ def test_an_empty_capture_hints_no_frames_not_static_only() -> None:
     report = _report()
     assert any("No TF frames were received" in h for h in report.hints)
     assert not any("only static frames" in h for h in report.hints)
+
+
+def test_no_path_finding_lists_only_the_frames_that_were_not_seen() -> None:
+    report = _report(
+        static=[_s("a", "base_laser", 0)], source="camera_optical_frame", target="base_laser"
+    )
+    finding = next(f for f in report.findings if f.kind == "no_path")
+    assert finding.frames == ["camera_optical_frame"]
+    assert "camera_optical_frame" in finding.text and "base_laser" not in finding.text
+    assert report.path_note == "Unknown frame(s): camera_optical_frame."
+    both = _report(static=[_s("a", "b", 0)], source="x", target="y")
+    finding = next(f for f in both.findings if f.kind == "no_path")
+    assert finding.frames == ["x", "y"] and finding.text == "No frame named x or y was seen."

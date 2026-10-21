@@ -55,7 +55,7 @@ def _strings(node: Any) -> list[str]:
 
 def test_no_tool_or_parameter_description_carries_internal_history() -> None:
     tools = asyncio.run(_app().list_tools())
-    assert len(tools) == 15
+    assert len(tools) == 16
     for tool in tools:
         texts = [tool.description or "", *_strings(tool.input_schema)]
         for text in texts:

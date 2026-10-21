@@ -1,0 +1,243 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Diff the ROS 2 graph"
+  },
+  "description": "ROS 2 graph only. Answer \"what changed since it last worked\": snapshot the graph (or `bag_path`) and compare it with `baseline`, as a `GraphDiff`. `changes` are node, topic, type, qos, rate and count differences; `added` = present now, absent from the baseline. `not_compared` names what a pair cannot support: nodes and counts need live against live, rates bag against bag, writer QoS a DDS backend. `/rosout` and `/parameter_events` count noise is only tallied in `builtin_changes_count`. The first call stores a snapshot and says so in `note`. Snapshots stay in memory (16, lost on restart). **Raises an MCP error** for an unknown id, a bad bag path or without a `ros2` CLI. **Mock mode**: the first call reports 3 changes, the next 0. Read-only. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
+  "inputSchema": {
+    "properties": {
+      "bag_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Snapshot this bag instead of the live graph."
+      },
+      "baseline": {
+        "default": "previous",
+        "description": "`previous` (last snapshot), a `snap-N` id from `snapshot_ids`, or a bag path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "name": "graph_diff",
+  "outputSchema": {
+    "$defs": {
+      "GraphChange": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Current value, if any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "description": "Baseline value, if any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "change": {
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "type": "string"
+          },
+          "field": {
+            "description": "Property that changed; `null` if added or removed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "node",
+              "topic",
+              "type",
+              "qos",
+              "rate",
+              "count"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "change",
+          "name",
+          "text"
+        ],
+        "type": "object"
+      },
+      "GraphSnapshotRef": {
+        "additionalProperties": false,
+        "properties": {
+          "has_qos": {
+            "description": "Writer QoS or latching held.",
+            "type": "boolean"
+          },
+          "has_rates": {
+            "type": "boolean"
+          },
+          "id": {
+            "description": "`snap-N` or the bag path.",
+            "type": "string"
+          },
+          "node_count": {
+            "description": "`null` for a bag.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "`null` for live.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "enum": [
+              "live",
+              "bag"
+            ],
+            "type": "string"
+          },
+          "taken_ns": {
+            "type": "integer"
+          },
+          "topic_count": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "taken_ns",
+          "topic_count",
+          "has_qos",
+          "has_rates"
+        ],
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "added_count": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "baseline": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/GraphSnapshotRef"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "`null` without baseline."
+      },
+      "baseline_id": {
+        "description": "`null` without baseline (`note`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "builtin_changes_count": {
+        "description": "Count changes on `/rosout`, `/parameter_events`: not in `changes`.",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "changed_count": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "changes": {
+        "items": {
+          "$ref": "#/$defs/GraphChange"
+        },
+        "type": "array"
+      },
+      "current": {
+        "$ref": "#/$defs/GraphSnapshotRef"
+      },
+      "mode_effective": {
+        "description": "`live` or `mock` (fixtures).",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "type": "string"
+      },
+      "not_compared": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Skipped comparison and why.",
+        "type": "object"
+      },
+      "note": {
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "removed_count": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "snapshot_id": {
+        "description": "Stored snapshot id.",
+        "type": "string"
+      },
+      "snapshot_ids": {
+        "description": "Held ids, oldest first.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "snapshot_id",
+      "current",
+      "changes",
+      "added_count",
+      "removed_count",
+      "changed_count",
+      "not_compared",
+      "builtin_changes_count",
+      "snapshot_ids",
+      "mode_effective"
+    ],
+    "title": "GraphDiff",
+    "type": "object"
+  },
+  "title": "Diff the ROS 2 graph"
+}

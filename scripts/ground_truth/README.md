@@ -12,13 +12,25 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | --- | --- |
 | `drive.py` | MCP stdio driver: runs `calls.json` in one session, saves one JSON per call (result, wall time) and the server's stderr |
 | `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes; `{"settle_s": 3}` entries sleep (before the DDS calls and at the end) |
+| `calls_graph_diff.json` | The four `graph_diff` calls of the bench only (the OmniSim kit does not run it): `{"spawn": ...}` starts `tests/integration/ros2/graph_change.py` between the steady call and the v2 call, and `drive.py` stops it when the session ends |
+| `calls_nav_primitives.json` | The two Nav2 primitive calls of the bench only (`40_action_status`: one sample of the hidden, latched `/bench_fib/_action/status`; `41_bond`: `/bond` samples), run between `calls.json` and `calls_graph_diff.json` |
+| `calls_declared.json` | The declared-against-real call of the bench only: `get_node_info` of `/bench_robot` with `params_file` set to `tests/integration/ros2/bench_params.yaml` (the OmniSim kit does not run it; the URDF side rides on the `17_inspect_tf` call) |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
 SHAPE (output shape changed; counted as a failure with `--strict-shape`, which CI uses), INFO.
 Sections and tolerances are listed at the top of `compare.py`: graph (topics, types, counts, QoS per
 side, nodes, `use_sim_time` per node), scan (geometry, every range, wall and sector minima), stamps
-(`stamp_source` per topic), rates (verdict, frequency, interval_cv), bag, dds.
+(`stamp_source` per topic), rates (verdict, frequency, interval_cv), bag, dds, tf, clock, logs and, from
+0.8.0, `graph_diff` (bench truth only): the first call has no baseline, the steady graph gives zero
+changes, after `graph_change.py` starts (node `/bench_v2`, topic `/scan_v2`, a second writer on
+`/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing.
+From 0.8.0 the `nav_primitives` section (bench truth only) reads the building blocks of the `diagnose-nav2` prompt, not Nav2: `/bench_robot` serves a never-called action `/bench_fib` and publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz). The hidden `_action/status` topic gives one sample with an empty `status_list`, `/bench_fib` is in `get_node_info.action_servers` of `/bench_robot`, the status topic is absent from `list_topics`, and every `/bond` sample carries the id.
+The `visibility` section (bench truth only, from `05s_list_endpoints_scan` and the health and participant calls) checks the `/scan` writer's `node_name` is `/bench_robot`, its participant has `endpoint_count` >= 12 and `ros_security_enabled` is false with no note.
+`/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing. Also from 0.8.0, `declared` (bench truth
+only): `inspect_tf` finds the URDF on `/robot_description` and names the link nothing publishes
+(`arm_link`), and `param_diff` names exactly the parameter the file states differently
+(`max_range`) and the one the node does not have (`extra_gain`).
 
 Machine-dependent rows (OmniSim kit runs on a shared host):
 
@@ -70,6 +82,15 @@ the timer periods (the bench stamps with seconds since start, so simulated rate 
 The TF tree (`tf` section) is three static edges on `/tf_static`, three steady edges on `/tf` (one gives `tool` a second parent) and `map -> odom`, which `publisher.py` sends for 3 s after each new subscriber of `/tf` and then stops, so the 12 s `inspect_tf` call (`17_inspect_tf`) must find exactly one `stale` and one `two_parents` finding.
 `/parameter_events` and `/rosout` are checked for presence and type only: their endpoint counts
 depend on hidden CLI and daemon nodes.
+
+## Fault scenarios (not part of the bench run)
+
+`publisher.py --fault NAME` runs the same node as a clean robot with one fault, for the agent
+evaluation (`scripts/agent_eval/ros2_scenarios.py`, `docs/EVAL.md`). No ground truth is written
+in that mode and `entrypoint.sh`, `drive.py` and `compare.py` never use it: without the flag the
+publisher is exactly the bench described above. The faults, their companion processes
+(`blocked_node.py`, `fault_nodes.py`, `graph_change.py`) and the clean URDF are in
+`tests/integration/ros2/faults.py`.
 
 ## Tests
 

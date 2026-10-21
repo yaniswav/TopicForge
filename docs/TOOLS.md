@@ -5,7 +5,7 @@ served in mock mode. Do not edit by hand: `tests/test_contract_snapshots.py`
 fails when this file is out of date. The rules behind the shapes are in
 [CONTRACT.md](CONTRACT.md).
 
-15 tools, all read-only.
+16 tools, all read-only.
 
 | Tool | Title | World |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ fails when this file is out of date. The rules behind the shapes are in
 | [`detect_qos_mismatches`](#detect_qos_mismatches) | Detect QoS mismatches | open |
 | [`get_node_info`](#get_node_info) | Get node info | open |
 | [`get_topic_info`](#get_topic_info) | Get topic info | open |
+| [`graph_diff`](#graph_diff) | Diff the ROS 2 graph | open |
 | [`health_check`](#health_check) | Health check | closed |
 | [`inspect_tf`](#inspect_tf) | Inspect TF tree | open |
 | [`list_endpoints`](#list_endpoints) | List DDS endpoints | open |
@@ -31,7 +32,7 @@ fails when this file is out of date. The rules behind the shapes are in
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=false`, `readOnlyHint=true`
 
-Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like path, and only mock detects anomalies. **Raises an MCP error** for a malformed or missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like path, and only mock detects anomalies. **Raises an MCP error** for a malformed or missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no side effects. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -44,13 +45,14 @@ Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, me
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `path` | `str` | yes | Bag path as supplied. |
-| `storage_format` | `str \| null` | no | `mcap`, `sqlite3`, or other storage identifier when known. |
+| `storage_format` | `string \| null` | no | `mcap`, `sqlite3`, or other storage identifier when known. |
 | `duration_s` | `float` | yes | Bag duration in seconds. |
 | `message_count` | `int` | yes | Total number of messages across all recorded topics. |
 | `topics` | `list[BagTopicStats]` | yes | Per-topic statistics for every topic present in the bag. |
 | `anomalies` | `list[str]` | no | Notes on gaps or clock jumps; mock mode only. |
+| `start_ns` | `integer \| null` | no | Record time in ns of the bag's first message (rosbag2 `starting_time`): the zero of `peek_bag_samples` `start_s` / `end_s`. `null` when unreadable. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`. |
+| `note` | `string \| null` | no | Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`. |
 | `bag_format` | `"mcap" \| "db3" \| "bag" \| "unknown" \| null` | no | Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 bag info` text. |
 
 ## `detect_qos_mismatches`
@@ -59,7 +61,7 @@ Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, me
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-Explain why DDS readers and writers on a topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `summary` (one line, read it first), `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists what would also break once fixed), `hints` (probable typos in orphan topic names, type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, where announced). **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot see). Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; `*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose reader joined later on the same host: normal. Reports and partition splits carry `suggested_fixes`: text for a human, never applied by TopicForge; `verify_with` names the call that confirms the repair. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; mock returns fixtures. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).
+Explain why DDS readers and writers on a topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `summary` (one line, read it first), `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists what would also break once fixed), `hints` (probable typos in orphan topic names, type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, where announced). **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot see). Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; `*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose reader joined later on the same host: normal. Reports and partition splits carry `suggested_fixes`: text for a human, never applied by TopicForge; `verify_with` names the call that confirms the repair. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; mock returns fixtures. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -79,13 +81,13 @@ Explain why DDS readers and writers on a topic do not talk, and who will. Pairs 
 | `matched_total` | `int` | no | Matched pairs before the size cap. |
 | `not_matched_total` | `int` | no | Not-matched pairs before the size cap. |
 | `truncated` | `bool` | no | True when `reports`, `matched` or `not_matched` hit the 200-entry cap (see `*_total`); narrow with `topic`. |
-| `summary` | `str \| null` | no | One-line reading of the scan: counts of incompatible, not matched and matched pairs. |
+| `summary` | `string \| null` | no | One-line reading of the scan: counts of incompatible, not matched and matched pairs. |
 | `pairs_checked` | `int` | yes | Same-topic (reader, writer) pairs examined. |
 | `topics_scanned` | `int` | yes | Topics that had at least one endpoint in scope. |
 | `policies_checked` | `list[str]` | yes | Policies compared on every pair. |
 | `policies_unchecked` | `list[str]` | yes | What the scan does not cover, each with a reason; a clean result says nothing about them. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 
 ## `get_node_info`
 
@@ -93,7 +95,7 @@ Explain why DDS readers and writers on a topic do not talk, and who will. Pairs 
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node as a `NodeInfo`: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never waits for the node. Parameters come from a read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null`, `parameters_note` says its executor is probably blocked, and the interfaces are still returned. A value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` and a long value is cut (`truncated`, `original_size`), both said in `parameters_note`. With several nodes of that name `duplicate_count` is above 1 and `note` warns. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only request TopicForge ever sends is a parameter read (list/get); it sends no other request to a node. **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time: up to three CLI calls (node list and node info, 8 s each at most; then the parameter read, at most `timeout_s`, 20 s). The whole call, lock wait included, ends within 45 s: if another `ros2` call holds the lock it fails at once with a `busy` error (retry), and a call that waited has less time for the parameter read.
+ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node as a `NodeInfo`: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never waits for the node. Parameters come from a read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null`, `parameters_note` says its executor is probably blocked, and the interfaces are still returned. A value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` and a long value is cut (`truncated`, `original_size`), both said in `parameters_note`. With `params_file`, `param_diff` lists declared values that differ on the node, are `declared_only` or `masked`. With several nodes of that name `duplicate_count` is above 1 and `note` warns. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only request TopicForge ever sends is a parameter read (list/get); it sends no other request to a node. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; up to three CLI calls (node list and info, 8 s each at most; the parameter read, at most `timeout_s`, 20 s); ends within 45 s, less time for the read after a wait; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -101,6 +103,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | --- | --- | --- | --- | --- | --- |
 | `node` | `str` | yes | - | - | Fully qualified node name as `list_nodes` gives it, e.g. `/robot1/lidar_driver` (a missing leading `/` is added). |
 | `timeout_s` | `float` | no | `8.0` | >= 1.0, <= 20.0 | Seconds to wait for the parameter read, 1..20, default 8. A node that does not answer is reported in `parameters_note`, not as an error. |
+| `params_file` | `str \| null` | no | `null` | - | Server path of a ROS 2 parameter `.yaml` (1 MiB max). |
 
 ### Output (top-level fields)
 
@@ -113,13 +116,17 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `service_clients` | `list[NodeInterface]` | yes | Services the node calls. |
 | `action_servers` | `list[NodeInterface]` | yes | Actions the node serves. |
 | `action_clients` | `list[NodeInterface]` | yes | Actions the node calls. |
-| `parameters` | `list[NodeParameter] \| null` | no | Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none. |
-| `parameters_note` | `str \| null` | no | Why `parameters` is `None`, or what was masked or cut; `None` when complete. |
-| `use_sim_time` | `bool \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
-| `use_sim_time_note` | `str \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
+| `parameters` | `array \| null` | no | Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none. |
+| `parameters_note` | `string \| null` | no | Why `parameters` is `None`, or what was masked or cut; `None` when complete. |
+| `use_sim_time` | `boolean \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
+| `use_sim_time_note` | `string \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
+| `lifecycle` | `bool` | no | True when `service_servers` has `<full_name>/get_state` (GetState). |
 | `duplicate_count` | `int` | yes | Nodes using this exact full name; above 1, the data above belongs to one of them. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
+| `param_diff` | `array \| null` | no | File against node: differences only. |
+| `param_diff_summary` | `string \| null` | no | Counts left out: same, live_only. |
+| `param_diff_note` | `string \| null` | no | - |
 
 ## `get_topic_info`
 
@@ -127,7 +134,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Describe one ROS 2 `topic` (fully qualified, e.g. `/cmd_vel`) as a `TopicInfo`: counts and, in live mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where `transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a `null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. **Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Describe one ROS 2 `topic` (fully qualified, e.g. `/cmd_vel`) as a `TopicInfo`: counts and, in live mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where `transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a `null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. **Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. Read-only; no side effects. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -144,13 +151,46 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Describe one ROS 2 `
 | `publisher_count` | `int` | yes | - |
 | `subscriber_count` | `int` | yes | - |
 | `publisher_qos` | `SideQos \| null` | no | QoS of the publishers. `None` when it was not read: see `publisher_qos_note`. |
-| `publisher_qos_note` | `str \| null` | no | Why `publisher_qos` is `None`. `None` when it is set. |
+| `publisher_qos_note` | `string \| null` | no | Why `publisher_qos` is `None`. `None` when it is set. |
 | `subscription_qos` | `SideQos \| null` | no | QoS of the subscriptions. `None` when it was not read: see `subscription_qos_note`. |
-| `subscription_qos_note` | `str \| null` | no | Why `subscription_qos` is `None`. `None` when it is set. |
+| `subscription_qos_note` | `string \| null` | no | Why `subscription_qos` is `None`. `None` when it is set. |
 | `publisher_nodes` | `list[str]` | no | Publisher node names (`ros2 topic info --verbose`); empty when unknown. |
 | `subscriber_nodes` | `list[str]` | no | Subscriber node names; empty when unknown. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
+
+## `graph_diff`
+
+**Diff the ROS 2 graph**
+
+Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
+
+ROS 2 graph only. Answer "what changed since it last worked": snapshot the graph (or `bag_path`) and compare it with `baseline`, as a `GraphDiff`. `changes` are node, topic, type, qos, rate and count differences; `added` = present now, absent from the baseline. `not_compared` names what a pair cannot support: nodes and counts need live against live, rates bag against bag, writer QoS a DDS backend. `/rosout` and `/parameter_events` count noise is only tallied in `builtin_changes_count`. The first call stores a snapshot and says so in `note`. Snapshots stay in memory (16, lost on restart). **Raises an MCP error** for an unknown id, a bad bag path or without a `ros2` CLI. **Mock mode**: the first call reports 3 changes, the next 0. Read-only. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
+
+### Input parameters
+
+| Name | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `baseline` | `str` | no | `"previous"` | - | `previous` (last snapshot), a `snap-N` id from `snapshot_ids`, or a bag path. |
+| `bag_path` | `str \| null` | no | `null` | - | Snapshot this bag instead of the live graph. |
+
+### Output (top-level fields)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `snapshot_id` | `str` | yes | Stored snapshot id. |
+| `baseline_id` | `string \| null` | no | `null` without baseline (`note`). |
+| `current` | `GraphSnapshotRef` | yes | - |
+| `baseline` | `GraphSnapshotRef \| null` | no | `null` without baseline. |
+| `changes` | `list[GraphChange]` | yes | - |
+| `added_count` | `int` | yes | - |
+| `removed_count` | `int` | yes | - |
+| `changed_count` | `int` | yes | - |
+| `not_compared` | `dict[str, str]` | yes | Skipped comparison and why. |
+| `builtin_changes_count` | `int` | yes | Count changes on `/rosout`, `/parameter_events`: not in `changes`. |
+| `snapshot_ids` | `list[str]` | yes | Held ids, oldest first. |
+| `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 
 ## `health_check`
 
@@ -168,34 +208,38 @@ None.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `mode` | `str` | yes | Mode actually serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools only). May differ from `requested_mode` after a fallback. |
+| `mode` | `str` | yes | Mode serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools only); may differ from `requested_mode` after a fallback. |
 | `requested_mode` | `str` | yes | Mode requested by configuration (may be `auto`). |
 | `ros2_available` | `bool` | yes | Whether a `ros2` CLI is on PATH. |
-| `ros2_distro` | `str \| null` | no | `ROS_DISTRO` if set (disclosed by design under the local-trust model). |
+| `ros2_distro` | `string \| null` | no | `ROS_DISTRO` if set (disclosed by design under the local-trust model). |
 | `server_version` | `str` | yes | TopicForge version. |
-| `contract_version` | `int` | no | Output contract version; changes only when a field is renamed, removed or retyped. |
+| `contract_version` | `int` | no | Output contract version; changes when a field is renamed, removed or retyped. |
 | `max_sample_count` | `int` | yes | Server cap on samples per call; larger requests are clamped. |
 | `dds_backend` | `"mock" \| "cyclone" \| "fast" \| "none"` | no | DDS backend serving: `mock`, `cyclone`, `fast`, or `none` (DDS module inactive). |
-| `dds_inactive_note` | `str \| null` | no | Why `dds_backend` is `none` while ROS 2 serves (not selected, binding missing, or failed to start); else `null`. |
-| `dds_domain_id` | `int \| null` | no | DDS domain id observed when the DDS module is active. |
-| `observed_domain_note` | `str \| null` | no | Which DDS domain is observed: only the one joined at startup; others are invisible. |
+| `dds_inactive_note` | `string \| null` | no | Why `dds_backend` is `none` while ROS 2 serves; else `null`. |
+| `dds_domain_id` | `integer \| null` | no | DDS domain id observed when the DDS module is active. |
+| `observed_domain_note` | `string \| null` | no | Which DDS domain is observed: only the one joined at startup; others are invisible. |
 | `middleware_available` | `bool` | no | True when a DDS backend serves; else whether the configured binding is importable. |
-| `now_ns` | `int \| null` | no | Server wall-clock time (ns since epoch) when this report was built. |
-| `observer_started_ns` | `int \| null` | no | ns when the DDS observer joined; nothing earlier was watched. `None` without one. |
-| `tracker_running` | `bool \| null` | no | Whether the discovery tracker thread is alive (Cyclone); `None` without a tracker. |
-| `tracker_passes` | `int \| null` | no | Completed discovery tracker passes since start. |
-| `tracker_errors` | `int \| null` | no | Tracker passes that raised; non-zero means gaps. |
-| `tracker_last_pass_ns` | `int \| null` | no | ns of the last tracker pass; far older than `now_ns` means stale lifecycle. |
-| `tracker_cache_evictions` | `int \| null` | no | Discovery entries dropped from a full tracker cache (4096 each); non-zero means the bus is bigger than listed. |
+| `now_ns` | `integer \| null` | no | Server wall-clock time (ns since epoch) when this report was built. |
+| `observer_started_ns` | `integer \| null` | no | ns when the DDS observer joined; nothing earlier was watched. `None` without one. |
+| `tracker_running` | `boolean \| null` | no | Whether the discovery tracker thread is alive (Cyclone); `None` without a tracker. |
+| `tracker_passes` | `integer \| null` | no | Completed discovery tracker passes since start. |
+| `tracker_errors` | `integer \| null` | no | Tracker passes that raised; non-zero means gaps. |
+| `tracker_last_pass_ns` | `integer \| null` | no | ns of the last tracker pass; far older than `now_ns` means stale lifecycle. |
+| `tracker_cache_evictions` | `integer \| null` | no | Discovery entries dropped from a full tracker cache; non-zero means the bus is bigger than listed. |
 | `ros_tools_available` | `bool` | no | True when the ROS 2 tools can run (`ros_backend` is not `none`); on a DDS-only setup use `list_endpoints`. |
-| `sim_clock_published` | `bool \| null` | no | Whether `/clock` had a publisher in the last graph read (a hint that stamps may be sim time). `None` in mock or without a recent read; `health_check` never runs `ros2`. |
+| `sim_clock_published` | `boolean \| null` | no | Whether `/clock` had a publisher at the last graph read (stamps may be sim time); `None` in mock or without a recent read. |
 | `payload_decoding` | `"disabled" \| "enabled"` | no | `disabled`: DDS user-topic payloads are not decoded. |
-| `payload_decoding_note` | `str \| null` | no | Reason for `payload_decoding`. |
+| `payload_decoding_note` | `string \| null` | no | Reason for `payload_decoding`. |
 | `dds_security` | `"not_supported"` | no | DDS Security is not handled: protected endpoints and data are invisible. |
-| `rmw_implementation` | `str \| null` | no | ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`. |
+| `ros_security_enabled` | `boolean \| null` | no | `ROS_SECURITY_ENABLE` is `true`; `None` unless the ros2 CLI serves. |
+| `ros_security_strategy` | `"Enforce" \| "Permissive" \| null` | no | `ROS_SECURITY_STRATEGY` when set to a valid value. |
+| `ros_security_keystore_set` | `boolean \| null` | no | Whether a keystore variable is set (the path is never shown). |
+| `ros_security_note` | `string \| null` | no | Set when `ros_security_enabled`: what stays invisible. |
+| `rmw_implementation` | `string \| null` | no | ROS 2 middleware, e.g. `rmw_fastrtps_cpp`; `None` when `rmw_source` is `none`. |
 | `rmw_source` | `"env" \| "ros2_cli" \| "distro_default" \| "none"` | no | `env`, `ros2_cli`, `distro_default` (not verified on the graph) or `none`. |
 | `ros_backend` | `"mock" \| "ros2_cli" \| "none"` | no | ROS 2 backend: `ros2_cli`, `mock` or `none`. |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 
 ## `inspect_tf`
 
@@ -203,7 +247,7 @@ None.
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -228,16 +272,21 @@ ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latch
 | `message_count` | `int` | yes | Transforms captured, repeats included. |
 | `findings` | `list[TfFinding]` | yes | Empty when the tree is sound. |
 | `hints` | `list[str]` | yes | - |
-| `path` | `list[str] \| null` | no | Frames from `source_frame` to `target_frame`. |
-| `path_note` | `str \| null` | no | Why `path` is `None`, or context. |
-| `reference_ns` | `int \| null` | yes | Newest `/tf` stamp: the clock for `age_s`. |
+| `path` | `array \| null` | no | Frames from `source_frame` to `target_frame`. |
+| `path_note` | `string \| null` | no | Why `path` is `None`, or context. |
+| `reference_ns` | `integer \| null` | yes | Newest `/tf` stamp: the clock for `age_s`. |
 | `window_s` | `float` | yes | - |
 | `window_actual_s` | `float` | yes | - |
-| `stamp_span_s` | `float \| null` | yes | - |
-| `real_time_factor` | `float \| null` | yes | Stamp time over wall time: about 1 on a real robot, other on sim. |
+| `stamp_span_s` | `number \| null` | yes | - |
+| `real_time_factor` | `number \| null` | yes | Stamp time over wall time: about 1 on a real robot, other on sim. |
 | `truncated` | `bool` | yes | Messages were dropped or the cap was hit. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
+| `urdf_source` | `"robot_description" \| "none"` | no | - |
+| `urdf_link_count` | `integer \| null` | no | - |
+| `declared_frames_missing` | `list[str]` | no | URDF links with no TF frame. |
+| `frames_not_in_urdf` | `list[str]` | no | TF frames not in the URDF (`map`, `odom` are normal). |
+| `urdf_note` | `string \| null` | no | - |
 
 ## `list_endpoints`
 
@@ -245,7 +294,7 @@ ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latch
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-List every DDS endpoint (writer and reader) announced on the bus as an `EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. `rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS topic), `type_name`, `type_id`, the owning `participant_guid` with `participant_name`, and a structured `qos`. Use it instead of parsing `peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` `compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, `announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with `topic` or `participant_guid` to read one topic's full QoS. **Orphans**: `by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, `orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader nobody publishes to) and the union of partitions. In `qos`, a duration or policy of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers; which one owns an instance is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (listed in `endpoints` only with `include_departed`), so a topic that lost its only writer is explained in one call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching nothing returns a `note` with the closest topics. **This lists discovery facts, not data flow**: it cannot tell a silent or hung writer from a healthy one; pair it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless `include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. **Raises an MCP error** when no DDS module is active; mock returns a fixture. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).
+List every DDS endpoint (writer and reader) announced on the bus as an `EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. `rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS topic), `type_name`, `type_id`, the owning `participant_guid` with `participant_name`, and a structured `qos`. Use it instead of parsing `peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` `compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, `announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with `topic` or `participant_guid` to read one topic's full QoS. **Orphans**: `by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, `orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader nobody publishes to) and the union of partitions. In `qos`, a duration or policy of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers; which one owns an instance is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (listed in `endpoints` only with `include_departed`), so a topic that lost its only writer is explained in one call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching nothing returns a `note` with the closest topics. **This lists discovery facts, not data flow**: it cannot tell a silent or hung writer from a healthy one; pair it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless `include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. **Raises an MCP error** when no DDS module is active; mock returns a fixture. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -266,7 +315,7 @@ List every DDS endpoint (writer and reader) announced on the bus as an `Endpoint
 | `domain_id` | `int` | yes | - |
 | `fields` | `"full" \| "compact"` | no | Detail level served: `compact` drops per-endpoint QoS detail, type id and notes. |
 | `snapshot_ns` | `int` | yes | Wall-clock time of the snapshot, ns since epoch. |
-| `observer_guid` | `str \| null` | no | GUID of TopicForge's own participant, `None` in mock. |
+| `observer_guid` | `string \| null` | no | GUID of TopicForge's own participant, `None` in mock. |
 | `endpoints` | `list[EndpointInfo]` | yes | Matching endpoints, capped (see `truncated`). |
 | `by_topic` | `list[TopicSummary]` | yes | Roll-up over every matching endpoint. |
 | `total` | `int` | yes | Endpoints in the discovery cache before any filter. |
@@ -276,7 +325,7 @@ List every DDS endpoint (writer and reader) announced on the bus as an `Endpoint
 | `excluded_observer_endpoint_count` | `int` | no | TopicForge's own endpoints left out of `endpoints` (counted in `total`). |
 | `hidden_internal_endpoint_count` | `int` | no | Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) left out while `include_internal` is false. |
 | `hints` | `list[str]` | no | Facts true of every endpoint, stated once (e.g. liveness is not observed). |
-| `note` | `str \| null` | no | Set when a `topic` filter matched nothing: the closest known topics. |
+| `note` | `string \| null` | no | Set when a `topic` filter matched nothing: the closest known topics. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 
 ## `list_nodes`
@@ -285,7 +334,7 @@ List every DDS endpoint (writer and reader) announced on the bus as an `Endpoint
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (one CLI call). **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` (managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (two CLI calls). **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -300,8 +349,11 @@ None.
 | `total` | `int` | yes | Distinct node names on the graph (no cap applies). |
 | `truncated` | `bool` | yes | True when `returned` is less than `total` because of a cap. |
 | `duplicates` | `list[str]` | yes | Full names that appear more than once on the graph. Empty when every name is unique. |
+| `lifecycle_count` | `int` | no | Nodes with `lifecycle` true. |
+| `lifecycle_note` | `string \| null` | no | Why `lifecycle` could not be determined (service list failed), else `None`. |
+| `by_namespace` | `dict[str, int]` | no | Distinct full names per namespace (`/` is the root), sorted by namespace. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 
 ## `list_participants`
 
@@ -309,7 +361,7 @@ None.
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `vendor` (read from the GUID prefix, `unknown` for vendors that do not put theirs there, e.g. Dust DDS and RTI Connext; see `vendor_source`), optional `name` (the announced EntityName, e.g. `lidar_driver`; a participant with none is normal, not a fault: identify it by its topics), `hostname`, `domain_id` and `is_observer` (TopicForge's own read-only participant, listed like any other). Lifecycle: `status` (`active` / `left`), `first_seen_ns` / `last_seen_ns` (TopicForge's clock), `announced_ns` (DDS source timestamp) and, once left, `lost_ns` + `lost_time_source`: an upper bound of the death (exact after a clean shutdown; after a crash the lease expiry, so up to one lease earlier: 10 s Cyclone, 20 s Fast DDS, 100 s RTI). **Restarts**: a restarted node is a new GUID with the same name; `restarts_by_name` gives `lives` (GUIDs) and `departures` per name, so do not count GUIDs by hand (`seen_count` is not a restart count). Cyclone tracks discovery in the background; right after start the call waits up to 3 s for it. **Only the domain joined at startup is observed** (`health_check` `dds_domain_id`): a participant on another domain is INVISIBLE here, and `domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS layer, so non-ROS participants appear too. **Read-only by architecture**: it cannot publish, modify QoS or alter the bus. **Raises an MCP error** when no DDS module is active (install `topicforge[dds]`, set `TOPICFORGE_DDS_BACKEND=cyclone`); the mock backend returns fixtures. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).
+List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `vendor` (read from the GUID prefix, `unknown` for vendors that do not put theirs there, e.g. Dust DDS and RTI Connext; see `vendor_source`), optional `name` (the announced EntityName, e.g. `lidar_driver`; a participant with none is normal, not a fault: identify it by its topics), `hostname`, `domain_id` and `is_observer` (TopicForge's own read-only participant, listed like any other). Lifecycle: `status` (`active` / `left`), `first_seen_ns` / `last_seen_ns` (TopicForge's clock), `announced_ns` (DDS source timestamp) and, once left, `lost_ns` + `lost_time_source`: an upper bound of the death (exact after a clean shutdown; after a crash the lease expiry, so up to one lease earlier: 10 s Cyclone, 20 s Fast DDS, 100 s RTI). **Restarts**: a restarted node is a new GUID with the same name; `restarts_by_name` gives `lives` (GUIDs) and `departures` per name, so do not count GUIDs by hand (`seen_count` is not a restart count). Cyclone tracks discovery in the background; right after start the call waits up to 3 s for it. **Only the domain joined at startup is observed** (`health_check` `dds_domain_id`): a participant on another domain is INVISIBLE here, and `domain_id` does not switch domains (restart with `TOPICFORGE_DDS_DOMAIN_ID`). Works at the raw DDS layer, so non-ROS participants appear too. **Read-only by architecture**: it cannot publish, modify QoS or alter the bus. **Raises an MCP error** when no DDS module is active (install `topicforge[dds]`, set `TOPICFORGE_DDS_BACKEND=cyclone`); the mock backend returns fixtures. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -327,9 +379,9 @@ List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `ve
 | `truncated` | `bool` | yes | - |
 | `domain_id` | `int` | yes | DDS domain observed (joined at startup). |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 | `restarts_by_name` | `dict[str, NameLifecycle]` | no | Names seen with several GUIDs or lost at least once (absent: ran once and stayed). A restart is a new GUID with the same name. |
-| `restarts_note` | `str \| null` | no | Set when unnamed participants were left out of `restarts_by_name`. |
+| `restarts_note` | `string \| null` | no | Set when unnamed participants were left out of `restarts_by_name`. |
 | `restarts_by_node` | `dict[str, NameLifecycle]` | no | `restarts_by_name` keyed by ROS 2 node full name. |
 
 ## `list_topics`
@@ -338,7 +390,7 @@ List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `ve
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, `message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty `topics`** when the graph has none or live discovery times out. **Raises an MCP error** without a `ros2` CLI. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).
+ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, `message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty `topics`** when the graph has none or live discovery times out. **Raises an MCP error** without a `ros2` CLI. Read-only; no side effects. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -353,7 +405,7 @@ None.
 | `total` | `int` | yes | - |
 | `truncated` | `bool` | yes | - |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 
 ## `participant_events`
 
@@ -361,7 +413,7 @@ None.
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, `observed_ns`, `age_s` (seconds before the response; live only), optional `name` (announced name), `hostname` and `domain_id`. `time_source` is `dds_source_timestamp` (timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` timestamp is an upper bound of the death: exact after a clean shutdown, the lease expiry after a crash, so the process died up to one lease earlier (10 s Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. **Restarts**: a restarted node is a new participant (one `lost` and one `discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` and `departures` per name over the window, so do not count GUIDs by hand. Capped at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows what happened since it started watching (`health_check.observer_started_ns`). **Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).
+Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, `observed_ns`, `age_s` (seconds before the response; live only), optional `name` (announced name), `hostname` and `domain_id`. `time_source` is `dds_source_timestamp` (timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` timestamp is an upper bound of the death: exact after a clean shutdown, the lease expiry after a crash, so the process died up to one lease earlier (10 s Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. **Restarts**: a restarted node is a new participant (one `lost` and one `discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` and `departures` per name over the window, so do not count GUIDs by hand. Capped at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows what happened since it started watching (`health_check.observer_started_ns`). **Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -380,9 +432,9 @@ Return DDS participant lifecycle events (`discovered` / `lost`) from a recent wi
 | `truncated` | `bool` | yes | True when cut to the 200-event cap. |
 | `domain_id` | `int` | yes | DDS domain observed (joined at startup). |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
 | `restarts_by_name` | `dict[str, NameLifecycle]` | no | Names seen with several GUIDs or lost at least once (absent: ran once and stayed). A restart is a new GUID with the same name. Window only. |
-| `restarts_note` | `str \| null` | no | Set when unnamed participants were left out of `restarts_by_name`. |
+| `restarts_note` | `string \| null` | no | Set when unnamed participants were left out of `restarts_by_name`. |
 
 ## `peek_bag_samples`
 
@@ -390,7 +442,7 @@ Return DDS participant lifecycle events (`discovered` / `lost`) from a recent wi
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=false`, `readOnlyHint=true`
 
-Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the **first** `count` messages of the topic in recording order, not the last. **Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level header (`stamp_source` `header`), else the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); `recorded_ns` is always the record time. Each `payload` carries `_decode_status` (`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the `rosbags` library** and needs the ROS 2 side of the runtime (an error on a DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded definitions (Humble `.db3`) is decoded with those of its recorded distro, or Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists them. **Read-only by architecture**. **Raises an MCP error** when the path does not exist, the topic is not in the bag, or `rosbags` is missing. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `recorded_ns` (the bag record time of the returned messages). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS call is busy); the time follows the bag's size and how deep the first samples are.
+Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the **first** `count` messages of the topic in recording order, not the last (`sample_messages` keeps the newest log matches). `start_s` / `end_s` limit it to a bag-relative time range, empty with a `note` past the end; on `/rosout`, `min_log_level` and `node` keep the first `count` matching logs in range. **Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level header (`stamp_source` `header`), else the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); `recorded_ns` is always the record time. Each `payload` carries `_decode_status` (`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the `rosbags` library** and needs the ROS 2 side of the runtime (an error on a DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded definitions (Humble `.db3`) is decoded with those of its recorded distro, or Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists them. **Read-only by architecture**. **Raises an MCP error** when the path does not exist, the topic is not in the bag, or `rosbags` is missing. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `recorded_ns` (the bag record time of the returned messages). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS call is busy); the time follows the bag's size and how deep the first samples are.
 
 ### Input parameters
 
@@ -399,6 +451,10 @@ Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline
 | `path` | `str` | yes | - | min length 1 | Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked live; mock accepts any well-formed path. |
 | `topic` | `str` | yes | - | - | Fully qualified ROS 2 topic name starting with `/`, e.g. `/cmd_vel`. Segments are letters, digits and underscores (not starting with a digit); anything else is rejected before reaching the `ros2` CLI. |
 | `count` | `int` | no | `5` | >= 0 | Messages to return, default 5, at most 50 (`health_check.max_sample_count`): more is capped to 50, negative raises an error. The result's `count` may be lower. |
+| `start_s` | `float \| null` | no | `null` | >= 0 | Only messages recorded at or after this many seconds from the bag's first message (`analyze_bag.start_ns`), default from the start. |
+| `end_s` | `float \| null` | no | `null` | >= 0 | Only messages recorded before this bag-relative second (exclusive), default to the end. |
+| `min_log_level` | `"debug" \| "info" \| "warn" \| "error" \| "fatal" \| null` | no | `null` | - | `/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level (debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error. |
+| `node` | `str \| null` | no | `null` | - | `/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` (also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error. |
 
 ### Output (top-level fields)
 
@@ -409,7 +465,7 @@ Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline
 | `samples` | `list[MessageSample]` | yes | The samples, in backend order. |
 | `rate` | `TopicRate \| null` | no | How the topic delivered the messages, with a verdict; `null` for `peek_dds_samples`. Use `count` >= 10. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | Why `samples` is empty or limited, when not obvious; else `None`. |
+| `note` | `string \| null` | no | Why `samples` is empty or limited, when not obvious; else `None`. |
 
 ## `peek_dds_samples`
 
@@ -417,7 +473,7 @@ Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_messages` but read from the DDS layer (works without ROS 2). `count` defaults to 5, clamped to 50. (a) The builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) return structured discovery records: on Cyclone the CURRENT state (one per live participant or endpoint), not recent events (use `participant_events`); `DCPSPublication` / `DCPSSubscription` are the raw data behind `list_endpoints`. The topic may be `/scan`, `scan` or `rt/scan`. (b) User topics: payload decoding is DISABLED on every backend, so the call returns `count` 0, empty `samples` and a `note`; that does NOT mean the topic is silent. Use `list_endpoints` for its presence, writers, readers and QoS. A user topic not announced on the bus raises an error. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**: it cannot publish. **Raises an MCP error** when no DDS module is active or the topic is not announced. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).
+Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_messages` but read from the DDS layer (works without ROS 2). `count` defaults to 5, clamped to 50. (a) The builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) return structured discovery records: on Cyclone the CURRENT state (one per live participant or endpoint), not recent events (use `participant_events`); `DCPSPublication` / `DCPSSubscription` are the raw data behind `list_endpoints`. The topic may be `/scan`, `scan` or `rt/scan`. (b) User topics: payload decoding is DISABLED on every backend, so the call returns `count` 0, empty `samples` and a `note`; that does NOT mean the topic is silent. Use `list_endpoints` for its presence, writers, readers and QoS. A user topic not announced on the bus raises an error. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**: it cannot publish. **Raises an MCP error** when no DDS module is active or the topic is not announced. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -435,7 +491,7 @@ Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_message
 | `samples` | `list[MessageSample]` | yes | The samples, in backend order. |
 | `rate` | `TopicRate \| null` | no | How the topic delivered the messages, with a verdict; `null` for `peek_dds_samples`. Use `count` >= 10. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | Why `samples` is empty or limited, when not obvious; else `None`. |
+| `note` | `string \| null` | no | Why `samples` is empty or limited, when not obvious; else `None`. |
 
 ## `sample_messages`
 
@@ -443,7 +499,7 @@ Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_message
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. **Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics work) and returns what arrived by the deadline: `count` is the actual number and `note` says `N of M messages` and why it is short (no publisher, silent, slow or too large to print in time; a latched topic usually holds one message, so use `count` 1). Each sample has `payload` (nested named values), `timestamp_ns` (the publisher's clock, sim time on a simulation, 0 for a headerless message such as `std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock when the CLI printed it). **Arrays**: arrays, strings and bytes are cut at 128 elements by default (a 541-beam `LaserScan` loses beams 128 and up); cut fields are listed in `payload._truncated_fields` and `note`. Raise `max_array_length` (up to 65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for an unknown topic, or when the CLI fails. Read-only; never publishes. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `received_ns` (when the CLI printed each message). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time. It returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; the whole call, lock wait included, ends within 45 s: a call that cannot get the lock fails at once with a `busy` error (retry), and one that waited has less time to collect.
+ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. **Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics work) and returns what arrived by the deadline: `count` is the actual number and `note` says `N of M messages` and why it is short (no publisher, silent, slow or too large to print in time; a latched topic usually holds one message, so use `count` 1). Each sample has `payload` (nested named values), `timestamp_ns` (the publisher's clock, sim time on a simulation, 0 for a headerless message such as `std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock when the CLI printed it). **Arrays**: arrays, strings and bytes are cut at 128 elements by default (a 541-beam `LaserScan` loses beams 128 and up); cut fields are listed in `payload._truncated_fields` and `note`. Raise `max_array_length` (up to 65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for an unknown topic, or when the CLI fails. Read-only; never publishes. **Logs**: `min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most 2000 messages) and return the NEWEST `count` matches in stamp order; `peek_bag_samples` returns the FIRST matches. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `received_ns` (when the CLI printed each message). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; ends within 45 s, less time to collect after a wait; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -454,6 +510,8 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples`
 | `max_array_length` | `int \| null` | no | `128` | >= 1, <= 65536 | Longest array, string or bytes value returned in full, 1..65536, default 128 (a 541-beam `LaserScan` is cut to 128 ranges; its `summary` still covers all). Longer values are cut and listed in `_truncated_fields`. Null returns everything (large for images and clouds; a message over 1 MiB is dropped with a note). |
 | `arrays_summary_only` | `bool` | no | `false` | - | When true, arrays become a type-and-length summary: use it to read the non-array fields of large messages. Default false. |
 | `timeout_s` | `float` | no | `10.0` | >= 1.0, <= 40.0 | Seconds to wait, 1..40, default 10, covering topic lookup and CLI start-up. The call returns within `timeout_s` plus a few seconds, with what arrived and a `note`. Raise it for a topic slower than 1 Hz. |
+| `min_log_level` | `"debug" \| "info" \| "warn" \| "error" \| "fatal" \| null` | no | `null` | - | `/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level (debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error. |
+| `node` | `str \| null` | no | `null` | - | `/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` (also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error. |
 
 ### Output (top-level fields)
 
@@ -464,7 +522,7 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples`
 | `samples` | `list[MessageSample]` | yes | The samples, in backend order. |
 | `rate` | `TopicRate \| null` | no | How the topic delivered the messages, with a verdict; `null` for `peek_dds_samples`. Use `count` >= 10. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | Why `samples` is empty or limited, when not obvious; else `None`. |
+| `note` | `string \| null` | no | Why `samples` is empty or limited, when not obvious; else `None`. |
 
 ## `topic_metrics`
 
@@ -472,7 +530,7 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples`
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent window as a `TopicMetrics`. **Read `status` first**: `unsupported_user_topic` means the payload is not decoded, so no metric exists: every null or 0 is not a measurement; `no_samples_yet` is a builtin topic with nothing buffered; `ok` means computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how often it was called, not the publish rate: a coarse presence signal. `declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline announced in discovery (declared, not measured; null when none). Also `sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is outside 1..3600. Right after start the call waits up to 3 s for discovery. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).
+Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent window as a `TopicMetrics`. **Read `status` first**: `unsupported_user_topic` means the payload is not decoded, so no metric exists: every null or 0 is not a measurement; `no_samples_yet` is a builtin topic with nothing buffered; `ok` means computed. **Limits**: the buffer is filled only when `peek_dds_samples` runs on the topic, so `observed_frequency_hz` reflects how often it was called, not the publish rate: a coarse presence signal. `declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline announced in discovery (declared, not measured; null when none). Also `sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is outside 1..3600. Right after start the call waits up to 3 s for discovery. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -490,14 +548,188 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
 | `window_s` | `int` | yes | Requested window in seconds (echoed). |
 | `window_actual_s` | `float` | yes | Seconds actually covered; shorter than `window_s` after a recent start; `0.0` without samples. |
 | `samples_observed` | `int` | yes | Samples buffered in the window. `0` does NOT mean no publisher, only that no `peek_dds_samples` call captured one. |
-| `observed_frequency_hz` | `float \| null` | no | `samples_observed / window_actual_s`; `None` under 2 samples. |
-| `declared_frequency_hz` | `float \| null` | no | `1 / deadline` of the shortest writer Deadline announced: the promised rate, not the observed one; `None` when none announced. |
+| `observed_frequency_hz` | `number \| null` | no | `samples_observed / window_actual_s`; `None` under 2 samples. |
+| `declared_frequency_hz` | `number \| null` | no | `1 / deadline` of the shortest writer Deadline announced: the promised rate, not the observed one; `None` when none announced. |
 | `status` | `"ok" \| "no_samples_yet" \| "unsupported_user_topic"` | no | `ok`; `no_samples_yet` (empty buffer); `unsupported_user_topic` (payload not decoded: null fields are not measurements). |
 | `sequence_gaps_count` | `int` | no | Missing sequence numbers in the buffered samples; `0` also when none exist (see `sequence_numbers_available`). |
 | `sequence_numbers_available` | `bool` | no | True when a sequence number could be read from a sample. |
-| `latency_ns_p50` | `int \| null` | no | Median publish-to-receive latency in ns; `None` unless `latency_available`. |
-| `latency_ns_p95` | `int \| null` | no | 95th-percentile publish-to-receive latency (ns). |
-| `latency_ns_p99` | `int \| null` | no | 99th-percentile publish-to-receive latency (ns). |
+| `latency_ns_p50` | `integer \| null` | no | Median publish-to-receive latency in ns; `None` unless `latency_available`. |
+| `latency_ns_p95` | `integer \| null` | no | 95th-percentile publish-to-receive latency (ns). |
+| `latency_ns_p99` | `integer \| null` | no | 99th-percentile publish-to-receive latency (ns). |
 | `latency_available` | `bool` | no | True when a sample carried both a publish and a receive timestamp. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
-| `note` | `str \| null` | no | One sentence of context, or `None`. |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
+
+## Notes
+
+- `inspect_tf` compares the TF frames with the URDF on the `/robot_description`
+  topic, which `robot_state_publisher` publishes (the default since ROS 2 Galactic).
+  A robot description held only as a node parameter is not read: `urdf_source` is
+  `none` and `urdf_note` says why. A link on a non-fixed joint has a TF frame only
+  while `/joint_states` is published.
+- `get_node_info(params_file=...)` reads a YAML file from the disk of the machine
+  running TopicForge (`.yaml` or `.yml`, at most 1 MiB, read-only). The path is never
+  sent to a node or to the `ros2` CLI, and nothing is written.
+
+## Message summaries
+
+`MessageSample.summary` is advertised in the tool schemas as an open object with a
+`summary_type` (`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`) or `null`.
+The server builds and validates the exact shapes below. `TopicRate` is the `rate`
+block of a sample result. See [CONTRACT.md](CONTRACT.md) section 9.9.
+
+### `LaserScanSummary`
+
+Summary of a `sensor_msgs/msg/LaserScan`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"laser_scan"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id`; every angle is in this sensor frame, not the base frame. |
+| `beam_count` | `int` | yes | Beams in `ranges`. |
+| `angle_min` | `float \| null` | yes | Bearing of beam 0, rad. |
+| `angle_max` | `float \| null` | yes | Bearing of the last beam, rad. |
+| `angle_increment` | `float \| null` | yes | Angle between beams, rad. |
+| `range_min` | `float \| null` | yes | Smallest valid range, m. |
+| `range_max` | `float \| null` | yes | Largest valid range, m. |
+| `finite_count` | `int` | yes | Beams with a finite range. |
+| `inf_count` | `int` | yes | Beams at `+inf`. |
+| `neg_inf_count` | `int` | yes | Beams at `-inf`. |
+| `nan_count` | `int` | yes | Beams at `nan`. |
+| `out_of_range_count` | `int` | yes | Finite ranges outside `range_min`..`range_max` (not valid). |
+| `closest_obstacle` | `ScanReturn \| null` | yes | Closest valid return of the scan; `null` with `note`. |
+| `sectors` | `ScanSectors` | yes | Closest valid return per sector. |
+| `note` | `str \| null` | no | One sentence when the summary is partial; else `null`. |
+
+### `OdometrySummary`
+
+Summary of a `nav_msgs/msg/Odometry`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"odometry"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` (frame of the pose). |
+| `child_frame_id` | `str \| null` | yes | `child_frame_id` (frame of the twist). |
+| `linear_speed` | `float \| null` | yes | Norm of `twist.twist.linear`, m/s. |
+| `angular_z` | `float \| null` | yes | `twist.twist.angular.z`, rad/s. |
+| `position_x` | `float \| null` | yes | `pose.pose.position.x`, m. |
+| `position_y` | `float \| null` | yes | `pose.pose.position.y`, m. |
+| `position_z` | `float \| null` | yes | `pose.pose.position.z`, m. |
+| `yaw` | `float \| null` | yes | Heading from the pose quaternion, radians. |
+| `note` | `str \| null` | no | One sentence when a value is missing; else `null`. |
+
+### `ImuSummary`
+
+Summary of a `sensor_msgs/msg/Imu`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"imu"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` of the IMU. |
+| `orientation_valid` | `bool` | yes | False when the IMU gives no orientation: `roll`, `pitch`, `yaw` are `null`. |
+| `roll` | `float \| null` | yes | Rotation about x, radians. |
+| `pitch` | `float \| null` | yes | Rotation about y, radians. |
+| `yaw` | `float \| null` | yes | Rotation about z, radians. |
+| `angular_velocity_norm` | `float \| null` | yes | Norm of `angular_velocity`, rad/s. |
+| `linear_acceleration_norm` | `float \| null` | yes | Norm of `linear_acceleration`, m/s^2. |
+| `note` | `str \| null` | no | One sentence when a value is unusable; else `null`. |
+
+### `ImageSummary`
+
+Summary of a `sensor_msgs/msg/Image`. Pixels are never read.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"image"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` of the camera. |
+| `width` | `int \| null` | yes | Pixels. |
+| `height` | `int \| null` | yes | Pixels. |
+| `encoding` | `str \| null` | yes | Pixel encoding, e.g. `rgb8`. |
+| `step` | `int \| null` | yes | Row length, bytes. |
+| `is_bigendian` | `bool \| null` | yes | Big-endian pixels. |
+| `data_length` | `int \| null` | yes | Pixel buffer size in bytes (see `data_length_basis`). |
+| `data_length_basis` | `"payload" \| "step_x_height" \| null` | yes | `payload` (counted) or `step_x_height` (array cut, so step times height). |
+| `note` | `str \| null` | no | One sentence when partial; else `null`. |
+
+### `PointCloud2Summary`
+
+Summary of a `sensor_msgs/msg/PointCloud2`. Points are never read.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"point_cloud2"` | yes | - |
+| `frame_id` | `str \| null` | yes | `header.frame_id` of the cloud. |
+| `width` | `int \| null` | yes | Points per row. |
+| `height` | `int \| null` | yes | Rows (1: unorganized). |
+| `point_count` | `int \| null` | yes | `width` times `height`. |
+| `point_step` | `int \| null` | yes | Bytes per point. |
+| `row_step` | `int \| null` | yes | Bytes per row. |
+| `is_dense` | `bool \| null` | yes | True when no point is invalid. |
+| `fields` | `list[PointFieldSummary]` | yes | Point layout. |
+| `note` | `str \| null` | no | One sentence when partial; else `null`. |
+
+### `ScanSectors`
+
+Sector minima, defined by bearing in the sensor frame.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `front` | `ScanSector` | yes | Bearings within +-45 degrees of +x. |
+| `left` | `ScanSector` | yes | Bearings from 45 to 135 degrees. |
+| `right` | `ScanSector` | yes | Bearings from -135 to -45 degrees. |
+| `rear` | `ScanSector` | yes | Bearings beyond +-135 degrees. |
+
+### `ScanSector`
+
+The closest valid return inside one angular sector of the scan.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `beam_count` | `int` | yes | Beams inside the sector (0: not covered). |
+| `closest` | `ScanReturn \| null` | yes | Closest valid return in the sector; `null` with `note`. |
+| `note` | `str \| null` | no | Why `closest` is `null`; `null` when it is set. |
+
+### `ScanReturn`
+
+One beam of a laser scan: the shortest valid return of a set of beams.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `range` | `float` | yes | Distance, meters. |
+| `bearing` | `float` | yes | Beam direction in radians, sensor frame: 0 is +x, counter-clockwise positive. |
+| `beam_index` | `int` | yes | Index in `ranges`. |
+
+### `PointFieldSummary`
+
+One field of a point cloud (`sensor_msgs/msg/PointField`).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | `str` | yes | Field name, e.g. `x`. |
+| `datatype` | `str` | yes | Element type, e.g. `FLOAT32`. |
+| `offset` | `int \| null` | yes | Byte offset in a point. |
+| `count` | `int \| null` | yes | Elements per point. |
+
+### `TopicRate`
+
+How a topic delivered its messages during one sampling call, with a verdict.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `basis` | `"received_ns" \| "recorded_ns"` | yes | Clock the rate is measured on: `received_ns` (live) or `recorded_ns` (bag). |
+| `message_count` | `int` | yes | Messages the rate is computed from. |
+| `startup_burst_count` | `int` | yes | Leading messages set aside as a start-up drain (live only); still in `message_count`. |
+| `window_s` | `float` | yes | Observation length, seconds. |
+| `mean_interval_s` | `float \| null` | yes | Mean interval; `null` under 2 messages. |
+| `interval_median_s` | `float \| null` | yes | Median interval; `null` under 2 messages. |
+| `max_gap_s` | `float \| null` | yes | Longest interval; `null` under 2 messages. |
+| `interval_cv` | `float \| null` | yes | Interval standard deviation over mean; `null` under 2 messages. |
+| `observed_frequency_hz` | `float \| null` | yes | Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages. |
+| `sim_frequency_hz` | `float \| null` | yes | Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps. |
+| `trailing_gap_s` | `float \| null` | yes | Time from the last message to the end of a live observation; else `null`. |
+| `clock_basis` | `"wall" \| "sim" \| "none" \| "mixed"` | no | Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` (no stamps), `mixed` (several kinds, e.g. two publishers). |
+| `stamp_age_median_s` | `float \| null` | no | Median of arrival minus stamp, s, if `wall`; negative = publisher ahead. |
+| `stamp_age_p95_s` | `float \| null` | no | 95th percentile of that age (max under 20 messages). |
+| `stamp_regression_count` | `int` | no | Times a stamp went back versus the previous one. |
+| `verdict` | `"silent" \| "insufficient" \| "intermittent" \| "stable" \| "jittery" \| "erratic"` | yes | First match: `silent` (none), `insufficient` (under 5), `intermittent` (an interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), `erratic`. Describes this window, not a diagnosis. |
+| `verdict_note` | `str` | yes | The verdict in plain words. |
