@@ -526,6 +526,38 @@ def test_inspect_tf_reads_the_bench_tree(adapter: Ros2CliAdapter) -> None:
     assert not _echo_processes(), "the killed `ros2 topic echo` left a process behind"
 
 
+def test_inspect_tf_compares_the_urdf_with_the_frames(adapter: Ros2CliAdapter) -> None:
+    """`/robot_description` is a latched String the bench publishes: see `declared_truth`."""
+    from topicforge.services.inspector import Inspector
+
+    from . import ground_truth as model
+
+    want = model.declared_truth()["urdf"]
+    report = Inspector(adapter).inspect_tf(window_s=3.0)
+    assert report.urdf_source == want["source"], report.urdf_note
+    assert report.urdf_link_count == want["link_count"]
+    assert report.declared_frames_missing == want["declared_frames_missing"]
+    assert report.frames_not_in_urdf == want["frames_not_in_urdf"]
+    flagged = [f.frames for f in report.findings if f.kind == want["finding_kind"]]
+    assert flagged == [want["declared_frames_missing"]]
+    assert not _echo_processes(), "the killed `ros2 topic echo` left a process behind"
+
+
+def test_get_node_info_params_file_names_the_drift(adapter: Ros2CliAdapter) -> None:
+    """`bench_params.yaml` against the parameters `/bench_robot` declares: see `declared_truth`."""
+    from topicforge.services.inspector import Inspector
+
+    from . import ground_truth as model
+
+    want = model.declared_truth()["params"]
+    path = Path(__file__).with_name(model.PARAMS_FILE_NAME)
+    info = Inspector(adapter).get_node_info(want["node"], params_file=str(path))
+    assert info.param_diff is not None, info.param_diff_note
+    assert [d.model_dump() for d in info.param_diff] == want["differences"]
+    assert (info.param_diff_summary or "").startswith(f"{want['same']} same,")
+    assert info.param_diff_note is None
+
+
 def test_rosout_filter_reads_the_buffer_and_keeps_the_node(adapter: Ros2CliAdapter) -> None:
     """The depth-2000 reader must receive the buffered ERROR lines, not only the live ones."""
     result = adapter.sample_messages(

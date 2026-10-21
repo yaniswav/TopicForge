@@ -1,0 +1,8 @@
+# A launch-style parameter file for /bench_robot, read by `get_node_info(params_file=...)`.
+# The node declares max_range 10.0 (this file says 12.0), frame_id "laser" (the same) and has
+# no extra_gain at all: see `declared_truth` in ground_truth.py.
+bench_robot:
+  ros__parameters:
+    max_range: 12.0
+    frame_id: laser
+    extra_gain: 1.5

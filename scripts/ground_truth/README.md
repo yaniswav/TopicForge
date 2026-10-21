@@ -13,6 +13,7 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | `drive.py` | MCP stdio driver: runs `calls.json` in one session, saves one JSON per call (result, wall time) and the server's stderr |
 | `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes; `{"settle_s": 3}` entries sleep (before the DDS calls and at the end) |
 | `calls_graph_diff.json` | The four `graph_diff` calls of the bench only (the OmniSim kit does not run it): `{"spawn": ...}` starts `tests/integration/ros2/graph_change.py` between the steady call and the v2 call, and `drive.py` stops it when the session ends |
+| `calls_declared.json` | The declared-against-real call of the bench only: `get_node_info` of `/bench_robot` with `params_file` set to `tests/integration/ros2/bench_params.yaml` (the OmniSim kit does not run it; the URDF side rides on the `17_inspect_tf` call) |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
@@ -22,7 +23,10 @@ side, nodes, `use_sim_time` per node), scan (geometry, every range, wall and sec
 (`stamp_source` per topic), rates (verdict, frequency, interval_cv), bag, dds, tf, clock, logs and, from
 0.8.0, `graph_diff` (bench truth only): the first call has no baseline, the steady graph gives zero
 changes, after `graph_change.py` starts (node `/bench_v2`, topic `/scan_v2`, a second writer on
-`/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing.
+`/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing. Also from 0.8.0, `declared` (bench truth
+only): `inspect_tf` finds the URDF on `/robot_description` and names the link nothing publishes
+(`arm_link`), and `param_diff` names exactly the parameter the file states differently
+(`max_range`) and the one the node does not have (`extra_gain`).
 
 Machine-dependent rows (OmniSim kit runs on a shared host):
 

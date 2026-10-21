@@ -20,7 +20,11 @@ Everything is deterministic and exact by construction:
 - the TF tree is the `tf` section: three static edges on `/tf_static`, three steady edges
   on `/tf` (one of them gives `tool` a second parent), and one edge (`map -> odom`) that
   is published for `TF_FLAKY_ACTIVE_S` after each new subscriber of `/tf` and then stops,
-  so any capture longer than that sees it go stale.
+  so any capture longer than that sees it go stale;
+- the declared side (0.8.0, `declared_truth`): `/robot_description` carries a URDF whose links
+  are the static frames plus `arm_link`, a link on a revolute joint that nothing publishes, and
+  `/bench_robot` declares three parameters of which `bench_params.yaml` states one differently
+  and adds one the node does not have.
 """
 
 from __future__ import annotations
@@ -60,6 +64,7 @@ TF_STATIC_EDGES = (
 TF_STEADY_EDGES = (("odom", "base_link"), ("base_link", "tool"), ("odom", "tool"))
 TF_FLAKY_EDGE = ("map", "odom")
 # The `inspect_tf` call of `scripts/ground_truth/calls.json`: the window outlasts the flaky edge.
+TF_CALL_NAME = "17_inspect_tf"
 TF_CALL = {
     "window_s": 12,
     "stale_after_s": 2.0,
@@ -91,6 +96,7 @@ BENCH_TOPICS = {
     "/camera/image_raw": ("sensor_msgs/msg/Image", False),
     "/scan_edge": ("sensor_msgs/msg/LaserScan", False),
     "/robot_description_lite": ("std_msgs/msg/String", True),
+    "/robot_description": ("std_msgs/msg/String", True),
     "/tf": ("tf2_msgs/msg/TFMessage", False),
     "/tf_static": ("tf2_msgs/msg/TFMessage", True),
     "/imu/data": ("sensor_msgs/msg/Imu", False),
@@ -126,6 +132,17 @@ STAMPS = {
 }
 SECTOR_EDGE_EPS = 1e-4
 
+# Declared against real (0.8.0), see `declared_truth`. The URDF on `/robot_description` has the
+# links of TF_STATIC_EDGES plus this one, hanging from a revolute joint nothing publishes.
+URDF_UNPUBLISHED_LINK = "arm_link"
+# Parameters `/bench_robot` declares, and the ones `bench_params.yaml` states for it (the file
+# is read by the server, never sent to the node).
+BENCH_PARAMS: dict[str, Any] = {"scan_period": 0.1, "frame_id": "laser", "max_range": 10.0}
+PARAMS_FILE_NAME = "bench_params.yaml"
+PARAMS_FILE_DECLARED: dict[str, Any] = {"max_range": 12.0, "frame_id": "laser", "extra_gain": 1.5}
+PARAMS_CALL_NAME = "03p_node_info_params"
+PARAMS_NODE = "/bench_robot"
+
 # graph_diff (0.8.0): `graph_change.py` adds exactly these three differences, see `graph_diff_truth`.
 GRAPH_V2_NODE = "/bench_v2"
 GRAPH_V2_TOPIC = "/scan_v2"
@@ -154,6 +171,80 @@ def tf_truth() -> dict[str, Any]:
             SCAN_FRAME,
         ],
         "real_time_factor": 1.0,
+    }
+
+
+def urdf_links() -> list[str]:
+    """Link names of the bench URDF: the static frames, then the unpublished arm link."""
+    names: list[str] = []
+    for parent, child in TF_STATIC_EDGES:
+        for name in (parent, child):
+            if name not in names:
+                names.append(name)
+    return [*names, URDF_UNPUBLISHED_LINK]
+
+
+def urdf_text() -> str:
+    """The URDF `publisher.py` latches on `/robot_description` (minimal: links and joints)."""
+    parts = ['<?xml version="1.0"?>', '<robot name="bench_robot">']
+    parts += [f'<link name="{name}"/>' for name in urdf_links()]
+    for parent, child in TF_STATIC_EDGES:
+        parts.append(
+            f'<joint name="{child}_joint" type="fixed">'
+            f'<parent link="{parent}"/><child link="{child}"/></joint>'
+        )
+    parts.append(
+        f'<joint name="{URDF_UNPUBLISHED_LINK}_joint" type="revolute">'
+        f'<parent link="base_link"/><child link="{URDF_UNPUBLISHED_LINK}"/>'
+        '<limit lower="0" upper="1" effort="1" velocity="1"/></joint>'
+    )
+    parts.append("</robot>")
+    return "".join(parts)
+
+
+def declared_truth() -> dict[str, Any]:
+    """What the declared-against-real answers must say (0.8.0).
+
+    `urdf` is read from the `17_inspect_tf` answer (the URDF is compared on every call), `params`
+    from `03p_node_info_params` (`get_node_info` with `params_file`). The differences are exactly
+    `max_range` (the file says 12.0, the node 10.0) and `extra_gain` (the file only); `frame_id`
+    is the one parameter that agrees, and the node's others (`scan_period`, `use_sim_time`, ...)
+    are counted as `live_only`.
+    """
+    links = urdf_links()
+    differences = []
+    for name in sorted(PARAMS_FILE_DECLARED):
+        declared = PARAMS_FILE_DECLARED[name]
+        if name not in BENCH_PARAMS:
+            differences.append(
+                {"name": name, "status": "declared_only", "declared": declared, "live": None}
+            )
+        elif BENCH_PARAMS[name] != declared:
+            differences.append(
+                {
+                    "name": name,
+                    "status": "different",
+                    "declared": declared,
+                    "live": BENCH_PARAMS[name],
+                }
+            )
+    return {
+        "urdf": {
+            "call": TF_CALL_NAME,
+            "source": "robot_description",
+            "link_count": len(links),
+            "declared_frames_missing": [URDF_UNPUBLISHED_LINK],
+            "frames_not_in_urdf": sorted(
+                {n for e in tf_truth()["dynamic_edges"] for n in e} - set(links)
+            ),
+            "finding_kind": "declared_not_published",
+        },
+        "params": {
+            "call": PARAMS_CALL_NAME,
+            "node": PARAMS_NODE,
+            "differences": differences,
+            "same": len(PARAMS_FILE_DECLARED) - len(differences),
+        },
     }
 
 
@@ -392,6 +483,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         "clock": clock_truth(),
         "logs": logs_truth(),
         "graph_diff": graph_diff_truth(),
+        "declared": declared_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

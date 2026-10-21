@@ -44,6 +44,11 @@ class BenchRobot(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self._desc_pub = self.create_publisher(String, "/robot_description_lite", latched)
+        # What robot_state_publisher does: the URDF, latched (0.8.0, `ground_truth.urdf_text`).
+        self._urdf_pub = self.create_publisher(String, "/robot_description", latched)
+        # Declared parameters, for the `params_file` comparison (`ground_truth.BENCH_PARAMS`).
+        for name, value in model.BENCH_PARAMS.items():
+            self.declare_parameter(name, value)
         # tf2's own QoS: /tf is reliable and volatile with a deep queue, /tf_static latched.
         self._tf_pub = self.create_publisher(TFMessage, "/tf", QoSProfile(depth=100))
         self._tf_static_pub = self.create_publisher(TFMessage, "/tf_static", latched)
@@ -61,6 +66,9 @@ class BenchRobot(Node):
         desc = String()
         desc.data = "bench_robot: differential drive, 2D lidar"
         self._desc_pub.publish(desc)
+        urdf = String()
+        urdf.data = model.urdf_text()
+        self._urdf_pub.publish(urdf)
         self._tf_static_pub.publish(
             TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
         )

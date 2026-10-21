@@ -1,0 +1,6 @@
+[
+  {"name": "03p_node_info_params", "tool": "get_node_info", "timeout": 60,
+   "args": {"node": "/bench_robot", "timeout_s": 8,
+            "params_file": "/opt/topicforge/tests/integration/ros2/bench_params.yaml"}},
+  {"settle_s": 3}
+]
