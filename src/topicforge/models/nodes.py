@@ -124,6 +124,19 @@ class NodeParameter(BaseModel):
     )
 
 
+class ParamDiff(BaseModel):
+    """One parameter where `params_file` and the running node disagree."""
+
+    model_config = _CONFIG
+
+    name: str
+    status: Literal["different", "declared_only", "masked"] = Field(
+        description="`declared_only`: absent on the node."
+    )
+    declared: JsonValue
+    live: JsonValue
+
+
 class NodeInfo(BaseModel):
     """Detail of one node: its interfaces, its parameters and `use_sim_time`."""
 
@@ -173,6 +186,20 @@ class NodeInfo(BaseModel):
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
     note: str | None = Field(default=None, description=_NOTE_DESC)
+    param_diff: list[ParamDiff] | None = Field(
+        default=None, description="File against node: differences only."
+    )
+    param_diff_summary: str | None = Field(
+        default=None, description="Counts left out: same, live_only."
+    )
+    param_diff_note: str | None = None
 
 
-__all__ = ["NodeInfo", "NodeInterface", "NodeListItem", "NodeListing", "NodeParameter"]
+__all__ = [
+    "NodeInfo",
+    "NodeInterface",
+    "NodeListItem",
+    "NodeListing",
+    "NodeParameter",
+    "ParamDiff",
+]

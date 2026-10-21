@@ -14,6 +14,7 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes; `{"settle_s": 3}` entries sleep (before the DDS calls and at the end) |
 | `calls_graph_diff.json` | The four `graph_diff` calls of the bench only (the OmniSim kit does not run it): `{"spawn": ...}` starts `tests/integration/ros2/graph_change.py` between the steady call and the v2 call, and `drive.py` stops it when the session ends |
 | `calls_nav_primitives.json` | The two Nav2 primitive calls of the bench only (`40_action_status`: one sample of the hidden, latched `/bench_fib/_action/status`; `41_bond`: `/bond` samples), run between `calls.json` and `calls_graph_diff.json` |
+| `calls_declared.json` | The declared-against-real call of the bench only: `get_node_info` of `/bench_robot` with `params_file` set to `tests/integration/ros2/bench_params.yaml` (the OmniSim kit does not run it; the URDF side rides on the `17_inspect_tf` call) |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
@@ -26,6 +27,10 @@ changes, after `graph_change.py` starts (node `/bench_v2`, topic `/scan_v2`, a s
 `/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing.
 From 0.8.0 the `nav_primitives` section (bench truth only) reads the building blocks of the `diagnose-nav2` prompt, not Nav2: `/bench_robot` serves a never-called action `/bench_fib` and publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz). The hidden `_action/status` topic gives one sample with an empty `status_list`, `/bench_fib` is in `get_node_info.action_servers` of `/bench_robot`, the status topic is absent from `list_topics`, and every `/bond` sample carries the id.
 The `visibility` section (bench truth only, from `05s_list_endpoints_scan` and the health and participant calls) checks the `/scan` writer's `node_name` is `/bench_robot`, its participant has `endpoint_count` >= 12 and `ros_security_enabled` is false with no note.
+`/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing. Also from 0.8.0, `declared` (bench truth
+only): `inspect_tf` finds the URDF on `/robot_description` and names the link nothing publishes
+(`arm_link`), and `param_diff` names exactly the parameter the file states differently
+(`max_range`) and the one the node does not have (`extra_gain`).
 
 Machine-dependent rows (OmniSim kit runs on a shared host):
 

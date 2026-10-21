@@ -312,6 +312,25 @@ def render_summaries_appendix() -> str:
     return "\n".join(lines)
 
 
+def render_notes() -> str:
+    """Markdown notes that belong to no single field: what a result needs from the robot."""
+    return "\n".join(
+        [
+            "## Notes",
+            "",
+            "- `inspect_tf` compares the TF frames with the URDF on the `/robot_description`",
+            "  topic, which `robot_state_publisher` publishes (the default since ROS 2 Galactic).",
+            "  A robot description held only as a node parameter is not read: `urdf_source` is",
+            "  `none` and `urdf_note` says why. A link on a non-fixed joint has a TF frame only",
+            "  while `/joint_states` is published.",
+            "- `get_node_info(params_file=...)` reads a YAML file from the disk of the machine",
+            "  running TopicForge (`.yaml` or `.yml`, at most 1 MiB, read-only). The path is never",
+            "  sent to a node or to the `ros2` CLI, and nothing is written.",
+            "",
+        ]
+    )
+
+
 def render_tools_doc(tools: list[JsonDict]) -> str:
     """Full text of docs/TOOLS.md for `tools`."""
     head = [
@@ -331,7 +350,9 @@ def render_tools_doc(tools: list[JsonDict]) -> str:
         world = "open" if (t["annotations"] or {}).get("openWorldHint") else "closed"
         head.append(f"| [`{t['name']}`](#{t['name']}) | {t['title']} | {world} |")
     body = "\n".join(render_tool_section(t) for t in tools)
-    return "\n".join(head) + "\n\n" + body + "\n" + render_summaries_appendix()
+    return (
+        "\n".join(head) + "\n\n" + body + "\n" + render_notes() + "\n" + render_summaries_appendix()
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

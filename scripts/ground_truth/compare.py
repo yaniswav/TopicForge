@@ -25,6 +25,9 @@ topic; only the bench truth has one), graph_diff (the four `graph_diff` calls of
 has one), nav_primitives (the Nav2 building blocks of the `diagnose-nav2` prompt, from
 `calls_nav_primitives.json`: a hidden latched `_action/status` sample, the action in
 `get_node_info.action_servers`, `/bond` samples; only the bench truth has one). Reads output contract 2 (0.7:
+has one), declared (the URDF links against the TF frames in the `17_inspect_tf` answer, and
+`param_diff` in the `03p_node_info_params` answer of `calls_declared.json`; only the bench truth
+has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -1602,7 +1605,8 @@ def _tf_frame_rows(truth: dict, frames: dict[str, dict], rep: Report, wall: floa
 
 def _tf_finding_rows(truth: dict, report: dict, rep: Report, wall: float | None) -> None:
     findings = report.get("findings") or []
-    kinds = sorted({f.get("kind") for f in findings})
+    # `declared_not_published` comes from the URDF, not the tree: the `declared` section owns it.
+    kinds = sorted({f.get("kind") for f in findings} - {DECLARED_FINDING_KIND})
     want_kinds = sorted(truth["finding_kinds"])
     rep.add(
         "tf",
@@ -2357,6 +2361,149 @@ def check_visibility(gt: dict, res: Results, rep: Report) -> None:
     _check_vis_participant(truth, res, rep)
     _check_vis_health(truth, res, rep)
 
+# ---------------------------------------------------------------------------- declared
+# Self-contained: the `declared` section of the truth (only the bench writes one). The URDF side
+# reads the `17_inspect_tf` answer (`inspect_tf` compares `/robot_description` on every call), the
+# parameter side the `03p_node_info_params` answer (`get_node_info` with `params_file`).
+DECLARED_FINDING_KIND = "declared_not_published"
+
+
+def _dc_row(
+    rep: Report, metric: str, truth: Any, got: Any, ok: bool, wall: float | None, note: str = ""
+) -> None:
+    rep.add("declared", metric, truth, got, "PASS" if ok else "FAIL", note, wall)
+
+
+def _dc_unavailable(rep: Report, metric: str, err: str, wall: float | None) -> None:
+    if err == "missing":
+        rep.add("declared", metric, "a report", "absent", "WARN", "older server", wall)
+    else:
+        rep.add("declared", metric, "a report", err, "FAIL", "", wall)
+
+
+def _check_declared_urdf(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["call"])
+    wall = res.times.get(truth["call"])
+    err = tool_err(data)
+    if err:
+        return _dc_unavailable(rep, "URDF comparison (inspect_tf)", err, wall)
+    report = objs(data)[0]
+    note = str(report.get("urdf_note") or "")
+    got_source = report.get("urdf_source")
+    if got_source is None:
+        return rep.add(
+            "declared",
+            "URDF comparison (inspect_tf)",
+            "urdf_source",
+            "absent",
+            "WARN",
+            "older server",
+            wall,
+        )
+    _dc_row(
+        rep,
+        "urdf_source (inspect_tf)",
+        truth["source"],
+        got_source,
+        got_source == truth["source"],
+        wall,
+        note,
+    )
+    count = report.get("urdf_link_count")
+    _dc_row(
+        rep,
+        "urdf_link_count (inspect_tf)",
+        truth["link_count"],
+        count,
+        count == truth["link_count"],
+        wall,
+    )
+    missing = sorted(report.get("declared_frames_missing") or [])
+    _dc_row(
+        rep,
+        "declared_frames_missing (inspect_tf)",
+        truth["declared_frames_missing"],
+        missing,
+        missing == sorted(truth["declared_frames_missing"]),
+        wall,
+        "a link of the URDF that nothing publishes",
+    )
+    extra = sorted(report.get("frames_not_in_urdf") or [])
+    _dc_row(
+        rep,
+        "frames_not_in_urdf (inspect_tf)",
+        truth["frames_not_in_urdf"],
+        extra,
+        extra == sorted(truth["frames_not_in_urdf"]),
+        wall,
+        "the moving frames of the model: informative, not a fault",
+    )
+    found = [f for f in report.get("findings") or [] if f.get("kind") == truth["finding_kind"]]
+    got = [f.get("frames") for f in found]
+    _dc_row(
+        rep,
+        "declared_not_published finding (inspect_tf)",
+        [truth["declared_frames_missing"]],
+        got,
+        got == [truth["declared_frames_missing"]],
+        wall,
+        "one finding naming every link",
+    )
+
+
+def _diff_rows(entries: list[dict]) -> list[tuple[str, str, Any, Any]]:
+    return sorted((e["name"], e["status"], e.get("declared"), e.get("live")) for e in entries)
+
+
+def _check_declared_params(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["call"])
+    wall = res.times.get(truth["call"])
+    err = tool_err(data)
+    if err:
+        return _dc_unavailable(rep, "param_diff (get_node_info)", err, wall)
+    info = objs(data)[0]
+    if "param_diff" not in info:
+        return rep.add(
+            "declared",
+            "param_diff (get_node_info)",
+            "param_diff",
+            "absent",
+            "WARN",
+            "older server",
+            wall,
+        )
+    got = info.get("param_diff")
+    want = _diff_rows(truth["differences"])
+    _dc_row(
+        rep,
+        "param_diff entries (get_node_info)",
+        want,
+        None if got is None else _diff_rows(got),
+        got is not None and _diff_rows(got) == want,
+        wall,
+        str(info.get("param_diff_note") or ""),
+    )
+    summary = str(info.get("param_diff_summary") or "")
+    _dc_row(
+        rep,
+        "param_diff_summary (get_node_info)",
+        f"{truth['same']} same, N live_only",
+        summary,
+        summary.startswith(f"{truth['same']} same,"),
+        wall,
+        "same and live_only are counted, not listed",
+    )
+
+
+@guard("declared")
+def check_declared(gt: dict, res: Results, rep: Report) -> None:
+    """URDF links against TF frames and a parameter file against the node (0.8.0)."""
+    truth = gt.get("declared")
+    if not truth:
+        return
+    _check_declared_urdf(truth["urdf"], res, rep)
+    _check_declared_params(truth["params"], res, rep)
+
 
 SECTIONS = (
     check_graph,
@@ -2371,6 +2518,7 @@ SECTIONS = (
     check_graph_diff,
     check_nav_primitives,
     check_visibility,
+    check_declared,
     check_listing,
 )
 

@@ -251,8 +251,8 @@ def _bench_scan_sample(gt: dict, args: dict) -> dict:
     )
 
 
-def _tf_report(truth: dict) -> dict[str, Any]:
-    """A perfect `inspect_tf` answer for the bench's `tf` truth."""
+def _tf_report(truth: dict, declared: dict) -> dict[str, Any]:
+    """A perfect `inspect_tf` answer for the bench's `tf` and `declared.urdf` truth."""
     parents = {}
     for parent, child in [*truth["static_edges"], *truth["dynamic_edges"]]:
         parents.setdefault(child, []).append(parent)
@@ -273,6 +273,13 @@ def _tf_report(truth: dict) -> dict[str, Any]:
         )
     findings = [{"kind": "stale", "frames": ["map", "odom"], "text": "stale"}]
     findings += [
+        {
+            "kind": "declared_not_published",
+            "frames": declared["declared_frames_missing"],
+            "text": "d",
+        }
+    ]
+    findings += [
         {"kind": "two_parents", "frames": [child, *ps], "text": "two parents"}
         for child, ps in truth["two_parents"].items()
     ]
@@ -282,6 +289,11 @@ def _tf_report(truth: dict) -> dict[str, Any]:
         "findings": findings,
         "path": truth["path"],
         "real_time_factor": truth["real_time_factor"],
+        "urdf_source": declared["source"],
+        "urdf_link_count": declared["link_count"],
+        "declared_frames_missing": declared["declared_frames_missing"],
+        "frames_not_in_urdf": declared["frames_not_in_urdf"],
+        "urdf_note": None,
     }
 
 
@@ -457,7 +469,20 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     out["06_detect_qos_mismatches"] = _call(
         "detect_qos_mismatches", {}, {"reports": [], "reports_total": 0, "matched_total": 6}
     )
-    out["17_inspect_tf"] = _call("inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"]))
+    declared = gt["declared"]
+    out["17_inspect_tf"] = _call(
+        "inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"], declared["urdf"])
+    )
+    out[declared["params"]["call"]] = _call(
+        "get_node_info",
+        {"node": declared["params"]["node"]},
+        {
+            "full_name": declared["params"]["node"],
+            "param_diff": [dict(d) for d in declared["params"]["differences"]],
+            "param_diff_summary": f"{declared['params']['same']} same, 3 live_only",
+            "param_diff_note": None,
+        },
+    )
     _graph_diff_results(gt, out)
     _nav_results(gt, out)
     out["07_sample_scan_full"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 1})
@@ -704,6 +729,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         "graph_diff",
         "nav_primitives",
         "visibility",
+        "declared",
         "listing",
     }
 
@@ -1547,3 +1573,148 @@ def test_drive_stops_spawned_processes_when_the_session_fails(
     with open(log_path, "w", encoding="utf-8") as log, pytest.raises(RuntimeError, match="broke"):
         asyncio.run(drive.run(None, [], tmp_path, log))  # type: ignore[arg-type]
     assert started and started[0].poll() is not None
+
+
+# ------------------------------------------------------------------ declared vs real (0.8.0)
+def _declared_run(tmp_path: Path, truth: dict, mutate: Any) -> tuple[int, list[str]]:
+    results = _bench_results(truth)
+    _bag_results(truth, results)
+    mutate(results)
+    code, report = _run(tmp_path / str(id(mutate)), truth, results, "--strict-shape")
+    return code, _metrics(report, "FAIL")
+
+
+def test_the_declared_section_catches_each_kind_of_wrong_answer(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def tf(r: dict) -> dict:
+        return r["17_inspect_tf"]["parsed"][0]
+
+    def params(r: dict) -> dict:
+        return r["03p_node_info_params"]["parsed"][0]
+
+    cases = {
+        "urdf_source": lambda r: tf(r).update(urdf_source="none"),
+        "urdf_link_count": lambda r: tf(r).update(urdf_link_count=3),
+        "declared_frames_missing": lambda r: tf(r).update(declared_frames_missing=[]),
+        "frames_not_in_urdf": lambda r: tf(r).update(frames_not_in_urdf=["map"]),
+        "declared_not_published finding": lambda r: tf(r).update(
+            findings=[f for f in tf(r)["findings"] if f["kind"] != "declared_not_published"]
+        ),
+        "param_diff entries": lambda r: params(r)["param_diff"].pop(),
+        "param_diff_summary": lambda r: params(r).update(param_diff_summary="0 same, 3 live_only"),
+    }
+    for needle, mutate in cases.items():
+        code, failed = _declared_run(tmp_path, bench_truth, mutate)
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+def test_a_wrong_param_value_or_status_fails(tmp_path: Path, bench_truth: dict) -> None:
+    def wrong_value(r: dict) -> None:
+        r["03p_node_info_params"]["parsed"][0]["param_diff"][1]["live"] = 11.0
+
+    def wrong_status(r: dict) -> None:
+        r["03p_node_info_params"]["parsed"][0]["param_diff"][0]["status"] = "different"
+
+    def no_diff(r: dict) -> None:
+        r["03p_node_info_params"]["parsed"][0]["param_diff"] = None
+
+    for mutate in (wrong_value, wrong_status, no_diff):
+        code, failed = _declared_run(tmp_path, bench_truth, mutate)
+        assert code == 1 and "param_diff entries (get_node_info)" in failed
+
+
+def test_the_tf_kinds_row_ignores_the_urdf_finding(tmp_path: Path, bench_truth: dict) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    code, report = _run(tmp_path, bench_truth, results, "--strict-shape")
+    assert code == 0 and "finding kinds (inspect_tf)" in _metrics(report, "PASS")
+
+
+def test_an_older_server_without_the_declared_fields_is_a_warning(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    for key in ("urdf_source", "urdf_link_count", "declared_frames_missing", "frames_not_in_urdf"):
+        del results["17_inspect_tf"]["parsed"][0][key]
+    del results["03p_node_info_params"]["parsed"][0]["param_diff"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0
+    assert {"URDF comparison (inspect_tf)", "param_diff (get_node_info)"} <= set(
+        _metrics(report, "WARN")
+    )
+
+
+def test_a_missing_declared_answer_is_a_warning_not_a_failure(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    del results["03p_node_info_params"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0 and "param_diff (get_node_info)" in _metrics(report, "WARN")
+
+
+def test_the_kit_truth_has_no_declared_section(tmp_path: Path, omnisim: tuple[dict, dict]) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "declared" for r in report["rows"])
+
+
+def test_bench_declared_truth_matches_what_the_real_code_computes() -> None:
+    """The truth is derived from the bench's own constants: run TopicForge's code on them."""
+    from topicforge.adapters.common.nodes import build_parameters
+    from topicforge.adapters.common.param_diff import build_param_diff
+    from topicforge.adapters.common.tf_tree import build_tf_report
+    from topicforge.adapters.common.urdf import parse_urdf
+    from topicforge.models import TfCapture, TfSample
+
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")
+    urdf_truth, params_truth = truth["declared"]["urdf"], truth["declared"]["params"]
+    model = parse_urdf(bench.urdf_text())
+    assert len(model.links) == urdf_truth["link_count"]
+    arm = model.joint_into(bench.URDF_UNPUBLISHED_LINK)
+    assert arm is not None and arm.type == "revolute"
+    edges = [*bench.TF_STATIC_EDGES, *bench.TF_STEADY_EDGES, bench.TF_FLAKY_EDGE]
+    samples = [TfSample(parent=p, child=c, stamp_ns=0, received_ns=0) for p, c in edges]
+    report = build_tf_report(
+        TfCapture(static=samples[:3], dynamic=samples[3:], window_actual_s=1.0),
+        2.0,
+        None,
+        None,
+        urdf=model,
+    )
+    assert report.declared_frames_missing == urdf_truth["declared_frames_missing"]
+    assert report.frames_not_in_urdf == urdf_truth["frames_not_in_urdf"]
+    assert [f.kind for f in report.findings if f.kind == "declared_not_published"]
+    # The file the bench reads, against the parameters /bench_robot declares (+ use_sim_time).
+    text = (ROOT / "tests" / "integration" / "ros2" / bench.PARAMS_FILE_NAME).read_text("ascii")
+    live = build_parameters({**bench.BENCH_PARAMS, "use_sim_time": False})[0]
+    diff, summary, note = build_param_diff(text, bench.PARAMS_NODE, live)
+    assert diff is not None and note is None
+    assert [d.model_dump() for d in diff] == params_truth["differences"]
+    assert (summary or "").startswith(f"{params_truth['same']} same,")
+
+
+def test_the_declared_call_runs_in_the_bench_only_and_reads_the_shipped_file() -> None:
+    kit = json.loads((ROOT / "scripts" / "ground_truth" / "calls.json").read_text("utf-8"))
+    assert not any(c.get("name") == "03p_node_info_params" for c in kit)
+    calls = json.loads(
+        (ROOT / "scripts" / "ground_truth" / "calls_declared.json").read_text("utf-8")
+    )
+    (call,) = [c for c in calls if "name" in c]
+    assert call["name"] == bench.PARAMS_CALL_NAME and call["tool"] == "get_node_info"
+    assert call["args"]["node"] == bench.PARAMS_NODE
+    assert call["args"]["params_file"].endswith("/tests/integration/ros2/" + bench.PARAMS_FILE_NAME)
+    assert calls[-1] == {"settle_s": 3}
+    script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
+    assert script.index("calls_declared.json") < script.index("calls_graph_diff.json")
+    sample = next(c for c in kit if c.get("name") == "20_sample_{slug}")
+    assert "/robot_description" in sample["exclude"]
+
+
+def test_the_bench_publisher_uses_the_truth_constants() -> None:
+    source = (ROOT / "tests" / "integration" / "ros2" / "publisher.py").read_text("ascii")
+    for needle in ("model.urdf_text()", "model.BENCH_PARAMS", '"/robot_description"'):
+        assert needle in source
+    assert bench.BENCH_TOPICS["/robot_description"] == ("std_msgs/msg/String", True)

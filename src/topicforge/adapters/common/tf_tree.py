@@ -20,6 +20,12 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Literal
 
+from topicforge.adapters.common.urdf import (
+    FIXED_JOINT,
+    UrdfModel,
+    declared_frames_missing,
+    frames_not_in_urdf,
+)
 from topicforge.models import TfCapture, TfFinding, TfFrame, TfReport, TfSample
 
 _NS = 1_000_000_000
@@ -59,12 +65,15 @@ def build_tf_report(
     *,
     window_s: float | None = None,
     mode_effective: Literal["mock", "live"] = "live",
+    urdf: UrdfModel | None = None,
+    urdf_note: str | None = None,
 ) -> TfReport:
     """Analyse `capture` into the report of `inspect_tf`.
 
     `source_frame` and `target_frame` are both given or both `None`; when given, the
     report carries the chain of frames between them. `window_s` is the requested
-    listening time (the capture's own `window_actual_s` when omitted).
+    listening time (the capture's own `window_actual_s` when omitted). `urdf` is the parsed
+    `/robot_description`, compared with the frames; `urdf_note` says why there is none.
     """
     edges = _group_edges(capture)
     reference_ns = max((s.stamp_ns for s in capture.dynamic), default=None)
@@ -88,6 +97,8 @@ def build_tf_report(
     ]
     path, path_note, path_findings = _path(edges, roots, source_frame, target_frame, frames)
     findings += path_findings
+    declared = _declared(urdf, urdf_note, [f.name for f in frames])
+    findings += declared.findings
 
     stamp_span_s, rtf = _clock_figures(edges, capture)
     truncated = capture.dropped_count > 0 or capture.capped
@@ -112,7 +123,52 @@ def build_tf_report(
         truncated=truncated,
         mode_effective=mode_effective,
         note=_note(capture, bool(frames)),
+        urdf_source="none" if urdf is None else "robot_description",
+        urdf_link_count=None if urdf is None else len(urdf.links),
+        declared_frames_missing=declared.missing,
+        frames_not_in_urdf=declared.extra,
+        urdf_note=declared.note,
     )
+
+
+@dataclass
+class _Declared:
+    """The URDF side of a report: the two lists, the finding and the note."""
+
+    missing: list[str] = field(default_factory=list)
+    extra: list[str] = field(default_factory=list)
+    findings: list[TfFinding] = field(default_factory=list)
+    note: str | None = None
+
+
+def _declared(urdf: UrdfModel | None, urdf_note: str | None, frames: list[str]) -> _Declared:
+    if urdf is None:
+        return _Declared(note=urdf_note)
+    if not frames:
+        return _Declared(note="No TF frame was captured, so the URDF links were not compared.")
+    missing = declared_frames_missing(urdf, frames)
+    extra = frames_not_in_urdf(urdf, frames)
+    findings = [_declared_finding(urdf, missing)] if missing else []
+    return _Declared(missing, extra, findings, urdf_note)
+
+
+def _declared_finding(urdf: UrdfModel, missing: list[str]) -> TfFinding:
+    moving = [
+        link
+        for link in missing
+        if (joint := urdf.joint_into(link)) is not None and joint.type != FIXED_JOINT
+    ]
+    text = (
+        f"The URDF declares {len(missing)} link(s) with no frame on /tf or /tf_static: "
+        f"{', '.join(missing)}. robot_state_publisher publishes fixed joints on /tf_static and "
+        "the others on /tf."
+    )
+    if moving:
+        text += (
+            f" {', '.join(moving)}: the joint is not fixed, so the frame exists only while "
+            "/joint_states is published."
+        )
+    return TfFinding(kind="declared_not_published", frames=missing, text=text)
 
 
 def _norm(name: str) -> str:
