@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `scripts/ground_truth/calls_graph_diff.json` runs the first, steady, v2 and bag calls. The
   comparator gets a `graph_diff` section: the steady graph must give zero changes, the v2 graph
   exactly three, a bag baseline no removal and no type or QoS change.
+- The `diagnose-nav2` prompt (the third, with optional `symptom` and `namespace`) and the plugin
+  skill of the same name: a read-only call order for a Nav2 stack (node list and lifecycle flags,
+  `lifecycle_manager` parameters, `/bond` heartbeats, the hidden latched `_action/status` topics
+  read with `sample_messages`, `inspect_tf` map to base_link, filtered `/rosout`, the controller's
+  velocity output) and a list of what TopicForge cannot see (lifecycle state, costmaps, the
+  behavior tree). No tool added, 0 bytes in `tools/list`. `docs/CONTRACT.md` section 9.17. Nav2
+  itself was not run: the prompt is verified on its primitives, not on a real stack.
+- Bench (written, not run: needs the four Docker cells) for those primitives: the image adds
+  `example_interfaces` and `bond`, `publisher.py` serves a never-called action `/bench_fib` and
+  publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz), `calls_nav_primitives.json` runs
+  `40_action_status` and `41_bond`, and the comparator gets a `nav_primitives` section (one latched
+  sample with an empty `status_list`, the action in `get_node_info.action_servers`, the status
+  topic absent from `list_topics`, the bond id on every `/bond` sample).
 
 ### Changed
 
