@@ -159,8 +159,9 @@ python scripts/agent_eval/run_external.py --cli codex --scenario healthy_bus \
 
 ## 0.8.0 campaign (v2)
 
-**Status: not run.** This section describes the campaign, its tooling and what will be
-recorded. Every result cell below is a placeholder. Nothing here is a measurement.
+**Status: run on 2026-10-21** (branch `release/0.8.0`, 14 runs: 7 scenarios x 2 variants, one
+Sonnet agent per run, ROS 2 Jazzy in WSL Ubuntu 24.04, Fast DDS for the robot, Cyclone for the
+observer). Results below.
 
 ### What it is for
 
@@ -266,24 +267,43 @@ For each run the orchestrator:
 
 ### Results
 
-All cells are placeholders: no run has been made.
+Calls are `tool_calls` from the broker (catalogue listings not counted). Graded against
+`TRUTH_ROS2.md`.
 
 | Scenario | `tools`: grade, calls | `prompt` (`inspect-ros2-robot`): grade, calls |
 |---|---|---|
-| `healthy` | not run | not run |
-| `blocked_executor` | not run | not run |
-| `tf_stale` | not run | not run |
-| `qos_mismatch` | not run | not run |
-| `restart_loop` | not run | not run |
-| `declared_drift` | not run | not run |
-| `graph_v1_v2` | not run | not run |
+| `healthy` | correct, no false alarm, 19 | correct, no false alarm, 18 |
+| `blocked_executor` | correct, 14 | correct, 18 |
+| `tf_stale` | correct (`map -> odom`, `/bench_robot`), 10 | correct, 13 |
+| `qos_mismatch` | correct, 2 | correct, 3 |
+| `restart_loop` | partially correct: loop and count (25 at its call), no cause, 15 | correct: loop, count (11 at its call), cause "costmap not received" from `/rosout`, 12 |
+| `declared_drift` | correct, 2 | correct, 7 |
+| `graph_v1_v2` | correct, 1 (`graph_diff` alone) | correct, 2 |
 
 | Criterion | Result |
 |---|---|
-| flagship 1: three changes named, no false alarm (`graph_v1_v2`) | not run |
-| flagship 3: `arm_link`, `max_range`, `extra_gain` named, no false alarm (`declared_drift`) | not run |
-| no invented `critical` on `healthy` | not run |
-| calls with the prompt alone, over the scenarios (threshold proposed: at most 6) | not run |
+| flagship 1: three changes named, no false alarm (`graph_v1_v2`) | met in both variants, one `graph_diff` call |
+| flagship 3: `arm_link`, `max_range`, `extra_gain` named, no false alarm (`declared_drift`) | met in both variants |
+| no invented `critical` on `healthy` | met in both variants (observations only: `/scan_edge` degenerate test scan, no subscribers, security off) |
+| calls with the prompt alone, over the scenarios (threshold proposed: at most 6) | not met: median 12, 2 of 7 runs at 6 or fewer; the prompt did not lower the call count (sum 73 against 63) |
+
+What the runs taught:
+
+- The prompt helped on content, not on effort: it is what sent the agent to `/rosout` with
+  `min_log_level` and `node`, which found the cause in `restart_loop`. On open questions
+  (`healthy`, `blocked_executor`) both variants sampled every topic (9 `sample_messages`).
+- `inspect_tf` with its defaults (5 s window, `stale_after_s` 2) reported `tf_stale` as healthy
+  on the first call in both variants; the agents found the stale edge only with a longer window.
+- Repeated feedback across runs: `restarts_by_name` keyed on `/` lumps every node together
+  (`restarts_by_node` is the useful field and sits last); participant `name` is `/` for every
+  Fast DDS participant; `min_log_level` rejects upper case (`WARN`) and the prompt does not say
+  so; `detect_qos_mismatches` is noisy on a healthy bus (`ros_discovery_info` pairs, one "no
+  reader" hint per topic) and its reports carry GUID prefixes, not node names; the `/rosout`
+  note mixes "0 of 0 log messages" with the latched-topic hint; `param_diff_summary` counts
+  `same` and `live_only` entries it does not name.
+- Harness: `restarts_at_question` is counted at `READY`, not at the agent's first call, so it
+  under-counts when the agent starts late (5 at `READY`, 25 at the agent's call in the `tools`
+  run). The `restart_loop` grades above use the count at the agent's call, from the cycle.
 
 ### Limits
 
