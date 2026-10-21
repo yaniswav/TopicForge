@@ -2253,6 +2253,7 @@ def check_nav_primitives(gt: dict, res: Results, rep: Report) -> None:
     _check_nav_hidden_topic(status, res, rep)
     _check_nav_bond(truth["bond"], res, rep)
 
+
 # ---------------------------------------------------------------------------- visibility
 # Self-contained: the `visibility` section of the truth (only the bench writes one) against the
 # health, participant and endpoint calls it names (0.8.0). The node name is what ties an endpoint
@@ -2360,6 +2361,7 @@ def check_visibility(gt: dict, res: Results, rep: Report) -> None:
     _check_vis_endpoints(truth, res, rep)
     _check_vis_participant(truth, res, rep)
     _check_vis_health(truth, res, rep)
+
 
 # ---------------------------------------------------------------------------- declared
 # Self-contained: the `declared` section of the truth (only the bench writes one). The URDF side
