@@ -960,3 +960,118 @@ within the bounds computed from `metadata.yaml`; `analyze_bag.start_ns` equals t
 `starting_time`. The live rows use `timeout_s` 6, short enough that live lines alone give one or
 two ERRORs, so at least 3 means the depth-2000 reader received the transient_local buffer on
 that RMW. Each row prints its exact message count and a histogram of levels.
+
+### 9.13 `tools/list` size: two compaction levers (0.8.0)
+
+Additive and wire-compatible: no field is added, removed or retyped, and no payload changes.
+`tools/list` went from 94,957 bytes (0.7.3, fifteen tools) to 94,393 bytes with `graph_diff`
+(sixteen tools), under the 100,000-byte test ceiling, which does not move.
+
+- **Lane notes.** The `**Duration**` sentence every locked tool carries is one sentence
+  now: ``**Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s;
+  `busy` error if the lock is held (retry).`` (DDS tools name the DDS binding and lock). The
+  facts are the ones of section 1.7, and `tests/test_tool_descriptions.py` still requires
+  `45 s`, `` `busy` ``, the lock name and, for `sample_messages`, `` `timeout_s` `` and
+  `at most 40`.
+- **Nullable fold, output schemas only.** `anyOf: [X, {"type": "null"}]` is served as
+  `type: [X, "null"]` when `X` is a plain typed schema (a string, number, array or object with
+  its own keywords). A `$ref` or a nested combinator is left as it was, and an `enum` of `X`
+  gains `null` so the folded schema still accepts one. Input schemas are never folded: clients
+  already read their `anyOf` form. The two forms accept exactly the same values, so a client
+  that validates `structuredContent` against the `outputSchema` sees no difference; one that
+  generates types from the schema reads `string | null` for what used to be an `anyOf`.
+  `MessageSample.summary` (9.9) becomes `type: ["object", "null"]` with its `required` and
+  `properties` beside it, which is the same set of accepted values.
+- An output schema description that only says "Envelope returned by `<tool>`." is dropped, and
+  a few `HealthReport` field descriptions are shorter (same facts).
+- `tests/test_output_schema_validation.py` calls every tool in mock mode and validates the
+  structured result against the schema `list_tools` serves, with `jsonschema`. It is the net
+  under any further compaction.
+- Reserve, if a later tool needs bytes: serve a subset of tools (`ros`, `dds`, `all`). It is not
+  used in 0.8.0.
+
+### 9.14 `graph_diff` (tool 16)
+
+The sixteenth tool served (the slot numbered 16 in the plan stays reserved for `get_image`, which
+needs rclpy). Additive, ROS lane, open-world, read-only. It answers "what changed since it last
+worked". Inputs: `baseline` (string, default `previous`) and `bag_path` (string or `null`). It
+returns `GraphDiff`.
+
+**Calls.** Each call takes one snapshot of the current side, stores it, and compares it with the
+baseline. The current side is the live graph, or the bag at `bag_path`. `baseline` is one string:
+
+- `previous`: the last snapshot taken before this call. With none yet the call stores a snapshot
+  and returns `baseline` and `baseline_id` `null`, no `changes`, and a `note` ("No baseline yet:
+  snapshot snap-1 stored ...").
+- `snap-N`: a snapshot id from `snapshot_ids`. An id that is not held raises an error that lists
+  the held ids ("unknown snapshot id 'snap-9'; held snapshots: snap-1, snap-2"), and nothing is
+  stored.
+- anything else: a bag path (same validation as `analyze_bag`), snapshotted for this call and
+  not kept in the ring. Its `id` in `baseline_id` is the path.
+
+The baseline is resolved before the new snapshot is taken, so a bad value stores nothing.
+
+**The ring.** Sixteen snapshots in memory, in the server process. Ids are `snap-N`, N counting up
+from 1 for the life of the process and never reused; the oldest snapshot is dropped past sixteen.
+A restart empties it. Nothing is written to disk.
+
+**What a snapshot holds.**
+
+| Side | Holds | Source |
+| --- | --- | --- |
+| live | nodes (full names), topics with type, publisher and subscriber counts, writer QoS | `list_nodes` and `list_topics` (the `ros2` CLI), `list_endpoints` read from the discovery cache |
+| bag | topics with type, rate (`frequency_hz`), latching | `analyze_bag`; `rosbag2_internal` topics are left out |
+
+Writer QoS is the set of `reliability/durability` pairs of the topic's writers (lowercase,
+sorted, comma-separated), never the depth. It is present only when a DDS backend is active, read
+without a binding call and without the DDS lock; otherwise `not_compared.qos` says so. A bag
+holds latching only (`transient_local` or `volatile`).
+
+**Comparisons.** Only what both sides can support is compared; the rest is named in
+`not_compared` (key, then the reason), never silently skipped.
+
+| `kind` | Compared when | `change`, `field` |
+| --- | --- | --- |
+| `node` | live against live | `added`, `removed` |
+| `topic` | always | `added`, `removed` (`after` or `before` holds the message type) |
+| `type` | always | `changed`, `message_type` |
+| `qos` | both sides hold the same kind of QoS: live writer QoS (`writer_qos`) or bag latching (`latched`) | `changed` |
+| `rate` | bag against bag | `changed`, `frequency_hz`; past 20 percent relative (exactly 20 percent is not a change) |
+| `count` | live against live | `changed`, `publisher_count` or `subscriber_count` (strings in `before` and `after`) |
+
+`added` means present in the current snapshot and absent from the baseline. When one side is a
+bag, `note` says what that means: a bag holds only the recorded topics, so with a bag baseline
+`added` is present live and absent from the bag. `changes` is sorted by kind (the order of the
+table), then name. `added_count`, `removed_count` and `changed_count` count `changes`.
+
+**Noise.** Endpoint counts on `/rosout` and `/parameter_events` move with every node and every
+CLI call: a change in one of their counters is tallied in `builtin_changes_count` and never
+appears in `changes`. A `subscriber_count` change in a snapshot taken less than 5 s after a
+TopicForge `ros2` CLI call (from the runner's ring of spawned pids) carries "A TopicForge `ros2`
+CLI reader may linger 2 s" in its `text`. A healthy graph diffed against itself gives zero
+changes (bench row `31_graph_diff_steady`).
+
+**Mock.** The ring starts with `snap-0`, built on the first call from the mock fixtures minus
+three things: the node `/imu_driver`, the topic `/imu/data`, and the `/scan` writer QoS (it had
+`reliable/volatile`, the fixture says `best_effort/volatile`). The first mock call therefore
+reports exactly three changes (a node, a topic and a QoS), the second none. `MOCK_BAG_ANALYSIS`
+(any well-formed bag path in mock mode) is accepted as a baseline.
+
+**Fields.** `GraphSnapshotRef` has `id`, `source` (`live` or `bag`), `taken_ns`, `path` (`null`
+for live), `node_count` (`null` for a bag), `topic_count`, `has_qos`, `has_rates`. `GraphChange`
+has `kind`, `change`, `name`, `field` (`null` when added or removed), `before`, `after` (`null`
+when not applicable) and `text`. `GraphDiff` has `snapshot_id`, `baseline_id`, `current`,
+`baseline`, `changes`, the three counts, `not_compared`, `builtin_changes_count`, `snapshot_ids`
+(oldest first), `mode_effective` and `note`.
+
+**Read-only.** It sends nothing `list_nodes` and `list_topics` do not already send; the
+discovery cache is read, not the binding; a bag is read through the existing path validation.
+
+**Bench.** `calls_graph_diff.json` (run after `calls.json`): `30_graph_diff_first` (no baseline),
+settle 3 s, `31_graph_diff_steady` (zero changes: the healthy line), `graph_change.py` started by
+`drive.py` (`{"spawn": ...}`, stopped when the session ends), settle 5 s, `32_graph_diff_v2`
+(exactly three changes: node `/bench_v2` added, topic `/scan_v2` added, `/cmd_vel_out`
+`publisher_count` 1 to 2; any other change is a false alarm) and `33_graph_diff_bag` (`baseline`
+is the recorded bag: `removed_count` 0, no `type` or `qos` change, `not_compared` names `nodes`
+and `rates`). Comparator section `graph_diff`. Written for the four Docker cells; not run in the
+session that added it.

@@ -5,6 +5,40 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## 0.8.0 (unreleased)
+
+### Added
+
+- `graph_diff`, the sixteenth tool: "what changed since it last worked". Each call snapshots the
+  ROS 2 graph (nodes, topics, types, publisher and subscriber counts, writer QoS when a DDS backend
+  is up) or a bag (`bag_path`: topics, types, rates, latching), keeps it in an in-memory ring of 16
+  (`snap-N` ids, emptied on restart, nothing written to disk) and compares it with `baseline`:
+  `previous`, a snapshot id or a bag path, in one string. The result is a sorted list of node,
+  topic, type, qos, rate and count differences with what could not be compared named in
+  `not_compared` (nodes and counts only live against live, rates only bag against bag, writer QoS
+  only with a DDS backend). Endpoint-count noise on `/rosout` and `/parameter_events` is tallied in
+  `builtin_changes_count`, never reported. ROS lane, read-only, open world. `docs/CONTRACT.md`
+  section 9.14.
+- The mock robot ships a `snap-0` baseline derived from its fixtures minus a node, a topic and a
+  QoS: the first mock call reports exactly three changes, the second none, and the mock bag is
+  accepted as a baseline.
+- Bench (written, not run: needs the four Docker cells): `drive.py` gains `{"spawn": PATH}` (the
+  process is stopped when the session ends), `tests/integration/ros2/graph_change.py` adds the
+  node `/bench_v2`, the topic `/scan_v2` and a second `/cmd_vel_out` writer, and
+  `scripts/ground_truth/calls_graph_diff.json` runs the first, steady, v2 and bag calls. The
+  comparator gets a `graph_diff` section: the steady graph must give zero changes, the v2 graph
+  exactly three, a bag baseline no removal and no type or QoS change.
+
+### Changed
+
+- `tools/list` is 94,393 bytes with sixteen tools (94,957 with fifteen in 0.7.3), under the
+  unchanged 100,000-byte test ceiling. Two levers pay for the new tool (`docs/CONTRACT.md`
+  section 9.13, wire-compatible): the `**Duration**` lane note is one sentence, and
+  `anyOf: [X, null]` is served as `type: [X, "null"]` in output schemas only. A new test validates
+  every mock result against the output schema the server serves.
+- The ROS lane now serves eight tools (`graph_diff` joins the seven `ros2` CLI tools). The
+  `MiddlewareAdapter` protocol is unchanged.
+
 ## [Unreleased]
 
 ### Added
