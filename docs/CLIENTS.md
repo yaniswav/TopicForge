@@ -85,7 +85,7 @@ say where the file lives and what differs.
 
 ## Claude Code
 
-Plugin (server plus two skills, asks for backend and domain at install):
+Plugin (server plus three skills, asks for backend and domain at install):
 
 ```
 claude plugin marketplace add yaniswav/TopicForge
@@ -121,7 +121,7 @@ Or paste the common JSON shape into `~/.cursor/mcp.json` (all projects) or
 
 ## Agent Plugins (Cursor and other compatible clients)
 
-The `plugin/` folder of this repository is also an [Agent Plugins](https://agent-plugins.org) 1.0.0 package: `plugin.json` (manifest), `mcp.json` (the same pinned `uvx` launch) and `skills/` (two skills). Clients that load that format, such as Cursor, can install it as a plugin and get the server and the skills in one step; the plain JSON config above remains the simplest route for everything else. The format has no user-configuration prompt, so the backend is fixed to `cyclone` and the domain to `0`; edit the `env` block of `mcp.json` to change them (see `plugin/README.md`). Cursor Directory (cursor.directory/plugins/new) and the Cursor marketplace take a repository URL; a repo-root `.cursor-plugin/marketplace.json` points Cursor at the `plugin/` subfolder. Whether each directory scanner accepts a subfolder is unverified.
+The `plugin/` folder of this repository is also an [Agent Plugins](https://agent-plugins.org) 1.0.0 package: `plugin.json` (manifest), `mcp.json` (the same pinned `uvx` launch) and `skills/` (three skills). Clients that load that format, such as Cursor, can install it as a plugin and get the server and the skills in one step; the plain JSON config above remains the simplest route for everything else. The format has no user-configuration prompt, so the backend is fixed to `cyclone` and the domain to `0`; edit the `env` block of `mcp.json` to change them (see `plugin/README.md`). Cursor Directory (cursor.directory/plugins/new) and the Cursor marketplace take a repository URL; a repo-root `.cursor-plugin/marketplace.json` points Cursor at the `plugin/` subfolder. Whether each directory scanner accepts a subfolder is unverified.
 
 ## VS Code / GitHub Copilot
 
@@ -305,11 +305,12 @@ port to a network interface; use an SSH tunnel instead.
 
 ## Prompts and instructions
 
-The server offers two MCP prompts, `diagnose-dds-bus` (nodes do not talk, a topic gets no data,
-a node crashed) and `inspect-ros2-robot` (what topics exist, what a bag contains), plus short
+The server offers three MCP prompts, `diagnose-dds-bus` (nodes do not talk, a topic gets no data,
+a node crashed), `inspect-ros2-robot` (what topics exist, what a bag contains) and `diagnose-nav2`
+(a Nav2 stack that does not start, aborts goals or does not move the robot), plus short
 server `instructions` sent in the `initialize` result (the read-only guarantee, which tool to
-call first, `contract_version`). Both prompts take optional arguments (`topic`, `symptom` or
-`bag_path`) that only focus the text; they run no tool by themselves.
+call first, `contract_version`). The prompts take optional arguments (`topic`, `symptom`,
+`bag_path` or `namespace`) that only focus the text; they run no tool by themselves.
 
 | Client | Prompts | Instructions |
 | --- | --- | --- |

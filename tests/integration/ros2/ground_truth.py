@@ -17,6 +17,7 @@ Everything is deterministic and exact by construction:
   the same monotonic clock, so the simulated rate equals the wall rate;
 - topics, types, counts and QoS are what `publisher.py`, `blocked_node.py` and
   `lifecycle_node.py` create (the last one a managed node in `/robot1`);
+- `/bond` and the action server `/bench_fib` are the Nav2 primitives (`nav_primitives`);
 - the TF tree is the `tf` section: three static edges on `/tf_static`, three steady edges
   on `/tf` (one of them gives `tool` a second parent), and one edge (`map -> odom`) that
   is published for `TF_FLAKY_ACTIVE_S` after each new subscriber of `/tf` and then stops,
@@ -96,6 +97,7 @@ BENCH_TOPICS = {
     "/imu/data": ("sensor_msgs/msg/Imu", False),
     "/pose_mixed": ("geometry_msgs/msg/PoseStamped", False),
     "/stamps_regress": ("geometry_msgs/msg/PoseStamped", False),
+    "/bond": ("bond/msg/Status", False),
 }
 PUBLISHER_COUNTS = {"/pose_mixed": 2}
 # Present on every graph; the number of endpoints depends on hidden CLI and daemon nodes.
@@ -125,6 +127,18 @@ STAMPS = {
     "/cmd_vel_out": "none",
 }
 SECTOR_EDGE_EPS = 1e-4
+
+# Nav2 primitives (0.8.0): what the `diagnose-nav2` prompt reads, without Nav2. `/bond` is a
+# `bond/msg/Status` heartbeat for the bond id `BOND_ID` (Nav2 uses the node name as the id), and
+# `/bench_fib` an action server that nothing calls: its `_action/status` topic is hidden from
+# `list_topics` and latched, and `status_list` is empty because no goal ever ran.
+BOND_TOPIC = "/bond"
+BOND_ID = "bench_robot"
+BOND_PERIOD = 1.0
+ACTION_NAME = "/bench_fib"
+ACTION_TYPE = "example_interfaces/action/Fibonacci"
+ACTION_STATUS_TOPIC = f"{ACTION_NAME}/_action/status"
+ACTION_NODE = "/bench_robot"
 
 # graph_diff (0.8.0): `graph_change.py` adds exactly these three differences, see `graph_diff_truth`.
 GRAPH_V2_NODE = "/bench_v2"
@@ -189,6 +203,29 @@ def graph_diff_truth() -> dict[str, Any]:
             "absent_kinds": ["type", "qos"],
             "not_compared": ["nodes", "rates"],
         },
+    }
+
+
+def nav_primitives_truth() -> dict[str, Any]:
+    """What `40_action_status` and `41_bond` of `calls_nav_primitives.json` must show (0.8.0).
+
+    A hidden `_action/status` topic read by `sample_messages` (one latched sample, an empty
+    `status_list`), the action listed in `get_node_info.action_servers` of its node, and the
+    status topic absent from `list_topics`; `/bond` samples all carry the bond id.
+    """
+    return {
+        "action_status": {
+            "call": "40_action_status",
+            "topic": ACTION_STATUS_TOPIC,
+            "samples": 1,
+            "status_list": [],
+            "action": ACTION_NAME,
+            "action_type": ACTION_TYPE,
+            "node": ACTION_NODE,
+            "listed_call": "02_list_topics",
+            "node_info_call": "03n_node_info_bench_robot",
+        },
+        "bond": {"call": "41_bond", "topic": BOND_TOPIC, "id": BOND_ID},
     }
 
 
@@ -392,6 +429,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         "clock": clock_truth(),
         "logs": logs_truth(),
         "graph_diff": graph_diff_truth(),
+        "nav_primitives": nav_primitives_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

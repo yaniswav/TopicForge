@@ -67,10 +67,11 @@ PYTEST_RC=$?
 echo "bench: ground truth (drive.py, compare.py)"
 GT=scripts/ground_truth
 rm -rf "$OUT/results"
-# calls_graph_diff.json runs last (it starts graph_change.py, which changes the graph) and only
-# here: the OmniSim kit runs calls.json alone.
+# calls_nav_primitives.json (the Nav2 primitives) comes next and calls_graph_diff.json runs last
+# (it starts graph_change.py, which changes the graph); both only here: the OmniSim kit runs
+# calls.json alone.
 /opt/tfenv/bin/python "$GT/drive.py" --out "$OUT/results" --bag "$BAG" \
-    --calls "$GT/calls.json" "$GT/calls_graph_diff.json" \
+    --calls "$GT/calls.json" "$GT/calls_nav_primitives.json" "$GT/calls_graph_diff.json" \
     --server-cmd /opt/tfenv/bin/topicforge --mode live --dds-backend cyclone \
     --env TOPICFORGE_LOG_LEVEL=WARNING > "$OUT/drive.log" 2>&1
 DRIVE_RC=$?

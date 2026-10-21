@@ -13,6 +13,7 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | `drive.py` | MCP stdio driver: runs `calls.json` in one session, saves one JSON per call (result, wall time) and the server's stderr |
 | `calls.json` | Default call list. Graph calls come first, sampling after; `for_each` expands over topics and nodes; `{"settle_s": 3}` entries sleep (before the DDS calls and at the end) |
 | `calls_graph_diff.json` | The four `graph_diff` calls of the bench only (the OmniSim kit does not run it): `{"spawn": ...}` starts `tests/integration/ros2/graph_change.py` between the steady call and the v2 call, and `drive.py` stops it when the session ends |
+| `calls_nav_primitives.json` | The two Nav2 primitive calls of the bench only (`40_action_status`: one sample of the hidden, latched `/bench_fib/_action/status`; `41_bond`: `/bond` samples), run between `calls.json` and `calls_graph_diff.json` |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
@@ -23,6 +24,7 @@ side, nodes, `use_sim_time` per node), scan (geometry, every range, wall and sec
 0.8.0, `graph_diff` (bench truth only): the first call has no baseline, the steady graph gives zero
 changes, after `graph_change.py` starts (node `/bench_v2`, topic `/scan_v2`, a second writer on
 `/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing.
+From 0.8.0 the `nav_primitives` section (bench truth only) reads the building blocks of the `diagnose-nav2` prompt, not Nav2: `/bench_robot` serves a never-called action `/bench_fib` and publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz). The hidden `_action/status` topic gives one sample with an empty `status_list`, `/bench_fib` is in `get_node_info.action_servers` of `/bench_robot`, the status topic is absent from `list_topics`, and every `/bond` sample carries the id.
 
 Machine-dependent rows (OmniSim kit runs on a shared host):
 

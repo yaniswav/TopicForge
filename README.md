@@ -69,7 +69,7 @@ Every response except `health_check` carries `mode_effective` (`"live"` or `"moc
 | `peek_bag_samples`      | Decoded samples from a recorded bag, including ROS 1 `.bag` (`rosbags` ships with the package) |
 | `list_endpoints`        | DDS writers and readers with structured QoS, per-topic roll-up that flags orphans (writer with no reader, reader with no writer) |
 
-The server also offers two MCP prompts, `diagnose-dds-bus` and `inspect-ros2-robot`, that give a client the read-only call order, and short server `instructions` for clients that do not show prompts (see [`docs/CLIENTS.md`](docs/CLIENTS.md#prompts-and-instructions)).
+The server also offers three MCP prompts, `diagnose-dds-bus`, `inspect-ros2-robot` and `diagnose-nav2`, that give a client the read-only call order, and short server `instructions` for clients that do not show prompts (see [`docs/CLIENTS.md`](docs/CLIENTS.md#prompts-and-instructions)).
 
 Walkthroughs against the mock, each with the exact tool calls and payloads, are in [`examples/`](examples/README.md). To run the DDS tools against a real bus with several programs and vendors, see [`examples/dds/README.md`](examples/dds/README.md) (`python examples/dds/run_all.py`).
 

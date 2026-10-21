@@ -12,9 +12,13 @@ import time
 
 import ground_truth as model
 import rclpy
+from action_msgs.msg import GoalStatusArray
+from bond.msg import Status as BondStatus
 from builtin_interfaces.msg import Time
+from example_interfaces.action import Fibonacci
 from geometry_msgs.msg import PoseStamped, Transform, TransformStamped, Twist
 from ground_truth import CAMERA_DELAY_SEC, N_BEAMS
+from rclpy.action import ActionServer
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
@@ -65,6 +69,7 @@ class BenchRobot(Node):
             TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
         )
         self._setup_clock_topics(qos)
+        self._setup_nav_primitives(qos, latched)
         # /rosout lines for the log filter bench (truth: `ground_truth.logs_truth`).
         self.create_timer(model.LOG_WARN_PERIOD, self._log_warn)
         self.create_timer(model.LOG_ERROR_PERIOD, self._log_error)
@@ -80,6 +85,40 @@ class BenchRobot(Node):
         self.create_timer(model.IMU_PERIOD, self._tick_imu)
         self.create_timer(model.POSE_PERIOD, self._tick_pose_mixed)
         self.create_timer(model.REGRESS_PERIOD, self._tick_regress)
+
+    # ---- Nav2 primitives (0.8.0): truth in `ground_truth.nav_primitives_truth`
+    def _setup_nav_primitives(self, qos: QoSProfile, latched: QoSProfile) -> None:
+        """`/bond` heartbeats and an action server nothing ever calls.
+
+        An idle `ActionServer` publishes nothing on its `_action/status` topic until a goal
+        changes state, so one empty `GoalStatusArray` is published by hand with the status
+        topic's own QoS (reliable, transient local, depth 1): a sampler then finds the latched
+        message a Nav2 server has after its first goal. The topic is hidden from `ros2 topic list`.
+        """
+        self._bond_pub = self.create_publisher(BondStatus, model.BOND_TOPIC, qos)
+        self.create_timer(model.BOND_PERIOD, self._tick_bond)
+        self._fib_server = ActionServer(self, Fibonacci, model.ACTION_NAME, self._execute_fib)
+        self._status_pub = self.create_publisher(
+            GoalStatusArray, model.ACTION_STATUS_TOPIC, latched
+        )
+        self._status_pub.publish(GoalStatusArray())
+
+    def _execute_fib(self, goal_handle) -> Fibonacci.Result:
+        """Never reached: no client sends a goal. Aborts it if one ever does."""
+        goal_handle.abort()
+        return Fibonacci.Result()
+
+    def _tick_bond(self) -> None:
+        msg = BondStatus()
+        msg.header.stamp = sim_time_msg(self._now())
+        msg.id = model.BOND_ID
+        msg.instance_id = "bench_instance"
+        msg.active = True
+        msg.heartbeat_timeout = 4.0
+        msg.heartbeat_period = float(model.BOND_PERIOD)
+        msg.connect_timeout = 10.0
+        msg.disconnect_timeout = 2.0
+        self._bond_pub.publish(msg)
 
     @staticmethod
     def _wall_time_msg(age_s: float = 0.0) -> Time:

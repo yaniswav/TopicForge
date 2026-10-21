@@ -1075,3 +1075,43 @@ settle 3 s, `31_graph_diff_steady` (zero changes: the healthy line), `graph_chan
 is the recorded bag: `removed_count` 0, no `type` or `qos` change, `not_compared` names `nodes`
 and `rates`). Comparator section `graph_diff`. Written for the four Docker cells; not run in the
 session that added it.
+
+### 9.17 The `diagnose-nav2` prompt and hidden topics (0.8.0)
+
+A third MCP prompt, `diagnose-nav2` (optional `symptom` and `namespace`, both only focus the
+text), with a plugin skill of the same name under `plugin/skills/` in the same wording. It adds
+nothing to `tools/list` (prompts are listed apart) and no tool. The server `instructions` name
+it next to the other two. It is a call order, not a diagnosis engine: the model reads the tool
+outputs and says what they show.
+
+**Order.** `health_check` (a `mock` server is the demo robot, which has no Nav2: say so),
+`list_nodes` (the Nav2 servers are managed nodes, `lifecycle` true; the state is never read),
+`get_node_info` of the `lifecycle_manager_*` (`parameters`: `node_names`, `autostart`,
+`bond_timeout`), `sample_messages("/bond", count 50)` (a `bond/msg/Status` per bond end, `id`
+the node name: a name of `node_names` that never appears is not bonded), `get_node_info` of
+`bt_navigator` then `sample_messages("<action>/_action/status", count 1)` (latched
+`action_msgs/msg/GoalStatusArray`, `status_list[].status` 1 accepted to 6 aborted),
+`inspect_tf(map, base_link)`, `/rosout` filtered with `min_log_level` and `node`, and the
+controller's velocity output while a goal executes. Count 50 is the tool's cap: with several
+bonds at several messages per second each, 20 messages could miss a node.
+
+**Hidden topics are readable.** `list_topics` does not list the `_action/status` and
+`_action/feedback` topics of an action (the `ros2` CLI hides them), but `sample_messages` reads
+any topic by name, and a latched one gives its last message. The prompt says so, because an
+agent that trusts `list_topics` alone concludes there is no such topic. A server that has not
+handled a goal since it started may hold no status message: the prompt tells the model to say
+that, not to call it a failure.
+
+**Read-only.** The text names no write verb (`tests/test_prompts.py` fails if a prompt contains
+`service call`, `lifecycle set`, `action send_goal` or `topic pub`), and it ends with what
+TopicForge cannot see: lifecycle state, costmaps, the behavior tree and its recoveries, whether
+the robot moves.
+
+**Bench.** The prompt is verified on its primitives, not on Nav2. `calls_nav_primitives.json`
+(between `calls.json` and `calls_graph_diff.json`): `40_action_status` reads
+`/bench_fib/_action/status` (an action server nothing calls; the bench publishes one empty
+latched status by hand, since an idle server publishes none) and must return one sample with
+`status_list` `[]`; `/bench_fib` must be in `action_servers` of `/bench_robot`; the status topic
+must be absent from `list_topics`; `41_bond` reads `/bond` (`bond/msg/Status`, id `bench_robot`,
+1 Hz) and every sample must carry the id. Comparator section `nav_primitives`. Written for the
+four Docker cells; not run in the session that added it, and Nav2 itself was never run.

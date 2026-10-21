@@ -285,6 +285,9 @@ def _tf_report(truth: dict) -> dict[str, Any]:
     }
 
 
+ACTION_TYPE = "example_interfaces/action/Fibonacci"
+
+
 def _bench_results(gt: dict) -> dict[str, Any]:
     out: dict[str, Any] = {}
     before = gt["graph"]["before_capture"]
@@ -388,6 +391,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
             "full_name": "/bench_robot",
             "publishers": user + infra,
             "subscribers": [],
+            "action_servers": [{"name": "/bench_fib", "type": ACTION_TYPE}],
             "use_sim_time": False,
             "use_sim_time_note": None,
         },
@@ -432,6 +436,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     )
     out["17_inspect_tf"] = _call("inspect_tf", gt["tf"]["call"], _tf_report(gt["tf"]))
     _graph_diff_results(gt, out)
+    _nav_results(gt, out)
     out["07_sample_scan_full"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 1})
     out["08_sample_scan_defaults"] = _call(
         "sample_messages",
@@ -465,6 +470,23 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         "/scan_edge", "header", {"ranges": ["inf", "nan", "-inf", 1.5]}, 2.0
     )
     return out
+
+
+def _nav_results(gt: dict, out: dict[str, Any]) -> None:
+    """The two `calls_nav_primitives.json` answers of a healthy bench."""
+    truth = gt["nav_primitives"]
+    status, bond = truth["action_status"], truth["bond"]
+    out[status["call"]] = _call(
+        "sample_messages",
+        {"topic": status["topic"], "count": 1},
+        {"topic": status["topic"], "count": 1, "samples": [{"payload": {"status_list": []}}]},
+    )
+    beats = [{"payload": {"id": bond["id"], "active": True}} for _ in range(5)]
+    out[bond["call"]] = _call(
+        "sample_messages",
+        {"topic": bond["topic"], "count": 5},
+        {"topic": bond["topic"], "count": 5, "samples": beats},
+    )
 
 
 def _bag_truth(gt: dict) -> None:
@@ -657,6 +679,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         "clock",
         "logs",
         "graph_diff",
+        "nav_primitives",
         "listing",
     }
 
@@ -673,6 +696,36 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
             "use_sim_time per node (get_node_info)",
         ),
         (lambda r: r["02n_list_nodes"]["parsed"][0]["nodes"].pop(), "node set (list_nodes)"),
+        (
+            lambda r: r["40_action_status"]["parsed"][0]["samples"][0]["payload"].update(
+                status_list=[{"status": 2}]
+            ),
+            "sample (sample_messages)",
+        ),
+        (
+            lambda r: r["40_action_status"]["parsed"][0]["samples"].clear(),
+            "sample (sample_messages)",
+        ),
+        (
+            lambda r: r["03n_node_info_bench_robot"]["parsed"][0]["action_servers"].clear(),
+            "in action_servers of /bench_robot",
+        ),
+        (
+            lambda r: r["02_list_topics"]["parsed"][0]["topics"].append(
+                {
+                    "name": "/bench_fib/_action/status",
+                    "message_type": "action_msgs/msg/GoalStatusArray",
+                    "publisher_count": 1,
+                    "subscriber_count": 0,
+                }
+            ),
+            "absent from list_topics",
+        ),
+        (
+            lambda r: r["41_bond"]["parsed"][0]["samples"][0]["payload"].update(id="other"),
+            "samples carry the bond id",
+        ),
+        (lambda r: r["41_bond"]["parsed"][0]["samples"].clear(), "samples carry the bond id"),
         (
             lambda r: r["02n_list_nodes"]["parsed"][0]["nodes"][2].update(lifecycle=False),
             "lifecycle nodes (list_nodes)",
@@ -1345,6 +1398,29 @@ def test_graph_diff_calls_run_after_the_kit_calls_and_change_the_graph_in_betwee
     assert calls[6]["args"] == {"baseline": "{BAG}"} and calls[6]["needs_bag"]
     bench_script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
     assert "calls_graph_diff.json" in bench_script
+
+
+def test_nav_primitives_calls_match_the_truth_and_stay_out_of_the_kit_run() -> None:
+    gt_dir = ROOT / "scripts" / "ground_truth"
+    kit = json.loads((gt_dir / "calls.json").read_text("utf-8"))
+    assert not any(str(c.get("name", "")).startswith(("40_", "41_")) for c in kit)
+    sampled = next(c for c in kit if c.get("name") == "20_sample_{slug}")
+    assert bench.BOND_TOPIC in sampled["exclude"]  # 41_bond reads it; no second reader
+    calls = json.loads((gt_dir / "calls_nav_primitives.json").read_text("utf-8"))
+    truth = bench.nav_primitives_truth()
+    named = {c["name"]: c for c in calls if "name" in c}
+    assert set(named) == {truth["action_status"]["call"], truth["bond"]["call"]}
+    status = named["40_action_status"]
+    assert status["args"] == {"topic": bench.ACTION_STATUS_TOPIC, "count": 1, "timeout_s": 8}
+    assert named["41_bond"]["args"]["topic"] == bench.BOND_TOPIC
+    assert calls[-1] == {"settle_s": 3}
+    assert bench.BENCH_TOPICS[bench.BOND_TOPIC] == ("bond/msg/Status", False)
+    assert bench.ACTION_STATUS_TOPIC not in bench.BENCH_TOPICS  # hidden: never in list_topics
+    entry = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
+    calls_line = next(x for x in entry.splitlines() if x.strip().startswith("--calls"))
+    assert calls_line.index("calls_nav_primitives.json") < calls_line.index("calls_graph_diff.json")
+    dockerfile = (ROOT / "tests" / "integration" / "ros2" / "Dockerfile").read_text("utf-8")
+    assert "ros-${DISTRO}-example-interfaces" in dockerfile and "ros-${DISTRO}-bond" in dockerfile
 
 
 # ---------------------------------------------------------------- drive.py: spawn

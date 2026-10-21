@@ -22,7 +22,9 @@ Sections: graph (topics, types, counts, QoS per side, nodes, use_sim_time per no
 bench truth has one), clock (`clock_basis`, stamp age and regressions per
 topic; only the bench truth has one), graph_diff (the four `graph_diff` calls of
 `calls_graph_diff.json`: first call, steady graph, graph v2, bag baseline; only the bench truth
-has one). Reads output contract 2 (0.7:
+has one), nav_primitives (the Nav2 building blocks of the `diagnose-nav2` prompt, from
+`calls_nav_primitives.json`: a hidden latched `_action/status` sample, the action in
+`get_node_info.action_servers`, `/bond` samples; only the bench truth has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -2137,6 +2139,117 @@ def check_graph_diff(gt: dict, res: Results, rep: Report) -> None:
     _check_gd_bag(truth["bag"], res, rep)
 
 
+# ---------------------------------------------------------------------------- nav_primitives
+# Self-contained: the `nav_primitives` section of the truth (only the bench writes one) against
+# `40_action_status` and `41_bond` of `calls_nav_primitives.json` (0.8.0). These are the
+# building blocks of the `diagnose-nav2` prompt, not Nav2: a hidden latched `_action/status`
+# topic read by `sample_messages`, the action in `get_node_info.action_servers`, and `/bond`.
+def _nav_samples(res: Results, name: str) -> tuple[list[dict] | None, float | None, str | None]:
+    """`(samples, wall_s, error)` of one saved `sample_messages` call."""
+    data = res.load(name)
+    err = tool_err(data)
+    if err:
+        return None, res.times.get(name), err
+    return objs(data)[0].get("samples") or [], res.times.get(name), None
+
+
+def _nav_row(
+    rep: Report, metric: str, truth: Any, got: Any, ok: bool, wall: float | None, note: str = ""
+) -> None:
+    rep.add("nav_primitives", metric, truth, got, "PASS" if ok else "FAIL", note, wall)
+
+
+def _nav_unavailable(rep: Report, metric: str, err: str, wall: float | None) -> None:
+    if err == "missing":
+        rep.add("nav_primitives", metric, "a result", "absent", "WARN", "older run", wall)
+    else:
+        rep.add("nav_primitives", metric, "a result", err, "FAIL", "", wall)
+
+
+def _check_nav_status_sample(truth: dict, res: Results, rep: Report) -> None:
+    samples, wall, err = _nav_samples(res, truth["call"])
+    metric = f"{truth['topic']} sample (sample_messages)"
+    if err:
+        return _nav_unavailable(rep, metric, err, wall)
+    lists = [(s.get("payload") or {}).get("status_list") for s in samples]
+    ok = len(samples) == truth["samples"] and lists == [truth["status_list"]] * len(samples)
+    _nav_row(
+        rep,
+        metric,
+        f"{truth['samples']} sample, status_list {truth['status_list']}",
+        f"{len(samples)} sample(s), status_list {lists}",
+        ok,
+        wall,
+        "a hidden, latched topic; no goal ever ran, so the list is empty",
+    )
+
+
+def _check_nav_action_server(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["node_info_call"])
+    err = tool_err(data)
+    metric = f"{truth['action']} in action_servers of {truth['node']} (get_node_info)"
+    if err:
+        return _nav_unavailable(rep, metric, err, res.times.get(truth["node_info_call"]))
+    servers = {(i["name"], i["type"]) for i in (objs(data) or [{}])[0].get("action_servers") or []}
+    want = (truth["action"], truth["action_type"])
+    _nav_row(
+        rep,
+        metric,
+        want,
+        sorted(servers),
+        want in servers,
+        res.times.get(truth["node_info_call"]),
+    )
+
+
+def _check_nav_hidden_topic(truth: dict, res: Results, rep: Report) -> None:
+    data = res.load(truth["listed_call"])
+    err = tool_err(data)
+    metric = f"{truth['topic']} absent from list_topics"
+    if err:
+        return _nav_unavailable(rep, metric, err, res.times.get(truth["listed_call"]))
+    names = {t["name"] for t in listing(data, "topics")}
+    _nav_row(
+        rep,
+        metric,
+        "hidden",
+        "listed" if truth["topic"] in names else "hidden",
+        truth["topic"] not in names,
+        res.times.get(truth["listed_call"]),
+        "`_action` topics are hidden by ros2 topic list, but sample_messages reads them",
+    )
+
+
+def _check_nav_bond(truth: dict, res: Results, rep: Report) -> None:
+    samples, wall, err = _nav_samples(res, truth["call"])
+    metric = f"{truth['topic']} samples carry the bond id"
+    if err:
+        return _nav_unavailable(rep, metric, err, wall)
+    ids = sorted({str((s.get("payload") or {}).get("id")) for s in samples})
+    _nav_row(
+        rep,
+        metric,
+        [truth["id"]],
+        ids if samples else "no sample",
+        bool(samples) and ids == [truth["id"]],
+        wall,
+        f"{len(samples)} sample(s) of bond/msg/Status",
+    )
+
+
+@guard("nav_primitives")
+def check_nav_primitives(gt: dict, res: Results, rep: Report) -> None:
+    """The Nav2 building blocks of the `diagnose-nav2` prompt, read from the bench (0.8.0)."""
+    truth = gt.get("nav_primitives")
+    if not truth:
+        return
+    status = truth["action_status"]
+    _check_nav_status_sample(status, res, rep)
+    _check_nav_action_server(status, res, rep)
+    _check_nav_hidden_topic(status, res, rep)
+    _check_nav_bond(truth["bond"], res, rep)
+
+
 SECTIONS = (
     check_graph,
     check_scan,
@@ -2148,6 +2261,7 @@ SECTIONS = (
     check_clock,
     check_logs,
     check_graph_diff,
+    check_nav_primitives,
     check_listing,
 )
 

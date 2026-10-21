@@ -1,0 +1,7 @@
+[
+  {"name": "40_action_status", "tool": "sample_messages", "timeout": 60,
+   "args": {"topic": "/bench_fib/_action/status", "count": 1, "timeout_s": 8}},
+  {"name": "41_bond", "tool": "sample_messages", "timeout": 60,
+   "args": {"topic": "/bond", "count": 5, "timeout_s": 8}},
+  {"settle_s": 3}
+]
