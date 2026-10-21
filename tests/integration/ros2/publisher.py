@@ -116,8 +116,6 @@ class BenchRobot(Node):
         msg.active = True
         msg.heartbeat_timeout = 4.0
         msg.heartbeat_period = float(model.BOND_PERIOD)
-        msg.connect_timeout = 10.0
-        msg.disconnect_timeout = 2.0
         self._bond_pub.publish(msg)
 
     @staticmethod
