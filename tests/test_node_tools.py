@@ -23,6 +23,7 @@ from topicforge.adapters.ros2_live.process_runner import ProcessResult
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
 from topicforge.server import build_app
+from topicforge.services.inspector import Inspector
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ros2_node"
 _MODULE = "topicforge.adapters.ros2_live.adapter"
@@ -427,3 +428,142 @@ def test_both_tools_use_the_ros_lane_and_are_open_world() -> None:
     assert "the only request TopicForge ever sends is a parameter read" in (
         tools["get_node_info"].description
     )
+
+
+# ----- params_file: the declared parameters against the running node -----
+
+_LIDAR_FILE = (
+    "lidar_driver:\n"
+    "  ros__parameters:\n"
+    "    frame_id: laser\n"
+    "    scan_frequency: 20.0\n"
+    "    extra_gain: 1.5\n"
+)
+
+
+def _params_file(tmp_path: Path, text: str = _LIDAR_FILE, name: str = "params.yaml") -> str:
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def test_mock_param_diff_names_the_changed_and_the_missing_parameter(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=_params_file(tmp_path)
+    )
+    assert info.param_diff is not None
+    assert [(d.name, d.status, d.declared, d.live) for d in info.param_diff] == [
+        ("extra_gain", "declared_only", 1.5, None),
+        ("scan_frequency", "different", 20.0, 10.0),
+    ]
+    assert info.param_diff_summary == "1 same, 1 live_only" and info.param_diff_note is None
+    assert info.parameters is not None  # the rest of the result is untouched
+
+
+def test_without_params_file_the_three_fields_stay_null() -> None:
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver")
+    assert (info.param_diff, info.param_diff_summary, info.param_diff_note) == (None, None, None)
+
+
+def test_a_missing_file_is_a_note_not_an_error(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=str(tmp_path / "absent.yaml")
+    )
+    assert info.param_diff is None and "is not a file" in (info.param_diff_note or "")
+    assert info.full_name == "/lidar_driver"
+
+
+def test_a_directory_is_not_a_file(tmp_path: Path) -> None:
+    folder = tmp_path / "dir.yaml"
+    folder.mkdir()
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=str(folder))
+    assert info.param_diff is None and "is not a file" in (info.param_diff_note or "")
+
+
+def test_a_file_over_one_mebibyte_is_not_parsed(tmp_path: Path) -> None:
+    big = _params_file(tmp_path, "# " + "x" * (1024 * 1024 + 1) + "\n")
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=big)
+    assert info.param_diff is None and "larger than 1048576 bytes" in (info.param_diff_note or "")
+
+
+def test_a_file_that_is_not_utf8_is_a_note(tmp_path: Path) -> None:
+    path = tmp_path / "latin.yaml"
+    path.write_bytes(b"a: \xe9\xff\n")
+    info = Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=str(path))
+    assert info.param_diff is None and "not UTF-8" in (info.param_diff_note or "")
+
+
+def test_invalid_yaml_is_a_note(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=_params_file(tmp_path, "a: [unclosed\n")
+    )
+    assert info.param_diff is None and "not valid YAML" in (info.param_diff_note or "")
+
+
+def test_a_file_without_a_section_for_the_node_says_so(tmp_path: Path) -> None:
+    info = Inspector(MockAdapter()).get_node_info(
+        "/camera_driver", params_file=_params_file(tmp_path)
+    )
+    assert info.param_diff is None and "no section for /camera_driver" in (
+        info.param_diff_note or ""
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("", "non-empty"),
+        ("  ", "non-empty"),
+        ("params.txt", ".yaml or .yml"),
+        ("/etc/passwd", ".yaml or .yml"),
+        ("a\x00.yaml", "null bytes"),
+    ],
+)
+def test_a_bad_params_file_path_is_rejected_before_any_io(value: str, message: str) -> None:
+    with pytest.raises(AdapterError, match=message):
+        Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=value)
+
+
+def test_live_params_file_is_read_by_the_server_and_never_given_to_the_cli(
+    cli: FakeCli, tmp_path: Path
+) -> None:
+    text = "nav_planner:\n  ros__parameters:\n    goal_tolerance: 9.0\n"
+    path = _params_file(tmp_path, text)
+    info = Inspector(Ros2CliAdapter()).get_node_info("/nav_planner", params_file=path)
+    assert info.param_diff is not None
+    assert [(d.name, d.status) for d in info.param_diff] == [("goal_tolerance", "different")]
+    assert not any(path in " ".join(call) for call, _, _ in cli.calls)
+    assert len(cli.ran("param dump")) == 1  # the same single read as without the file
+
+
+def test_when_the_node_does_not_answer_there_is_no_diff_and_a_note(
+    cli: FakeCli, tmp_path: Path
+) -> None:
+    cli.replies["param dump"] = TIMED_OUT
+    info = Inspector(Ros2CliAdapter()).get_node_info(
+        "/nav_planner",
+        params_file=_params_file(tmp_path, "nav_planner:\n  ros__parameters:\n    a: 1\n"),
+    )
+    assert info.parameters is None and info.param_diff is None
+    assert "were not read" in (info.param_diff_note or "")
+
+
+def test_get_node_info_over_mcp_with_params_file(tmp_path: Path) -> None:
+    data = _call(
+        "get_node_info", {"node": "/lidar_driver", "params_file": _params_file(tmp_path)}
+    ).structured_content
+    assert [d["name"] for d in data["param_diff"]] == ["extra_gain", "scan_frequency"]
+    assert data["param_diff_summary"] == "1 same, 1 live_only"
+
+
+def test_params_file_errors_reach_the_client() -> None:
+    with pytest.raises(ToolError, match=r".yaml or .yml"):
+        _call("get_node_info", {"node": "/lidar_driver", "params_file": "/etc/passwd"})
+
+
+def test_the_node_tool_never_writes_the_params_file(tmp_path: Path) -> None:
+    path = Path(_params_file(tmp_path))
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    Inspector(MockAdapter()).get_node_info("/lidar_driver", params_file=str(path))
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["params.yaml"]

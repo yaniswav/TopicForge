@@ -7,11 +7,13 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
 from topicforge.adapters.common.bag_range import validate_range
 from topicforge.adapters.common.log_filter import LogFilter
 from topicforge.adapters.common.ros_discovery import cli_ghost_note
 from topicforge.adapters.common.tf_tree import build_tf_report
+from topicforge.adapters.common.urdf import UrdfError, UrdfModel, parse_urdf
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
@@ -58,11 +60,18 @@ from topicforge.services.dds_views import (
     with_event_ages,
 )
 from topicforge.services.graph_diff import GraphDiffService, parse_baseline
+from topicforge.services.params_file import validate_params_file, with_param_diff
 from topicforge.services.sample_budget import apply_sample_budget
 
 DEFAULT_SAMPLE_COUNT = 5
 DEFAULT_LOOKBACK_SECONDS = 300
 DEFAULT_WINDOW_SECONDS = 60
+# `inspect_tf` reads the URDF from this latched topic after the capture: wait at most
+# `_URDF_READ_S`, keep `_URDF_RESERVE_S` of the call budget back, skip below `_URDF_MIN_READ_S`.
+_URDF_TOPIC = "/robot_description"
+_URDF_READ_S = 6.0
+_URDF_RESERVE_S = 3.0
+_URDF_MIN_READ_S = 2.0
 _DDS_DOMAIN_MIN = 0
 _DDS_DOMAIN_MAX = 232
 _LOOKBACK_MIN = 1
@@ -121,10 +130,17 @@ class Inspector:
         # No arguments, so nothing to validate here.
         return self._adapter.list_nodes()
 
-    def get_node_info(self, node: str, timeout_s: float = DEFAULT_NODE_TIMEOUT_S) -> NodeInfo:
+    def get_node_info(
+        self,
+        node: str,
+        timeout_s: float = DEFAULT_NODE_TIMEOUT_S,
+        params_file: str | None = None,
+    ) -> NodeInfo:
         name = _validate_node_name(node)
         _validate_node_timeout_s(timeout_s)
-        return self._adapter.get_node_info(name, timeout_s)
+        path = None if params_file is None else validate_params_file(params_file)
+        info = self._adapter.get_node_info(name, timeout_s)
+        return info if path is None else with_param_diff(info, path)
 
     def inspect_tf(
         self,
@@ -137,6 +153,7 @@ class Inspector:
         _validate_range("stale_after_s", stale_after_s, MIN_TF_STALE_AFTER_S, MAX_TF_STALE_AFTER_S)
         source, target = _validate_frame_pair(source_frame, target_frame)
         capture = self._adapter.capture_tf(float(window_s))
+        urdf, urdf_note = self._read_urdf()
         return build_tf_report(
             capture,
             float(stale_after_s),
@@ -144,7 +161,39 @@ class Inspector:
             target,
             window_s=float(window_s),
             mode_effective=self._adapter.effective_mode,
+            urdf=urdf,
+            urdf_note=urdf_note,
         )
+
+    def _read_urdf(self) -> tuple[UrdfModel | None, str | None]:
+        """The URDF on `/robot_description` as `(model, None)`, else `(None, why)`; never raises.
+
+        One latched message, read after the capture within what is left of the call budget.
+        A missing topic, a silent publisher, a late answer or a document that is not a URDF
+        all become a note: the TF tree is the result, the URDF only a comparison.
+        """
+        wait = call_budget.clamp(_URDF_READ_S, _URDF_RESERVE_S)
+        if wait < _URDF_MIN_READ_S:
+            return None, f"No time was left in this call's budget to read {_URDF_TOPIC}."
+        try:
+            result = self._adapter.sample_messages(
+                _URDF_TOPIC, 1, max_array_length=None, timeout_s=wait
+            )
+        except AdapterError as exc:
+            if "not found" in str(exc).lower() or "unknown topic" in str(exc).lower():
+                return None, (
+                    f"No {_URDF_TOPIC} topic: robot_state_publisher publishes it. A URDF held "
+                    "only as a node parameter is not read."
+                )
+            return None, f"{_URDF_TOPIC} could not be read ({exc})."
+        text = result.samples[0].payload.get("data") if result.samples else None
+        if not isinstance(text, str):
+            why = result.note or "no message arrived"
+            return None, f"{_URDF_TOPIC} gave no robot description ({why})."
+        try:
+            return parse_urdf(text), None
+        except UrdfError as exc:
+            return None, f"{_URDF_TOPIC} was not compared: {exc}."
 
     def graph_diff(self, baseline: str = "previous", bag_path: str | None = None) -> GraphDiff:
         """Snapshot the graph (or `bag_path`) and compare it with `baseline`."""

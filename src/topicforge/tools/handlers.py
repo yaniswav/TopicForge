@@ -71,6 +71,8 @@ _NODE_TIMEOUT_PARAM_DESC = (
     "answer is reported in `parameters_note`, not as an error."
 )
 
+_PARAMS_FILE_PARAM_DESC = "Server path of a ROS 2 parameter `.yaml` (1 MiB max)."
+
 _TF_FRAME_PARAM_DESC = (
     "Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get "
     "the chain between them in `path`."
@@ -274,7 +276,9 @@ def register_tools(
             "and the interfaces are still returned. A value whose name contains password, "
             "secret, token, api_key or credential is replaced by `<masked>` and a long value "
             "is cut (`truncated`, `original_size`), both said in `parameters_note`. With "
-            "several nodes of that name `duplicate_count` is above 1 and `note` warns. "
+            "`params_file`, `param_diff` lists declared values that differ on the node, are "
+            "`declared_only` or `masked`. With several nodes of that name `duplicate_count` is "
+            "above 1 and `note` warns. "
             "**Raises an MCP error** when the node is not on the graph (the message lists close "
             "matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only "
             "request TopicForge ever sends is a parameter read (list/get); it sends no other "
@@ -296,8 +300,9 @@ def register_tools(
                 le=MAX_NODE_TIMEOUT_S,
             ),
         ] = DEFAULT_NODE_TIMEOUT_S,
+        params_file: Annotated[str | None, Field(description=_PARAMS_FILE_PARAM_DESC)] = None,
     ) -> NodeInfo:
-        return inspector.get_node_info(node, timeout_s)
+        return inspector.get_node_info(node, timeout_s, params_file)
 
     @mcp.tool(
         annotations=read_only_annotations("Inspect TF tree", open_world=True),
@@ -310,7 +315,8 @@ def register_tools(
             "stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), "
             "`static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they "
             "hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and "
-            "`target_frame` for the `path` between them. **Empty `frames`** when nothing is "
+            "`target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF "
+            "links with no frame (`declared_not_published`). **Empty `frames`** when nothing is "
             "published (read `note`). The listening is capped (3000 messages): `echo` can drop "
             "messages at high rates, so the tree is exact but frequencies are approximate "
             "(`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed "

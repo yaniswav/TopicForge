@@ -7,6 +7,7 @@ from topicforge.models.nodes import (
     NodeListing,
     NodeListItem,
     NodeParameter,
+    ParamDiff,
 )
 from topicforge.models.schemas import (
     BagAnalysis,
@@ -73,6 +74,7 @@ __all__ = [
     "NodeParameter",
     "NotMatchedPair",
     "OdometrySummary",
+    "ParamDiff",
     "ParticipantEvent",
     "ParticipantEventListing",
     "ParticipantInfo",

@@ -112,6 +112,14 @@ MOCK_TOPICS: tuple[TopicInfo, ...] = (
         durability="transient_local",
     ),
     _topic(
+        "/robot_description",
+        "std_msgs/msg/String",
+        "reliable",
+        ("/robot_state_publisher",),
+        (),
+        durability="transient_local",
+    ),
+    _topic(
         "/rosout",
         "rcl_interfaces/msg/Log",
         "reliable",
@@ -168,6 +176,25 @@ MOCK_STATIC_EDGES: tuple[tuple[str, str], ...] = (
     ("base_link", "camera_link"),
     ("base_link", "imu_link"),
     ("camera_link", "camera_optical_frame"),
+)
+
+# The URDF on /robot_description: every frame of the mock tree plus `gripper_link`, a link on a
+# revolute joint that nothing publishes (the one `declared_not_published` finding of the mock).
+MOCK_URDF = (
+    '<?xml version="1.0"?>'
+    '<robot name="mock_diffbot">'
+    '<link name="base_link"/><link name="laser"/><link name="camera_link"/>'
+    '<link name="imu_link"/><link name="camera_optical_frame"/><link name="gripper_link"/>'
+    '<joint name="laser_joint" type="fixed"><parent link="base_link"/><child link="laser"/></joint>'
+    '<joint name="camera_joint" type="fixed">'
+    '<parent link="base_link"/><child link="camera_link"/></joint>'
+    '<joint name="imu_joint" type="fixed"><parent link="base_link"/><child link="imu_link"/></joint>'
+    '<joint name="optical_joint" type="fixed">'
+    '<parent link="camera_link"/><child link="camera_optical_frame"/></joint>'
+    '<joint name="gripper_joint" type="revolute">'
+    '<parent link="base_link"/><child link="gripper_link"/>'
+    '<limit lower="0" upper="1" effort="1" velocity="1"/></joint>'
+    "</robot>"
 )
 
 # The mock robot publishes /scan, /odom, /imu/data and /cmd_vel at 10 Hz; a mock
@@ -361,6 +388,16 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
                     for a, b in MOCK_STATIC_EDGES
                 ]
             },
+        )
+    ],
+    "/robot_description": [
+        MessageSample(
+            topic="/robot_description",
+            message_type="std_msgs/msg/String",
+            timestamp_ns=0,
+            stamp_source="none",
+            received_ns=_BASE_TS_NS,
+            payload={"data": MOCK_URDF},
         )
     ],
     "/rosout": [

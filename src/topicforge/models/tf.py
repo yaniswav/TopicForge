@@ -102,6 +102,15 @@ class TfReport(BaseModel):
     truncated: bool = Field(description="Messages were dropped or the cap was hit.")
     mode_effective: Literal["mock", "live"] = Field(description="`live` or `mock` (fixtures).")
     note: str | None = Field(default=None, description="One sentence of context, or `None`.")
+    urdf_source: Literal["robot_description", "none"] = "none"
+    urdf_link_count: int | None = None
+    declared_frames_missing: list[str] = Field(
+        default_factory=list, description="URDF links with no TF frame."
+    )
+    frames_not_in_urdf: list[str] = Field(
+        default_factory=list, description="TF frames not in the URDF (`map`, `odom` are normal)."
+    )
+    urdf_note: str | None = None
 
 
 __all__ = ["TfCapture", "TfFinding", "TfFrame", "TfReport", "TfSample"]
