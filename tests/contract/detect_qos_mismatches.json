@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Detect QoS mismatches"
   },
-  "description": "Explain why DDS readers and writers on a topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `summary` (one line, read it first), `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists what would also break once fixed), `hints` (probable typos in orphan topic names, type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, where announced). **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot see). Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; `*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose reader joined later on the same host: normal. Reports and partition splits carry `suggested_fixes`: text for a human, never applied by TopicForge; `verify_with` names the call that confirms the repair. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; mock returns fixtures. **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another DDS call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "Explain why DDS readers and writers on a topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `summary` (one line, read it first), `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists what would also break once fixed), `hints` (probable typos in orphan topic names, type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, where announced). **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot see). Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; `*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose reader joined later on the same host: normal. Reports and partition splits carry `suggested_fixes`: text for a human, never applied by TopicForge; `verify_with` names the call that confirms the repair. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; mock returns fixtures. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "topic": {
@@ -35,15 +35,11 @@
             "type": "boolean"
           },
           "late_joiner_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "One-line explanation, set together with `late_joiner`."
+            "description": "One-line explanation, set together with `late_joiner`.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "reader_guid": {
             "type": "string"
@@ -52,26 +48,18 @@
             "type": "string"
           },
           "reader_participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "topic": {
             "type": "string"
           },
           "type_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "writer_guid": {
@@ -81,13 +69,9 @@
             "type": "string"
           },
           "writer_participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -118,43 +102,27 @@
             "type": "array"
           },
           "reader_guid": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "reader_participant_guid": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "reader_participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "reader_type_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "severity": {
@@ -183,43 +151,27 @@
             "type": "array"
           },
           "writer_guid": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "writer_participant_guid": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "writer_participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "writer_type_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -251,13 +203,9 @@
             "type": "string"
           },
           "reader_participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "reason": {
@@ -285,13 +233,9 @@
             "type": "string"
           },
           "writer_participant_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           }
         },
@@ -416,15 +360,11 @@
         "type": "integer"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "pairs_checked": {
         "description": "Same-topic (reader, writer) pairs examined.",
@@ -458,15 +398,11 @@
         "type": "integer"
       },
       "summary": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "One-line reading of the scan: counts of incompatible, not matched and matched pairs."
+        "description": "One-line reading of the scan: counts of incompatible, not matched and matched pairs.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "topics_scanned": {
         "description": "Topics that had at least one endpoint in scope.",

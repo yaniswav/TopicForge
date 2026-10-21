@@ -103,26 +103,18 @@
             "type": "object"
           },
           "received_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only)."
+            "description": "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only).",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "recorded_ns": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Bag record time in ns (`peek_bag_samples` only)."
+            "description": "Bag record time in ns (`peek_bag_samples` only).",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "stamp_source": {
             "description": "Origin of `timestamp_ns`: `header`, `payload`, `recorded` (bag record time), `dds_source` or `none` (0).",
@@ -136,30 +128,26 @@
             "type": "string"
           },
           "summary": {
-            "anyOf": [
-              {
-                "properties": {
-                  "summary_type": {
-                    "enum": [
-                      "laser_scan",
-                      "odometry",
-                      "imu",
-                      "image",
-                      "point_cloud2"
-                    ],
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "summary_type"
+            "description": "Condensed reading of the whole message (see `summary_type`); `null` for other types and DDS peeks.",
+            "properties": {
+              "summary_type": {
+                "enum": [
+                  "laser_scan",
+                  "odometry",
+                  "imu",
+                  "image",
+                  "point_cloud2"
                 ],
-                "type": "object"
-              },
-              {
-                "type": "null"
+                "type": "string"
               }
+            },
+            "required": [
+              "summary_type"
             ],
-            "description": "Condensed reading of the whole message (see `summary_type`); `null` for other types and DDS peeks."
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "timestamp_ns": {
             "description": "Publisher-clock ns: `header.stamp`, else the time in the body of `Clock`, `TFMessage` or `Log`, else 0 (see `stamp_source`); not the arrival time.",
@@ -199,48 +187,32 @@
             "type": "string"
           },
           "interval_cv": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Interval standard deviation over mean; `null` under 2 messages."
+            "description": "Interval standard deviation over mean; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "interval_median_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Median interval; `null` under 2 messages."
+            "description": "Median interval; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "max_gap_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Longest interval; `null` under 2 messages."
+            "description": "Longest interval; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "mean_interval_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Mean interval; `null` under 2 messages."
+            "description": "Mean interval; `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "message_count": {
             "description": "Messages the rate is computed from.",
@@ -248,48 +220,32 @@
             "type": "integer"
           },
           "observed_frequency_hz": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages."
+            "description": "Messages per second on `basis`, drain excluded; the rate the caller received. `null` under 2 messages.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "sim_frequency_hz": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps."
+            "description": "Same rate on the messages' own stamps (publisher clock); `null` without advancing stamps.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "stamp_age_median_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Median of arrival minus stamp, s, if `wall`; negative = publisher ahead."
+            "description": "Median of arrival minus stamp, s, if `wall`; negative = publisher ahead.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "stamp_age_p95_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "95th percentile of that age (max under 20 messages)."
+            "description": "95th percentile of that age (max under 20 messages).",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "stamp_regression_count": {
             "description": "Times a stamp went back versus the previous one.",
@@ -302,15 +258,11 @@
             "type": "integer"
           },
           "trailing_gap_s": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Time from the last message to the end of a live observation; else `null`."
+            "description": "Time from the last message to the end of a live observation; else `null`.",
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "verdict": {
             "description": "First match: `silent` (none), `insufficient` (under 5), `intermittent` (an interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), `erratic`. Describes this window, not a diagnosis.",
@@ -369,15 +321,11 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Why `samples` is empty or limited, when not obvious; else `None`."
+        "description": "Why `samples` is empty or limited, when not obvious; else `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "rate": {
         "anyOf": [

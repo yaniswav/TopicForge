@@ -36,6 +36,7 @@ from topicforge.constants import (
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
+    GraphDiff,
     HealthReport,
     MismatchScan,
     NodeInfo,
@@ -140,6 +141,12 @@ _PATH_PARAM_DESC = (
     "live; mock accepts any well-formed path."
 )
 
+_BASELINE_PARAM_DESC = (
+    "`previous` (last snapshot), a `snap-N` id from `snapshot_ids`, or a bag path."
+)
+
+_BAG_SNAPSHOT_PARAM_DESC = "Snapshot this bag instead of the live graph."
+
 _SUMMARY_RATE_NOTE = (
     " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples "
     "carry a `summary` of the whole message (other types: null); `rate` gives frequency, "
@@ -148,15 +155,13 @@ _SUMMARY_RATE_NOTE = (
 )
 
 _ROS_LANE_NOTE = (
-    " **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole "
-    "call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock "
-    "it fails at once with a `busy` error (retry)."
+    " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; "
+    "`busy` error if the lock is held (retry)."
 )
 
 _DDS_LANE_NOTE = (
-    " **Duration**: uses the DDS binding behind the DDS lock (one call at a time); the whole "
-    "call, lock wait included, ends within 45 s, and if another DDS call holds the lock it "
-    "fails at once with a `busy` error (retry)."
+    " **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; "
+    "`busy` error if the lock is held (retry)."
 )
 
 _NO_LOCK_NOTE = (
@@ -273,12 +278,10 @@ def register_tools(
             "**Raises an MCP error** when the node is not on the graph (the message lists close "
             "matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only "
             "request TopicForge ever sends is a parameter read (list/get); it sends no other "
-            "request to a node. **Duration**: runs the `ros2` CLI behind the ROS lock, one "
-            "call at a time: up to three CLI calls (node list and node info, 8 s each at most; "
-            "then the parameter read, at most `timeout_s`, 20 s). The whole call, lock wait "
-            "included, ends within 45 s: if another `ros2` call holds the lock it fails at "
-            "once with a `busy` error (retry), and a call that waited has less time for the "
-            "parameter read."
+            "request to a node. **Duration**: `ros2` CLI behind the ROS lock, one call at a "
+            "time; up to three CLI calls (node list and info, 8 s each at most; the parameter "
+            "read, at most `timeout_s`, 20 s); ends within 45 s, less time for the read after "
+            "a wait; `busy` error if the lock is held (retry)."
         ),
     )
     @guarded("ros")
@@ -363,11 +366,10 @@ def register_tools(
             "`peek_bag_samples` returns the FIRST matches."
             + (_SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
             + (
-                " **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time. "
-                "It returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and "
-                "decode; the whole call, lock wait included, ends within 45 s: a call that "
-                "cannot get the lock fails at once with a `busy` error (retry), and one that "
-                "waited has less time to collect."
+                " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; returns within "
+                "`timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; ends within "
+                "45 s, less time to collect after a wait; `busy` error if the lock is held "
+                "(retry)."
             )
         ),
     )
@@ -434,6 +436,29 @@ def register_tools(
         path: Annotated[str, Field(description=_PATH_PARAM_DESC, min_length=1)],
     ) -> BagAnalysis:
         return inspector.analyze_bag(path)
+
+    @mcp.tool(
+        annotations=read_only_annotations("Diff the ROS 2 graph", open_world=True),
+        description=(
+            'ROS 2 graph only. Answer "what changed since it last worked": snapshot the graph '
+            "(or `bag_path`) and compare it with `baseline`, as a `GraphDiff`. `changes` are "
+            "node, topic, type, qos, rate and count differences; `added` = present now, absent "
+            "from the baseline. `not_compared` names what a pair cannot support: nodes and "
+            "counts need live against live, rates bag against bag, writer QoS a DDS backend. "
+            "`/rosout` and `/parameter_events` count noise is only tallied in "
+            "`builtin_changes_count`. The first call stores a snapshot and says so in `note`. "
+            "Snapshots stay in memory (16, lost on restart). **Raises an MCP error** for an "
+            "unknown id, a bad bag path or without a `ros2` CLI. **Mock mode**: the first call "
+            "reports 3 changes, the next 0. Read-only." + _ROS_LANE_NOTE
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "graph_diff")
+    def graph_diff(
+        baseline: Annotated[str, Field(description=_BASELINE_PARAM_DESC)] = "previous",
+        bag_path: Annotated[str | None, Field(description=_BAG_SNAPSHOT_PARAM_DESC)] = None,
+    ) -> GraphDiff:
+        return inspector.graph_diff(baseline, bag_path)
 
     # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone`, `fast` or
     # `mock`; with the `ros2_cli` adapter alone they raise AdapterError.

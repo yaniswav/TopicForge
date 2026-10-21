@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Get node info"
   },
-  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node as a `NodeInfo`: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never waits for the node. Parameters come from a read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null`, `parameters_note` says its executor is probably blocked, and the interfaces are still returned. A value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` and a long value is cut (`truncated`, `original_size`), both said in `parameters_note`. With several nodes of that name `duplicate_count` is above 1 and `note` warns. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only request TopicForge ever sends is a parameter read (list/get); it sends no other request to a node. **Duration**: runs the `ros2` CLI behind the ROS lock, one call at a time: up to three CLI calls (node list and node info, 8 s each at most; then the parameter read, at most `timeout_s`, 20 s). The whole call, lock wait included, ends within 45 s: if another `ros2` call holds the lock it fails at once with a `busy` error (retry), and a call that waited has less time for the parameter read.",
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node as a `NodeInfo`: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never waits for the node. Parameters come from a read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null`, `parameters_note` says its executor is probably blocked, and the interfaces are still returned. A value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` and a long value is cut (`truncated`, `original_size`), both said in `parameters_note`. With several nodes of that name `duplicate_count` is above 1 and `note` warns. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only request TopicForge ever sends is a parameter read (list/get); it sends no other request to a node. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; up to three CLI calls (node list and info, 8 s each at most; the parameter read, at most `timeout_s`, 20 s); ends within 45 s, less time for the read after a wait; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "node": {
@@ -60,15 +60,11 @@
             "type": "string"
           },
           "original_size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Characters (string) or elements (list) the value had before the cut. `None` unless `truncated` is true."
+            "description": "Characters (string) or elements (list) the value had before the cut. `None` unless `truncated` is true.",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "truncated": {
             "description": "True when `value` was cut because it was too long (an URDF, a long list).",
@@ -127,40 +123,28 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "parameters": {
-        "anyOf": [
-          {
-            "items": {
-              "$ref": "#/$defs/NodeParameter"
-            },
-            "type": "array"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none."
+        "description": "Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none.",
+        "items": {
+          "$ref": "#/$defs/NodeParameter"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
       },
       "parameters_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Why `parameters` is `None`, or what was masked or cut; `None` when complete."
+        "description": "Why `parameters` is `None`, or what was masked or cut; `None` when complete.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "publishers": {
         "description": "Topics the node publishes.",
@@ -191,26 +175,18 @@
         "type": "array"
       },
       "use_sim_time": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`."
+        "description": "Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`.",
+        "type": [
+          "boolean",
+          "null"
+        ]
       },
       "use_sim_time_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Why `use_sim_time` is `None`. `None` when it is set."
+        "description": "Why `use_sim_time` is `None`. `None` when it is set.",
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "required": [

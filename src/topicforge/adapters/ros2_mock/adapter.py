@@ -13,6 +13,7 @@ from topicforge.adapters.common.log_filter import (
     require_log_topic,
 )
 from topicforge.adapters.ros2_mock import fixtures, node_fixtures, tf_fixtures
+from topicforge.adapters.ros2_mock.graph_fixtures import mock_writer_qos
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_SAMPLE_TIMEOUT_S,
@@ -66,6 +67,14 @@ class MockAdapter:
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         # Mock parameters are read instantly, so `timeout_s` does not apply.
         return node_fixtures.mock_node_info(node)
+
+    def graph_writer_qos(self) -> dict[str, str]:
+        """`{topic: "reliability/durability"}` of the mock publishers, for `graph_diff`.
+
+        Not part of the `MiddlewareAdapter` protocol: the mock's DDS endpoint fixtures sit on
+        non-ROS topics, so the ROS topics' writer QoS is answered from the topic fixtures.
+        """
+        return mock_writer_qos()
 
     def capture_tf(self, window_s: float) -> TfCapture:
         # The mock capture is fixed: `window_s` does not apply.

@@ -70,9 +70,8 @@ def test_summary_is_an_open_object_with_a_summary_type_or_null(
     wires: dict[str, dict[str, Any]],
 ) -> None:
     sample = wires["sample_messages"]["outputSchema"]["$defs"]["MessageSample"]
-    options = sample["properties"]["summary"]["anyOf"]
-    assert {"type": "null"} in options
-    obj = next(o for o in options if o.get("type") == "object")
+    obj = sample["properties"]["summary"]
+    assert obj["type"] == ["object", "null"]  # the nullable fold of CONTRACT 9.13
     assert obj["required"] == ["summary_type"]
     assert obj["properties"]["summary_type"]["enum"] == [
         "laser_scan",

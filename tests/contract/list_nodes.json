@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List ROS 2 nodes"
   },
-  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` (managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (two CLI calls). **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_participants`. List the nodes on the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a `NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` (managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. `duplicates` lists full names used by several nodes (a per-node tool then answers for one of them, unidentified). Nodes starting with an underscore are hidden and a node on another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a `ros2` CLI. Read-only; cheap (two CLI calls). **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {},
     "type": "object"
@@ -49,7 +49,6 @@
       }
     },
     "additionalProperties": false,
-    "description": "Envelope returned by `list_nodes`.",
     "properties": {
       "by_namespace": {
         "additionalProperties": {
@@ -71,15 +70,11 @@
         "type": "integer"
       },
       "lifecycle_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Why `lifecycle` could not be determined (service list failed), else `None`."
+        "description": "Why `lifecycle` could not be determined (service list failed), else `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "mode_effective": {
         "description": "`live` or `mock` (fixtures).",
@@ -97,15 +92,11 @@
         "type": "array"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "returned": {
         "description": "Length of `nodes`.",

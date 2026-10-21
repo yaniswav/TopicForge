@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Get topic info"
   },
-  "description": "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Describe one ROS 2 `topic` (fully qualified, e.g. `/cmd_vel`) as a `TopicInfo`: counts and, in live mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where `transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a `null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. **Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. Read-only; no side effects. **Duration**: runs the `ros2` CLI behind the ROS lock (one call at a time); the whole call, lock wait included, ends within 45 s, and if another `ros2` call holds the lock it fails at once with a `busy` error (retry).",
+  "description": "ROS 2 graph only; on a DDS-only setup use `list_endpoints`. Describe one ROS 2 `topic` (fully qualified, e.g. `/cmd_vel`) as a `TopicInfo`: counts and, in live mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where `transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a `null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. **Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. Read-only; no side effects. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "topic": {
@@ -75,15 +75,11 @@
         "type": "string"
       },
       "note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "One sentence of context, or `None`."
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "publisher_count": {
         "minimum": 0,
@@ -108,15 +104,11 @@
         "description": "QoS of the publishers. `None` when it was not read: see `publisher_qos_note`."
       },
       "publisher_qos_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Why `publisher_qos` is `None`. `None` when it is set."
+        "description": "Why `publisher_qos` is `None`. `None` when it is set.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "subscriber_count": {
         "minimum": 0,
@@ -141,15 +133,11 @@
         "description": "QoS of the subscriptions. `None` when it was not read: see `subscription_qos_note`."
       },
       "subscription_qos_note": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "description": "Why `subscription_qos` is `None`. `None` when it is set."
+        "description": "Why `subscription_qos` is `None`. `None` when it is set.",
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "required": [

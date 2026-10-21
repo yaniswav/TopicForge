@@ -35,6 +35,7 @@ from topicforge.constants import (
 from topicforge.models import (
     BagAnalysis,
     EndpointListing,
+    GraphDiff,
     MismatchScan,
     NodeInfo,
     NodeListing,
@@ -56,6 +57,7 @@ from topicforge.services.dds_views import (
     restarts_from_participants,
     with_event_ages,
 )
+from topicforge.services.graph_diff import GraphDiffService, parse_baseline
 from topicforge.services.sample_budget import apply_sample_budget
 
 DEFAULT_SAMPLE_COUNT = 5
@@ -98,6 +100,7 @@ class Inspector:
         self._adapter = adapter
         self._max_sample_bytes = max_sample_bytes
         self._clock_ns = clock_ns
+        self._graph = GraphDiffService(adapter, clock_ns)
 
     @property
     def backend_name(self) -> AdapterName:
@@ -142,6 +145,15 @@ class Inspector:
             window_s=float(window_s),
             mode_effective=self._adapter.effective_mode,
         )
+
+    def graph_diff(self, baseline: str = "previous", bag_path: str | None = None) -> GraphDiff:
+        """Snapshot the graph (or `bag_path`) and compare it with `baseline`."""
+        if not isinstance(baseline, str):
+            raise AdapterError("baseline must be a string")
+        kind, value = parse_baseline(baseline)
+        if kind == "bag":
+            value = _validate_bag_path(value)
+        return self._graph.diff(value, None if bag_path is None else _validate_bag_path(bag_path))
 
     def get_topic_info(self, topic: str) -> TopicInfo:
         _validate_topic_name(topic)

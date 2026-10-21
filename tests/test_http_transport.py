@@ -55,7 +55,7 @@ def test_lists_the_tools_over_http_and_binds_to_loopback_only(
             return [tool.name for tool in (await client.list_tools()).tools]
 
     names = asyncio.run(run())
-    assert len(names) == 15 and "health_check" in names
+    assert len(names) == 16 and "health_check" in names
 
 
 def _post(port: int, host_header: str) -> int:

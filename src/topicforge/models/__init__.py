@@ -1,5 +1,6 @@
 """Pydantic schemas: the contract between TopicForge and MCP clients."""
 
+from topicforge.models.graph_diff import GraphChange, GraphDiff, GraphSnapshotRef
 from topicforge.models.nodes import (
     NodeInfo,
     NodeInterface,
@@ -52,6 +53,9 @@ __all__ = [
     "DepartedEndpoint",
     "EndpointInfo",
     "EndpointListing",
+    "GraphChange",
+    "GraphDiff",
+    "GraphSnapshotRef",
     "HealthReport",
     "ImageSummary",
     "ImuSummary",

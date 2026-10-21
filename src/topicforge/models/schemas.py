@@ -986,8 +986,8 @@ class HealthReport(BaseModel):
 
     mode: str = Field(
         description=(
-            "Mode actually serving: `mock` or `live` (`live` with `ros_backend` `none`:"
-            " DDS tools only). May differ from `requested_mode` after a fallback."
+            "Mode serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools "
+            "only); may differ from `requested_mode` after a fallback."
         )
     )
     requested_mode: str = Field(description="Mode requested by configuration (may be `auto`).")
@@ -1001,7 +1001,7 @@ class HealthReport(BaseModel):
         default=2,
         ge=1,
         description=(
-            "Output contract version; changes only when a field is renamed, removed or retyped."
+            "Output contract version; changes when a field is renamed, removed or retyped."
         ),
     )
     max_sample_count: int = Field(
@@ -1021,10 +1021,7 @@ class HealthReport(BaseModel):
     )
     dds_inactive_note: str | None = Field(
         default=None,
-        description=(
-            "Why `dds_backend` is `none` while ROS 2 serves (not selected, binding "
-            "missing, or failed to start); else `null`."
-        ),
+        description=("Why `dds_backend` is `none` while ROS 2 serves; else `null`."),
     )
     dds_domain_id: int | None = Field(
         default=None,
@@ -1079,8 +1076,8 @@ class HealthReport(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Discovery entries dropped from a full tracker cache (4096 each); non-zero "
-            "means the bus is bigger than listed."
+            "Discovery entries dropped from a full tracker cache; non-zero means the bus "
+            "is bigger than listed."
         ),
     )
     ros_tools_available: bool = Field(
@@ -1093,9 +1090,8 @@ class HealthReport(BaseModel):
     sim_clock_published: bool | None = Field(
         default=None,
         description=(
-            "Whether `/clock` had a publisher in the last graph read (a hint that "
-            "stamps may be sim time). `None` in mock or without a recent read; "
-            "`health_check` never runs `ros2`."
+            "Whether `/clock` had a publisher at the last graph read (stamps may be sim "
+            "time); `None` in mock or without a recent read."
         ),
     )
     payload_decoding: Literal["disabled", "enabled"] = Field(
