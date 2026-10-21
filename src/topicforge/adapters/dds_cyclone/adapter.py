@@ -59,6 +59,7 @@ from topicforge.adapters.common import (
     take_bounded,
     user_topic_result,
     validate_domain_id,
+    with_endpoint_counts,
 )
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
@@ -419,7 +420,8 @@ class CycloneDdsAdapter:
             p.model_copy(update={"is_observer": True}) if p.guid == observer else p
             for p in snap.participant_infos
         ]
-        return with_node_names(infos, snap.node_names, snap.node_names_last)
+        named = with_node_names(infos, snap.node_names, snap.node_names_last)
+        return with_endpoint_counts(named, snap.publications, snap.subscriptions)
 
     def participant_pids(self) -> dict[str, int]:
         """Pid announced by each cached participant (`__Pid` property), keyed by guid."""
@@ -479,6 +481,7 @@ class CycloneDdsAdapter:
             include_observer=include_observer,
             include_departed=include_departed,
             include_internal=include_internal,
+            nodes_by_guid=snap.endpoint_nodes,
             departed=[(r.role, r.sample, r.gone_ns, r.participant_name) for _, r in snap.departed],
         )
 

@@ -51,6 +51,7 @@ from topicforge.models import (
 from topicforge.services.dds_views import (
     compact_endpoints,
     domain_note,
+    endpointless_note,
     join_notes,
     restarts_from_events,
     restarts_from_nodes,
@@ -237,7 +238,11 @@ class Inspector:
             truncated=False,
             domain_id=self._observed_domain(domain_id),
             mode_effective=self._adapter.effective_mode,
-            note=join_notes(self._domain_note(domain_id), self._ghost_note(participants)),
+            note=join_notes(
+                self._domain_note(domain_id),
+                self._ghost_note(participants),
+                endpointless_note(participants, self._clock_ns()),
+            ),
             restarts_by_name=restarts,
             restarts_note=restarts_note,
             restarts_by_node=restarts_from_nodes(participants),

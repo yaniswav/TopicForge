@@ -6,7 +6,7 @@ import os
 import shutil
 import time
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from topicforge import __version__
 from topicforge.adapters.base import MiddlewareAdapter
@@ -55,6 +55,7 @@ class HealthService:
         ros_backend, dds_backend = _backends_from_adapter_name(self._adapter.name)
         observer = _observer_status(self._adapter)
         rmw = resolve_rmw(ros_backend, os.environ)
+        security = resolve_security(ros_backend, os.environ)
         return HealthReport(
             now_ns=time.time_ns(),
             observer_started_ns=observer.get("observer_started_ns"),
@@ -71,6 +72,10 @@ class HealthService:
             contract_version=CONTRACT_VERSION,
             rmw_implementation=rmw[0],
             rmw_source=rmw[1],
+            ros_security_enabled=security.enabled,
+            ros_security_strategy=security.strategy,
+            ros_security_keystore_set=security.keystore_set,
+            ros_security_note=security.note,
             max_sample_count=MAX_SAMPLE_COUNT,
             dds_backend=dds_backend,
             dds_inactive_note=(
@@ -109,6 +114,48 @@ def resolve_rmw(ros_backend: str, env: Mapping[str, str]) -> tuple[str | None, R
     if default is not None:
         return default, "distro_default"
     return None, "none"
+
+
+class SecurityEnv(NamedTuple):
+    """SROS2 settings as the environment declares them (a fact about env vars, not a verdict)."""
+
+    enabled: bool | None
+    strategy: Literal["Enforce", "Permissive"] | None
+    keystore_set: bool | None
+    note: str | None
+
+
+_NO_SECURITY_ENV = SecurityEnv(None, None, None, None)
+
+SECURITY_NOTE = (
+    "TopicForge joins the domain without an identity: participants of secured nodes stay "
+    "visible through SPDP, their endpoints and data do not"
+)
+"""Stated when `ROS_SECURITY_ENABLE` is `true`; not a claim about any particular node."""
+
+
+def resolve_security(ros_backend: str, env: Mapping[str, str]) -> SecurityEnv:
+    """SROS2 variables of `env`, never the keystore path and never a verdict on the graph.
+
+    Everything is `None` unless the ROS 2 CLI serves (same rule as `resolve_rmw`: mock and
+    DDS-only setups say nothing about an environment they do not run in). `enabled` follows
+    rcl, which accepts only the exact text `true`. `strategy` is `None` when unset or not
+    `Enforce` / `Permissive`. `keystore_set` is true for `ROS_SECURITY_KEYSTORE` or the older
+    `ROS_SECURITY_ROOT_DIRECTORY`. A secured bus is not proven by these variables, and an
+    unsecured one is not either: another process may differ.
+    """
+    if ros_backend != "ros2_cli":
+        return _NO_SECURITY_ENV
+    enabled = env.get("ROS_SECURITY_ENABLE", "").strip() == "true"
+    raw_strategy = env.get("ROS_SECURITY_STRATEGY", "").strip()
+    strategy: Literal["Enforce", "Permissive"] | None = (
+        raw_strategy if raw_strategy in ("Enforce", "Permissive") else None  # type: ignore[assignment]
+    )
+    keystore = any(
+        env.get(name, "").strip()
+        for name in ("ROS_SECURITY_KEYSTORE", "ROS_SECURITY_ROOT_DIRECTORY")
+    )
+    return SecurityEnv(enabled, strategy, keystore, SECURITY_NOTE if enabled else None)
 
 
 def _observer_status(adapter: MiddlewareAdapter) -> dict[str, Any]:

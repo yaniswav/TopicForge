@@ -25,6 +25,7 @@ side, nodes, `use_sim_time` per node), scan (geometry, every range, wall and sec
 changes, after `graph_change.py` starts (node `/bench_v2`, topic `/scan_v2`, a second writer on
 `/cmd_vel_out`) exactly those three changes and no other, and a bag baseline removes nothing.
 From 0.8.0 the `nav_primitives` section (bench truth only) reads the building blocks of the `diagnose-nav2` prompt, not Nav2: `/bench_robot` serves a never-called action `/bench_fib` and publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz). The hidden `_action/status` topic gives one sample with an empty `status_list`, `/bench_fib` is in `get_node_info.action_servers` of `/bench_robot`, the status topic is absent from `list_topics`, and every `/bond` sample carries the id.
+The `visibility` section (bench truth only, from `05s_list_endpoints_scan` and the health and participant calls) checks the `/scan` writer's `node_name` is `/bench_robot`, its participant has `endpoint_count` >= 12 and `ros_security_enabled` is false with no note.
 
 Machine-dependent rows (OmniSim kit runs on a shared host):
 

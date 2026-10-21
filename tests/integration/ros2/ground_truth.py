@@ -229,6 +229,27 @@ def nav_primitives_truth() -> dict[str, Any]:
     }
 
 
+def visibility_truth() -> dict[str, Any]:
+    """What the DDS visibility fields must say on the bench (0.8.0).
+
+    `/bench_robot` writes `/scan`, so `list_endpoints(topic="/scan")` has to name it as the
+    writer's node on every RMW (Fast DDS names all its participants `/`, so the node name is the
+    only link), its participant carries the node's parameter services, `/rosout`, the graph
+    plumbing and the topics, which is well over `min_endpoint_count`, and the bench environment
+    sets no SROS2 variable.
+    """
+    return {
+        "endpoints_call": "05s_list_endpoints_scan",
+        "topic": "/scan",
+        "writer_nodes": ["/bench_robot"],
+        "participants_call": "04_list_participants",
+        "node": "/bench_robot",
+        "min_endpoint_count": 12,
+        "health_call": "01_health_check",
+        "ros_security_enabled": False,
+    }
+
+
 def clock_truth() -> dict[str, Any]:
     """What `TopicRate.clock_basis` and the stamp fields must say per topic (0.7.3)."""
     return {
@@ -430,6 +451,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         "logs": logs_truth(),
         "graph_diff": graph_diff_truth(),
         "nav_primitives": nav_primitives_truth(),
+        "visibility": visibility_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

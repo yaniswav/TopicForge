@@ -151,6 +151,39 @@
         ],
         "type": "string"
       },
+      "ros_security_enabled": {
+        "description": "`ROS_SECURITY_ENABLE` is `true`; `None` unless the ros2 CLI serves.",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "ros_security_keystore_set": {
+        "description": "Whether a keystore variable is set (the path is never shown).",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "ros_security_note": {
+        "description": "Set when `ros_security_enabled`: what stays invisible.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ros_security_strategy": {
+        "description": "`ROS_SECURITY_STRATEGY` when set to a valid value.",
+        "enum": [
+          "Enforce",
+          "Permissive",
+          null
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "ros_tools_available": {
         "description": "True when the ROS 2 tools can run (`ros_backend` is not `none`); on a DDS-only setup use `list_endpoints`.",
         "type": "boolean"

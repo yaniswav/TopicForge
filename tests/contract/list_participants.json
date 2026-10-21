@@ -58,6 +58,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "endpoint_count": {
+            "description": "Writers plus readers seen for this participant; `None` without an endpoint cache.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "first_seen_ns": {
             "description": "Wall-clock ns of the first discovery sample seen; `None` without lifecycle tracking.",
             "minimum": 0,

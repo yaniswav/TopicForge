@@ -24,10 +24,12 @@ from topicforge.adapters.common import (
     endpoint_record,
     format_participant_key,
     listing_from_samples,
+    with_endpoint_counts,
 )
+from topicforge.adapters.common.dds_helpers import format_guid
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
-from topicforge.models import EndpointListing
+from topicforge.models import EndpointListing, ParticipantInfo
 from topicforge.server import build_app
 from topicforge.services import Inspector
 
@@ -474,3 +476,105 @@ def test_departed_endpoint_keeps_vendor_from_its_guid_prefix() -> None:
     )
     rec = endpoint_record(sample, "writer", {}, observer_guid=None, vendors_by_guid={})
     assert rec["participant_vendor"] == "cyclone"
+
+
+# ----------------------------- ROS 2 node names ------------------------------
+
+
+def _guid_of(key: int) -> str:
+    return format_guid(uuid.UUID(int=key).bytes)
+
+
+def test_endpoints_get_their_node_name_from_the_gid_map() -> None:
+    nodes = {_guid_of(1): "/bench_robot", _guid_of(3): "/listener"}
+    listing = listing_from_samples(
+        [],
+        [_endpoint_sample(key=1, topic="rt/scan"), _endpoint_sample(key=2, topic="rt/scan")],
+        [_endpoint_sample(key=3, topic="rt/scan"), _endpoint_sample(key=4, topic="rt/scan")],
+        domain_id=0,
+        mode_effective="live",
+        observer_guid=None,
+        nodes_by_guid=nodes,
+    )
+    by_guid = {e.guid: e.node_name for e in listing.endpoints}
+    assert by_guid == {
+        _guid_of(1): "/bench_robot",
+        _guid_of(2): None,
+        _guid_of(3): "/listener",
+        _guid_of(4): None,
+    }
+    (summary,) = listing.by_topic
+    assert summary.writer_nodes == ["/bench_robot"]
+    assert summary.reader_nodes == ["/listener"]
+
+
+def test_node_names_are_sorted_and_distinct_in_the_roll_up() -> None:
+    nodes = {_guid_of(i): name for i, name in [(1, "/b"), (2, "/a"), (3, "/b")]}
+    listing = listing_from_samples(
+        [],
+        [_endpoint_sample(key=i, topic="rt/t") for i in (1, 2, 3)],
+        [],
+        domain_id=0,
+        mode_effective="live",
+        observer_guid=None,
+        nodes_by_guid=nodes,
+    )
+    assert listing.by_topic[0].writer_nodes == ["/a", "/b"]
+    assert listing.by_topic[0].reader_nodes == []
+
+
+def test_without_a_gid_map_node_name_is_none_everywhere() -> None:
+    listing = listing_from_samples(
+        [],
+        [_endpoint_sample(key=1)],
+        [],
+        domain_id=0,
+        mode_effective="live",
+        observer_guid=None,
+    )
+    assert listing.endpoints[0].node_name is None
+    assert listing.by_topic[0].writer_nodes == []
+
+
+def test_a_departed_endpoint_keeps_its_node_name() -> None:
+    listing = listing_from_samples(
+        [],
+        [],
+        [],
+        domain_id=0,
+        mode_effective="live",
+        observer_guid=None,
+        include_departed=True,
+        departed=[("writer", _endpoint_sample(key=1), 5, "/")],
+        nodes_by_guid={_guid_of(1): "/gone_node"},
+    )
+    assert [e.node_name for e in listing.endpoints] == ["/gone_node"]
+
+
+def test_endpoint_counts_per_participant() -> None:
+    participants = [
+        ParticipantInfo(guid=_pguid(100), vendor="cyclone", domain_id=0),
+        ParticipantInfo(guid=_pguid(200), vendor="cyclone", domain_id=0),
+        ParticipantInfo(guid=_pguid(300), vendor="cyclone", domain_id=0),
+    ]
+    out = with_endpoint_counts(
+        participants,
+        [_endpoint_sample(key=1, participant=100), _endpoint_sample(key=2, participant=100)],
+        [_endpoint_sample(key=3, participant=100), _endpoint_sample(key=4, participant=200)],
+    )
+    assert [p.endpoint_count for p in out] == [3, 1, 0]
+    assert all(p.endpoint_count is None for p in participants)
+
+
+def test_the_mock_endpoints_carry_node_names_and_participants_carry_counts() -> None:
+    adapter = MockAdapter()
+    listing = adapter.list_endpoints()
+    nodes = {e.participant_name: e.node_name for e in listing.endpoints}
+    assert nodes["nav_planner"] == "/nav_planner"
+    assert nodes["lidar_driver"] == "/lidar_driver"
+    assert nodes[None] is None  # the Dust participant hosts no ROS 2 node
+    example = next(s for s in listing.by_topic if s.dds_topic == "/dds/topicforge/example")
+    assert example.writer_nodes == ["/camera_driver"]
+    assert example.reader_nodes == ["/nav_planner"]
+    counts = {p.name: p.endpoint_count for p in adapter.list_participants()}
+    assert counts == {"lidar_driver": 2, "nav_planner": 3, "camera_driver": 1, None: 1}

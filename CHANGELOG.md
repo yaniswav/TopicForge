@@ -41,6 +41,19 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `40_action_status` and `41_bond`, and the comparator gets a `nav_primitives` section (one latched
   sample with an empty `status_list`, the action in `get_node_info.action_servers`, the status
   topic absent from `list_topics`, the bond id on every `/bond` sample).
+- DDS visibility (lot C), without any verdict on security. `health_check` reports
+  `ros_security_enabled`, `ros_security_strategy`, `ros_security_keystore_set` (never the path)
+  and, when enabled, `ros_security_note` (a secured node's participant stays visible through SPDP,
+  its endpoints and data do not), all `null` without the `ros2` CLI. `ParticipantInfo.endpoint_count`
+  counts the endpoints seen per participant, and `list_participants` notes the ones with none for
+  more than 10 s, naming both causes (endpoint-less, or hidden by DDS Security). `EndpointInfo.node_name`
+  names the ROS 2 node of each endpoint, read from the `ros_discovery_info` gids (bytes 0 to 15 of
+  the 24-byte or 16-byte gid are the endpoint GUID), and `TopicSummary.writer_nodes` and
+  `reader_nodes` roll it up: the answer to "who writes `/scan`" when every Fast DDS participant is
+  called `/`. `tools/list` grew by 1,078 bytes (95,471). `docs/CONTRACT.md` section 9.16. Bench
+  (written, not run): a `visibility` section checks the `/scan` writer is `/bench_robot`, its
+  participant has at least 12 endpoints and the security fields are `false` and `null`. No SROS2
+  cell yet.
 
 ### Changed
 

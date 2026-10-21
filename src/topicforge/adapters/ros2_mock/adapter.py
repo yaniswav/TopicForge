@@ -246,9 +246,12 @@ def _reject_non_bag_path(path: str) -> None:
 
 def _with_mock_nodes(participant: ParticipantInfo) -> ParticipantInfo:
     """Attach the node names the mock robot's participants announce on `ros_discovery_info`."""
+    counted = participant.model_copy(
+        update={"endpoint_count": fixtures.mock_endpoint_count(participant.guid)}
+    )
     names = node_fixtures.mock_participant_node_names(participant.name)
     if not names:
-        return participant
-    return participant.model_copy(
+        return counted
+    return counted.model_copy(
         update={"node_names": names, "node_names_source": "ros_discovery_info"}
     )

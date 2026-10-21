@@ -10,7 +10,16 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from topicforge.models import MismatchReport, ParticipantInfo, QosProfile
+from topicforge.adapters.ros2_mock import MockAdapter
+from topicforge.models import (
+    EndpointInfo,
+    MismatchReport,
+    ParticipantInfo,
+    QosProfile,
+    TopicSummary,
+)
+from topicforge.services import Inspector
+from topicforge.services.dds_views import endpointless_note
 
 # ----- QosProfile -----
 
@@ -166,3 +175,73 @@ def test_mismatch_report_is_frozen():
     )
     with pytest.raises(ValidationError):
         report.severity = "risky"  # type: ignore[misc]
+
+
+# ----- 0.8.0 visibility fields -----
+
+_NOW_NS = 1_000_000_000_000
+_LONG_AGO_NS = _NOW_NS - 60 * 1_000_000_000
+
+
+def _participant(**kw: object) -> ParticipantInfo:
+    base: dict[str, object] = {
+        "guid": "01.02.03.04",
+        "vendor": "cyclone",
+        "domain_id": 0,
+        "status": "active",
+        "first_seen_ns": _LONG_AGO_NS,
+        "endpoint_count": 0,
+    }
+    base.update(kw)
+    return ParticipantInfo(**base)  # type: ignore[arg-type]
+
+
+def test_the_visibility_fields_are_optional_and_empty_by_default():
+    assert _participant(endpoint_count=None).endpoint_count is None
+    endpoint = EndpointInfo(
+        guid="g", role="writer", participant_guid="p", dds_topic="t", is_observer=False
+    )
+    assert endpoint.node_name is None
+    summary = TopicSummary(
+        dds_topic="t", type_names=[], writer_count=0, reader_count=0, partitions=[]
+    )
+    assert summary.writer_nodes == [] and summary.reader_nodes == []
+
+
+def test_endpoint_count_cannot_be_negative():
+    with pytest.raises(ValidationError):
+        _participant(endpoint_count=-1)
+
+
+def test_a_long_known_endpointless_participant_is_noted_with_both_causes():
+    note = endpointless_note([_participant(), _participant(guid="b")], _NOW_NS)
+    assert note is not None
+    assert note.startswith("2 participant(s) announce no endpoint TopicForge can see")
+    assert "endpoint-less participant" in note and "DDS Security" in note
+    assert "secured" not in note.lower()  # two causes named, no verdict
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"endpoint_count": None},
+        {"endpoint_count": 5},
+        {"is_observer": True},
+        {"is_topicforge_cli": True},
+        {"status": "left"},
+        {"first_seen_ns": None},
+        {"first_seen_ns": _NOW_NS - 10_000_000_000},  # exactly 10 s: not yet more than 10 s
+    ],
+)
+def test_the_endpointless_note_skips_what_it_cannot_say(override: dict[str, object]):
+    assert endpointless_note([_participant(**override)], _NOW_NS) is None
+
+
+def test_the_participant_listing_carries_the_note():
+    class _Adapter(MockAdapter):
+        def list_participants(self, domain_id: int = 0) -> list[ParticipantInfo]:
+            return [*super().list_participants(domain_id), _participant(guid="silent")]
+
+    listing = Inspector(_Adapter()).list_participants()
+    assert listing.note is not None and "1 participant(s) announce no endpoint" in listing.note
+    assert Inspector(MockAdapter()).list_participants().note is None

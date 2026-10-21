@@ -126,6 +126,13 @@
             "description": "True when the endpoint belongs to TopicForge's own observer participant.",
             "type": "boolean"
           },
+          "node_name": {
+            "description": "ROS 2 node owning the endpoint (`ros_discovery_info`); `None` if not announced.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "participant_guid": {
             "type": "string"
           },
@@ -410,6 +417,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "reader_nodes": {
+            "description": "Sorted ROS 2 nodes of the readers (`node_name`).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "ros_topic": {
             "description": "ROS 2 name of the topic, for example `/scan`. `None` for a DDS topic that is not a ROS 2 topic.",
             "type": [
@@ -426,6 +440,13 @@
           "writer_count": {
             "minimum": 0,
             "type": "integer"
+          },
+          "writer_nodes": {
+            "description": "Sorted ROS 2 nodes of the writers (`node_name`).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [

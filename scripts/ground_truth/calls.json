@@ -8,6 +8,7 @@
   {"settle_s": 3},
   {"name": "04_list_participants", "tool": "list_participants"},
   {"name": "05_list_endpoints", "tool": "list_endpoints"},
+  {"name": "05s_list_endpoints_scan", "tool": "list_endpoints", "args": {"topic": "/scan"}},
   {"name": "06_detect_qos_mismatches", "tool": "detect_qos_mismatches"},
   {"name": "03n_node_info_{slug}", "tool": "get_node_info", "for_each": "nodes",
    "args": {"node": "{item}", "timeout_s": 4}, "timeout": 60},
