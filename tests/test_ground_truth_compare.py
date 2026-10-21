@@ -298,6 +298,10 @@ def _bench_results(gt: dict) -> dict[str, Any]:
             "rmw_implementation": gt["ros"]["rmw_implementation"],
             "rmw_source": "env",
             "contract_version": 2,
+            "ros_security_enabled": False,
+            "ros_security_strategy": None,
+            "ros_security_keystore_set": False,
+            "ros_security_note": None,
         },
     )
     out["02_list_topics"] = _call(
@@ -408,7 +412,13 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         {},
         {
             "participants": [
-                {"vendor": "fast", "name": "bench_robot", "is_observer": False},
+                {
+                    "vendor": "fast",
+                    "name": "bench_robot",
+                    "is_observer": False,
+                    "node_names": ["/bench_robot"],
+                    "endpoint_count": 31,
+                },
                 {"vendor": "fast", "name": "bench_blocked", "is_observer": False},
                 {"vendor": "fast", "name": "bench_lifecycle", "is_observer": False},
                 {"vendor": "cyclone", "name": "topicforge", "is_observer": True},
@@ -425,6 +435,19 @@ def _bench_results(gt: dict) -> dict[str, Any]:
                 if t.get("counts") != "ignore"
                 for _ in range(t["publisher_count"])
             ]
+        },
+    )
+    out["05s_list_endpoints_scan"] = _call(
+        "list_endpoints",
+        {"topic": "/scan"},
+        {
+            "endpoints": [
+                {"role": "writer", "ros_topic": "/scan", "node_name": "/bench_robot"},
+                {"role": "reader", "ros_topic": "/scan", "node_name": None},
+            ],
+            "by_topic": [
+                {"ros_topic": "/scan", "writer_nodes": ["/bench_robot"], "reader_nodes": []}
+            ],
         },
     )
     out["06_detect_qos_mismatches"] = _call(
@@ -657,6 +680,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         "clock",
         "logs",
         "graph_diff",
+        "visibility",
         "listing",
     }
 
@@ -1288,6 +1312,71 @@ def test_the_graph_diff_section_catches_each_kind_of_wrong_answer(
     for needle, mutate in cases.items():
         code, failed = _gd_run(tmp_path, bench_truth, mutate)
         assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+# ------------------------------------------------------------------ visibility (0.8.0)
+def test_the_visibility_section_passes_on_a_healthy_bench(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    _, report = _run(tmp_path, bench_truth, _bench_results(bench_truth), "--strict-shape")
+    rows = [r for r in report["rows"] if r["section"] == "visibility"]
+    assert len(rows) == 5 and {r["verdict"] for r in rows} == {"PASS"}
+
+
+def test_the_visibility_section_catches_each_kind_of_wrong_answer(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    def parsed(r: dict, name: str) -> dict:
+        return r[name]["parsed"][0]
+
+    cases = {
+        "writer node_name": lambda r: parsed(r, "05s_list_endpoints_scan")["endpoints"][0].update(
+            node_name=None
+        ),
+        "writer_nodes": lambda r: parsed(r, "05s_list_endpoints_scan")["by_topic"][0].update(
+            writer_nodes=["/"]
+        ),
+        "endpoint_count": lambda r: parsed(r, "04_list_participants")["participants"][0].update(
+            endpoint_count=3
+        ),
+        "ros_security_enabled": lambda r: parsed(r, "01_health_check").update(
+            ros_security_enabled=True
+        ),
+        "ros_security_note": lambda r: parsed(r, "01_health_check").update(
+            ros_security_note="TopicForge joins the domain without an identity"
+        ),
+    }
+    for needle, mutate in cases.items():
+        results = _bench_results(bench_truth)
+        mutate(results)
+        code, report = _run(tmp_path / needle, bench_truth, results, "--strict-shape")
+        failed = _metrics(report, "FAIL")
+        assert code == 1 and any(needle in m for m in failed), (needle, failed)
+
+
+def test_an_older_server_without_the_visibility_calls_only_warns(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    del results["05s_list_endpoints_scan"]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0 and "list_endpoints node_name" in _metrics(report, "WARN")
+
+
+def test_the_kit_truth_has_no_visibility_section(
+    tmp_path: Path, omnisim: tuple[dict, dict]
+) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "visibility" for r in report["rows"])
+
+
+def test_the_visibility_call_sits_in_the_kit_calls_and_names_the_scan_topic() -> None:
+    kit = json.loads((ROOT / "scripts" / "ground_truth" / "calls.json").read_text("utf-8"))
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")["visibility"]
+    call = next(c for c in kit if c.get("name") == truth["endpoints_call"])
+    assert call["tool"] == "list_endpoints" and call["args"] == {"topic": truth["topic"]}
+    assert truth["node"] in bench.BENCH_NODES and truth["writer_nodes"] == [truth["node"]]
 
 
 def test_a_missing_graph_diff_answer_is_a_warning_not_a_failure(

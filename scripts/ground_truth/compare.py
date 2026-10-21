@@ -2137,6 +2137,115 @@ def check_graph_diff(gt: dict, res: Results, rep: Report) -> None:
     _check_gd_bag(truth["bag"], res, rep)
 
 
+# ---------------------------------------------------------------------------- visibility
+# Self-contained: the `visibility` section of the truth (only the bench writes one) against the
+# health, participant and endpoint calls it names (0.8.0). The node name is what ties an endpoint
+# to a ROS 2 node when every participant is called `/` (Fast DDS), so it has to hold on both RMWs.
+def _check_vis_endpoints(truth: dict, res: Results, rep: Report) -> None:
+    name = truth["endpoints_call"]
+    data = res.load(name)
+    err = tool_err(data)
+    wall = res.times.get(name)
+    if data is None or err:
+        verdict, got = ("WARN", "absent") if data is None else ("FAIL", err)
+        rep.add(
+            "visibility", "list_endpoints node_name", truth["writer_nodes"], got, verdict, "", wall
+        )
+        return
+    writers = [e for e in listing(data, "endpoints") if e.get("role") == "writer"]
+    got_nodes = sorted({e["node_name"] for e in writers if e.get("node_name")})
+    rep.add(
+        "visibility",
+        f"{truth['topic']} writer node_name",
+        truth["writer_nodes"],
+        got_nodes,
+        "PASS"
+        if got_nodes == truth["writer_nodes"] and all(e.get("node_name") for e in writers)
+        else "FAIL",
+        f"{len(writers)} writer(s); the node name comes from ros_discovery_info",
+        wall,
+    )
+    summaries = [s for s in listing(data, "by_topic") if s.get("ros_topic") == truth["topic"]]
+    got_summary = sorted(summaries[0].get("writer_nodes") or []) if summaries else None
+    rep.add(
+        "visibility",
+        f"{truth['topic']} writer_nodes",
+        truth["writer_nodes"],
+        got_summary,
+        "PASS" if got_summary == truth["writer_nodes"] else "FAIL",
+        "",
+        wall,
+    )
+
+
+def _check_vis_participant(truth: dict, res: Results, rep: Report) -> None:
+    name = truth["participants_call"]
+    data = res.load(name)
+    err = tool_err(data)
+    wall = res.times.get(name)
+    metric = f"{truth['node']} participant endpoint_count"
+    if data is None or err:
+        verdict, got = ("WARN", "absent") if data is None else ("FAIL", err)
+        rep.add("visibility", metric, f">= {truth['min_endpoint_count']}", got, verdict, "", wall)
+        return
+    hosts = [
+        p for p in listing(data, "participants") if truth["node"] in (p.get("node_names") or [])
+    ]
+    counts = [p.get("endpoint_count") for p in hosts]
+    ok = bool(hosts) and all(
+        isinstance(c, int) and c >= truth["min_endpoint_count"] for c in counts
+    )
+    rep.add(
+        "visibility",
+        metric,
+        f">= {truth['min_endpoint_count']}",
+        counts or "no participant hosts the node",
+        "PASS" if ok else "FAIL",
+        "writers plus readers, plumbing included",
+        wall,
+    )
+
+
+def _check_vis_health(truth: dict, res: Results, rep: Report) -> None:
+    name = truth["health_call"]
+    data = res.load(name)
+    wall = res.times.get(name)
+    if data is None or tool_err(data):
+        return  # the graph section already reports the missing health_check
+    health = (objs(data) or [{}])[0]
+    got = health.get("ros_security_enabled", "absent")
+    rep.add(
+        "visibility",
+        "health ros_security_enabled",
+        truth["ros_security_enabled"],
+        got,
+        "PASS" if got is truth["ros_security_enabled"] else "FAIL",
+        "the bench sets no ROS_SECURITY_* variable",
+        wall,
+    )
+    note = health.get("ros_security_note")
+    rep.add(
+        "visibility",
+        "health ros_security_note",
+        None,
+        note,
+        "PASS" if note is None else "FAIL",
+        "",
+        wall,
+    )
+
+
+@guard("visibility")
+def check_visibility(gt: dict, res: Results, rep: Report) -> None:
+    """DDS visibility: endpoint node names, participant endpoint counts, SROS2 health (0.8.0)."""
+    truth = gt.get("visibility")
+    if not truth:
+        return
+    _check_vis_endpoints(truth, res, rep)
+    _check_vis_participant(truth, res, rep)
+    _check_vis_health(truth, res, rep)
+
+
 SECTIONS = (
     check_graph,
     check_scan,
@@ -2148,6 +2257,7 @@ SECTIONS = (
     check_clock,
     check_logs,
     check_graph_diff,
+    check_visibility,
     check_listing,
 )
 
