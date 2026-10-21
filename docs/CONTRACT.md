@@ -630,7 +630,7 @@ Tools 13 and 14, shipped in 0.7.0. Both are additive, run in the ROS lane and ar
 
 `list_nodes` returns `NodeListing {nodes, returned, total, truncated, duplicates,
 lifecycle_count, lifecycle_note, by_namespace, mode_effective, note}` from `ros2 node list`
-and, since 0.7.3, one `ros2 service list -t` (section 9.10). A node is `{name, namespace,
+and, since 0.8.0, one `ros2 service list -t` (section 9.10). A node is `{name, namespace,
 full_name, duplicate_count, lifecycle}`; `nodes` holds one entry per distinct full name and `duplicates`
 the full names with `duplicate_count` above 1. Nodes whose name starts with an underscore
 are hidden by the CLI and are not listed.
@@ -671,8 +671,8 @@ shows only added properties.
 
 `tools/list` carries the description, input schema and output schema of every tool, and some
 clients truncate it. In 0.7.0 it was about 178 KB compact (14 tools); 0.7.2 served about 119 KB
-(118,884 bytes). 0.7.3 serves about 95 KB (94,957 bytes, section 9.9) against a 100,000 test
-ceiling, which leaves about 5 KB before `graph_diff`.
+(118,884 bytes). The compaction of section 9.9 brought it to 94,957 bytes with fifteen tools;
+0.8.0 serves 96,848 bytes with sixteen (sections 9.13, 9.15, 9.16) against a 100,000 test ceiling.
 How:
 
 - Pydantic's generated `title` is dropped from every property and nested model, and the
@@ -829,7 +829,7 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
 - The mock `/tf_static` topic carries the fixed frames of the demo robot; mock `inspect_tf`
   is a fixed 5 s capture and ignores `window_s`.
 
-### 9.9 `summary` is advertised as an open object (0.7.3)
+### 9.9 `summary` is advertised as an open object (0.8.0, planned as 0.7.3)
 
 Additive, a loosening of the advertised schema only. `MessageSample.summary` used to list the
 five summary models (`LaserScanSummary`, `OdometrySummary`, `ImuSummary`, `ImageSummary`,
@@ -850,7 +850,7 @@ from every `outputSchema` (never from an `inputSchema`): a result always carries
   `LaserScanSummary` passes the served schema, a wrong `summary_type` fails it, and mock
   `sample_messages` and `peek_bag_samples` results validate against it.
 
-### 9.10 `list_nodes` lifecycle and `by_namespace` (0.7.3)
+### 9.10 `list_nodes` lifecycle and `by_namespace` (0.8.0, planned as 0.7.3)
 
 Additive: new fields with defaults, no input change. `list_nodes` now costs two CLI calls
 (`ros2 node list`, then `ros2 service list -t`).
@@ -872,7 +872,7 @@ Additive: new fields with defaults, no input change. `list_nodes` now costs two 
   `transition_event` topic; the comparator checks `lifecycle` and `by_namespace` on both
   distros.
 
-### 9.11 `TopicRate` clock fields (0.7.3)
+### 9.11 `TopicRate` clock fields (0.8.0, planned as 0.7.3)
 
 Additive; every field has a default, so older payloads still validate. They say what kind of
 clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
@@ -892,7 +892,7 @@ clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
 - Computed by the pure `services/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
   of the messages that were decoded; messages dropped for size or decode errors are not seen.
 
-### 9.12 `/rosout` filter and bag ranges (0.7.3)
+### 9.12 `/rosout` filter and bag ranges (0.8.0, planned as 0.7.3)
 
 Additive; every new input is optional and every new field has a default.
 
@@ -964,8 +964,9 @@ that RMW. Each row prints its exact message count and a histogram of levels.
 ### 9.13 `tools/list` size: two compaction levers (0.8.0)
 
 Additive and wire-compatible: no field is added, removed or retyped, and no payload changes.
-`tools/list` went from 94,957 bytes (0.7.3, fifteen tools) to 94,393 bytes with `graph_diff`
-(sixteen tools), under the 100,000-byte test ceiling, which does not move.
+`tools/list` went from 94,957 bytes (fifteen tools, after section 9.9) to 94,393 bytes with
+`graph_diff` (sixteen tools), under the 100,000-byte test ceiling, which does not move. Sections
+9.15 (+1,377) and 9.16 (+1,078) bring the 0.8.0 total to 96,848 bytes.
 
 - **Lane notes.** The `**Duration**` sentence every locked tool carries is one sentence
   now: ``**Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s;
@@ -1148,7 +1149,7 @@ the links of the mock tree plus `gripper_link` on a revolute joint that nothing 
 `inspect_tf` reports `declared_frames_missing` `["gripper_link"]`, `frames_not_in_urdf`
 `["map", "odom"]` and one `declared_not_published` finding beside the `stale` one.
 
-**Size.** `tools/list` goes from 94,393 to 95,770 bytes (+1,377) for the five `TfReport` fields,
+**Size.** `tools/list` grows by 1,377 bytes for the five `TfReport` fields,
 the three `NodeInfo` fields, `ParamDiff`, the `params_file` input and two sentences of
 description.
 

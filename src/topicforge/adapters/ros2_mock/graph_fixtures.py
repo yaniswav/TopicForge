@@ -17,6 +17,16 @@ MOCK_BASELINE_SCAN_TOPIC = "/scan"
 MOCK_BASELINE_SCAN_QOS = "reliable/volatile"
 
 
+def mock_baseline_seed() -> dict[str, str]:
+    """What the mock `snap-0` baseline leaves out or changes, for `graph_diff`."""
+    return {
+        "missing_node": MOCK_BASELINE_MISSING_NODE,
+        "missing_topic": MOCK_BASELINE_MISSING_TOPIC,
+        "qos_topic": MOCK_BASELINE_SCAN_TOPIC,
+        "qos": MOCK_BASELINE_SCAN_QOS,
+    }
+
+
 def mock_writer_qos() -> dict[str, str]:
     """`{topic: "reliability/durability"}` of the mock topics' publishers, lowercase."""
     return {

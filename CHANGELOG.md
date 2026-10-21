@@ -5,7 +5,13 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## 0.8.0 (unreleased)
+## [0.8.0] - 2026-10-21
+
+Graph diff, declared-against-real checks, DDS visibility and a Nav2 prompt. It also carries the
+0.7.3 work (schema compaction, clock fields, `/rosout` filters, bag ranges, lifecycle nodes),
+which was never published on its own: see "Folded in from 0.7.3" below. Additive only
+(`docs/CONTRACT.md` section 9). Validated on the Docker ROS 2 bench (Humble and Jazzy,
+rmw_fastrtps and rmw_cyclonedds) and by a blind evaluation of 14 runs (`docs/EVAL.md`).
 
 ### Added
 
@@ -22,7 +28,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - The mock robot ships a `snap-0` baseline derived from its fixtures minus a node, a topic and a
   QoS: the first mock call reports exactly three changes, the second none, and the mock bag is
   accepted as a baseline.
-- Bench (written, not run: needs the four Docker cells): `drive.py` gains `{"spawn": PATH}` (the
+- Bench: `drive.py` gains `{"spawn": PATH}` (the
   process is stopped when the session ends), `tests/integration/ros2/graph_change.py` adds the
   node `/bench_v2`, the topic `/scan_v2` and a second `/cmd_vel_out` writer, and
   `scripts/ground_truth/calls_graph_diff.json` runs the first, steady, v2 and bag calls. The
@@ -35,7 +41,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   velocity output) and a list of what TopicForge cannot see (lifecycle state, costmaps, the
   behavior tree). No tool added, 0 bytes in `tools/list`. `docs/CONTRACT.md` section 9.17. Nav2
   itself was not run: the prompt is verified on its primitives, not on a real stack.
-- Bench (written, not run: needs the four Docker cells) for those primitives: the image adds
+- Bench for those primitives: the image adds
   `example_interfaces` and `bond`, `publisher.py` serves a never-called action `/bench_fib` and
   publishes `/bond` (`bond/msg/Status`, id `bench_robot`, 1 Hz), `calls_nav_primitives.json` runs
   `40_action_status` and `41_bond`, and the comparator gets a `nav_primitives` section (one latched
@@ -50,8 +56,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   names the ROS 2 node of each endpoint, read from the `ros_discovery_info` gids (bytes 0 to 15 of
   the 24-byte or 16-byte gid are the endpoint GUID), and `TopicSummary.writer_nodes` and
   `reader_nodes` roll it up: the answer to "who writes `/scan`" when every Fast DDS participant is
-  called `/`. `tools/list` grew by 1,078 bytes (95,471). `docs/CONTRACT.md` section 9.16. Bench
-  (written, not run): a `visibility` section checks the `/scan` writer is `/bench_robot`, its
+  called `/`. `tools/list` grows by 1,078 bytes. `docs/CONTRACT.md` section 9.16. Bench:
+  a `visibility` section checks the `/scan` writer is `/bench_robot`, its
   participant has at least 12 endpoints and the security fields are `false` and `null`. No SROS2
   cell yet.
 - Declared against real (lot B), `docs/CONTRACT.md` section 9.15. `inspect_tf` reads the latched
@@ -66,11 +72,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   are never echoed from the file. The comparison runs in the service, so the `MiddlewareAdapter`
   protocol is unchanged, and it works in mock mode. The mock robot publishes `/robot_description`
   with a `gripper_link` nothing publishes (`list_topics` gains one topic). `tools/list` grows by
-  1,377 bytes to 95,770. Bench (written, not run: needs the four Docker cells): the publisher
+  1,377 bytes. Bench: the publisher
   latches a URDF with an unpublished `arm_link` and declares three parameters,
   `bench_params.yaml` disagrees on `max_range` and adds `extra_gain`, `calls_declared.json` runs
   `03p_node_info_params`, and the comparator gets a `declared` section.
-- Evaluation tooling for the 0.8.0 campaign (lot E; nothing was run, see `docs/EVAL.md`, "0.8.0
+- Evaluation tooling for the 0.8.0 campaign (lot E; results in `docs/EVAL.md`, "0.8.0
   campaign (v2)"). `scripts/agent_eval/tf.py list --brief` prints one line per tool (name, inputs
   with `*` on required ones, first sentence): 2,309 bytes against 35,514 for the full listing on
   the mock server; `list --tool NAME` prints one tool in full and `--host` reaches a broker on
@@ -89,8 +95,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
-- `tools/list` is 94,393 bytes with sixteen tools (94,957 with fifteen in 0.7.3), under the
-  unchanged 100,000-byte test ceiling. Two levers pay for the new tool (`docs/CONTRACT.md`
+- `tools/list` is 96,848 bytes with sixteen tools (118,884 with fifteen in 0.7.2), under the
+  100,000-byte test ceiling. `graph_diff` itself costs nothing net: two levers pay for it (`docs/CONTRACT.md`
   section 9.13, wire-compatible): the `**Duration**` lane note is one sentence, and
   `anyOf: [X, null]` is served as `type: [X, "null"]` in output schemas only. A new test validates
   every mock result against the output schema the server serves.
@@ -99,9 +105,9 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - Bench: `test_a_short_latched_result_hints_count_one` waits 6 s instead of 3 (it got no sample once
   on a loaded Jazzy and Fast DDS runner).
 
-## [Unreleased]
+### Folded in from 0.7.3 (never published separately)
 
-### Added
+#### Added
 
 - `list_nodes` flags lifecycle (managed) nodes: `NodeListItem.lifecycle`, plus
   `NodeListing.lifecycle_count`, `lifecycle_note` (set when the service list failed, never a
@@ -127,7 +133,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `/rosout` topic and bag topic. The bench logs WARN/ERROR/INFO, records `/rosout`, and the
   comparator gets a `logs` section.
 
-### Changed
+#### Changed
 
 - `MiddlewareAdapter.sample_messages` gains keyword arguments `min_log_level` and `node`, and
   `peek_bag_samples` gains `start_s`, `end_s`, `min_log_level` and `node` (all default `None`),
@@ -146,7 +152,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `start_ns` 0, not `null`. The live `/rosout` depth-2000 reader is used only when a log filter
   is set; an unfiltered read behaves as in 0.7.2.
 
-### Fixed
+#### Fixed
 
 - `inspect_tf`: the `no_path` finding for unknown frames named every requested frame, even one
   that exists ("No frame named camera_optical_frame or base_laser was seen"). Its text and

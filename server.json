@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/yaniswav/TopicForge#readme",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "topicforge",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },

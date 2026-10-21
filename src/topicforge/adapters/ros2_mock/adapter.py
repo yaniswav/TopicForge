@@ -13,7 +13,7 @@ from topicforge.adapters.common.log_filter import (
     require_log_topic,
 )
 from topicforge.adapters.ros2_mock import fixtures, node_fixtures, tf_fixtures
-from topicforge.adapters.ros2_mock.graph_fixtures import mock_writer_qos
+from topicforge.adapters.ros2_mock.graph_fixtures import mock_baseline_seed, mock_writer_qos
 from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_SAMPLE_TIMEOUT_S,
@@ -75,6 +75,13 @@ class MockAdapter:
         non-ROS topics, so the ROS topics' writer QoS is answered from the topic fixtures.
         """
         return mock_writer_qos()
+
+    def graph_baseline_seed(self) -> dict[str, str]:
+        """How `graph_diff` derives the mock `snap-0` baseline from the live mock graph.
+
+        Not part of the `MiddlewareAdapter` protocol: an adapter without it gets no seed.
+        """
+        return mock_baseline_seed()
 
     def capture_tf(self, window_s: float) -> TfCapture:
         # The mock capture is fixed: `window_s` does not apply.

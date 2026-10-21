@@ -16,12 +16,7 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
-from topicforge.adapters.ros2_mock.graph_fixtures import (
-    MOCK_BASELINE_MISSING_NODE,
-    MOCK_BASELINE_MISSING_TOPIC,
-    MOCK_BASELINE_SCAN_QOS,
-    MOCK_BASELINE_SCAN_TOPIC,
-)
+from topicforge.adapters.common.endpoints import MAX_LISTED_ENDPOINTS
 from topicforge.models.graph_diff import (
     GRAPH_CHANGE_KINDS,
     GraphChange,
@@ -204,7 +199,9 @@ class GraphDiffService:
         self._clock_ns = clock_ns
         self._ring = ring or SnapshotRing()
         self._seed_lock = threading.Lock()
-        self._seeded = getattr(adapter, "name", None) != "mock"
+        # Only the mock adapter offers a seed (`graph_baseline_seed`, outside the protocol).
+        self._seed = getattr(adapter, "graph_baseline_seed", None)
+        self._seeded = self._seed is None
 
     def diff(self, baseline: str, bag_path: str | None) -> GraphDiff:
         """Snapshot the graph (or `bag_path`), store it and compare it with `baseline`.
@@ -240,18 +237,18 @@ class GraphDiffService:
     def _seed_once(self) -> None:
         """Seed the mock baseline on the first call (the constructor stays free of adapter calls)."""
         with self._seed_lock:
-            if not self._seeded:
-                self._seed_mock_baseline()
-                self._seeded = True
+            if not self._seeded and self._seed is not None:
+                self._seed_mock_baseline(self._seed())
+            self._seeded = True
 
-    def _seed_mock_baseline(self) -> None:
+    def _seed_mock_baseline(self, seed: dict[str, str]) -> None:
         """Store `snap-0`: the mock graph minus a node, a topic and a QoS (never a frozen copy)."""
         now = self._clock_ns()
         current = build_live_snapshot(self._adapter, now)
-        topics = {n: s for n, s in current.topics.items() if n != MOCK_BASELINE_MISSING_TOPIC}
+        topics = {n: s for n, s in current.topics.items() if n != seed["missing_topic"]}
         qos = {n: q for n, q in current.qos.items() if n in topics}
-        qos[MOCK_BASELINE_SCAN_TOPIC] = MOCK_BASELINE_SCAN_QOS
-        nodes = (current.nodes or frozenset()) - {MOCK_BASELINE_MISSING_NODE}
+        qos[seed["qos_topic"]] = seed["qos"]
+        nodes = (current.nodes or frozenset()) - {seed["missing_node"]}
         self._ring.seed(
             GraphSnapshot(
                 id="snap-0",
@@ -323,5 +320,5 @@ def _notes(base: GraphSnapshot, cur: GraphSnapshot) -> str | None:
             "from the bag."
         )
     if cur.qos_truncated or base.qos_truncated:
-        parts.append("Writer QoS covers the first 500 endpoints only.")
+        parts.append(f"Writer QoS covers the first {MAX_LISTED_ENDPOINTS} endpoints only.")
     return " ".join(parts) or None
