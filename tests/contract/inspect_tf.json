@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Inspect TF tree"
   },
-  "description": "ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
+  "description": "ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
   "inputSchema": {
     "properties": {
       "source_frame": {
@@ -156,6 +156,13 @@
     "additionalProperties": false,
     "description": "The TF tree as captured: frames, roots, findings and an optional path.",
     "properties": {
+      "declared_frames_missing": {
+        "description": "URDF links with no TF frame.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "dynamic_count": {
         "description": "Frames with a dynamic transform.",
         "type": "integer"
@@ -174,6 +181,13 @@
         "description": "Sorted by name.",
         "items": {
           "$ref": "#/$defs/TfFrame"
+        },
+        "type": "array"
+      },
+      "frames_not_in_urdf": {
+        "description": "TF frames not in the URDF (`map`, `odom` are normal).",
+        "items": {
+          "type": "string"
         },
         "type": "array"
       },
@@ -260,6 +274,25 @@
       "truncated": {
         "description": "Messages were dropped or the cap was hit.",
         "type": "boolean"
+      },
+      "urdf_link_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "urdf_note": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "urdf_source": {
+        "enum": [
+          "robot_description",
+          "none"
+        ],
+        "type": "string"
       },
       "window_actual_s": {
         "type": "number"

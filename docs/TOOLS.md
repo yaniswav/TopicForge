@@ -95,7 +95,7 @@ Explain why DDS readers and writers on a topic do not talk, and who will. Pairs 
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node as a `NodeInfo`: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never waits for the node. Parameters come from a read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null`, `parameters_note` says its executor is probably blocked, and the interfaces are still returned. A value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` and a long value is cut (`truncated`, `original_size`), both said in `parameters_note`. With several nodes of that name `duplicate_count` is above 1 and `note` warns. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only request TopicForge ever sends is a parameter read (list/get); it sends no other request to a node. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; up to three CLI calls (node list and info, 8 s each at most; the parameter read, at most `timeout_s`, 20 s); ends within 45 s, less time for the read after a wait; `busy` error if the lock is held (retry).
+ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 2 node as a `NodeInfo`: the topics it publishes and subscribes to, the services and actions it serves or calls (each `{name, type}`), its parameters and `use_sim_time`. Interfaces come from the graph (`ros2 node info`), which never waits for the node. Parameters come from a read (`ros2 param dump`) bounded by `timeout_s`: **a node that does not answer in time is a finding, not an error**: `parameters` is `null`, `parameters_note` says its executor is probably blocked, and the interfaces are still returned. A value whose name contains password, secret, token, api_key or credential is replaced by `<masked>` and a long value is cut (`truncated`, `original_size`), both said in `parameters_note`. With `params_file`, `param_diff` lists declared values that differ on the node, are `declared_only` or `masked`. With several nodes of that name `duplicate_count` is above 1 and `note` warns. **Raises an MCP error** when the node is not on the graph (the message lists close matches), the name is malformed, or without a `ros2` CLI. **Read-only**: the only request TopicForge ever sends is a parameter read (list/get); it sends no other request to a node. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; up to three CLI calls (node list and info, 8 s each at most; the parameter read, at most `timeout_s`, 20 s); ends within 45 s, less time for the read after a wait; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -103,6 +103,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | --- | --- | --- | --- | --- | --- |
 | `node` | `str` | yes | - | - | Fully qualified node name as `list_nodes` gives it, e.g. `/robot1/lidar_driver` (a missing leading `/` is added). |
 | `timeout_s` | `float` | no | `8.0` | >= 1.0, <= 20.0 | Seconds to wait for the parameter read, 1..20, default 8. A node that does not answer is reported in `parameters_note`, not as an error. |
+| `params_file` | `str \| null` | no | `null` | - | Server path of a ROS 2 parameter `.yaml` (1 MiB max). |
 
 ### Output (top-level fields)
 
@@ -123,6 +124,9 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `duplicate_count` | `int` | yes | Nodes using this exact full name; above 1, the data above belongs to one of them. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
+| `param_diff` | `array \| null` | no | File against node: differences only. |
+| `param_diff_summary` | `string \| null` | no | Counts left out: same, live_only. |
+| `param_diff_note` | `string \| null` | no | - |
 
 ## `get_topic_info`
 
@@ -239,7 +243,7 @@ None.
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
+ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -274,6 +278,11 @@ ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latch
 | `truncated` | `bool` | yes | Messages were dropped or the cap was hit. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
+| `urdf_source` | `"robot_description" \| "none"` | no | - |
+| `urdf_link_count` | `integer \| null` | no | - |
+| `declared_frames_missing` | `list[str]` | no | URDF links with no TF frame. |
+| `frames_not_in_urdf` | `list[str]` | no | TF frames not in the URDF (`map`, `odom` are normal). |
+| `urdf_note` | `string \| null` | no | - |
 
 ## `list_endpoints`
 
@@ -546,6 +555,17 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
 | `latency_available` | `bool` | no | True when a sample carried both a publish and a receive timestamp. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
+
+## Notes
+
+- `inspect_tf` compares the TF frames with the URDF on the `/robot_description`
+  topic, which `robot_state_publisher` publishes (the default since ROS 2 Galactic).
+  A robot description held only as a node parameter is not read: `urdf_source` is
+  `none` and `urdf_note` says why. A link on a non-fixed joint has a TF frame only
+  while `/joint_states` is published.
+- `get_node_info(params_file=...)` reads a YAML file from the disk of the machine
+  running TopicForge (`.yaml` or `.yml`, at most 1 MiB, read-only). The path is never
+  sent to a node or to the `ros2` CLI, and nothing is written.
 
 ## Message summaries
 
