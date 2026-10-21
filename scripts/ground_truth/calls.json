@@ -22,7 +22,7 @@
   {"name": "20_sample_{slug}", "tool": "sample_messages", "for_each": "topics", "timeout": 60,
    "min_publishers": 1,
    "exclude": ["/scan", "/rosout", "/parameter_events", "/tf", "/tf_static",
-               "/robot_description_lite", "/robot1/bench_lifecycle/transition_event"],
+               "/robot_description_lite", "/robot1/bench_lifecycle/transition_event", "/bond"],
    "args": {"topic": "{item}", "count": 12, "timeout_s": 30}},
   {"name": "21_log_error_node", "tool": "sample_messages", "timeout": 60,
    "args": {"topic": "/rosout", "count": 20, "min_log_level": "error",

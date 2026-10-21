@@ -456,6 +456,19 @@ def test_list_nodes_flags_the_lifecycle_node_and_counts_namespaces(
     assert not adapter.get_node_info("/bench_robot").lifecycle
 
 
+def test_nav2_primitives_a_hidden_action_status_and_a_bond(adapter: Ros2CliAdapter) -> None:
+    """What the `diagnose-nav2` prompt reads: no Nav2, only its building blocks."""
+    names = {t.name for t in adapter.list_topics()}
+    assert "/bond" in names
+    assert "/bench_fib/_action/status" not in names  # hidden from the listing, still readable
+    servers = {(i.name, i.type) for i in adapter.get_node_info("/bench_robot").action_servers}
+    assert ("/bench_fib", "example_interfaces/action/Fibonacci") in servers
+    status = adapter.sample_messages("/bench_fib/_action/status", 1, timeout_s=8.0)
+    assert [s.payload for s in status.samples] == [{"status_list": []}]
+    bond = adapter.sample_messages("/bond", 2, timeout_s=8.0)
+    assert bond.samples and {s.payload["id"] for s in bond.samples} == {"bench_robot"}
+
+
 def test_get_node_info_of_the_publisher(adapter: Ros2CliAdapter) -> None:
     info = adapter.get_node_info("/bench_robot")
     published = {i.name: i.type for i in info.publishers}
