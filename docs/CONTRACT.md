@@ -820,7 +820,7 @@ error). It returns `TfReport`. Inputs: `window_s` (1..20, default 5), `stale_aft
   `sim_frequency_hz` the stamps, `real_time_factor` is their ratio (about 1 on a real robot).
 - `findings.kind` is an open set (1.9): `stale`, `two_parents`, `disconnected` (more than one
   root), `static_and_dynamic` (a frame on both topics), `cycle`, `no_path` (unknown or
-  unconnected frames). A sound tree has none.
+  unconnected frames); 0.8.0 adds `declared_not_published` (9.15). A sound tree has none.
 - Ages are measured against the newest `/tf` stamp, so one publisher with a future stamp or a
   zero stamp skews the staleness of every other frame: a frame can read as stale because
   another one runs ahead. Check `stamp_span_s` and the stamps when many frames go stale at once.
@@ -1075,3 +1075,90 @@ settle 3 s, `31_graph_diff_steady` (zero changes: the healthy line), `graph_chan
 is the recorded bag: `removed_count` 0, no `type` or `qos` change, `not_compared` names `nodes`
 and `rates`). Comparator section `graph_diff`. Written for the four Docker cells; not run in the
 session that added it.
+
+### 9.15 Declared against real: URDF in `inspect_tf`, `params_file` in `get_node_info` (0.8.0)
+
+Additive: no tool is added, no field changes, every new field has a default. The question is
+"does the robot run what its description says", and both halves are answered from a topic and a
+file the server reads, never by asking a node for anything new.
+
+**`inspect_tf` and `/robot_description`.** After the TF capture, if the call budget allows, the
+server reads one message of `/robot_description` (`std_msgs/msg/String`, latched, published by
+`robot_state_publisher`): uncut, at most 6 s, and only when at least 2 s remain once a 3 s stop
+reserve is kept back from the 45 s budget. The read is a plain `sample_messages` through the
+adapter, so it follows the same QoS rule as any latched topic. The document is parsed by
+`adapters/common/urdf.py` (`ElementTree`; links are the direct `<link name>` children of
+`<robot>`, joints their `type`, `<parent link>` and `<child link>`). A document that declares a
+`DOCTYPE` or an `ENTITY`, is not a `<robot>`, has no link, is not well-formed XML or exceeds
+4,000,000 characters is refused with a note. Nothing about the URDF can make the call fail: an
+absent topic, a silent publisher, a late answer or a refused document gives `urdf_source` `none`
+and a `urdf_note`; the TF tree is the result and the URDF only a comparison.
+
+New `TfReport` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `urdf_source` | `robot_description` when a URDF was read and compared, else `none` (default) |
+| `urdf_link_count` | links in the URDF, `null` when none was read |
+| `declared_frames_missing` | URDF links with no TF frame, in URDF order |
+| `frames_not_in_urdf` | TF frames that are not a link, sorted. Informative: `map` and `odom` are legitimate |
+| `urdf_note` | why `urdf_source` is `none`, or that no frame was captured so nothing was compared |
+
+A link has a frame when a frame is named like it or `<prefix>/<link>` (a `frame_prefix`; a leading
+`/` is ignored). One finding `declared_not_published` (`kind` stays an open set, 1.9) lists every
+missing link in `frames`; its `text` says that `robot_state_publisher` puts fixed joints on
+`/tf_static` and the others on `/tf`, and names the links under a non-fixed joint, which have a
+frame only while `/joint_states` is published. With no TF frame captured at all nothing is
+compared (no finding, a note), so an empty capture does not read as "every link is missing".
+`/robot_description` is a topic only: a URDF held solely as a `robot_description` parameter is not
+read (`get_node_info` cuts long values) and gives `urdf_source` `none`; reading it is 0.8.1.
+`docs/TOOLS.md` says that a robot needs `robot_state_publisher` for this.
+
+**`get_node_info(params_file=...)`.** `params_file` is a path on the machine the server runs on, to
+a ROS 2 parameter file (`.yaml` or `.yml`, a regular file, at most 1 MiB, read with
+`yaml.safe_load`). It is read by the server and never passed to the `ros2` CLI or to the node;
+nothing is written. A path that is empty, has a null byte or another extension raises an error
+before any I/O; every other problem (missing file, not UTF-8, invalid YAML, too large, no section
+for the node) is a `param_diff_note` with `param_diff` `null`, and the interfaces and parameters
+of the node are returned as usual. The comparison is `adapters/common/param_diff.py`, done in the
+service: the `MiddlewareAdapter` protocol does not change, and it works in mock mode.
+
+- Sections of the file that apply to a node, least specific first, later wins: `/**` (or `**`),
+  `/<namespace>/**`, the bare node name, the fully qualified name; each needs a `ros__parameters`
+  mapping. Any other key with a wildcard is named in the note, never guessed. Names are flattened
+  with `.` between levels, as `get_node_info` does.
+- Equality: an integer and a float are equal when their values are; booleans, strings and `null`
+  compare exactly (a boolean is never an integer); lists element by element with the same rules.
+  A live value the node cut for its size is compared with the file value cut the same way. A
+  document whose aliases expand past 100,000 values is refused.
+- A name that looks like a secret (`password`, `secret`, `token`, `api_key`, `credential`) is
+  never shown from the file: the entry is `masked` with `<masked>` on both sides.
+- New `NodeInfo` fields, all `null` without `params_file`: `param_diff` (`null` when no comparison
+  could be made, an empty list when everything agrees), `param_diff_summary`, `param_diff_note`.
+  `ParamDiff` has `name`, `status` (`different`; `declared_only`: absent on the node; `masked`),
+  `declared` and `live` (`null` for `declared_only`). Entries are sorted by name and capped at 200
+  (the note counts the rest). Parameters that agree (`same`) and parameters only the node has
+  (`live_only`) are counted in `param_diff_summary` (`"1 same, 3 live_only"`), not listed.
+- The node parameter list stops at 500 entries (`get_node_info`); at that size the note warns
+  that `declared_only` may be wrong.
+
+**Mock.** `/robot_description` is a latched `std_msgs/msg/String` from `/robot_state_publisher`
+(`list_topics` counts one more topic, `get_topic_info` and `sample_messages` serve it). Its URDF has
+the links of the mock tree plus `gripper_link` on a revolute joint that nothing publishes, so mock
+`inspect_tf` reports `declared_frames_missing` `["gripper_link"]`, `frames_not_in_urdf`
+`["map", "odom"]` and one `declared_not_published` finding beside the `stale` one.
+
+**Size.** `tools/list` goes from 94,393 to 95,770 bytes (+1,377) for the five `TfReport` fields,
+the three `NodeInfo` fields, `ParamDiff`, the `params_file` input and two sentences of
+description.
+
+**Bench.** `publisher.py` latches the URDF (`base_link`, `base_laser`, `camera_link`,
+`camera_optical_frame`, plus `arm_link`, never published) on `/robot_description` and declares
+`scan_period` 0.1, `frame_id` `laser` and `max_range` 10.0 on `/bench_robot`;
+`tests/integration/ros2/bench_params.yaml` states `max_range` 12.0, `frame_id` `laser` and
+`extra_gain` 1.5. `calls_declared.json` (bench only) runs `03p_node_info_params`. Comparator
+section `declared`: `urdf_source` `robot_description`, `declared_frames_missing` `["arm_link"]`,
+`frames_not_in_urdf` `["map", "odom", "tool"]`, one `declared_not_published` finding, and
+`param_diff` exactly `extra_gain` `declared_only` and `max_range` `different` (12.0 against
+10.0), summary starting `1 same,`. Written for the four Docker cells; not run in the session that
+added it.

@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `scripts/ground_truth/calls_graph_diff.json` runs the first, steady, v2 and bag calls. The
   comparator gets a `graph_diff` section: the steady graph must give zero changes, the v2 graph
   exactly three, a bag baseline no removal and no type or QoS change.
+- Declared against real (lot B), `docs/CONTRACT.md` section 9.15. `inspect_tf` reads the latched
+  `/robot_description` after the capture and compares the URDF links with the TF frames:
+  `urdf_source`, `urdf_link_count`, `declared_frames_missing`, `frames_not_in_urdf`, `urdf_note`
+  and a `declared_not_published` finding (a link nothing publishes, with a reminder that a
+  non-fixed joint needs `/joint_states`). It needs `robot_state_publisher` (a topic; a URDF held
+  only as a parameter is not read) and a missing or refused document is a note, never an error.
+  `get_node_info` takes `params_file`, a server-side ROS 2 parameter YAML (`.yaml`/`.yml`, 1 MiB,
+  `yaml.safe_load`, never sent to the CLI or the node, nothing written) and returns `param_diff`
+  (`different`, `declared_only`, `masked`), `param_diff_summary` and `param_diff_note`; secrets
+  are never echoed from the file. The comparison runs in the service, so the `MiddlewareAdapter`
+  protocol is unchanged, and it works in mock mode. The mock robot publishes `/robot_description`
+  with a `gripper_link` nothing publishes (`list_topics` gains one topic). `tools/list` grows by
+  1,377 bytes to 95,770. Bench (written, not run: needs the four Docker cells): the publisher
+  latches a URDF with an unpublished `arm_link` and declares three parameters,
+  `bench_params.yaml` disagrees on `max_range` and adds `extra_gain`, `calls_declared.json` runs
+  `03p_node_info_params`, and the comparator gets a `declared` section.
 
 ### Changed
 
