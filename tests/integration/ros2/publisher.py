@@ -3,13 +3,20 @@
 Everything is stamped with simulated time that starts at 0, and `/clock`
 is published by this same node. The numbers it publishes come from `ground_truth.py`, which
 also writes the matching `ground_truth.json` when the node starts.
+
+`--fault <name>` (see `faults.py`) turns the bench robot into a clean robot with one fault, for
+the agent evaluation: no ground truth is written, and the CI bench's own oddities (stale
+`map -> odom`, two parents, unpublished link, wall-stamped topics, WARN and ERROR lines) are
+gone. Without the flag nothing changes.
 """
 
 from __future__ import annotations
 
 import math
+import sys
 import time
 
+import faults
 import ground_truth as model
 import rclpy
 from action_msgs.msg import GoalStatusArray
@@ -33,15 +40,19 @@ def sim_time_msg(t: float) -> Time:
 
 
 class BenchRobot(Node):
-    def __init__(self) -> None:
+    def __init__(self, profile: faults.Profile | None = None) -> None:
         super().__init__("bench_robot")
+        self._profile = profile
         self._t0 = time.monotonic()
         qos = QoSProfile(depth=10)
         self._clock_pub = self.create_publisher(Clock, "/clock", qos)
         self._scan_pub = self.create_publisher(LaserScan, "/scan", qos)
         self._twist_pub = self.create_publisher(Twist, "/cmd_vel_out", qos)
         self._image_pub = self.create_publisher(Image, "/camera/image_raw", qos)
-        self._edge_pub = self.create_publisher(LaserScan, "/scan_edge", qos)
+        edge_qos = qos
+        if profile is not None and profile.edge_best_effort:
+            edge_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self._edge_pub = self.create_publisher(LaserScan, faults.EDGE_TOPIC, edge_qos)
         latched = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -58,6 +69,7 @@ class BenchRobot(Node):
         self._tf_static_pub = self.create_publisher(TFMessage, "/tf_static", latched)
         self._tf_subscribers = 0
         self._tf_armed_at = 0.0
+        self._steady_edges = model.TF_STEADY_EDGES if profile is None else faults.steady_edges()
 
         self._image_data = bytes(640 * 480 * 3)
         self.create_timer(model.CLOCK_PERIOD, self._tick_clock)
@@ -71,16 +83,17 @@ class BenchRobot(Node):
         desc.data = "bench_robot: differential drive, 2D lidar"
         self._desc_pub.publish(desc)
         urdf = String()
-        urdf.data = model.urdf_text()
+        urdf.data = model.urdf_text() if profile is None else faults.urdf_text(profile.urdf_drift)
         self._urdf_pub.publish(urdf)
         self._tf_static_pub.publish(
             TFMessage(transforms=[self._transform(p, c, 0.0) for p, c in model.TF_STATIC_EDGES])
         )
-        self._setup_clock_topics(qos)
         self._setup_nav_primitives(qos, latched)
-        # /rosout lines for the log filter bench (truth: `ground_truth.logs_truth`).
-        self.create_timer(model.LOG_WARN_PERIOD, self._log_warn)
-        self.create_timer(model.LOG_ERROR_PERIOD, self._log_error)
+        if profile is None:
+            self._setup_clock_topics(qos)
+            # /rosout lines for the log filter bench (truth: `ground_truth.logs_truth`).
+            self.create_timer(model.LOG_WARN_PERIOD, self._log_warn)
+            self.create_timer(model.LOG_ERROR_PERIOD, self._log_error)
 
     # ---- clock topics (0.7.3): wall-stamped, mixed-clock and regressing stamps
     def _setup_clock_topics(self, qos: QoSProfile) -> None:
@@ -178,8 +191,10 @@ class BenchRobot(Node):
         if subscribers > 0 and self._tf_subscribers == 0:
             self._tf_armed_at = now
         self._tf_subscribers = subscribers
-        edges = list(model.TF_STEADY_EDGES)
-        if subscribers > 0 and now - self._tf_armed_at < model.TF_FLAKY_ACTIVE_S:
+        edges = list(self._steady_edges)
+        if self._profile is not None and not self._profile.map_odom_flaky:
+            edges.append(faults.MAP_ODOM_EDGE)  # a localization that never stops
+        elif subscribers > 0 and now - self._tf_armed_at < model.TF_FLAKY_ACTIVE_S:
             edges.append(model.TF_FLAKY_EDGE)
         self._tf_pub.publish(TFMessage(transforms=[self._transform(p, c, now) for p, c in edges]))
 
@@ -235,9 +250,12 @@ class BenchRobot(Node):
 
 
 def main() -> None:
-    model.write_truth()
-    rclpy.init()
-    node = BenchRobot()
+    fault, ros_args = faults.parse_fault_args(sys.argv[1:])
+    profile = None if fault is None else faults.profile_for(fault)
+    if profile is None:
+        model.write_truth()
+    rclpy.init(args=[sys.argv[0], *ros_args])
+    node = BenchRobot(profile)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
