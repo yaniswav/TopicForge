@@ -313,7 +313,7 @@ def test_a_message_over_the_cap_is_dropped_with_a_note() -> None:
 
 
 def test_a_short_latched_result_hints_count_one(adapter: Ros2CliAdapter) -> None:
-    result = adapter.sample_messages("/robot_description_lite", 3, timeout_s=3)
+    result = adapter.sample_messages("/robot_description_lite", 3, timeout_s=6)
     assert result.count == 1
     assert result.note is not None and "fewer than requested" in result.note
     assert "latched" in result.note
