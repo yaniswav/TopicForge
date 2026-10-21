@@ -1075,3 +1075,56 @@ settle 3 s, `31_graph_diff_steady` (zero changes: the healthy line), `graph_chan
 is the recorded bag: `removed_count` 0, no `type` or `qos` change, `not_compared` names `nodes`
 and `rates`). Comparator section `graph_diff`. Written for the four Docker cells; not run in the
 session that added it.
+
+### 9.16 DDS visibility: SROS2 environment, `endpoint_count`, `node_name` (0.8.0)
+
+Additive: new optional fields, no input change. About 1,100 bytes of `tools/list`. Nothing here
+says a bus is secured or unsecured: it reports environment variables and what discovery shows.
+
+**`health_check`.** Four fields, all `null` unless the `ros2` CLI serves (`ros_backend` is
+`ros2_cli`; the same rule as `rmw_implementation`, so the mock and a DDS-only setup say nothing
+about an environment they do not run in), read from the server's own environment by the pure
+`resolve_security` in `services/health.py`:
+
+- `ros_security_enabled` (bool): `ROS_SECURITY_ENABLE` is exactly `true`, as rcl reads it.
+- `ros_security_strategy` (`Enforce`, `Permissive` or `null`): `ROS_SECURITY_STRATEGY` when it
+  holds one of the two documented values, `null` when unset or anything else.
+- `ros_security_keystore_set` (bool): `ROS_SECURITY_KEYSTORE`, or the older
+  `ROS_SECURITY_ROOT_DIRECTORY`, is non-empty. The path itself is never reported.
+- `ros_security_note` (string or `null`): set only when `ros_security_enabled` is true:
+  "TopicForge joins the domain without an identity: participants of secured nodes stay visible
+  through SPDP, their endpoints and data do not". A server started without these variables
+  while the robot has them reports `false`: the variables describe this process, not the graph.
+
+`dds_security` stays `not_supported`.
+
+**`ParticipantInfo.endpoint_count`** (int or `null`): writers plus readers the discovery cache
+holds for the participant, ROS 2 plumbing included (a ROS 2 node always brings a dozen: its
+parameter services, `/rosout`, `ros_discovery_info`). `null` when the backend keeps no endpoint
+cache (mock excepted: it counts its fixtures; Fast DDS has never run). When an active participant
+that is not the observer and not a TopicForge `ros2` CLI process has had `endpoint_count` 0 for
+more than 10 s since first seen, `ParticipantListing.note` adds "N participant(s) announce no
+endpoint TopicForge can see: an endpoint-less participant, or DDS Security hides them (TopicForge
+has no identity on this domain)." Two causes, no verdict: the data cannot tell them apart.
+
+**`EndpointInfo.node_name`** (string or `null`): the ROS 2 node that owns the endpoint, resolved
+from the `ros_discovery_info` cache. Each message lists, per node, the gids of its readers and
+writers; a gid is 24 bytes on Humble and 16 on Iron and later, and its bytes 0 to 15 are the RTPS
+GUID of the endpoint (12-byte participant prefix, 4-byte entity id), which is the `guid` of the
+endpoint. `null` for an endpoint no node claims (a plain DDS application, a participant whose
+message was not seen, the TopicForge observer). It is the only link between an endpoint and a
+node when every participant is called `/` (Fast DDS). The map outlives a participant that
+announced an empty node list on shutdown, so departed endpoints keep their node.
+`TopicSummary.writer_nodes` and `reader_nodes` list the distinct `node_name` of the listed writers
+and readers, sorted (empty when none is known).
+
+**Mock.** Participants count their fixture endpoints (`lidar_driver` 2, `nav_planner` 3,
+`camera_driver` 1, the Dust participant 1) and the endpoints of the three that host a node carry
+its name; the Dust endpoint has none.
+
+**Bench.** `visibility` section of the bench truth (`05s_list_endpoints_scan` is a
+`list_endpoints(topic="/scan")` call in `calls.json`): the `/scan` writer's `node_name` and
+`writer_nodes` are `/bench_robot`, the participant that hosts `/bench_robot` has an
+`endpoint_count` of at least 12, `ros_security_enabled` is `false` and `ros_security_note` is
+`null`. Written for the four Docker cells; not run in the session that added it. Not covered: a
+bus with SROS2 enabled (a SROS2 cell is planned for 0.8.1) and RTI.
