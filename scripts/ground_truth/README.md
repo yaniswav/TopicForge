@@ -83,6 +83,15 @@ The TF tree (`tf` section) is three static edges on `/tf_static`, three steady e
 `/parameter_events` and `/rosout` are checked for presence and type only: their endpoint counts
 depend on hidden CLI and daemon nodes.
 
+## Fault scenarios (not part of the bench run)
+
+`publisher.py --fault NAME` runs the same node as a clean robot with one fault, for the agent
+evaluation (`scripts/agent_eval/ros2_scenarios.py`, `docs/EVAL.md`). No ground truth is written
+in that mode and `entrypoint.sh`, `drive.py` and `compare.py` never use it: without the flag the
+publisher is exactly the bench described above. The faults, their companion processes
+(`blocked_node.py`, `fault_nodes.py`, `graph_change.py`) and the clean URDF are in
+`tests/integration/ros2/faults.py`.
+
 ## Tests
 
 `tests/test_ground_truth_compare.py` runs the comparator without ROS on a trimmed recording of a

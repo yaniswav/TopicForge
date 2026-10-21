@@ -70,6 +70,22 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   latches a URDF with an unpublished `arm_link` and declares three parameters,
   `bench_params.yaml` disagrees on `max_range` and adds `extra_gain`, `calls_declared.json` runs
   `03p_node_info_params`, and the comparator gets a `declared` section.
+- Evaluation tooling for the 0.8.0 campaign (lot E; nothing was run, see `docs/EVAL.md`, "0.8.0
+  campaign (v2)"). `scripts/agent_eval/tf.py list --brief` prints one line per tool (name, inputs
+  with `*` on required ones, first sentence): 2,309 bytes against 35,514 for the full listing on
+  the mock server; `list --tool NAME` prints one tool in full and `--host` reaches a broker on
+  another machine. `broker.py` gains `--server-cmd` (any command that starts TopicForge, such as
+  `/opt/tfenv/bin/topicforge` in the bench image), `--mode`, `--dds-backend`, repeatable `--env`
+  and `--calls-log` (one JSON line per request, so the runner counts an agent's tool calls itself);
+  it still listens on 127.0.0.1 unless `--host 0.0.0.0` is given. `publisher.py --fault NAME`
+  turns the bench robot into a clean robot with one fault: `healthy`, `blocked_executor`,
+  `tf_stale`, `qos_mismatch` (a best_effort `/scan_edge` writer against a reliable
+  `/edge_viewer`), `restart_loop` (a node that dies every 6 s and is started again),
+  `declared_drift` and `graph_v1_v2`; the faults live in the bench, TopicForge stays read-only, and
+  `publisher.py` without the flag is unchanged. `scripts/agent_eval/ros2_scenarios.py` starts one
+  scenario (broker, robot, companions) and writes the agent's workspace and prompt, with a
+  `--variant prompt` that adds the text of `inspect-ros2-robot` or `diagnose-nav2`; the expected
+  diagnoses are in `scripts/agent_eval/TRUTH_ROS2.md`. The image copies `scripts/agent_eval`.
 
 ### Changed
 
@@ -80,6 +96,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   every mock result against the output schema the server serves.
 - The ROS lane now serves eight tools (`graph_diff` joins the seven `ros2` CLI tools). The
   `MiddlewareAdapter` protocol is unchanged.
+- Bench: `test_a_short_latched_result_hints_count_one` waits 6 s instead of 3 (it got no sample once
+  on a loaded Jazzy and Fast DDS runner).
 
 ## [Unreleased]
 

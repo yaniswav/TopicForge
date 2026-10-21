@@ -13,10 +13,21 @@ Pieces:
   `TRUTH.md` holds the expected diagnosis of every scenario.
 - `broker.py`: keeps one TopicForge MCP server alive over stdio and relays
   tool calls from a local TCP port, so lifecycle history survives between
-  the agent's calls.
+  the agent's calls. It listens on 127.0.0.1; `--host 0.0.0.0` is for a
+  container whose published port is bound to loopback. `--server-cmd` starts
+  any TopicForge command instead of `python -m topicforge` (in the bench image:
+  `/opt/tfenv/bin/topicforge`), `--mode`, `--dds-backend` and `--env KEY=VALUE`
+  set its environment (`--mode mock --dds-backend mock` needs no ROS 2), and
+  `--calls-log FILE` writes one JSON line per request.
 - `tf.py`: what the agent runs. `python tf.py <port> list` shows the tools
-  exactly as an MCP client sees them; `python tf.py <port> <tool> '<json>'`
-  calls one.
+  exactly as an MCP client sees them (about 35 KB on the mock server);
+  `list --brief` is one line per tool (name, inputs, first sentence; about
+  2.3 KB); `list --tool <name>` shows one tool in full;
+  `python tf.py <port> <tool> '<json>'` calls one. `--host H` before the port
+  reaches a broker on another machine.
+- `ros2_scenarios.py` and `TRUTH_ROS2.md`: the ROS 2 scenarios of the 0.8.0
+  campaign, run on the bench robot with `publisher.py --fault NAME`
+  (`tests/integration/ros2/faults.py`). One command per scenario, see below.
 
 Run with the demo venv (`examples/dds/README.md`, section Setup):
 
@@ -39,3 +50,22 @@ agents on the author's 16 test scenarios (the author wrote them and knows the
 answers). On 0.5.4 the agents reached 10 of 11 correct diagnoses, mostly by
 parsing raw text by hand, and reported a restart loop as a single restart. On
 the 0.5.5 branch they reached 16 of 16, with no false alarm on a healthy bus.
+
+## ROS 2 scenarios (0.8.0)
+
+On Linux or WSL with ROS 2 sourced (or in the bench image), one scenario at a time:
+
+```
+source /opt/ros/humble/setup.bash
+python scripts/agent_eval/ros2_scenarios.py <scenario> [--variant tools|prompt] --out eval_runs
+```
+
+Scenarios: `healthy`, `blocked_executor`, `tf_stale`, `qos_mismatch`, `restart_loop`,
+`declared_drift`, `graph_v1_v2`. The runner starts the broker, the robot and the fault, then
+prints `READY`, the question, and the paths of the agent's prompt (`prompt.txt`) and working
+folder (`work/`, only `tf.py` and a README). Create the `stop` file in the run folder when the
+agent is done: the runner writes `summary.json` (the agent's tool calls, counted by the broker,
+and the true restart count for `restart_loop`). `--variant prompt` adds the text of
+`inspect-ros2-robot` (or `--prompt diagnose-nav2`) to the instructions. `--print-only` shows the
+plan and the question without ROS 2. The Docker command, the procedure and the table of results
+are in `docs/EVAL.md`, "0.8.0 campaign (v2)"; the expected diagnoses are in `TRUTH_ROS2.md`.
