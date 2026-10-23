@@ -6,7 +6,7 @@
 `edge_viewer` subscribes to `/scan_edge` with a reliable QoS while `publisher.py --fault
 qos_mismatch` offers best_effort there, so DDS never connects them. `flapper` is a supervisor:
 it starts `flapper-child` (a node `/path_planner` that logs an ERROR and exits 1 after
-`FLAPPER_LIFE_S`), waits `FLAPPER_GAP_S`, and starts it again, printing `start N` for every
+`FLAPPER_LIFE_S`), waits `FLAPPER_GAP_S`, and starts it again, printing `start N <unix time>` for every
 new process (N - 1 restarts so far). Each child is a new process and so a new DDS participant, like a node that a
 launch file respawns. Constants and expected diagnoses: `faults.py`, `TRUTH_ROS2.md`.
 """
@@ -68,7 +68,7 @@ def run_flapper() -> None:
     try:
         while True:
             count += 1
-            print(f"start {count}", flush=True)
+            print(f"start {count} {time.time():.3f}", flush=True)
             subprocess.run([sys.executable, __file__, "flapper-child"], check=False)
             time.sleep(faults.FLAPPER_GAP_S)
     except KeyboardInterrupt:

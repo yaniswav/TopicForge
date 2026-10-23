@@ -192,14 +192,36 @@ def summarize_calls(lines: Iterable[str], since: float = 0.0) -> dict[str, Any]:
     }
 
 
-def count_flapper_starts(text: str) -> int:
-    """Processes the restart-loop supervisor has started, from its `start N` lines."""
-    starts = [
-        int(p[1])
-        for p in (ln.split() for ln in text.splitlines())
-        if p[:1] == ["start"] and len(p) == 2 and p[1].isdigit()
-    ]
+def count_flapper_starts(text: str, before: float | None = None) -> int:
+    """Processes the restart-loop supervisor has started, from its `start N [time]` lines.
+
+    With `before` (unix time), only the starts printed with a time up to it count; a line
+    without a time then counts as unknown and is left out.
+    """
+    starts = []
+    for p in (ln.split() for ln in text.splitlines()):
+        if p[:1] != ["start"] or len(p) not in (2, 3) or not p[1].isdigit():
+            continue
+        if before is not None:
+            try:
+                if len(p) < 3 or float(p[2]) > before:
+                    continue
+            except ValueError:
+                continue
+        starts.append(int(p[1]))
     return max(starts, default=0)
+
+
+def first_call_time(lines: list[str], since: float) -> float | None:
+    """Unix time of the agent's first tool call at or after `since`, `None` without one."""
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("kind") == "tool" and entry.get("t", 0) >= since:
+            return float(entry["t"])
+    return None
 
 
 def plan(fault: str, port: int, variant: str, prompt_name: str) -> list[str]:
@@ -380,6 +402,12 @@ def run(a: argparse.Namespace) -> int:
         }  # fmt: skip
         if fault == faults.RESTART_LOOP:
             summary["restarts_at_question"] = max(starts_at_ready - 1, 0)
+            # what the agent could see: an agent that starts late finds more restarts
+            first = first_call_time(lines, ready_at)
+            flapper_text = flapper_log.read_text() if flapper_log.exists() else ""
+            summary["restarts_at_first_call"] = (
+                None if first is None else max(count_flapper_starts(flapper_text, first) - 1, 0)
+            )
             summary["restarts_at_stop"] = max(starts_at_stop - 1, 0)
         (run_dir / "summary.json").write_text(json.dumps(summary, indent=1), encoding="ascii")
         print(json.dumps(summary), flush=True)

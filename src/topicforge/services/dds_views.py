@@ -24,18 +24,24 @@ from topicforge.models import (
 
 _NS_PER_S = 1_000_000_000
 
+# Participant names that identify no process. ROS 2 names every participant of a
+# context after its security enclave, `/` by default, so on Fast DDS (and on any rmw
+# since Iron) one key would lump every node of the graph together.
+_SHARED_NAMES = frozenset({"/"})
+
 
 def _tally(rows: Iterable[tuple[str | None, str, bool]]) -> tuple[dict[str, NameLifecycle], int]:
     """Count lives and departures per name from `(name, guid, lost)` rows.
 
     Returns the names that restarted or left (see `restarts_by_name`) and how many rows had
-    no name. A name is kept when it carries more than one GUID or at least one departure.
+    no usable name (empty, or shared by every node such as the enclave `/`). A name is kept
+    when it carries more than one GUID or at least one departure.
     """
     guids: dict[str, set[str]] = {}
     departures: dict[str, int] = {}
     unnamed = 0
     for name, guid, lost in rows:
-        if not name:
+        if not name or name in _SHARED_NAMES:
             unnamed += 1
             continue
         guids.setdefault(name, set()).add(guid)
@@ -49,12 +55,14 @@ def _tally(rows: Iterable[tuple[str | None, str, bool]]) -> tuple[dict[str, Name
     return table, unnamed
 
 
-def _unnamed_note(unnamed: int, what: str) -> str | None:
+def _unnamed_note(unnamed: int, what: str, by_node: bool = False) -> str | None:
     if not unnamed:
         return None
-    return (
-        f"{unnamed} unnamed {what} not counted: without a name, restarts cannot be tied together."
+    note = (
+        f"{unnamed} unnamed {what} not counted (no name, or the name `/` that every ROS 2 "
+        "node shares): restarts cannot be tied together."
     )
+    return note + (" `restarts_by_node` counts them by node name." if by_node else "")
 
 
 def restarts_from_participants(
@@ -62,7 +70,7 @@ def restarts_from_participants(
 ) -> tuple[dict[str, NameLifecycle], str | None]:
     """`restarts_by_name` for a participant listing: lives are listed GUIDs, departures `left`."""
     table, unnamed = _tally((p.name, p.guid, p.status == "left") for p in participants)
-    return table, _unnamed_note(unnamed, "participant(s) are")
+    return table, _unnamed_note(unnamed, "participant(s) are", by_node=True)
 
 
 def restarts_from_nodes(participants: Iterable[ParticipantInfo]) -> dict[str, NameLifecycle]:

@@ -505,6 +505,9 @@ class SuggestedFix(BaseModel):
     verify_with: str = Field(description="The TopicForge tool to run again to confirm the repair.")
 
 
+_NODE_DESC = "ROS 2 node (`ros_discovery_info`); `None` if not announced."
+
+
 class MismatchReport(BaseModel):
     """A single reader/writer QoS incompatibility detected on a topic.
 
@@ -533,6 +536,8 @@ class MismatchReport(BaseModel):
     writer_participant_name: str | None = Field(
         default=None,
     )
+    reader_node: str | None = Field(default=None, description=_NODE_DESC)
+    writer_node: str | None = Field(default=None, description=_NODE_DESC)
     reader_type_name: str | None = Field(
         default=None,
     )
@@ -575,6 +580,8 @@ class NotMatchedPair(BaseModel):
     writer_participant_name: str | None = Field(
         default=None,
     )
+    reader_node: str | None = None
+    writer_node: str | None = None
     reason: Literal["partition", "type_name"] = Field(
         description=(
             "`partition` (none in common) or `type_name` (different types); QoS rules "
@@ -618,6 +625,8 @@ class MatchedPair(BaseModel):
     writer_participant_name: str | None = Field(
         default=None,
     )
+    reader_node: str | None = None
+    writer_node: str | None = None
     late_joiner: bool = Field(
         default=False,
         description=(

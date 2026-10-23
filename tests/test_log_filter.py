@@ -46,7 +46,28 @@ def test_level_thresholds_are_the_ros_constants() -> None:
     ]
     assert level_threshold(None) is None
     with pytest.raises(AdapterError, match="min_log_level"):
-        level_threshold("warning")
+        level_threshold("verbose")
+
+
+@pytest.mark.parametrize(("name", "value"), [("WARN", 30), ("Error", 40), ("warning", 30)])
+def test_level_names_ignore_case_and_take_warning(name: str, value: int) -> None:
+    assert level_threshold(name) == value
+
+
+def test_the_tool_accepts_ros_upper_case_levels() -> None:
+    """`WARN` is how ROS 2 prints the level: the MCP call must not reject it."""
+    import asyncio
+
+    from topicforge.config import Settings
+    from topicforge.server import build_app
+
+    app = build_app(
+        Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
+    )
+    result = asyncio.run(
+        app.call_tool("sample_messages", {"topic": "/rosout", "count": 2, "min_log_level": "WARN"})
+    )
+    assert result is not None
 
 
 @pytest.mark.parametrize("name", ["/robot1/driver", "robot1/driver", "robot1.driver"])
@@ -260,7 +281,10 @@ def test_live_filter_with_nothing_read_reports_why(monkeypatch: pytest.MonkeyPat
     _stub_live(monkeypatch, EchoRun())
     result = Ros2CliAdapter().sample_messages("/rosout", 3, node="/bench_blocked", timeout_s=2)
     assert result.count == 0
-    assert result.note is not None and "0 of 0 log messages" in result.note
+    note = result.note or ""
+    assert "No log message arrived within 2 s" in note and "node=/bench_blocked" in note
+    # neither the no-match advice nor the latched-topic advice applies when nothing was read
+    assert "Nothing matched" not in note and "`count` 1" not in note
 
 
 def test_live_filter_on_a_non_log_topic_raises(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -62,6 +62,8 @@ class ParamComparison:
     same: int
     live_only: int
     omitted: int = 0
+    same_names: tuple[str, ...] = ()
+    live_only_names: tuple[str, ...] = ()
 
 
 def load_params_document(text: str) -> Mapping[str, object]:
@@ -178,16 +180,23 @@ def compare_parameters(
     """Differences between the declared parameters and the node's, sorted by name."""
     by_name = {p.name: p for p in live}
     entries: list[ParamDiff] = []
-    same = 0
+    same: list[str] = []
     for name in sorted(declared):
         entry = _compare_one(name, declared[name], by_name.get(name))
         if entry is None:
-            same += 1
+            same.append(name)
         else:
             entries.append(entry)
-    live_only = sum(1 for name in by_name if name not in declared)
+    live_only = sorted(name for name in by_name if name not in declared)
     omitted = max(len(entries) - MAX_PARAM_DIFF, 0)
-    return ParamComparison(entries[:MAX_PARAM_DIFF], same, live_only, omitted)
+    return ParamComparison(
+        entries[:MAX_PARAM_DIFF],
+        len(same),
+        len(live_only),
+        omitted,
+        same_names=tuple(same),
+        live_only_names=tuple(live_only),
+    )
 
 
 def _compare_one(name: str, declared: JsonValue, live: NodeParameter | None) -> ParamDiff | None:
@@ -210,9 +219,28 @@ def _compare_one(name: str, declared: JsonValue, live: NodeParameter | None) -> 
     return ParamDiff(name=name, status="different", declared=shown, live=live.value)
 
 
+# Names listed per count in the summary; the rest are counted.
+_SUMMARY_NAMES = 10
+
+
+def _named(count: int, label: str, names: Sequence[str]) -> str:
+    if not names:
+        return f"{count} {label}"
+    shown = ", ".join(names[:_SUMMARY_NAMES])
+    more = len(names) - _SUMMARY_NAMES
+    return f"{count} {label} ({shown}{f' and {more} more' if more > 0 else ''})"
+
+
 def summarize(comparison: ParamComparison) -> str:
-    """`"1 same, 3 live_only"`: the two counts that `param_diff` does not list."""
-    return f"{comparison.same} same, {comparison.live_only} live_only"
+    """`"1 same (rate), 2 live_only (a, b)"`: what `param_diff` does not list, with names.
+
+    `live_only` parameters are on the node and absent from the file (the ROS 2 defaults
+    such as `use_sim_time` among them); `same` agree with the file.
+    """
+    return (
+        f"{_named(comparison.same, 'same', comparison.same_names)}, "
+        f"{_named(comparison.live_only, 'live_only', comparison.live_only_names)}"
+    )
 
 
 def build_param_diff(

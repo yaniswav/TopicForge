@@ -35,13 +35,15 @@ def is_log_type(message_type: str) -> bool:
 def level_threshold(min_log_level: str | None) -> int | None:
     """Numeric threshold of a level name; `None` for no level filter.
 
-    Raises `AdapterError` for a name outside `debug`, `info`, `warn`, `error`, `fatal`.
+    Case is ignored and `warning` means `warn`. Raises `AdapterError` for any other name
+    outside `debug`, `info`, `warn`, `error`, `fatal`.
     """
     if min_log_level is None:
         return None
     try:
-        return LOG_LEVELS[min_log_level]
-    except (KeyError, TypeError):
+        name = min_log_level.strip().lower()
+        return LOG_LEVELS["warn" if name == "warning" else name]
+    except (KeyError, TypeError, AttributeError):
         raise AdapterError(
             f"min_log_level must be one of {', '.join(LOG_LEVELS)}, got {min_log_level!r}"
         ) from None

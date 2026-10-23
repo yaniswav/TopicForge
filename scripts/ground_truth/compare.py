@@ -2491,9 +2491,9 @@ def _check_declared_params(truth: dict, res: Results, rep: Report) -> None:
         "param_diff_summary (get_node_info)",
         f"{truth['same']} same, N live_only",
         summary,
-        summary.startswith(f"{truth['same']} same,"),
+        summary.startswith((f"{truth['same']} same,", f"{truth['same']} same (")),
         wall,
-        "same and live_only are counted, not listed",
+        "same and live_only are counted (and named since 0.8.1), not listed as entries",
     )
 
 

@@ -155,12 +155,13 @@ def test_different_and_declared_only_are_listed_and_the_rest_counted() -> None:
         ("extra_gain", "declared_only", 1.5, None),
         ("max_range", "different", 12.0, 10.0),
     ]
-    assert summary == "1 same, 2 live_only" and note is None
+    assert summary == "1 same (frame_id), 2 live_only (scan_period, use_sim_time)"
+    assert note is None
 
 
 def test_everything_equal_gives_an_empty_list_not_none() -> None:
     diff, summary, _ = _diff("/**:\n  ros__parameters:\n    a: 1\n", {"a": 1.0})
-    assert diff == [] and summary == "1 same, 0 live_only"
+    assert diff == [] and summary == "1 same (a), 0 live_only"
 
 
 def test_a_secret_is_masked_on_both_sides_and_never_echoed_from_the_file() -> None:

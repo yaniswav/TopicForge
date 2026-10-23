@@ -55,7 +55,9 @@ class TfFrame(BaseModel):
     age_s: float | None = Field(
         description="Seconds its stamp trails the newest `/tf` stamp; `None` if static or root."
     )
-    stale: bool = Field(description="`age_s` above `stale_after_s`.")
+    stale: bool = Field(
+        description="`age_s` above `stale_after_s`, or above 10 periods (min 1 s) of a steady edge."
+    )
     observed_frequency_hz: float | None = Field(description="Rate on arrival (wall) time.")
     sim_frequency_hz: float | None = Field(description="Rate on header stamps.")
 

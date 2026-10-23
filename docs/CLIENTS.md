@@ -297,11 +297,52 @@ The endpoint is `http://127.0.0.1:8765/mcp`. Two cases it is meant for:
 - A robot: run it on the robot, then `ssh -L 8765:127.0.0.1:8765 robot` and use the same URL
   on your laptop.
 
-Threat model: the server has no authentication, so anything that can reach the port can read
-your robot graph. It therefore binds `127.0.0.1` only (there is no flag to change that) and
-rejects any request whose `Host` or `Origin` is not a loopback name with the served port, which
-stops a web page in your browser from reaching it through DNS rebinding. Do not forward the
-port to a network interface; use an SSH tunnel instead.
+Threat model: without a token the server has no authentication, so anything that can reach the
+port can read your robot graph. It therefore binds `127.0.0.1` by default and rejects any
+request whose `Host` or `Origin` is not a loopback name with the served port, which stops a web
+page in your browser from reaching it through DNS rebinding. Do not forward the port to a
+network interface; use an SSH tunnel instead.
+
+Bearer token (0.8.1). Set `TOPICFORGE_HTTP_TOKEN` to a secret of at least 32 printable
+characters (for example `openssl rand -hex 32`) and every request must then carry
+`Authorization: Bearer <token>`; a request without it gets `401`. The token is read from the
+environment only, never from a flag. Only with a token may `--host` name another address:
+
+```
+TOPICFORGE_HTTP_TOKEN=... topicforge --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+This is plain HTTP: the token and every answer cross the network in clear, so keep it to a
+network you trust, or put a TLS reverse proxy in front. The SSH tunnel above remains the safer
+way to reach a robot. Clients that support HTTP headers in their MCP config (Claude Code's
+`--header`, VS Code's `headers`, Cursor's `headers`) pass the token there.
+
+## Docker
+
+The repository's `Dockerfile` builds a stdio image on ROS 2 Jazzy (`ros:jazzy-ros-core`, the
+`ros2` CLI and Cyclone DDS included, a non-root user):
+
+```
+docker build -t topicforge .
+```
+
+Point a client at `docker` instead of `uvx`:
+
+```json
+{ "command": "docker", "args": ["run", "-i", "--rm", "topicforge"] }
+```
+
+What the container can see depends on its network:
+
+- Linux with `--network host` (and the robot's `ROS_DOMAIN_ID`, e.g. `-e ROS_DOMAIN_ID=0`):
+  the live graph, as a local install would.
+- Docker Desktop on Windows or macOS: the container does not see the host's DDS traffic. The
+  `ros2` CLI is in the image, so `auto` still picks live mode and finds an empty graph (only
+  `/rosout` and `/parameter_events`). Use it for bags, mounted with
+  `-v /path/to/bags:/bags:ro` (then ask about `/bags/run.mcap`), or for the demo robot with
+  `-e TOPICFORGE_MODE=mock`.
+
+The image is about 1 GB (ROS 2 Jazzy core plus Cyclone DDS).
 
 ## Prompts and instructions
 

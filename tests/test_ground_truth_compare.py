@@ -479,7 +479,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         {
             "full_name": declared["params"]["node"],
             "param_diff": [dict(d) for d in declared["params"]["differences"]],
-            "param_diff_summary": f"{declared['params']['same']} same, 3 live_only",
+            "param_diff_summary": f"{declared['params']['same']} same (frame_id), 3 live_only",
             "param_diff_note": None,
         },
     )
@@ -1602,7 +1602,9 @@ def test_the_declared_section_catches_each_kind_of_wrong_answer(
             findings=[f for f in tf(r)["findings"] if f["kind"] != "declared_not_published"]
         ),
         "param_diff entries": lambda r: params(r)["param_diff"].pop(),
-        "param_diff_summary": lambda r: params(r).update(param_diff_summary="0 same, 3 live_only"),
+        "param_diff_summary": lambda r: params(r).update(
+            param_diff_summary="0 same, 3 live_only (a, b, c)"
+        ),
     }
     for needle, mutate in cases.items():
         code, failed = _declared_run(tmp_path, bench_truth, mutate)
@@ -1693,7 +1695,7 @@ def test_bench_declared_truth_matches_what_the_real_code_computes() -> None:
     diff, summary, note = build_param_diff(text, bench.PARAMS_NODE, live)
     assert diff is not None and note is None
     assert [d.model_dump() for d in diff] == params_truth["differences"]
-    assert (summary or "").startswith(f"{params_truth['same']} same,")
+    assert (summary or "").startswith(f"{params_truth['same']} same (")
 
 
 def test_the_declared_call_runs_in_the_bench_only_and_reads_the_shipped_file() -> None:
