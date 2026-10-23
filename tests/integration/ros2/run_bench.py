@@ -6,7 +6,8 @@ After the tests the container drives TopicForge over MCP and compares its answer
 bench's ground truth (scripts/ground_truth). `--out DIR` keeps COMPARISON.md, comparison.json
 and the raw results on the host (CI uploads that folder).
 
-Extra pytest arguments go after `--`, e.g. `-- -k scan`.
+Extra pytest arguments go after `--`, e.g. `-- -k scan`. `--sros2` runs the SROS2 cell
+(`sros2_check.py`: one secured node, TopicForge without an identity) instead of the bench.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 DOCKERFILE = "tests/integration/ros2/Dockerfile"
 ENTRYPOINT = "/opt/topicforge/tests/integration/ros2/entrypoint.sh"
+SROS2_CHECK = "/opt/topicforge/tests/integration/ros2/sros2_check.py"
 RMW = {"fastrtps": "rmw_fastrtps_cpp", "cyclonedds": "rmw_cyclonedds_cpp"}
 
 
@@ -34,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rmw", choices=sorted(RMW), default="fastrtps")
     parser.add_argument("--no-build", action="store_true", help="reuse an existing image")
     parser.add_argument("--out", type=Path, help="host folder for the ground-truth report")
+    parser.add_argument("--sros2", action="store_true", help="run the SROS2 cell instead")
     parser.add_argument("pytest_args", nargs="*", help="extra pytest arguments (after --)")
     args = parser.parse_args(argv)
 
@@ -75,9 +78,16 @@ def main(argv: list[str] | None = None) -> int:
                 "-e",
                 f"RMW_IMPLEMENTATION={RMW[args.rmw]}",
                 image,
-                "bash",
-                ENTRYPOINT,
-                *args.pytest_args,
+                *(
+                    [
+                        "bash",
+                        "-c",
+                        f"source /opt/ros/{args.distro}/setup.bash && "
+                        f"/opt/tfenv/bin/python {SROS2_CHECK}",
+                    ]
+                    if args.sros2
+                    else ["bash", ENTRYPOINT, *args.pytest_args]
+                ),
             ]
         )
     finally:

@@ -87,3 +87,31 @@ jobs:
           path: bench-out/
           if-no-files-found: warn
           retention-days: 14
+
+  sros2:
+    # One node with ROS_SECURITY_ENABLE=true and the Enforce strategy, TopicForge without an
+    # identity: the participant stays visible with endpoint_count 0 and the endpointless note,
+    # and health_check reads the security variables (docs/CONTRACT.md section 9.16).
+    name: sros2 ${{ matrix.distro }} / ${{ matrix.rmw }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy]
+        rmw: [fastrtps, cyclonedds]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build image and run the SROS2 cell
+        run: >
+          python tests/integration/ros2/run_bench.py
+          --distro ${{ matrix.distro }} --rmw ${{ matrix.rmw }} --sros2

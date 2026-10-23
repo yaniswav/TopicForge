@@ -1217,8 +1217,12 @@ its name; the Dust endpoint has none.
 `list_endpoints(topic="/scan")` call in `calls.json`): the `/scan` writer's `node_name` and
 `writer_nodes` are `/bench_robot`, the participant that hosts `/bench_robot` has an
 `endpoint_count` of at least 12, `ros_security_enabled` is `false` and `ros_security_note` is
-`null`. Written for the four Docker cells; not run in the session that added it. Not covered: a
-bus with SROS2 enabled (a SROS2 cell is planned for 0.8.1) and RTI.
+`null`. Written for the four Docker cells; not run in the session that added it. RTI is not
+covered. Since 0.8.1 the `sros2` job of `ros2-live.yml` (`run_bench.py --sros2`,
+`tests/integration/ros2/sros2_check.py`) covers a bus with SROS2 enabled: one node with the
+Enforce strategy, TopicForge without an identity sees its participant with `endpoint_count` 0 and
+the note above, and `health_check` reports the four fields with and without the variables. Run
+on 2026-10-23 on jazzy with Cyclone and Fast DDS: 4 of 4 checks passed in each cell.
 
 ### 9.17 The `diagnose-nav2` prompt and hidden topics (0.8.0)
 
@@ -1259,3 +1263,26 @@ latched status by hand, since an idle server publishes none) and must return one
 must be absent from `list_topics`; `41_bond` reads `/bond` (`bond/msg/Status`, id `bench_robot`,
 1 Hz) and every sample must carry the id. Comparator section `nav_primitives`. Written for the
 four Docker cells; not run in the session that added it, and Nav2 itself was never run.
+
+### 9.18 0.8.1: eval findings, URDF parameter, HTTP token
+
+Additive. `tools/list` grows by 467 bytes, to 97,315 (measured like `test_tool_listing_stays_small`).
+
+- `MismatchReport`, `NotMatchedPair` and `MatchedPair` gain `reader_node` and `writer_node`
+  (string or `null`), the `node_name` of each endpoint (section 9.16).
+- `detect_qos_mismatches` without `topic` leaves `ros_discovery_info` out (every ROS 2
+  participant reads and writes it with one QoS, about N x N matched pairs); `topic` can still
+  name it. Orphan topics that no near name explains are folded into one hint per side.
+- `TfFrame.stale` is also true for an edge with a steady rate (5 transforms or more) silent for
+  over ten of its periods, at least 1 s, even under `stale_after_s`. The finding text says which
+  limit applied.
+- `restarts_by_name` leaves out the name `/` (the ROS 2 enclave every node shares on Fast DDS);
+  those participants are counted in `restarts_note`, which points to `restarts_by_node`.
+- `min_log_level` accepts any case and `warning`; the schema keeps the lower-case enum.
+- `param_diff_summary` names the `same` and `live_only` parameters, up to ten each:
+  `1 same (frame_id), 1 live_only (use_sim_time)`.
+- A filtered `/rosout` read that received nothing says so in one note.
+- `inspect_tf` reads the URDF from the robot_state_publisher parameter when no node publishes
+  `/robot_description` (section 9.15).
+- HTTP transport: `TOPICFORGE_HTTP_TOKEN` and `--host` (SECURITY.md, docs/CLIENTS.md). No output
+  change.

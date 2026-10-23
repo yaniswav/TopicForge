@@ -5,6 +5,43 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The 0.8.0 evaluation findings, a URDF read from the robot_state_publisher parameter, an optional
+HTTP bearer token, a Docker image and a SROS2 bench cell. Additive only (`docs/CONTRACT.md`
+section 9.18). `tools/list` is 97,315 bytes (+467).
+
+### Added
+
+- HTTP transport: `TOPICFORGE_HTTP_TOKEN` (at least 32 printable characters, environment only)
+  makes every request carry `Authorization: Bearer <token>`, compared in constant time, else
+  `401`. `--host` may bind an address other than loopback only with a token; such a bind lifts
+  the DNS-rebinding allow-list. Plain HTTP: SECURITY.md says what the token does not cover.
+- `inspect_tf` reads the URDF from the `robot_description` parameter of the node named
+  `robot_state_publisher` when no node publishes `/robot_description`; `urdf_note` names the node.
+- `reader_node` and `writer_node` on `detect_qos_mismatches` reports, `not_matched` and
+  `matched` pairs.
+- A root `Dockerfile`: a stdio image on `ros:jazzy-ros-core` with the `ros2` CLI and Cyclone DDS,
+  non-root. Live graphs need Linux `--network host`; docs/CLIENTS.md has the Docker Desktop
+  limits.
+- Bench: a `sros2` job (`run_bench.py --sros2`) with one node under SROS2 Enforce. Run on jazzy
+  with Cyclone and Fast DDS, 4 of 4 checks in each.
+- Eval harness: `restarts_at_first_call` in the `restart_loop` summary, counted at the agent's
+  first call rather than at `READY`.
+
+### Changed
+
+- `inspect_tf`: an edge with a steady rate silent for over ten of its periods (at least 1 s) is
+  stale even under `stale_after_s`. With the defaults, the evaluation's `tf_stale` read as healthy.
+- `restarts_by_name` leaves out the name `/` that every ROS 2 node shares on Fast DDS; the note
+  points to `restarts_by_node`.
+- `min_log_level` accepts `WARN`, `Error` and `warning`.
+- `detect_qos_mismatches` without `topic` leaves `ros_discovery_info` out, and folds orphan
+  topics into one hint per side instead of one hint each.
+- `param_diff_summary` names the `same` and `live_only` parameters.
+- A filtered `/rosout` read that received nothing says so, instead of mixing the no-match advice
+  with the latched-topic advice.
+
 ## [0.8.0] - 2026-10-21
 
 Graph diff, declared-against-real checks, DDS visibility and a Nav2 prompt. It also carries the
