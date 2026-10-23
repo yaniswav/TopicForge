@@ -641,3 +641,80 @@ def test_the_inspect_tf_result_over_mcp_carries_the_urdf_fields() -> None:
     assert data["urdf_source"] == "robot_description"
     assert data["declared_frames_missing"] == ["gripper_link"]
     assert data["frames_not_in_urdf"] == ["map", "odom"]
+
+
+# ----- URDF held only as a parameter (0.8.1) -----
+
+_URDF = "<robot><link name='base_link'/><link name='laser'/></robot>"
+
+
+class _ParamUrdfAdapter(_UrdfAdapter):
+    """No `/robot_description` topic; a scripted robot_state_publisher parameter read."""
+
+    def __init__(self, answer: tuple[str | None, str]) -> None:
+        super().__init__(AdapterError("Topic not found or empty info: '/robot_description'"))
+        self._param = answer
+        self.param_waits: list[float] = []
+
+    def robot_description_parameter(self, timeout_s: float) -> tuple[str | None, str]:
+        self.param_waits.append(timeout_s)
+        return self._param
+
+
+def test_without_the_topic_the_parameter_is_compared_and_named() -> None:
+    adapter = _ParamUrdfAdapter((_URDF, "/robot_state_publisher"))
+    report = Inspector(adapter).inspect_tf()
+    assert report.urdf_source == "robot_description" and report.urdf_link_count == 2
+    assert "parameter of /robot_state_publisher" in (report.urdf_note or "")
+    assert adapter.param_waits and adapter.param_waits[0] <= 6.0
+
+
+def test_a_failed_parameter_read_is_a_note() -> None:
+    report = Inspector(
+        _ParamUrdfAdapter((None, "no robot_state_publisher node is running"))
+    ).inspect_tf()
+    assert report.urdf_source == "none"
+    assert "no robot_state_publisher node is running" in (report.urdf_note or "")
+
+
+def _dump(text: str) -> str:
+    body = "\n".join("      " + line for line in text.splitlines())
+    return f"/ns/robot_state_publisher:\n  ros__parameters:\n    robot_description: |\n{body}\n"
+
+
+def test_live_reads_robot_description_from_the_dump(monkeypatch: pytest.MonkeyPatch) -> None:
+    from topicforge.adapters.ros2_live.process_runner import ProcessResult
+
+    adapter = Ros2CliAdapter()
+    calls: list[list[str]] = []
+    monkeypatch.setattr(adapter, "_node_names", lambda: ["/lidar", "/ns/robot_state_publisher"])
+
+    def fake_exec(cmd: list[str], timeout: float, **_: Any) -> Any:
+        calls.append(cmd)
+        return ProcessResult(0, _dump(_URDF), "", timed_out=False, truncated=False), timeout
+
+    monkeypatch.setattr(adapter, "_exec", fake_exec)
+    text, node = adapter.robot_description_parameter(5.0)
+    assert node == "/ns/robot_state_publisher" and text is not None and "laser" in text
+    assert calls == [[adapter._exe, "param", "dump", "/ns/robot_state_publisher"]]
+
+
+def test_live_without_robot_state_publisher_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = Ros2CliAdapter()
+    monkeypatch.setattr(adapter, "_node_names", lambda: ["/lidar"])
+    assert adapter.robot_description_parameter(5.0) == (
+        None,
+        "no robot_state_publisher node is running",
+    )
+
+
+def test_composite_routes_the_parameter_read_to_the_ros_half() -> None:
+    class _Ros(MockAdapter):
+        def robot_description_parameter(self, timeout_s: float) -> tuple[str | None, str]:
+            return _URDF, "/robot_state_publisher"
+
+    composite = CompositeAdapter(_Ros(), MockAdapter())
+    assert composite.robot_description_parameter(1.0) == (_URDF, "/robot_state_publisher")
+    assert (
+        CompositeAdapter(MockAdapter(), MockAdapter()).robot_description_parameter(1.0)[0] is None
+    )

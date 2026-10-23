@@ -80,7 +80,8 @@ def build_tf_report(
     `source_frame` and `target_frame` are both given or both `None`; when given, the
     report carries the chain of frames between them. `window_s` is the requested
     listening time (the capture's own `window_actual_s` when omitted). `urdf` is the parsed
-    `/robot_description`, compared with the frames; `urdf_note` says why there is none.
+    `/robot_description` (topic or parameter: `urdf_note` names a parameter source),
+    compared with the frames; `urdf_note` says why there is none.
     """
     edges = _group_edges(capture)
     reference_ns = max((s.stamp_ns for s in capture.dynamic), default=None)

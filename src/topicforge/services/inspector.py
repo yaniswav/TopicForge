@@ -169,6 +169,9 @@ class Inspector:
     def _read_urdf(self) -> tuple[UrdfModel | None, str | None]:
         """The URDF on `/robot_description` as `(model, None)`, else `(None, why)`; never raises.
 
+        Without the topic, the robot_state_publisher parameter is tried and a model then
+        comes with a note naming that source.
+
         One latched message, read after the capture within what is left of the call budget.
         A missing topic, a silent publisher, a late answer or a document that is not a URDF
         all become a note: the TF tree is the result, the URDF only a comparison.
@@ -182,10 +185,7 @@ class Inspector:
             )
         except AdapterError as exc:
             if "not found" in str(exc).lower() or "unknown topic" in str(exc).lower():
-                return None, (
-                    f"No {_URDF_TOPIC} topic: robot_state_publisher publishes it. A URDF held "
-                    "only as a node parameter is not read."
-                )
+                return self._read_urdf_parameter()
             return None, f"{_URDF_TOPIC} could not be read ({exc})."
         text = result.samples[0].payload.get("data") if result.samples else None
         if not isinstance(text, str):
@@ -195,6 +195,25 @@ class Inspector:
             return parse_urdf(text), None
         except UrdfError as exc:
             return None, f"{_URDF_TOPIC} was not compared: {exc}."
+
+    def _read_urdf_parameter(self) -> tuple[UrdfModel | None, str | None]:
+        """The URDF held as robot_state_publisher's `robot_description` parameter, or why not.
+
+        Only when no node publishes `/robot_description`; the note then names the source.
+        """
+        read = getattr(self._adapter, "robot_description_parameter", None)
+        if not callable(read):
+            return None, f"No {_URDF_TOPIC} topic: robot_state_publisher publishes it."
+        wait = call_budget.clamp(_URDF_READ_S, _URDF_RESERVE_S)
+        if wait < _URDF_MIN_READ_S:
+            return None, f"No {_URDF_TOPIC} topic, and no time was left to read the parameter."
+        text, source = read(wait)
+        if text is None:
+            return None, f"No {_URDF_TOPIC} topic, and the parameter was not read: {source}."
+        try:
+            return parse_urdf(text), f"Read from the robot_description parameter of {source}."
+        except UrdfError as exc:
+            return None, f"The robot_description parameter of {source} was not compared: {exc}."
 
     def graph_diff(self, baseline: str = "previous", bag_path: str | None = None) -> GraphDiff:
         """Snapshot the graph (or `bag_path`) and compare it with `baseline`."""

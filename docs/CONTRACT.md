@@ -1099,7 +1099,7 @@ New `TfReport` fields:
 
 | Field | Meaning |
 | --- | --- |
-| `urdf_source` | `robot_description` when a URDF was read and compared, else `none` (default) |
+| `urdf_source` | `robot_description` when a URDF was read and compared (from the topic, or since 0.8.1 from the parameter of the same name), else `none` (default) |
 | `urdf_link_count` | links in the URDF, `null` when none was read |
 | `declared_frames_missing` | URDF links with no TF frame, in URDF order |
 | `frames_not_in_urdf` | TF frames that are not a link, sorted. Informative: `map` and `odom` are legitimate |
@@ -1111,8 +1111,11 @@ missing link in `frames`; its `text` says that `robot_state_publisher` puts fixe
 `/tf_static` and the others on `/tf`, and names the links under a non-fixed joint, which have a
 frame only while `/joint_states` is published. With no TF frame captured at all nothing is
 compared (no finding, a note), so an empty capture does not read as "every link is missing".
-`/robot_description` is a topic only: a URDF held solely as a `robot_description` parameter is not
-read (`get_node_info` cuts long values) and gives `urdf_source` `none`; reading it is 0.8.1.
+In 0.8.0 `/robot_description` was a topic only. Since 0.8.1, when no node publishes the topic,
+`inspect_tf` reads the `robot_description` parameter of the first node named
+`robot_state_publisher` (any namespace) with one `ros2 param dump`, the same parameter read as
+`get_node_info`. `urdf_source` stays `robot_description` (a closed set does not grow between
+breaks, section 1.9) and `urdf_note` says the URDF came from that node's parameter.
 `docs/TOOLS.md` says that a robot needs `robot_state_publisher` for this.
 
 **`get_node_info(params_file=...)`.** `params_file` is a path on the machine the server runs on, to

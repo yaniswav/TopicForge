@@ -102,6 +102,8 @@ _STOP_RESERVE_SEC = 3.0
 _PARAM_DUMP_MAX_BYTES = 1024 * 1024
 # Time `get_node_info` keeps back from the call budget for killing a stuck `ros2 param`.
 _PARAM_STOP_RESERVE_SEC = 2.0
+# Node whose `robot_description` parameter `inspect_tf` reads when the topic is absent.
+_URDF_NODE_BASENAME = "robot_state_publisher"
 # A `/clock` publisher hint older than this is reported as unknown.
 _CLOCK_HINT_TTL_SEC = 120.0
 
@@ -269,6 +271,36 @@ class Ros2CliAdapter:
             duplicate_count=names.count(node),
             mode=self.effective_mode,
         )
+
+    def robot_description_parameter(self, timeout_s: float) -> tuple[str | None, str]:
+        """The `robot_description` parameter of the robot_state_publisher node, read-only.
+
+        Outside the adapter protocol: `inspect_tf` falls back to it when no node publishes
+        `/robot_description`. The node is the first one named `robot_state_publisher` in
+        any namespace; its parameters are read with the same `ros2 param dump` as
+        `get_node_info` (a parameter read, the only request TopicForge sends to a node).
+        Returns `(urdf_text, node)` or `(None, why)`; never raises for a missing node.
+        """
+        names = sorted(set(self._node_names()))
+        holders = [n for n in names if n.rsplit("/", 1)[-1] == _URDF_NODE_BASENAME]
+        if not holders:
+            return None, f"no {_URDF_NODE_BASENAME} node is running"
+        node = holders[0]
+        wait = call_budget.clamp(timeout_s, _PARAM_STOP_RESERVE_SEC)
+        if wait <= 0:
+            return None, f"no time was left to read the parameters of {node}"
+        result, shown = self._exec(
+            [self._exe, "param", "dump", node], wait, max_output_bytes=_PARAM_DUMP_MAX_BYTES
+        )
+        if result.timed_out:
+            return None, f"{node} did not answer its parameter read within {shown:g} s"
+        if result.returncode != 0 or result.truncated:
+            return None, f"the parameters of {node} could not be read"
+        raw = parse_param_dump(result.stdout)
+        text = None if raw is None else raw.get("robot_description")
+        if not isinstance(text, str) or not text.strip():
+            return None, f"{node} has no robot_description parameter"
+        return text, node
 
     def capture_tf(self, window_s: float) -> TfCapture:
         """Raw `/tf_static` and `/tf` transforms: a latched read, then `window_s` of `/tf`.
