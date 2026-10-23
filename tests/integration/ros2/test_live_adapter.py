@@ -567,7 +567,7 @@ def test_get_node_info_params_file_names_the_drift(adapter: Ros2CliAdapter) -> N
     info = Inspector(adapter).get_node_info(want["node"], params_file=str(path))
     assert info.param_diff is not None, info.param_diff_note
     assert [d.model_dump() for d in info.param_diff] == want["differences"]
-    assert (info.param_diff_summary or "").startswith(f"{want['same']} same,")
+    assert (info.param_diff_summary or "").startswith(f"{want['same']} same (")
     assert info.param_diff_note is None
 
 
