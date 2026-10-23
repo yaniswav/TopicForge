@@ -317,6 +317,33 @@ network you trust, or put a TLS reverse proxy in front. The SSH tunnel above rem
 way to reach a robot. Clients that support HTTP headers in their MCP config (Claude Code's
 `--header`, VS Code's `headers`, Cursor's `headers`) pass the token there.
 
+## Docker
+
+The repository's `Dockerfile` builds a stdio image on ROS 2 Jazzy (`ros:jazzy-ros-core`, the
+`ros2` CLI and Cyclone DDS included, a non-root user):
+
+```
+docker build -t topicforge .
+```
+
+Point a client at `docker` instead of `uvx`:
+
+```json
+{ "command": "docker", "args": ["run", "-i", "--rm", "topicforge"] }
+```
+
+What the container can see depends on its network:
+
+- Linux with `--network host` (and the robot's `ROS_DOMAIN_ID`, e.g. `-e ROS_DOMAIN_ID=0`):
+  the live graph, as a local install would.
+- Docker Desktop on Windows or macOS: the container does not see the host's DDS traffic. The
+  `ros2` CLI is in the image, so `auto` still picks live mode and finds an empty graph (only
+  `/rosout` and `/parameter_events`). Use it for bags, mounted with
+  `-v /path/to/bags:/bags:ro` (then ask about `/bags/run.mcap`), or for the demo robot with
+  `-e TOPICFORGE_MODE=mock`.
+
+The image is about 1 GB (ROS 2 Jazzy core plus Cyclone DDS).
+
 ## Prompts and instructions
 
 The server offers three MCP prompts, `diagnose-dds-bus` (nodes do not talk, a topic gets no data,
