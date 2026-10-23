@@ -125,7 +125,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
 | `param_diff` | `array \| null` | no | File against node: differences only. |
-| `param_diff_summary` | `string \| null` | no | Counts left out: same, live_only. |
+| `param_diff_summary` | `string \| null` | no | Left out of `param_diff`: same, live_only, with names. |
 | `param_diff_note` | `string \| null` | no | - |
 
 ## `get_topic_info`

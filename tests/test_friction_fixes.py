@@ -92,6 +92,28 @@ def test_restarts_from_participants_uses_status_left() -> None:
     assert note is not None and "1 unnamed" in note
 
 
+def test_the_enclave_name_slash_is_not_a_restart_key() -> None:
+    """Fast DDS names every ROS 2 participant `/`: one key would lump all nodes together."""
+    events = [
+        _event("a", "discovered", "/"),
+        _event("a", "lost", "/"),
+        _event("b", "discovered", "/"),
+        _event("c", "discovered", "/"),
+    ]
+    table, note = restarts_from_events(events)
+    assert table == {}
+    assert note is not None and "4 unnamed" in note and "`/`" in note
+    assert "restarts_by_node" not in note
+
+
+def test_participant_note_points_to_restarts_by_node() -> None:
+    table, note = restarts_from_participants(
+        [ParticipantInfo(guid="g1", vendor="fast", name="/", domain_id=0, status="active")]
+    )
+    assert table == {}
+    assert note is not None and "restarts_by_node" in note
+
+
 class _RestartLoop(MockAdapter):
     @property
     def effective_mode(self):  # type: ignore[no-untyped-def]

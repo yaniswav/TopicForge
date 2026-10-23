@@ -135,7 +135,7 @@
             ]
           },
           "stale": {
-            "description": "`age_s` above `stale_after_s`.",
+            "description": "`age_s` above `stale_after_s`, or above 10 periods (min 1 s) of a steady edge.",
             "type": "boolean"
           }
         },

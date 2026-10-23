@@ -81,6 +81,27 @@ def test_stale_threshold_is_respected() -> None:
     assert _report(dynamic=dynamic, stale_after_s=0.5).stale_count == 1
 
 
+def test_a_steady_edge_that_stopped_is_stale_under_the_time_limit() -> None:
+    """The eval's `tf_stale`: map -> odom at 10 Hz stops 1.6 s before the end of the window."""
+    dynamic = _series("odom", "base_link", 0, 5, 50) + _series("map", "odom", 0, 3.4, 10)
+    report = _report(dynamic=dynamic, stale_after_s=2.0)
+    odom = _frame(report, "odom")
+    assert odom.stale and odom.age_s == 1.6
+    assert "10 periods of its 10 Hz" in report.findings[0].text
+
+
+def test_a_short_gap_or_a_slow_edge_is_not_stale() -> None:
+    # 30 Hz edge silent for 0.5 s: under the 1 s floor
+    jitter = _series("odom", "base_link", 0, 5, 50) + _series("map", "odom", 0, 4.5, 30)
+    assert _report(dynamic=jitter).stale_count == 0
+    # 1 Hz edge silent for 1.5 s: ten periods is 10 s, so the 2 s limit decides
+    slow = _series("odom", "base_link", 0, 5, 50) + _series("map", "odom", 0, 3.5, 2)
+    assert _report(dynamic=slow).stale_count == 0
+    # too few transforms to trust a rate
+    few = _series("odom", "base_link", 0, 5, 50) + _series("map", "odom", 3.0, 3.3, 10)
+    assert _report(dynamic=few).stale_count == 0
+
+
 def test_two_parents() -> None:
     report = _report(
         dynamic=_series("odom", "base_link", 0, 3, 10) + _series("map", "base_link", 0, 3, 10),

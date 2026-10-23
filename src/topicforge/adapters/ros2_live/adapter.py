@@ -471,17 +471,14 @@ class Ros2CliAdapter:
         info: TopicInfo,
     ) -> SampleResult:
         """Result of a filtered `/rosout` read: the newest `count` matches and a note."""
+        if not run.documents:
+            return self._sample_result(
+                topic, [], _empty_log_note(run, budget, has_publisher, log_filter), None
+            )
         kept, note = newest_matches(
             samples, count, log_filter, cap_hit=len(run.documents) >= LOG_STREAM_CAP
         )
-        extras = [
-            _short_result_note(
-                run, len(samples), 1, budget, has_publisher, _publisher_durability(info)
-            )
-            if not run.documents
-            else None,
-            _dropped_note(run.oversized, skipped, self._max_message_chars),
-        ]
+        extras = [_dropped_note(run.oversized, skipped, self._max_message_chars)]
         return self._sample_result(
             topic, kept, " ".join(p for p in (note, *extras) if p) or None, None
         )
@@ -754,6 +751,26 @@ def _short_result_note(
         "less often than the deadline, be idle, or the message may be too "
         "large to print (retry with a lower `max_array_length` or "
         "`arrays_summary_only` true). A larger `timeout_s` waits longer."
+    )
+
+
+def _empty_log_note(
+    run: EchoRun, budget_s: float, has_publisher: bool, log_filter: LogFilter
+) -> str:
+    """Why a filtered `/rosout` read returned nothing when no log arrived at all.
+
+    The filter never ran, so the no-match advice (logger names, a lower level) and the
+    latched-topic advice (`count` 1) would both mislead here.
+    """
+    if run.exit_code is not None:
+        tail = f": {run.stderr_tail}" if run.stderr_tail else ""
+        return f"No log read: the `ros2` CLI exited early (exit {run.exit_code}){tail}."
+    if not has_publisher:
+        return "No log read: no node publishes on this topic."
+    return (
+        f"No log message arrived within {budget_s:g} s, so {log_filter} had nothing to test: "
+        "no node logged in the last 10 s (the `/rosout` buffer) or during the wait. A larger "
+        "`timeout_s` waits for new logs."
     )
 
 
