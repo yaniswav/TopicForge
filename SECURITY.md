@@ -149,7 +149,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest release receives security patches: `0.8.0` at the
+Only the latest release receives security patches: `0.8.1` at the
 time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure

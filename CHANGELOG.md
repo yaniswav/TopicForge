@@ -5,7 +5,7 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.1] - 2026-10-26
 
 The 0.8.0 evaluation findings, a URDF read from the robot_state_publisher parameter, an optional
 HTTP bearer token, a Docker image and a SROS2 bench cell. Additive only (`docs/CONTRACT.md`
@@ -1901,7 +1901,9 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/yaniswav/TopicForge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yaniswav/TopicForge/compare/v0.6.4...v0.7.0
