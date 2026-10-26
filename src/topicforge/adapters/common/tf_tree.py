@@ -8,7 +8,8 @@ graph: a frame exists because a transform names it.
 Time. Every age is measured on the transforms' own header stamps against the
 newest `/tf` stamp of the capture, so it is correct on sim time and needs no
 wall clock. A frame is stale when its newest transform trails that reference by
-more than `stale_after_s`. The wall arrival time gives the second rate
+more than `stale_after_s`, or, for an edge with a steady rate, by more than ten of its
+periods (at least 1 s). The wall arrival time gives the second rate
 (`observed_frequency_hz`) and, against the stamps, the real-time factor.
 """
 
@@ -29,6 +30,12 @@ from topicforge.adapters.common.urdf import (
 from topicforge.models import TfCapture, TfFinding, TfFrame, TfReport, TfSample
 
 _NS = 1_000_000_000
+# A frame that kept a steady rate is also stale once silent for this many of its periods,
+# but never under `_MIN_SILENCE_S` and only with `_MIN_RATE_SAMPLES` transforms behind the
+# rate: a 20 Hz edge silent for 1.9 s has stopped, even under the 2 s `stale_after_s`.
+_SILENT_PERIODS = 10
+_MIN_SILENCE_S = 1.0
+_MIN_RATE_SAMPLES = 5
 # A real-time factor further than this from 1 is reported as sim time or a slow host.
 _RTF_TOLERANCE = 0.15
 
@@ -73,7 +80,8 @@ def build_tf_report(
     `source_frame` and `target_frame` are both given or both `None`; when given, the
     report carries the chain of frames between them. `window_s` is the requested
     listening time (the capture's own `window_actual_s` when omitted). `urdf` is the parsed
-    `/robot_description`, compared with the frames; `urdf_note` says why there is none.
+    `/robot_description` (topic or parameter: `urdf_note` names a parameter source),
+    compared with the frames; `urdf_note` says why there is none.
     """
     edges = _group_edges(capture)
     reference_ns = max((s.stamp_ns for s in capture.dynamic), default=None)
@@ -232,6 +240,7 @@ def _frame(
     age = None
     if last_dynamic is not None and reference_ns is not None:
         age = round(max(reference_ns - last_dynamic, 0) / _NS, 3)
+    sim_rate = _rate(edge.dynamic, "stamp_ns")
     return TfFrame(
         name=name,
         parent=edge.parent,
@@ -239,10 +248,17 @@ def _frame(
         message_count=edge.count,
         last_stamp_ns=edge.last_stamp_ns,
         age_s=age,
-        stale=age is not None and age > stale_after_s,
+        stale=age is not None and age > _stale_limit(stale_after_s, sim_rate, len(edge.dynamic)),
         observed_frequency_hz=_rate(edge.dynamic, "received_ns"),
-        sim_frequency_hz=_rate(edge.dynamic, "stamp_ns"),
+        sim_frequency_hz=sim_rate,
     )
+
+
+def _stale_limit(stale_after_s: float, sim_rate: float | None, samples: int) -> float:
+    """Silence after which a frame is stale: `stale_after_s`, or less for a steady fast edge."""
+    if sim_rate is None or samples < _MIN_RATE_SAMPLES:
+        return stale_after_s
+    return min(stale_after_s, max(_SILENT_PERIODS / sim_rate, _MIN_SILENCE_S))
 
 
 def _stale_findings(frames: list[TfFrame], stale_after_s: float) -> list[TfFinding]:
@@ -252,12 +268,22 @@ def _stale_findings(frames: list[TfFrame], stale_after_s: float) -> list[TfFindi
             frames=[f.parent or "", f.name],
             text=(
                 f"{f.parent} -> {f.name} was last published {f.age_s:g} s before the newest "
-                f"transform (limit {stale_after_s:g} s): its publisher stopped or is blocked."
+                f"transform ({_limit_text(f, stale_after_s)}): its publisher stopped or is "
+                "blocked."
             ),
         )
         for f in frames
         if f.stale
     ]
+
+
+def _limit_text(frame: TfFrame, stale_after_s: float) -> str:
+    if frame.age_s is not None and frame.age_s > stale_after_s:
+        return f"limit {stale_after_s:g} s"
+    return (
+        f"silent for over {_SILENT_PERIODS} periods of its {frame.sim_frequency_hz:g} Hz, "
+        f"under the {stale_after_s:g} s limit"
+    )
 
 
 def _two_parent_findings(parents_of: dict[str, list[_Edge]]) -> list[TfFinding]:

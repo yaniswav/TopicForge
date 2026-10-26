@@ -59,7 +59,7 @@ the DDS adapters or in `adapters/common`.
 
 **The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no other service call, no parameter set, no lifecycle transition, no action goal.
 
-**Declaration.** All fifteen tools carry MCP `ToolAnnotations`:
+**Declaration.** All sixteen tools carry MCP `ToolAnnotations`:
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, a
 `title`, and an honest `openWorldHint` (true for tools that observe a
 live ROS 2 graph or DDS bus, false for `health_check`, `analyze_bag` and
@@ -72,7 +72,7 @@ architecture.
 
 **Proof.** `tests/test_tool_annotations.py` builds the app in mock mode,
 lists the tools through the MCP layer as a client would, and fails if the
-tool count is not fifteen, if any tool lacks annotations, is not read-only,
+tool count is not sixteen, if any tool lacks annotations, is not read-only,
 non-destructive and idempotent, has no title or a non-boolean
 `openWorldHint`, or if the set of closed-world tools differs from the
 three above. Adding a sixteenth tool without annotations fails the suite.
@@ -102,9 +102,22 @@ would. Telemetry is off by default and a verified no-op when off
 by design: it never reaches out to a robot. Run it on the robot (or a
 machine on its network) and reach it through a local transport or a
 tunnel you control. A loopback streamable-http
-transport ships in 0.7.0 (127.0.0.1 only, no authentication); reach a remote
+transport ships in 0.7.0 (127.0.0.1, no authentication); reach a remote
 robot through an SSH tunnel (see the "Local HTTP transport" section of
 docs/CLIENTS.md).
+
+**HTTP bearer token (0.8.1).** `TOPICFORGE_HTTP_TOKEN` (at least 32
+printable characters, read from the environment only) makes every HTTP
+request carry `Authorization: Bearer <token>`, compared in constant time;
+anything else gets `401`. Only with a token may `--host` bind an address
+other than loopback, and for such a bind the DNS-rebinding allow-list is
+lifted, since the token, not the `Host` header, is what keeps a foreign
+page out. What the token does not do: the transport is plain HTTP, so the
+token and every answer cross the network in clear and anyone who can read
+that traffic can replay the token; there is no rate limit on wrong tokens
+(32 characters put guessing out of reach) and no per-client identity or
+audit. Use it on a network you trust or behind a TLS reverse proxy; an SSH
+tunnel remains the recommended way to reach a robot.
 
 ## Reporting a vulnerability
 
@@ -136,7 +149,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest release receives security patches: `0.8.0` at the
+Only the latest release receives security patches: `0.8.1` at the
 time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure

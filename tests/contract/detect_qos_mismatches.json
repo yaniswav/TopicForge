@@ -44,6 +44,12 @@
           "reader_guid": {
             "type": "string"
           },
+          "reader_node": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reader_participant_guid": {
             "type": "string"
           },
@@ -64,6 +70,12 @@
           },
           "writer_guid": {
             "type": "string"
+          },
+          "writer_node": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "writer_participant_guid": {
             "type": "string"
@@ -102,6 +114,13 @@
             "type": "array"
           },
           "reader_guid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reader_node": {
+            "description": "ROS 2 node (`ros_discovery_info`); `None` if not announced.",
             "type": [
               "string",
               "null"
@@ -156,6 +175,13 @@
               "null"
             ]
           },
+          "writer_node": {
+            "description": "ROS 2 node (`ros_discovery_info`); `None` if not announced.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "writer_participant_guid": {
             "type": [
               "string",
@@ -199,6 +225,12 @@
           "reader_guid": {
             "type": "string"
           },
+          "reader_node": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reader_participant_guid": {
             "type": "string"
           },
@@ -228,6 +260,12 @@
           },
           "writer_guid": {
             "type": "string"
+          },
+          "writer_node": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "writer_participant_guid": {
             "type": "string"

@@ -79,6 +79,8 @@ def _not_matched(
         writer_guid=writer.guid,
         writer_participant_guid=writer.participant_guid,
         writer_participant_name=writer.participant_name,
+        reader_node=reader.node_name,
+        writer_node=writer.node_name,
         reason=reason,
         detail=detail,
     )
@@ -119,6 +121,8 @@ def _report(
             reader_participant_name=reader.participant_name,
             writer_participant_guid=writer.participant_guid,
             writer_participant_name=writer.participant_name,
+            reader_node=reader.node_name,
+            writer_node=writer.node_name,
             reader_type_name=reader.type_name,
             writer_type_name=writer.type_name,
             incompatible_policies=[d.policy for d in analysis.details],
@@ -156,8 +160,8 @@ def _late_joiner_note(
         return None
     if not _same_host(reader, writer, hostnames):
         return None
-    r = reader.participant_name or reader.guid
-    w = writer.participant_name or writer.guid
+    r = reader.node_name or reader.participant_name or reader.guid
+    w = writer.node_name or writer.participant_name or writer.guid
     return (
         f"reader {r} joined after writer {w}, which is VOLATILE: samples published "
         f"before {r} joined are not delivered to it (by design)."
@@ -179,11 +183,22 @@ def _matched(
         writer_guid=writer.guid,
         writer_participant_guid=writer.participant_guid,
         writer_participant_name=writer.participant_name,
+        reader_node=reader.node_name,
+        writer_node=writer.node_name,
     )
 
 
 def _is_builtin(topic: str) -> bool:
     return topic.startswith("DCPS")
+
+
+def _is_rmw_internal(topic: str) -> bool:
+    """`ros_discovery_info`: every ROS 2 participant reads and writes it with one QoS.
+
+    On a graph of N participants it adds about N x N matched pairs and says nothing about
+    the user's topics, so a whole-bus scan leaves it out; `topic` can still name it.
+    """
+    return topic.strip("/") == "ros_discovery_info"
 
 
 # ROS 2 name mangling prefixes other than `rt/` (plain topics): service request
@@ -302,11 +317,7 @@ def _orphan_hints(
                     f"{other!r} is the same name with or without a namespace: may be the "
                     "same data under a namespaced/remapped name."
                 )
-    plain: list[str] = []
-    for topic in orphans:
-        if topic in scope and topic not in explained:
-            side = "writers but no reader" if sides[topic] == "writer" else "readers but no writer"
-            plain.append(f"Topic {topic!r} has {side}: there is no pair to compare.")
+    plain = _plain_orphan_hints([t for t in orphans if t in scope and t not in explained], sides)
     if len(orphans) > _MAX_COMPARED_ORPHANS:
         near.insert(
             0,
@@ -320,6 +331,31 @@ def _orphan_hints(
             "hints may be missing, narrow the scan with `topic`.",
         )
     return near, plain
+
+
+_MAX_LISTED_ORPHANS = 8
+
+
+def _plain_orphan_hints(topics: list[str], sides: dict[str, str | None]) -> list[str]:
+    """One hint per side for orphan topics that no near name explains.
+
+    A healthy graph has several (a sensor nobody listens to yet), so they are folded into
+    one line per side instead of one hint each.
+    """
+    out = []
+    for side, text in (("writer", "writers but no reader"), ("reader", "readers but no writer")):
+        names = [t for t in topics if sides[t] == side]
+        if len(names) == 1:
+            out.append(f"Topic {names[0]!r} has {text}: there is no pair to compare.")
+        elif names:
+            listed = ", ".join(repr(t) for t in names[:_MAX_LISTED_ORPHANS])
+            more = len(names) - _MAX_LISTED_ORPHANS
+            listed += f" and {more} more" if more > 0 else ""
+            out.append(
+                f"{len(names)} topics have {text}, so there is no pair to compare "
+                f"(often normal): {listed}."
+            )
+    return out
 
 
 def _typo_hint(orphan: str, other: str, sides: dict[str, str | None], distance: int) -> str:
@@ -390,7 +426,11 @@ def scan_endpoints(
             scope_hints.append(form_note)
         elif wanted is None:
             scope_hints.append(no_match_note(topic, by_topic))
-    scope = {t for t in by_topic if topic is None or t == wanted}
+    scope = {
+        t
+        for t in by_topic
+        if (topic is None and not _is_rmw_internal(t)) or (topic is not None and t == wanted)
+    }
 
     report_entries: list[tuple[MismatchReport, EndpointInfo, EndpointInfo]] = []
     split_entries: list[tuple[NotMatchedPair, EndpointInfo, EndpointInfo]] = []

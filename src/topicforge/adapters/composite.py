@@ -101,6 +101,13 @@ class CompositeAdapter:
     def capture_tf(self, window_s: float) -> TfCapture:
         return self._ros.capture_tf(window_s)
 
+    def robot_description_parameter(self, timeout_s: float) -> tuple[str | None, str]:
+        """The ROS 2 half's `robot_description` parameter read, or why there is none."""
+        read = getattr(self._ros, "robot_description_parameter", None)
+        if not callable(read):
+            return None, "this backend cannot read node parameters"
+        return read(timeout_s)
+
     def sim_clock_published(self) -> bool | None:
         """The ROS 2 half's `/clock` probe, `None` when it has none."""
         probe = getattr(self._ros, "sim_clock_published", None)

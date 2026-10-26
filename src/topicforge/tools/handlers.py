@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from topicforge.constants import (
     DEFAULT_NODE_TIMEOUT_S,
@@ -117,6 +117,22 @@ _LOG_LEVEL_PARAM_DESC = (
     "`/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level "
     "(debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error."
 )
+
+
+def _log_level_name(value: object) -> object:
+    """Fold `WARN`, `Error` or `warning` onto the lower-case names the enum declares."""
+    if isinstance(value, str):
+        name = value.strip().lower()
+        return "warn" if name == "warning" else name
+    return value
+
+
+# Level names as ROS 2 prints them (`WARN`) are accepted; the schema keeps the lower case.
+_LogLevel = Annotated[
+    Literal["debug", "info", "warn", "error", "fatal"] | None,
+    BeforeValidator(_log_level_name),
+    Field(description=_LOG_LEVEL_PARAM_DESC),
+]
 
 _LOG_NODE_PARAM_DESC = (
     "`/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` "
@@ -403,10 +419,7 @@ def register_tools(
                 le=MAX_SAMPLE_TIMEOUT_S,
             ),
         ] = DEFAULT_SAMPLE_TIMEOUT_S,
-        min_log_level: Annotated[
-            Literal["debug", "info", "warn", "error", "fatal"] | None,
-            Field(description=_LOG_LEVEL_PARAM_DESC),
-        ] = None,
+        min_log_level: _LogLevel = None,
         node: Annotated[str | None, Field(description=_LOG_NODE_PARAM_DESC)] = None,
     ) -> SampleResult:
         return inspector.sample_messages(
@@ -703,10 +716,7 @@ def register_tools(
         count: Annotated[int, Field(description=_COUNT_PARAM_DESC, ge=0)] = 5,
         start_s: Annotated[float | None, Field(description=_START_S_PARAM_DESC, ge=0)] = None,
         end_s: Annotated[float | None, Field(description=_END_S_PARAM_DESC, ge=0)] = None,
-        min_log_level: Annotated[
-            Literal["debug", "info", "warn", "error", "fatal"] | None,
-            Field(description=_LOG_LEVEL_PARAM_DESC),
-        ] = None,
+        min_log_level: _LogLevel = None,
         node: Annotated[str | None, Field(description=_LOG_NODE_PARAM_DESC)] = None,
     ) -> SampleResult:
         return inspector.peek_bag_samples(

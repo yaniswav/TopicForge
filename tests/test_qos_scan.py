@@ -351,8 +351,27 @@ def test_hints_prioritize_findings_over_noise_and_say_what_was_omitted() -> None
         eps.append(_ep("writer", f"/lonely_topic_number_{i * 7919:06d}"))
     scan = scan_endpoints(eps)
     assert "typo" in scan.hints[0]
-    assert scan.hints[-1].endswith("more hint(s) omitted.")
-    assert len(scan.hints) == 21
+    # 40 orphans fold into one line instead of crowding out the findings
+    folded = [h for h in scan.hints if "40 topics have writers but no reader" in h]
+    assert len(folded) == 1 and folded[0].endswith("and 32 more.")
+    assert len(scan.hints) == 2
+
+
+def test_a_whole_bus_scan_leaves_ros_discovery_info_out() -> None:
+    eps = [_ep("writer", "ros_discovery_info"), _ep("reader", "ros_discovery_info")]
+    eps += [_ep("writer", "/scan"), _ep("reader", "/scan")]
+    scan = scan_endpoints(eps)
+    assert scan.topics_scanned == 1 and scan.matched_total == 1
+    assert scan_endpoints(eps, topic="ros_discovery_info").matched_total == 1
+
+
+def test_pairs_carry_the_ros_node_names() -> None:
+    reader = _ep("reader", "/scan").model_copy(update={"node_name": "/planner"})
+    writer = _ep("writer", "/scan", reliability="BEST_EFFORT").model_copy(
+        update={"node_name": "/lidar"}
+    )
+    report = scan_endpoints([reader, writer]).reports[0]
+    assert (report.reader_node, report.writer_node) == ("/planner", "/lidar")
 
 
 def test_unchecked_hints_survive_truncation() -> None:

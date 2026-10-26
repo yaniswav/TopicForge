@@ -190,7 +190,7 @@ class NodeInfo(BaseModel):
         default=None, description="File against node: differences only."
     )
     param_diff_summary: str | None = Field(
-        default=None, description="Counts left out: same, live_only."
+        default=None, description="Left out of `param_diff`: same, live_only, with names."
     )
     param_diff_note: str | None = None
 

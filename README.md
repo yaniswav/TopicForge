@@ -40,9 +40,9 @@ The server speaks MCP over stdio and waits for a client, so wire it into one. Fo
 }
 ```
 
-Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: `claude mcp add topicforge -- topicforge`. If the client cannot launch the server (WSL2 to Windows, a robot over an SSH tunnel), `topicforge --transport streamable-http --port 8765` serves `http://127.0.0.1:8765/mcp` on loopback only; see [`docs/CLIENTS.md`](docs/CLIENTS.md#local-http-transport).
+Then ask it to list the topics or to analyze `/tmp/demo.mcap`. For Claude Code: `claude mcp add topicforge -- topicforge`. If the client cannot launch the server (WSL2 to Windows, a robot over an SSH tunnel), `topicforge --transport streamable-http --port 8765` serves `http://127.0.0.1:8765/mcp` on loopback (another `--host` needs a bearer token in `TOPICFORGE_HTTP_TOKEN`); see [`docs/CLIENTS.md`](docs/CLIENTS.md#local-http-transport).
 
-**Other MCP clients.** Ready-to-paste configs for Claude Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code, Continue, Zed, JetBrains, Codex, Gemini CLI, Goose and more are in [`docs/CLIENTS.md`](docs/CLIENTS.md). One-click: [Add to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjguMCIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D) | [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.8.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D).
+**Other MCP clients.** Ready-to-paste configs for Claude Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code, Continue, Zed, JetBrains, Codex, Gemini CLI, Goose and more are in [`docs/CLIENTS.md`](docs/CLIENTS.md). One-click: [Add to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjguMSIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D) | [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.8.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D).
 
 Setup for a real ROS2 environment (WSL2, Linux, Docker, native Windows) is in [`docs/TESTING.md`](docs/TESTING.md); recurring monitoring prompts and the privacy contract are in [`docs/TUTORIEL.md`](docs/TUTORIEL.md).
 
@@ -107,7 +107,7 @@ A Fast DDS adapter exists but has never run against a bus, and its `fastdds` Pyt
 | `TOPICFORGE_DDS_DOMAIN_ID` | `0`     | DDS domain observed (0..232). Joined at startup; changing it needs a restart                      |
 | `TOPICFORGE_MAX_SAMPLE_BYTES` | `1048576` | Size cap for one sampled message (1 KiB..64 MiB); a call returns at most 4 times that. Over-cap messages are dropped with a note |
 
-Command-line options (not environment variables): `--transport stdio|streamable-http` (default `stdio`) and `--port N` (default 8765, only with `streamable-http`). The HTTP transport binds `127.0.0.1` only, with DNS-rebinding protection and no authentication; see [docs/CLIENTS.md](docs/CLIENTS.md#local-http-transport).
+Command-line options (not environment variables): `--transport stdio|streamable-http` (default `stdio`), `--port N` (default 8765) and `--host ADDR` (default `127.0.0.1`), the last two only with `streamable-http`. The HTTP transport binds `127.0.0.1` with DNS-rebinding protection; `TOPICFORGE_HTTP_TOKEN` (at least 32 characters) makes every request carry `Authorization: Bearer <token>` and is required for any other `--host` (plain HTTP, so prefer an SSH tunnel); see [docs/CLIENTS.md](docs/CLIENTS.md#local-http-transport).
 
 Samples with comments are in [`.env.example`](.env.example). Any invalid value stops the server with `topicforge: configuration error: ...` and exit code 2, so a typo cannot silently change behaviour.
 
@@ -146,7 +146,7 @@ When on, each tool call emits one event with exactly six fields:
 | `tool_name`  | `"list_topics"` | One of the sixteen tools, never argument values            |
 | `latency_ms` | `12.34`         | Handler wall-clock duration, 2 decimals                     |
 | `mode`       | `"mock"`        | Mode of the adapter actually serving: `mock` or `live`      |
-| `version`    | `"0.8.0"`       | TopicForge server version                                   |
+| `version`    | `"0.8.1"`       | TopicForge server version                                   |
 | `session_id` | `"a1b2c3..."`   | Random UUID per process, never persisted                    |
 | `success`    | `true`          | Whether the handler returned or raised                      |
 

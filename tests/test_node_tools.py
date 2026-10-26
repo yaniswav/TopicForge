@@ -456,7 +456,10 @@ def test_mock_param_diff_names_the_changed_and_the_missing_parameter(tmp_path: P
         ("extra_gain", "declared_only", 1.5, None),
         ("scan_frequency", "different", 20.0, 10.0),
     ]
-    assert info.param_diff_summary == "1 same, 1 live_only" and info.param_diff_note is None
+    assert (
+        info.param_diff_summary == "1 same (frame_id), 1 live_only (use_sim_time)"
+        and info.param_diff_note is None
+    )
     assert info.parameters is not None  # the rest of the result is untouched
 
 
@@ -553,7 +556,7 @@ def test_get_node_info_over_mcp_with_params_file(tmp_path: Path) -> None:
         "get_node_info", {"node": "/lidar_driver", "params_file": _params_file(tmp_path)}
     ).structured_content
     assert [d["name"] for d in data["param_diff"]] == ["extra_gain", "scan_frequency"]
-    assert data["param_diff_summary"] == "1 same, 1 live_only"
+    assert data["param_diff_summary"] == "1 same (frame_id), 1 live_only (use_sim_time)"
 
 
 def test_params_file_errors_reach_the_client() -> None:

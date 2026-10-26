@@ -6,7 +6,7 @@ TopicForge (ROS 2 / DDS) is a local, read-only MCP server that speaks stdio.
 Every client below launches it as a child process with the same command:
 
 ```
-uvx --from "topicforge==0.8.0" topicforge
+uvx --from "topicforge==0.8.1" topicforge
 ```
 
 and the same three environment variables:
@@ -21,7 +21,7 @@ The registry name is `io.github.yaniswav/topicforge`. Where a client asks for a
 display name, use **TopicForge (ROS 2 / DDS)**: an unrelated SEO product is also
 called TopicForge in the MCP registries.
 
-The version pin (`==0.8.0`) is moved on every release together with the other
+The version pin (`==0.8.1`) is moved on every release together with the other
 version strings; a test keeps them in sync.
 
 ## Before you start
@@ -44,7 +44,7 @@ version strings; a test keeps them in sync.
   `"--from"` in the args. To build the binding yourself, install the Cyclone C library and
   run `pip install "topicforge[dds]"`. The `[dds]` and `[dds-cyclone]` extras still work
   as aliases, so older commands keep installing.
-- **pip alternative.** `pip install "topicforge==0.8.0"`, then use
+- **pip alternative.** `pip install "topicforge==0.8.1"`, then use
   `"command": "topicforge"` (or `"command": "python", "args": ["-m", "topicforge"]`)
   with no `args` for uvx. Use the absolute path of the binary if the client does
   not see your venv.
@@ -72,7 +72,7 @@ say where the file lives and what differs.
   "mcpServers": {
     "topicforge": {
       "command": "uvx",
-      "args": ["--from", "topicforge==0.8.0", "topicforge"],
+      "args": ["--from", "topicforge==0.8.1", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
@@ -95,7 +95,7 @@ claude plugin install topicforge@topicforge
 Or just the server:
 
 ```
-claude mcp add topicforge --env TOPICFORGE_MODE=auto --env TOPICFORGE_DDS_BACKEND=cyclone --env TOPICFORGE_DDS_DOMAIN_ID=0 -- uvx --from "topicforge==0.8.0" topicforge
+claude mcp add topicforge --env TOPICFORGE_MODE=auto --env TOPICFORGE_DDS_BACKEND=cyclone --env TOPICFORGE_DDS_DOMAIN_ID=0 -- uvx --from "topicforge==0.8.1" topicforge
 ```
 
 ## Claude Desktop
@@ -112,9 +112,9 @@ the common JSON shape above and restart the app completely. On Windows, if
 
 The one-click links in this page and in the README are https redirects, because GitHub and PyPI strip `cursor://` and `vscode:` links. Only the raw schemes are documented by Cursor and VS Code; the https forms (`cursor.com/install-mcp`, `vscode.dev/redirect/mcp/install`) were observed to redirect correctly on 2026-10-06 but are not in the vendors' docs (unverified, last checked 2026-10-06). The raw links are given as a fallback.
 
-One click: [Add TopicForge to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjguMCIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D)
+One click: [Add TopicForge to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjguMSIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D)
 
-If that page does not open Cursor, use the raw deeplink: `cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjguMCIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D`
+If that page does not open Cursor, use the raw deeplink: `cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjguMSIsInRvcGljZm9yZ2UiXSwiZW52Ijp7IlRPUElDRk9SR0VfTU9ERSI6ImF1dG8iLCJUT1BJQ0ZPUkdFX0REU19CQUNLRU5EIjoiY3ljbG9uZSIsIlRPUElDRk9SR0VfRERTX0RPTUFJTl9JRCI6IjAifX0%3D`
 
 Or paste the common JSON shape into `~/.cursor/mcp.json` (all projects) or
 `.cursor/mcp.json` (one project).
@@ -125,9 +125,9 @@ The `plugin/` folder of this repository is also an [Agent Plugins](https://agent
 
 ## VS Code / GitHub Copilot
 
-One click: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.8.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)
+One click: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.8.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)
 
-Fallback, the raw URL handler: `vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.8.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D`
+Fallback, the raw URL handler: `vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.8.1%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D`
 
 Or put this in `.vscode/mcp.json` (the key is `servers`, not `mcpServers`), or run
 "MCP: Add Server" from the Command Palette:
@@ -138,7 +138,7 @@ Or put this in `.vscode/mcp.json` (the key is `servers`, not `mcpServers`), or r
     "topicforge": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "topicforge==0.8.0", "topicforge"],
+      "args": ["--from", "topicforge==0.8.1", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
@@ -167,7 +167,7 @@ Servers", and paste the common JSON shape (the file is
 Project file `.roo/mcp.json` (takes precedence) or the global `mcp_settings.json`
 opened from the MCP view. Paste the common JSON shape. Roo's docs say Windows
 needs a `cmd /c` wrapper for `npx`; for `uvx`, try it directly first and fall back
-to `"command": "cmd", "args": ["/c", "uvx", "--from", "topicforge==0.8.0",
+to `"command": "cmd", "args": ["/c", "uvx", "--from", "topicforge==0.8.1",
 "topicforge"]` if it fails to start.
 
 ## Continue
@@ -184,7 +184,7 @@ mcpServers:
     command: uvx
     args:
       - "--from"
-      - "topicforge==0.8.0"
+      - "topicforge==0.8.1"
       - "topicforge"
     env:
       TOPICFORGE_MODE: auto
@@ -201,7 +201,7 @@ In `settings.json`, under `context_servers`:
   "context_servers": {
     "topicforge": {
       "command": "uvx",
-      "args": ["--from", "topicforge==0.8.0", "topicforge"],
+      "args": ["--from", "topicforge==0.8.1", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
@@ -227,7 +227,7 @@ run with the dds extra can exceed, so set it to 60 s:
 ```toml
 [mcp_servers.topicforge]
 command = "uvx"
-args = ["--from", "topicforge==0.8.0", "topicforge"]
+args = ["--from", "topicforge==0.8.1", "topicforge"]
 startup_timeout_sec = 60
 
 [mcp_servers.topicforge.env]
@@ -258,7 +258,7 @@ extensions:
     name: TopicForge (ROS 2 / DDS)
     type: stdio
     cmd: uvx
-    args: [--from, "topicforge==0.8.0", topicforge]
+    args: [--from, "topicforge==0.8.1", topicforge]
     enabled: true
     envs: { "TOPICFORGE_MODE": "auto", "TOPICFORGE_DDS_BACKEND": "cyclone", "TOPICFORGE_DDS_DOMAIN_ID": "0" }
     timeout: 300
@@ -297,11 +297,52 @@ The endpoint is `http://127.0.0.1:8765/mcp`. Two cases it is meant for:
 - A robot: run it on the robot, then `ssh -L 8765:127.0.0.1:8765 robot` and use the same URL
   on your laptop.
 
-Threat model: the server has no authentication, so anything that can reach the port can read
-your robot graph. It therefore binds `127.0.0.1` only (there is no flag to change that) and
-rejects any request whose `Host` or `Origin` is not a loopback name with the served port, which
-stops a web page in your browser from reaching it through DNS rebinding. Do not forward the
-port to a network interface; use an SSH tunnel instead.
+Threat model: without a token the server has no authentication, so anything that can reach the
+port can read your robot graph. It therefore binds `127.0.0.1` by default and rejects any
+request whose `Host` or `Origin` is not a loopback name with the served port, which stops a web
+page in your browser from reaching it through DNS rebinding. Do not forward the port to a
+network interface; use an SSH tunnel instead.
+
+Bearer token (0.8.1). Set `TOPICFORGE_HTTP_TOKEN` to a secret of at least 32 printable
+characters (for example `openssl rand -hex 32`) and every request must then carry
+`Authorization: Bearer <token>`; a request without it gets `401`. The token is read from the
+environment only, never from a flag. Only with a token may `--host` name another address:
+
+```
+TOPICFORGE_HTTP_TOKEN=... topicforge --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+This is plain HTTP: the token and every answer cross the network in clear, so keep it to a
+network you trust, or put a TLS reverse proxy in front. The SSH tunnel above remains the safer
+way to reach a robot. Clients that support HTTP headers in their MCP config (Claude Code's
+`--header`, VS Code's `headers`, Cursor's `headers`) pass the token there.
+
+## Docker
+
+The repository's `Dockerfile` builds a stdio image on ROS 2 Jazzy (`ros:jazzy-ros-core`, the
+`ros2` CLI and Cyclone DDS included, a non-root user):
+
+```
+docker build -t topicforge .
+```
+
+Point a client at `docker` instead of `uvx`:
+
+```json
+{ "command": "docker", "args": ["run", "-i", "--rm", "topicforge"] }
+```
+
+What the container can see depends on its network:
+
+- Linux with `--network host` (and the robot's `ROS_DOMAIN_ID`, e.g. `-e ROS_DOMAIN_ID=0`):
+  the live graph, as a local install would.
+- Docker Desktop on Windows or macOS: the container does not see the host's DDS traffic. The
+  `ros2` CLI is in the image, so `auto` still picks live mode and finds an empty graph (only
+  `/rosout` and `/parameter_events`). Use it for bags, mounted with
+  `-v /path/to/bags:/bags:ro` (then ask about `/bags/run.mcap`), or for the demo robot with
+  `-e TOPICFORGE_MODE=mock`.
+
+The image is about 1 GB (ROS 2 Jazzy core plus Cyclone DDS).
 
 ## Prompts and instructions
 
@@ -326,7 +367,7 @@ when the question matches.
 
 ## Troubleshooting
 
-- Run the command by hand first: `uvx --from "topicforge==0.8.0" topicforge --version`.
+- Run the command by hand first: `uvx --from "topicforge==0.8.1" topicforge --version`.
 - Server starts but sees no DDS participants: check the domain id, and that the
   client machine is on the same network as the robot (DDS discovery uses
   multicast UDP). Ask the assistant to call `health_check`.

@@ -366,6 +366,21 @@ def test_the_calls_summary_counts_from_the_ready_time_and_apart_from_listings() 
 def test_flapper_starts_are_read_from_the_supervisor_log() -> None:
     assert scenarios.count_flapper_starts("") == 0
     assert scenarios.count_flapper_starts("start 1\nstart 2\nnoise\nstart 3\n") == 3
+    timed = "start 1 100.0\nstart 2 110.0\nstart 3 120.0\n"
+    assert scenarios.count_flapper_starts(timed) == 3
+    assert scenarios.count_flapper_starts(timed, before=115.0) == 2
+    assert scenarios.count_flapper_starts("start 1\n", before=115.0) == 0
+
+
+def test_first_call_time_skips_listings_and_earlier_calls() -> None:
+    lines = [
+        '{"t": 5, "kind": "tool", "tool": "health_check"}',
+        '{"t": 11, "kind": "list", "tool": null}',
+        "not json",
+        '{"t": 12, "kind": "tool", "tool": "list_nodes"}',
+    ]
+    assert scenarios.first_call_time(lines, since=10) == 12.0
+    assert scenarios.first_call_time(lines[:2], since=10) is None
 
 
 def test_print_only_needs_no_ros(capsys: pytest.CaptureFixture[str]) -> None:

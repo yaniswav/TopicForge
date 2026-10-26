@@ -188,7 +188,7 @@
         ]
       },
       "param_diff_summary": {
-        "description": "Counts left out: same, live_only.",
+        "description": "Left out of `param_diff`: same, live_only, with names.",
         "type": [
           "string",
           "null"

@@ -125,7 +125,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
 | `param_diff` | `array \| null` | no | File against node: differences only. |
-| `param_diff_summary` | `string \| null` | no | Counts left out: same, live_only. |
+| `param_diff_summary` | `string \| null` | no | Left out of `param_diff`: same, live_only, with names. |
 | `param_diff_note` | `string \| null` | no | - |
 
 ## `get_topic_info`
@@ -564,9 +564,10 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
 
 - `inspect_tf` compares the TF frames with the URDF on the `/robot_description`
   topic, which `robot_state_publisher` publishes (the default since ROS 2 Galactic).
-  A robot description held only as a node parameter is not read: `urdf_source` is
-  `none` and `urdf_note` says why. A link on a non-fixed joint has a TF frame only
-  while `/joint_states` is published.
+  Without that topic it reads the `robot_description` parameter of the node named
+  `robot_state_publisher` (`urdf_note` then names that node and parameter);
+  otherwise `urdf_source` is `none` and `urdf_note` says why. A link on a non-fixed
+  joint has a TF frame only while `/joint_states` is published.
 - `get_node_info(params_file=...)` reads a YAML file from the disk of the machine
   running TopicForge (`.yaml` or `.yml`, at most 1 MiB, read-only). The path is never
   sent to a node or to the `ros2` CLI, and nothing is written.
