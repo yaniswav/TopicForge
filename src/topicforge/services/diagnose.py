@@ -122,7 +122,7 @@ def _finding(
 ) -> Finding:
     return Finding(
         severity=severity,
-        check=check,  # type: ignore[arg-type]
+        check=check,
         subject=subject,
         text=text,
         evidence=list(evidence),
@@ -246,7 +246,7 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
         for p in parts.participants
         if p.status == "left" and not p.is_topicforge_cli and not p.is_observer
     ]
-    left = sorted({n for n in left if n.lstrip("/") not in lives})
+    left = sorted({n for n in left if lives.get(n.lstrip("/"), 0) < 2})
     if left:
         out.append(
             _finding(
@@ -577,7 +577,7 @@ class DiagnoseService:
     def _run_check(self, ctx: _Ctx, name: str) -> list[Finding] | None:
         """The findings of one check, or `None` after recording why it did not run."""
         reason = self._unavailable(ctx, name)
-        if reason is None and ctx.left() < _FLOOR_S.get(name, 0.0):
+        if reason is None and name in _FLOOR_S and ctx.left() < _FLOOR_S[name]:
             reason = "budget"
         if reason is None:
             try:
@@ -586,7 +586,7 @@ class DiagnoseService:
                 reason = "budget"
             except AdapterError as exc:
                 reason = str(exc) or "adapter error"
-        ctx.skipped.append(SkippedCheck(check=name, reason=reason))  # type: ignore[arg-type]
+        ctx.skipped.append(SkippedCheck(check=name, reason=reason))
         return None
 
     @staticmethod
@@ -653,7 +653,7 @@ def _assemble(
         critical_count=counts["critical"],
         warning_count=counts["warning"],
         info_count=counts["info"],
-        checks_run=ran,  # type: ignore[arg-type]
+        checks_run=ran,
         checks_skipped=ctx.skipped,
         budget_s=budget_s,
         elapsed_s=round(max(0.0, ctx.clock() - start), 3),
