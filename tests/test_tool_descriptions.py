@@ -35,6 +35,7 @@ LOCKED_TOOLS = {
     "get_node_info",
     "inspect_tf",
     "graph_diff",
+    "diagnose",
 }
 ROS_TOOLS = {
     "list_topics",
@@ -45,6 +46,7 @@ ROS_TOOLS = {
     "get_node_info",
     "inspect_tf",
     "graph_diff",
+    "diagnose",
 }
 
 

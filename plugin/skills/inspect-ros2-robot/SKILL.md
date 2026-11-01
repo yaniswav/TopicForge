@@ -9,6 +9,8 @@ Use the TopicForge tools (output contract 2: check `health_check.contract_versio
 
 ## Live graph
 
+When the question is "is anything wrong", call `diagnose` first: one ranked sweep that holds the ROS lock up to `budget_s`; then read what it names with the steps below.
+
 1. `health_check`. If `mode` is `mock`, the data is a fictional demo robot, not the user's: say so. If `ros_backend` is `none` there is no ROS 2 CLI; use the `diagnose-dds-bus` skill tools (`list_endpoints`) instead.
 2. `list_topics`: names, types, publisher and subscriber counts, in `topics`. QoS is not in the listing: `get_topic_info` gives `publisher_qos`, `subscription_qos` and the node names on each side.
 3. `get_topic_info` for one topic: reliability, durability (`transient_local` means latched, as on `/tf_static`).

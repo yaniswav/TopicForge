@@ -5,12 +5,13 @@ served in mock mode. Do not edit by hand: `tests/test_contract_snapshots.py`
 fails when this file is out of date. The rules behind the shapes are in
 [CONTRACT.md](CONTRACT.md).
 
-16 tools, all read-only.
+17 tools, all read-only.
 
 | Tool | Title | World |
 | --- | --- | --- |
 | [`analyze_bag`](#analyze_bag) | Analyze bag | closed |
 | [`detect_qos_mismatches`](#detect_qos_mismatches) | Detect QoS mismatches | open |
+| [`diagnose`](#diagnose) | Diagnose the robot | open |
 | [`get_node_info`](#get_node_info) | Get node info | open |
 | [`get_topic_info`](#get_topic_info) | Get topic info | open |
 | [`graph_diff`](#graph_diff) | Diff the ROS 2 graph | open |
@@ -86,6 +87,39 @@ Explain why DDS readers and writers on a topic do not talk, and who will. Pairs 
 | `topics_scanned` | `int` | yes | Topics that had at least one endpoint in scope. |
 | `policies_checked` | `list[str]` | yes | Policies compared on every pair. |
 | `policies_unchecked` | `list[str]` | yes | What the scan does not cover, each with a reason; a clean result says nothing about them. |
+| `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
+| `note` | `string \| null` | no | One sentence of context, or `None`. |
+
+## `diagnose`
+
+**Diagnose the robot**
+
+Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
+
+Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and rank what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, `topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` errors), `responsiveness` (parameter reads, `node` first); `scope` runs one group. `findings` are `critical`, `warning` or `info`, with `evidence` and, for QoS, `suggested_fixes`; `verdict` is one line. A check that errors or runs out of `budget_s` is in `checks_skipped`, never a tool error, and the verdict then says it is not verified. A clean result does not prove data flows. **Mock mode**: fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; other ROS tools get `busy` meanwhile, `health_check` stays free.
+
+### Input parameters
+
+| Name | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `scope` | `"all" \| "graph" \| "tf" \| "dds" \| "logs"` | no | `"all"` | - | `all`, or one group: `graph`, `tf`, `dds`, `logs`. |
+| `budget_s` | `float` | no | `30.0` | >= 10.0, <= 40.0 | Seconds for the sweep, 10..40, default 30. |
+| `node` | `str \| null` | no | `null` | - | Node read first (6 s); a failed read is critical. |
+
+### Output (top-level fields)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `findings` | `list[Finding]` | yes | Critical first; at most 50. |
+| `findings_total` | `int` | yes | - |
+| `critical_count` | `int` | yes | Counts cover all findings, not the capped list. |
+| `warning_count` | `int` | yes | - |
+| `info_count` | `int` | yes | - |
+| `checks_run` | `list[str]` | yes | - |
+| `checks_skipped` | `list[SkippedCheck]` | yes | Not verified. |
+| `budget_s` | `float` | yes | - |
+| `elapsed_s` | `float` | yes | - |
+| `verdict` | `str` | yes | One line; never an all-clear after a skipped check. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
 
