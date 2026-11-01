@@ -2371,7 +2371,8 @@ def _check_vis_qos_nodes(truth: dict, res: Results, rep: Report) -> None:
     pairs = listing(data, "matched")
     named = sorted({p["writer_node"] for p in pairs if p.get("writer_node")})
     if not pairs:
-        rep.add("visibility", metric, truth["node"], "no matched pair", "WARN", "", wall)
+        note = "no reader on a user topic here, nothing to name (the unit tests cover it)"
+        rep.add("visibility", metric, truth["node"], "no matched pair", "INFO", note, wall)
         return
     rep.add(
         "visibility",

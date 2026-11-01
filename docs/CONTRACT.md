@@ -1332,7 +1332,7 @@ answer `busy` meanwhile, `health_check` does not. The internal deadline is
 
 **Sources.** Existing services only, no adapter method added: `list_nodes`, `list_topics`,
 `get_node_info`, `inspect_tf` (`window_s` 8, `stale_after_s` 2), `sample_messages` (`/rosout`, 50,
-`min_log_level` `error`, `timeout_s` 3), `detect_qos_mismatches`, `participant_events` (300 s),
+`min_log_level` `error`, `timeout_s` 5: only lines logged while it listens), `detect_qos_mismatches`, `participant_events` (300 s),
 `list_participants` and the health report. On the DDS side it never calls `peek_dds_samples` or
 `topic_metrics`: the three DDS calls it makes are answered by the discovery caches
 (`tests/test_diagnose.py` records the adapter methods called and fails on either).

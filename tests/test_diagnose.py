@@ -417,7 +417,7 @@ def test_errors_on_rosout_are_one_warning_per_node_with_the_newest_line() -> Non
     assert len({f.subject for f in found}) == len(found)
 
 
-def test_rosout_is_read_with_the_error_filter_and_a_three_second_timeout() -> None:
+def test_rosout_is_read_with_the_error_filter_and_a_five_second_timeout() -> None:
     seen: list[dict[str, Any]] = []
 
     def record(topic: str, count: int, **kwargs: Any) -> Any:
@@ -429,7 +429,7 @@ def test_rosout_is_read_with_the_error_filter_and_a_three_second_timeout() -> No
     _run(adapter)
     seen = [s for s in seen if s["topic"] == "/rosout"]
     assert seen[0]["count"] == 50
-    assert seen[0]["min_log_level"] == "error" and seen[0]["timeout_s"] == 3.0
+    assert seen[0]["min_log_level"] == "error" and seen[0]["timeout_s"] == 5.0
 
 
 def test_no_error_line_is_an_info() -> None:
