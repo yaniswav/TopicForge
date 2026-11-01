@@ -492,6 +492,7 @@ def _bench_results(gt: dict) -> dict[str, Any]:
     )
     _graph_diff_results(gt, out)
     _nav_results(gt, out)
+    _diagnose_results(gt, out)
     out["07_sample_scan_full"] = _bench_scan_sample(gt, {"topic": "/scan", "count": 1})
     out["08_sample_scan_defaults"] = _call(
         "sample_messages",
@@ -541,6 +542,55 @@ def _nav_results(gt: dict, out: dict[str, Any]) -> None:
         "sample_messages",
         {"topic": bond["topic"], "count": 5},
         {"topic": bond["topic"], "count": 5, "samples": beats},
+    )
+
+
+def _finding(severity: str, check: str, subject: str | None, text: str = "t") -> dict:
+    return {"severity": severity, "check": check, "subject": subject, "text": text}
+
+
+def _diagnosis(findings: list[dict], **extra: Any) -> dict:
+    crit = sum(f["severity"] == "critical" for f in findings)
+    warn = sum(f["severity"] == "warning" for f in findings)
+    return {
+        "findings": findings,
+        "findings_total": len(findings),
+        "critical_count": crit,
+        "warning_count": warn,
+        "info_count": len(findings) - crit - warn,
+        "checks_skipped": [],
+        "budget_s": 40,
+        "elapsed_s": 21.5,
+        "verdict": f"{crit} critical and {warn} warning finding(s) in the 7 checks run; "
+        "data flow itself is not observed",
+        **extra,
+    }
+
+
+def _seeded_findings() -> list[dict]:
+    """What the bench seeds, as `diagnose` words it (subjects as `check_tf` and `check_logs` do)."""
+    return [
+        _finding("warning", "tf", "map->odom"),
+        _finding("warning", "tf", "tool,base_link,odom"),
+        _finding("warning", "tf", "arm_link"),
+        _finding("warning", "logs", "/bench_robot"),
+        _finding("info", "nodes", None),
+    ]
+
+
+def _diagnose_results(gt: dict, out: dict[str, Any]) -> None:
+    """The two `calls_diagnose.json` answers of a healthy bench."""
+    truth = gt["diagnose"]
+    blocked = truth["node"]["node"]
+    out[truth["full"]["call"]] = _call(
+        "diagnose",
+        {"budget_s": 40},
+        _diagnosis([*_seeded_findings(), _finding("warning", "responsiveness", blocked)]),
+    )
+    out[truth["node"]["call"]] = _call(
+        "diagnose",
+        {"budget_s": 40, "node": blocked},
+        _diagnosis([*_seeded_findings(), _finding("critical", "responsiveness", blocked)]),
     )
 
 
@@ -737,6 +787,7 @@ def test_synthetic_contract2_run_matches_the_bench_truth(tmp_path: Path, bench_t
         "nav_primitives",
         "visibility",
         "declared",
+        "diagnose",
         "listing",
     }
 
@@ -1466,6 +1517,164 @@ def test_the_visibility_call_sits_in_the_kit_calls_and_names_the_scan_topic() ->
     call = next(c for c in kit if c.get("name") == truth["endpoints_call"])
     assert call["tool"] == "list_endpoints" and call["args"] == {"topic": truth["topic"]}
     assert truth["node"] in bench.BENCH_NODES and truth["writer_nodes"] == [truth["node"]]
+
+
+# ------------------------------------------------------------------ diagnose (0.9.0)
+def test_the_diagnose_section_passes_on_a_healthy_bench(tmp_path: Path, bench_truth: dict) -> None:
+    _, report = _run(tmp_path, bench_truth, _bench_results(bench_truth), "--strict-shape")
+    rows = [r for r in report["rows"] if r["section"] == "diagnose"]
+    assert len(rows) == 12 and {r["verdict"] for r in rows} == {"PASS"}
+
+
+def _dg_run(tmp_path: Path, bench_truth: dict, mutate: Any) -> tuple[int, list[str], dict]:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    mutate(results)
+    code, report = _run(tmp_path, bench_truth, results, "--strict-shape")
+    return code, _metrics(report, "FAIL"), report
+
+
+def _set_findings(results: dict, call: str, findings: list[dict], **extra: Any) -> None:
+    results[call]["parsed"][0].update(_diagnosis(findings, **extra))
+
+
+def test_a_false_alarm_fails_the_cell_and_is_named(tmp_path: Path, bench_truth: dict) -> None:
+    call = bench_truth["diagnose"]["full"]["call"]
+
+    def mutate(r: dict) -> None:
+        extra = [_finding("warning", "topics", "/goal_pose"), _finding("critical", "dds", "/x")]
+        findings = r[call]["parsed"][0]["findings"] + extra
+        _set_findings(r, call, findings)
+
+    code, failed, report = _dg_run(tmp_path, bench_truth, mutate)
+    assert code == 1
+    assert f"{call} warning findings" in failed and f"{call} critical findings" in failed
+    notes = " ".join(r["note"] for r in report["rows"] if r["verdict"] == "FAIL")
+    assert "false alarm" in notes and "topics:/goal_pose" in notes and "dds:/x" in notes
+
+
+def test_a_seeded_fault_that_is_not_reported_fails_the_cell(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    call = bench_truth["diagnose"]["full"]["call"]
+
+    def mutate(r: dict) -> None:
+        kept = [f for f in r[call]["parsed"][0]["findings"] if f["subject"] != "arm_link"]
+        _set_findings(r, call, kept)
+
+    code, failed, report = _dg_run(tmp_path, bench_truth, mutate)
+    assert code == 1 and f"{call} warning findings" in failed
+    assert any("missing: ['tf:arm_link']" in r["note"] for r in report["rows"])
+
+
+def test_the_blocked_node_must_be_critical_when_it_is_named(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    call = bench_truth["diagnose"]["node"]["call"]
+
+    def mutate(r: dict) -> None:
+        findings = [
+            f for f in r[call]["parsed"][0]["findings"] if f["check"] != "responsiveness"
+        ] + [_finding("warning", "responsiveness", "/bench_blocked")]
+        _set_findings(r, call, findings)
+
+    code, failed, _ = _dg_run(tmp_path, bench_truth, mutate)
+    assert code == 1 and f"{call} critical findings" in failed
+
+
+def test_an_unreached_blocked_node_is_fine_when_an_info_names_it(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    call = bench_truth["diagnose"]["full"]["call"]
+
+    def swap(r: dict, text: str) -> None:
+        kept = [f for f in r[call]["parsed"][0]["findings"] if f["check"] != "responsiveness"]
+        info = _finding("info", "responsiveness", None, text)
+        _set_findings(r, call, [*kept, info])
+
+    code, failed, _ = _dg_run(
+        tmp_path / "named", bench_truth, lambda r: swap(r, "1 node(s) not tested: /bench_blocked.")
+    )
+    assert code == 0 and not failed
+    code, failed, _ = _dg_run(
+        tmp_path / "silent", bench_truth, lambda r: swap(r, "1 node(s) not tested: /other.")
+    )
+    assert code == 1 and f"{call} warning findings" in failed
+
+
+@pytest.mark.parametrize(
+    ("mutation", "metric"),
+    [
+        ({"checks_skipped": [{"check": "dds", "reason": "budget"}]}, "checks_skipped"),
+        ({"elapsed_s": 41.0}, "elapsed_s"),
+        ({"critical_count": 5}, "counts match findings"),
+        (
+            {"verdict": "no critical or warning finding in the 7 checks run; data flow itself"},
+            "verdict",
+        ),
+        ({"verdict": "robot is healthy"}, "verdict"),
+    ],
+)
+def test_the_diagnose_envelope_is_checked(
+    tmp_path: Path, bench_truth: dict, mutation: dict, metric: str
+) -> None:
+    call = bench_truth["diagnose"]["full"]["call"]
+    code, failed, _ = _dg_run(
+        tmp_path, bench_truth, lambda r: r[call]["parsed"][0].update(mutation)
+    )
+    assert code == 1 and f"{call} {metric}" in failed
+
+
+def test_an_older_server_without_diagnose_only_warns(tmp_path: Path, bench_truth: dict) -> None:
+    results = _bench_results(bench_truth)
+    _bag_results(bench_truth, results)
+    for truth in (bench_truth["diagnose"]["full"], bench_truth["diagnose"]["node"]):
+        del results[truth["call"]]
+    code, report = _run(tmp_path, bench_truth, results)
+    assert code == 0 and len(_metrics(report, "WARN")) >= 2
+
+
+def test_a_failing_diagnose_call_is_a_failure(tmp_path: Path, bench_truth: dict) -> None:
+    call = bench_truth["diagnose"]["node"]["call"]
+    code, failed, _ = _dg_run(
+        tmp_path,
+        bench_truth,
+        lambda r: r[call].update(isError=True, content=["busy: another ros call is running"]),
+    )
+    assert code == 1 and f"{call} result" in failed
+
+
+def test_the_kit_truth_has_no_diagnose_section(tmp_path: Path, omnisim: tuple[dict, dict]) -> None:
+    _, report = _run(tmp_path, *omnisim)
+    assert all(r["section"] != "diagnose" for r in report["rows"])
+
+
+def test_the_diagnose_calls_are_bench_only_and_ask_for_the_budget_the_truth_states() -> None:
+    gt_dir = ROOT / "scripts" / "ground_truth"
+    kit = json.loads((gt_dir / "calls.json").read_text("utf-8"))
+    assert all(c.get("tool") != "diagnose" for c in kit)
+    calls = [
+        c for c in json.loads((gt_dir / "calls_diagnose.json").read_text("utf-8")) if c.get("tool")
+    ]
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")["diagnose"]
+    assert [c["name"] for c in calls] == [truth["full"]["call"], truth["node"]["call"]]
+    assert all(c["args"]["budget_s"] == truth["budget_s"] for c in calls)
+    assert calls[1]["args"]["node"] == truth["node"]["node"] == "/bench_blocked"
+    assert truth["node"]["node"] in bench.BENCH_NODES
+    assert "calls_diagnose.json" in (
+        ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh"
+    ).read_text("utf-8")
+
+
+def test_the_diagnose_truth_matches_what_the_bench_seeds() -> None:
+    truth = bench.build_truth("humble", "rmw_fastrtps_cpp")["diagnose"]
+    seeded = {
+        (e["check"], e.get("subject") or e["subject_starts"]) for e in truth["node"]["warning"]
+    }
+    assert ("tf", f"{bench.TF_FLAKY_EDGE[0]}->{bench.TF_FLAKY_EDGE[1]}") in seeded
+    assert ("tf", bench.URDF_UNPUBLISHED_LINK) in seeded
+    assert ("logs", "/bench_robot") in seeded
+    assert any(sub.startswith("tool") for check, sub in seeded if check == "tf")
 
 
 def test_a_missing_graph_diff_answer_is_a_warning_not_a_failure(

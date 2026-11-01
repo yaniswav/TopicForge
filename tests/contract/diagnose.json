@@ -1,0 +1,262 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Diagnose the robot"
+  },
+  "description": "Answer \"is anything wrong\": sweep the ROS 2 graph and DDS bus in one call and rank what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, `topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` errors), `responsiveness` (parameter reads, `node` first); `scope` runs one group. `findings` are `critical`, `warning` or `info`, with `evidence` and, for QoS, `suggested_fixes`; `verdict` is one line. A check that errors or runs out of `budget_s` is in `checks_skipped`, never a tool error, and the verdict then says it is not verified. A clean result does not prove data flows. **Mock mode**: fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; other ROS tools get `busy` meanwhile, `health_check` stays free.",
+  "inputSchema": {
+    "properties": {
+      "budget_s": {
+        "default": 30.0,
+        "description": "Seconds for the sweep, 10..40, default 30.",
+        "maximum": 40.0,
+        "minimum": 10.0,
+        "type": "number"
+      },
+      "node": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Node read first (6 s); a failed read is critical."
+      },
+      "scope": {
+        "default": "all",
+        "description": "`all`, or one group: `graph`, `tf`, `dds`, `logs`.",
+        "enum": [
+          "all",
+          "graph",
+          "tf",
+          "dds",
+          "logs"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "name": "diagnose",
+  "outputSchema": {
+    "$defs": {
+      "Evidence": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "Field of that tool's result.",
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "field",
+          "value"
+        ],
+        "type": "object"
+      },
+      "Finding": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "enum": [
+              "environment",
+              "nodes",
+              "topics",
+              "dds",
+              "tf",
+              "logs",
+              "responsiveness"
+            ],
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/$defs/Evidence"
+            },
+            "type": "array"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "warning",
+              "info"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "description": "Topic, node or frame.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggested_fixes": {
+            "description": "From `detect_qos_mismatches`; text for a human, never applied.",
+            "items": {
+              "$ref": "#/$defs/SuggestedFix"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "check",
+          "text",
+          "evidence",
+          "suggested_fixes"
+        ],
+        "type": "object"
+      },
+      "SkippedCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "`budget`, or the error or missing backend.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "SuggestedFix": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "Form of `text`: a CLI command, a ROS 2 QoS override, a DDS profile or a launch parameter.",
+            "enum": [
+              "cli",
+              "qos_override",
+              "dds_profile",
+              "launch_param"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "description": "Which node or side to change, writer or reader.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The exact command, YAML or XML to apply.",
+            "type": "string"
+          },
+          "tradeoff": {
+            "description": "What is lost by applying it.",
+            "type": "string"
+          },
+          "verify_with": {
+            "description": "The TopicForge tool to run again to confirm the repair.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target",
+          "text",
+          "tradeoff",
+          "verify_with"
+        ],
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "budget_s": {
+        "type": "number"
+      },
+      "checks_run": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "checks_skipped": {
+        "description": "Not verified.",
+        "items": {
+          "$ref": "#/$defs/SkippedCheck"
+        },
+        "type": "array"
+      },
+      "critical_count": {
+        "description": "Counts cover all findings, not the capped list.",
+        "type": "integer"
+      },
+      "elapsed_s": {
+        "type": "number"
+      },
+      "findings": {
+        "description": "Critical first; at most 50.",
+        "items": {
+          "$ref": "#/$defs/Finding"
+        },
+        "type": "array"
+      },
+      "findings_total": {
+        "type": "integer"
+      },
+      "info_count": {
+        "type": "integer"
+      },
+      "mode_effective": {
+        "description": "`live` or `mock` (fixtures).",
+        "enum": [
+          "mock",
+          "live"
+        ],
+        "type": "string"
+      },
+      "note": {
+        "description": "One sentence of context, or `None`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "verdict": {
+        "description": "One line; never an all-clear after a skipped check.",
+        "type": "string"
+      },
+      "warning_count": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "findings",
+      "findings_total",
+      "critical_count",
+      "warning_count",
+      "info_count",
+      "checks_run",
+      "checks_skipped",
+      "budget_s",
+      "elapsed_s",
+      "verdict",
+      "mode_effective"
+    ],
+    "title": "Diagnosis",
+    "type": "object"
+  },
+  "title": "Diagnose the robot"
+}

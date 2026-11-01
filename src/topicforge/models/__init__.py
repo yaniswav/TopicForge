@@ -1,5 +1,6 @@
 """Pydantic schemas: the contract between TopicForge and MCP clients."""
 
+from topicforge.models.diagnose import Diagnosis, Evidence, Finding, SkippedCheck
 from topicforge.models.graph_diff import GraphChange, GraphDiff, GraphSnapshotRef
 from topicforge.models.nodes import (
     NodeInfo,
@@ -52,8 +53,11 @@ __all__ = [
     "BagAnalysis",
     "BagTopicStats",
     "DepartedEndpoint",
+    "Diagnosis",
     "EndpointInfo",
     "EndpointListing",
+    "Evidence",
+    "Finding",
     "GraphChange",
     "GraphDiff",
     "GraphSnapshotRef",
@@ -84,6 +88,7 @@ __all__ = [
     "QosProfile",
     "SampleResult",
     "SideQos",
+    "SkippedCheck",
     "SuggestedFix",
     "TfCapture",
     "TfFinding",

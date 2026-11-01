@@ -19,15 +19,18 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import BeforeValidator, Field
 
 from topicforge.constants import (
+    DEFAULT_DIAGNOSE_BUDGET_S,
     DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
     DEFAULT_TF_STALE_AFTER_S,
     DEFAULT_TF_WINDOW_S,
+    MAX_DIAGNOSE_BUDGET_S,
     MAX_NODE_TIMEOUT_S,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
     MAX_TF_STALE_AFTER_S,
     MAX_TF_WINDOW_S,
+    MIN_DIAGNOSE_BUDGET_S,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
     MIN_TF_STALE_AFTER_S,
@@ -35,6 +38,7 @@ from topicforge.constants import (
 )
 from topicforge.models import (
     BagAnalysis,
+    Diagnosis,
     EndpointListing,
     GraphDiff,
     HealthReport,
@@ -50,6 +54,7 @@ from topicforge.models import (
     TopicMetrics,
 )
 from topicforge.services import HealthService, Inspector
+from topicforge.services.diagnose import DiagnoseService
 from topicforge.telemetry import TelemetryClient, instrument
 from topicforge.tools.annotations import read_only_annotations
 from topicforge.tools.guard import guarded
@@ -197,6 +202,7 @@ def register_tools(
     With telemetry disabled (the default), `instrument(...)` returns the
     handler unchanged.
     """
+    diagnoser = DiagnoseService(inspector, health)
 
     @mcp.tool(
         annotations=read_only_annotations("Health check", open_world=False),
@@ -473,6 +479,43 @@ def register_tools(
         bag_path: Annotated[str | None, Field(description=_BAG_SNAPSHOT_PARAM_DESC)] = None,
     ) -> GraphDiff:
         return inspector.graph_diff(baseline, bag_path)
+
+    @mcp.tool(
+        annotations=read_only_annotations("Diagnose the robot", open_world=True),
+        description=(
+            'Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and rank '
+            "what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, "
+            "`topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` "
+            "errors), `responsiveness` (parameter reads, `node` first); `scope` runs one "
+            "group. `findings` are `critical`, `warning` or `info`, with `evidence` and, for "
+            "QoS, `suggested_fixes`; `verdict` is one line. A check that errors or runs out of "
+            "`budget_s` is in `checks_skipped`, never a tool error, and the verdict then says "
+            "it is not verified. A clean result does not prove data flows. **Mock mode**: "
+            "fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; "
+            "other ROS tools get `busy` meanwhile, `health_check` stays free."
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "diagnose")
+    def diagnose(
+        scope: Annotated[
+            Literal["all", "graph", "tf", "dds", "logs"],
+            Field(description="`all`, or one group: `graph`, `tf`, `dds`, `logs`."),
+        ] = "all",
+        budget_s: Annotated[
+            float,
+            Field(
+                description="Seconds for the sweep, 10..40, default 30.",
+                ge=MIN_DIAGNOSE_BUDGET_S,
+                le=MAX_DIAGNOSE_BUDGET_S,
+            ),
+        ] = DEFAULT_DIAGNOSE_BUDGET_S,
+        node: Annotated[
+            str | None,
+            Field(description="Node read first (6 s); a failed read is critical."),
+        ] = None,
+    ) -> Diagnosis:
+        return diagnoser.diagnose(scope, budget_s, node)
 
     # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone` or
     # `mock`; with the `ros2_cli` adapter alone they raise AdapterError.

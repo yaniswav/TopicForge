@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from topicforge import budget as call_budget
-from topicforge.adapters.base import AdapterError, AdapterName, MiddlewareAdapter
+from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode, MiddlewareAdapter
 from topicforge.adapters.common.bag_range import validate_range
 from topicforge.adapters.common.log_filter import LogFilter
 from topicforge.adapters.common.ros_discovery import cli_ghost_note
@@ -115,6 +115,10 @@ class Inspector:
     @property
     def backend_name(self) -> AdapterName:
         return self._adapter.name
+
+    @property
+    def effective_mode(self) -> EffectiveMode:
+        return self._adapter.effective_mode
 
     def list_topics(self) -> TopicListing:
         # No arguments, so nothing to validate here.

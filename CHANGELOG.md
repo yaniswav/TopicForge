@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `diagnose`, the seventeenth tool: one bounded sweep of the ROS 2 graph and the DDS bus that
+  answers "is anything wrong". It runs `environment`, `nodes`, `topics`, `dds`, `tf`, `logs` and
+  `responsiveness` (a parameter read per node, the `node` argument first) from the existing
+  services, within `budget_s` (10..40, default 30), and returns findings ranked `critical`,
+  `warning`, `info` with evidence and, for QoS, the `suggested_fixes` of `detect_qos_mismatches`.
+  A check that errors or runs out of budget is listed in `checks_skipped` and the verdict then
+  says the sweep is incomplete: it never reads as an all-clear. It holds the ROS lock for up to
+  `budget_s`. `tools/list` is 99,658 bytes (`diagnose` 4,267) against the 105,000 ceiling. The
+  bench gains `50_diagnose` and `51_diagnose_node` and a comparator section that requires the
+  exact set of seeded findings (`docs/CONTRACT.md` section 9.21).
+
 ### Changed
 
 - `tools/list` is 95,391 bytes (-1,924): shorter lane notes, no duplicated "Read-only" phrase,

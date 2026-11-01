@@ -1,0 +1,7 @@
+[
+  {"name": "50_diagnose", "tool": "diagnose", "timeout": 120, "args": {"budget_s": 40}},
+  {"settle_s": 3},
+  {"name": "51_diagnose_node", "tool": "diagnose", "timeout": 120,
+   "args": {"budget_s": 40, "node": "/bench_blocked"}},
+  {"settle_s": 3}
+]

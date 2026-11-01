@@ -37,6 +37,7 @@ _CALLS: dict[str, dict[str, Any]] = {
     "inspect_tf": {},
     "get_node_info": {"node": "/lidar_driver"},
     "graph_diff": {},
+    "diagnose": {},
 }
 
 
