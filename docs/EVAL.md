@@ -318,3 +318,43 @@ What the runs taught:
   working folder and the prompt rules, not on an enforced boundary.
 - The first round's questions and these ones are different, so the two are comparable in kind
   only.
+
+## 0.9.0 campaign (v3)
+
+**Status: the `diagnose` variant ran on 2026-11-01** (branch `release/0.9.0`, ROS 2 Jazzy in WSL
+Ubuntu 24.04, Fast DDS for the robot, Cyclone for the observer). The agent variant is still to
+run.
+
+### What it is for
+
+It is the exit gate of `diagnose` (tool 17). The 0.8.0 campaign measured a median of 12 calls with
+a prompt alone, against a target of 6, which is why `diagnose` became a tool. Two measures:
+
+1. `diagnose` alone, without an agent (`--variant diagnose`: the runner calls
+   `diagnose(budget_s=40)` once after the robot settles and records the findings), must rank the
+   injected fault first and report no critical and no warning on the healthy robot;
+2. an agent with the seventeen tools and no prompt must answer correctly with a median of at most
+   4 calls (v2: 12).
+
+### Results: `diagnose` alone
+
+| Scenario | Rank 1 (critical or warning) | Other critical or warning | Time |
+|---|---|---|---|
+| `healthy` | none | none | 17.9 s |
+| `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 21.6 s |
+| `tf_stale` | warning `tf` on `map->odom` | none | 17.7 s |
+| `qos_mismatch` | critical `dds` on `/scan_edge` | none | 19.7 s |
+| `restart_loop` | critical `dds` on `/path_planner` | warning `logs` on `/path_planner` (its own crash lines) | 19.6 s |
+| `declared_drift` | warning `tf` on `arm_link` (URDF link with no frame) | none | 18.3 s |
+| `graph_v1_v2` | none | none | 20.2 s |
+
+No check was skipped in any run. Six of the seven runs come out as the plan expects:
+- `healthy` gives zero critical and zero warning;
+- each injected fault is the first finding;
+- the extra `logs` warning in `restart_loop` comes from the failing node itself.
+
+Two runs only partly cover the scenario:
+- **`declared_drift`:** `diagnose` names the URDF half but not the parameter half. That half needs a parameter file, and only `get_node_info(params_file=...)` reads one.
+- **`graph_v1_v2`:** there is nothing to report, because a launch change is not a fault. That question belongs to `graph_diff`. `diagnose` stays silent on it, which is the right result for a sweep that compares with nothing.
+
+`blocked_executor` comes out as a warning, not a critical: `/bench_blocked` is not named, and a timed-out read on an unnamed node is a warning by design (`docs/CONTRACT.md` section 9.21).
