@@ -2353,12 +2353,42 @@ def _check_vis_health(truth: dict, res: Results, rep: Report) -> None:
 
 
 @guard("visibility")
+def _check_vis_qos_nodes(truth: dict, res: Results, rep: Report) -> None:
+    """The QoS scan names the writer's node on its pairs (null on every pair in 0.8.1)."""
+    name = truth.get("qos_call")
+    if not name:
+        return
+    data = res.load(name)
+    err = tool_err(data)
+    wall = res.times.get(name)
+    metric = "QoS pairs name the writer node"
+    if data is None or err:
+        verdict, got = ("WARN", "absent") if data is None else ("FAIL", err)
+        rep.add("visibility", metric, truth["node"], got, verdict, "", wall)
+        return
+    pairs = listing(data, "matched")
+    named = sorted({p["writer_node"] for p in pairs if p.get("writer_node")})
+    if not pairs:
+        rep.add("visibility", metric, truth["node"], "no matched pair", "WARN", "", wall)
+        return
+    rep.add(
+        "visibility",
+        metric,
+        truth["node"],
+        named,
+        "PASS" if truth["node"] in named else "FAIL",
+        f"{len(pairs)} matched pair(s) listed",
+        wall,
+    )
+
+
 def check_visibility(gt: dict, res: Results, rep: Report) -> None:
     """DDS visibility: endpoint node names, participant endpoint counts, SROS2 health (0.8.0)."""
     truth = gt.get("visibility")
     if not truth:
         return
     _check_vis_endpoints(truth, res, rep)
+    _check_vis_qos_nodes(truth, res, rep)
     _check_vis_participant(truth, res, rep)
     _check_vis_health(truth, res, rep)
 

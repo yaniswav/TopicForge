@@ -30,13 +30,17 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_vendor_id,
     vendor_id_from_guid,
 )
-from topicforge.adapters.common.endpoints import announced_ns_of, format_participant_key
+from topicforge.adapters.common.endpoints import (
+    announced_ns_of,
+    endpoint_infos_from_samples,
+    format_participant_key,
+)
 from topicforge.adapters.common.lifecycle import LifecycleBuffer
 from topicforge.adapters.common.ros_discovery import (
     NodeNameCache,
     apply_info_samples,
 )
-from topicforge.models import ParticipantInfo
+from topicforge.models import EndpointInfo, ParticipantInfo
 
 DEFAULT_PERIOD_S = 0.5
 """Seconds between two passes of the tracker thread."""
@@ -163,6 +167,20 @@ class DiscoverySnapshot:
     """Node names per participant prefix key, from `ros_discovery_info`."""
     endpoint_nodes: dict[str, str] = field(default_factory=dict)
     """Node full name by endpoint GUID, from the same messages (reader and writer gids)."""
+
+    def endpoint_infos(self, observer_guid: str | None) -> list[EndpointInfo]:
+        """Every live endpoint as `EndpointInfo`, with its ROS 2 node name when known.
+
+        The one place that builds endpoints from a snapshot, so no caller can
+        forget the gid -> node map (0.8.1 left it out of the QoS scan).
+        """
+        return endpoint_infos_from_samples(
+            self.participants,
+            self.publications,
+            self.subscriptions,
+            observer_guid=observer_guid,
+            nodes_by_guid=self.endpoint_nodes,
+        )
 
 
 @dataclass

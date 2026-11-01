@@ -326,10 +326,12 @@ def visibility_truth() -> dict[str, Any]:
     writer's node on every RMW (Fast DDS names all its participants `/`, so the node name is the
     only link), its participant carries the node's parameter services, `/rosout`, the graph
     plumbing and the topics, which is well over `min_endpoint_count`, and the bench environment
-    sets no SROS2 variable.
+    sets no SROS2 variable. From 0.9.0 the QoS scan names the same node on its pairs (0.8.1 left
+    `writer_node` null there, as it built its endpoints without the gid map).
     """
     return {
         "endpoints_call": "05s_list_endpoints_scan",
+        "qos_call": "06_detect_qos_mismatches",
         "topic": "/scan",
         "writer_nodes": ["/bench_robot"],
         "participants_call": "04_list_participants",

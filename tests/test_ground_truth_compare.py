@@ -467,7 +467,14 @@ def _bench_results(gt: dict) -> dict[str, Any]:
         },
     )
     out["06_detect_qos_mismatches"] = _call(
-        "detect_qos_mismatches", {}, {"reports": [], "reports_total": 0, "matched_total": 6}
+        "detect_qos_mismatches",
+        {},
+        {
+            "reports": [],
+            "reports_total": 0,
+            "matched_total": 6,
+            "matched": [{"topic": "/scan", "writer_node": "/bench_robot", "reader_node": None}],
+        },
     )
     declared = gt["declared"]
     out["17_inspect_tf"] = _call(
@@ -1399,7 +1406,7 @@ def test_the_visibility_section_passes_on_a_healthy_bench(
 ) -> None:
     _, report = _run(tmp_path, bench_truth, _bench_results(bench_truth), "--strict-shape")
     rows = [r for r in report["rows"] if r["section"] == "visibility"]
-    assert len(rows) == 5 and {r["verdict"] for r in rows} == {"PASS"}
+    assert len(rows) == 6 and {r["verdict"] for r in rows} == {"PASS"}
 
 
 def test_the_visibility_section_catches_each_kind_of_wrong_answer(
@@ -1415,6 +1422,9 @@ def test_the_visibility_section_catches_each_kind_of_wrong_answer(
         "writer_nodes": lambda r: parsed(r, "05s_list_endpoints_scan")["by_topic"][0].update(
             writer_nodes=["/"]
         ),
+        "QoS pairs name the writer node": lambda r: parsed(r, "06_detect_qos_mismatches")[
+            "matched"
+        ][0].update(writer_node=None),
         "endpoint_count": lambda r: parsed(r, "04_list_participants")["participants"][0].update(
             endpoint_count=3
         ),

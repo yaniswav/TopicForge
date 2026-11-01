@@ -5,6 +5,16 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `detect_qos_mismatches` on a live DDS backend now fills `reader_node` and `writer_node`. 0.8.1
+  built the scan's endpoints without the gid -> node map that `list_endpoints` uses, so both
+  fields stayed `null` on every pair (seen on Fast DDS in the OmniSim kit). Both tools now build
+  their endpoints through one snapshot method. The Docker bench checks the writer node on the
+  scan's pairs (`docs/CONTRACT.md` section 9.19).
+
 ## [0.8.1] - 2026-10-26
 
 The 0.8.0 evaluation findings, a URDF read from the robot_state_publisher parameter, an optional

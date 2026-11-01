@@ -1286,3 +1286,12 @@ Additive. `tools/list` grows by 467 bytes, to 97,315 (measured like `test_tool_l
   `/robot_description` (section 9.15).
 - HTTP transport: `TOPICFORGE_HTTP_TOKEN` and `--host` (SECURITY.md, docs/CLIENTS.md). No output
   change.
+
+### 9.19 Node names on QoS pairs (0.9.0, fix)
+
+No shape change. On a live DDS backend, `detect_qos_mismatches` fills `reader_node` and
+`writer_node` from the same gid -> node map as `list_endpoints` (section 9.16). In 0.8.1 the QoS
+scan built its endpoints without that map, so both fields were `null` on every pair even when
+`list_endpoints` named the nodes. The mock already filled them, which is why the tests did not
+see it. Comparator: section `visibility`, row "QoS pairs name the writer node" on
+`06_detect_qos_mismatches`.
