@@ -3,9 +3,10 @@
 TopicForge is a read-only MCP server for ROS 2 and DDS. It observes a robot stack;
 it cannot publish, command or change anything. There is no write path in the code.
 
-## Tools (sixteen, all read-only)
+## Tools (seventeen, all read-only)
 
 - `health_check`: environment and mode introspection. Call it first; it always succeeds.
+- `diagnose`: "is anything wrong": one bounded sweep of the graph and the bus, findings ranked critical, warning, info. A check it could not run is listed in `checks_skipped`; the verdict is then not an all-clear. It holds the ROS lock for up to `budget_s`.
 - `list_topics`, `get_topic_info`, `sample_messages`: discover and peek the ROS 2 graph.
 - `list_nodes`, `get_node_info`: the ROS 2 nodes, and one node's topics, services, actions and parameters.
 - `inspect_tf`: the TF tree from `/tf_static` and `/tf`: roots, stale, two-parent and disconnected frames, and the chain between two frames.

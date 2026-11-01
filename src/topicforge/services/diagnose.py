@@ -466,9 +466,9 @@ def _candidates(ctx: _Ctx) -> list[str]:
 
 def check_responsiveness(ctx: _Ctx) -> list[Finding]:
     """Read parameters of as many nodes as the remaining budget allows; silence is a finding."""
-    candidates = _candidates(ctx)
-    if not candidates:
+    if ctx.nodes is None and ctx.node is None:
         raise AdapterError("no node list to read from (the nodes check did not run)")
+    candidates = _candidates(ctx)
     out: list[Finding] = []
     untested: list[str] = []
     for i, name in enumerate(candidates):
@@ -628,7 +628,7 @@ def _verdict(scope: str, counts: tuple[int, int], ran: int, skipped: list[str]) 
     if scope != "all":
         caveats += f"; scope {scope} only, the other checks were not run"
     verdict = f"{base}{caveats}; data flow itself is not observed"
-    return f"Incomplete sweep: {verdict}" if skipped else verdict
+    return f"Incomplete sweep: {verdict}" if skipped or scope != "all" else verdict
 
 
 def _assemble(

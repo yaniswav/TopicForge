@@ -241,6 +241,23 @@ def test_nodes_duplicates_are_a_warning() -> None:
     assert [(f.subject) for f in found] == ["/a"]
 
 
+def test_an_empty_graph_runs_the_responsiveness_check_on_no_node_instead_of_skipping_it() -> None:
+    result = _run(_calm(Scripted(), []))
+    assert "responsiveness" in result.checks_run and result.checks_skipped == []
+    assert [f.severity for f in _by(result, "nodes")] == ["warning"]
+
+
+def test_responsiveness_is_skipped_when_the_node_list_failed_unless_a_node_is_named() -> None:
+    adapter = _calm(Scripted())
+    adapter.fail["list_nodes"] = AdapterError("list_nodes broke")
+    skipped = {s.check for s in _run(adapter).checks_skipped}
+    assert skipped == {"nodes", "responsiveness"}
+    named = _run(adapter, node="/a")
+    assert "responsiveness" in named.checks_run and {s.check for s in named.checks_skipped} == {
+        "nodes"
+    }
+
+
 def test_no_node_on_a_live_graph_is_a_warning() -> None:
     adapter = _calm(Scripted(), [])
     found = _by(_run(adapter), "nodes", "warning")
@@ -556,7 +573,7 @@ def test_scope_limits_the_checks_and_the_verdict_says_so() -> None:
     adapter = _calm(Scripted())
     result = _run(adapter, scope="tf")
     assert result.checks_run == ["environment", "tf"]
-    assert "scope tf only" in result.verdict
+    assert result.verdict.startswith("Incomplete sweep:") and "scope tf only" in result.verdict
     assert "list_nodes" not in adapter.calls and "capture_tf" in adapter.calls
 
 
@@ -716,7 +733,7 @@ def test_the_fixes_of_a_diagnosis_pass_the_forbidden_verb_rule() -> None:
             assert _FORBIDDEN_VERB.search(text) is None, text
 
 
-def test_the_telemetry_wrapper_and_lane_apply_to_diagnose() -> None:
+def test_diagnose_takes_the_ros_lane_and_answers_busy_when_it_is_held() -> None:
     from topicforge.tools.guard import _LANES
 
     held = _LANES["ros"].lock
