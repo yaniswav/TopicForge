@@ -84,8 +84,7 @@ three above. Adding a sixteenth tool without annotations fails the suite.
   other participants see it, and it creates builtin discovery readers
   (DCPSParticipant, DCPSPublication, DCPSSubscription). It never creates a
   writer, and it creates no reader on user topics: the typed user-topic
-  reader code is disabled and unreachable (payload decoding is off). The
-  `dds_fast` adapter has never run against a bus.
+  reader code is disabled and unreachable (payload decoding is off).
 - The ros2 CLI path starts `ros2` processes, which can start the ros2
   daemon if it is not already running. `sample_messages` runs
   `ros2 topic echo`, which creates a temporary subscription (a reader) on

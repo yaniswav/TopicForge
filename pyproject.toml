@@ -58,9 +58,9 @@ dev = [
 # those extras failed to install, and an unclaimed package name in a published
 # extra is a dependency-confusion risk: anyone could register it. `pyopendds`
 # exists but no OpenDDS adapter ships any more (removed in 0.7.0).
-# Fast DDS still works if its Python binding is built from eProsima's sources;
-# see docs/DDS_QUICKSTART.md. Do not add a name here without checking it
-# resolves on PyPI and belongs to the upstream project.
+# Fast DDS participants are observed through the Cyclone backend (standard RTPS
+# discovery); the fastdds-based adapter was removed in 0.9.0. Do not add a name
+# here without checking it resolves on PyPI and belongs to the upstream project.
 #
 # `[dds]` and `[dds-cyclone]` are kept as aliases since 0.6.3 (cyclonedds became a core
 # dependency on supported platforms) so existing `topicforge[dds]` commands keep working.
@@ -102,7 +102,6 @@ addopts = "-ra --strict-markers -m \"not integration\""
 pythonpath = ["src"]
 markers = [
     "requires_cyclonedds: tests needing the `cyclonedds` Python bindings; auto-skip without them",
-    "requires_fastdds: tests needing the `fastdds` Python bindings; auto-skip without them",
     "integration: real-bus DDS scenarios; deselected by default via addopts, select with `-m integration`",
     "requires_rosbags: tests needing the `rosbags` Python library; auto-skip without it (v0.4.0 Phase 3+)",
 ]
@@ -111,16 +110,14 @@ markers = [
 branch = true
 source = ["topicforge"]
 omit = [
-    # The two real DDS adapters import their vendor binding (cyclonedds /
-    # fastdds) at module top level, so they are structurally unreachable
-    # without those SDKs installed. Their pure logic was extracted into
+    # The Cyclone adapter imports its binding at module top level, so it is
+    # structurally unreachable without the SDK installed. Its pure logic was extracted into
     # adapters/common/{dds_introspection,qos_normalize,cdr_decoder}.py
     # (Lot 0) which IS measured here; the thin binding shells are exercised
     # only under the `-m integration` real-bus tier. Excluded so the
     # coverage gate reflects testable code rather than being dragged down
     # by lines no unit run can reach.
     "*/adapters/dds_cyclone/adapter.py",
-    "*/adapters/dds_fast/adapter.py",
 ]
 
 [tool.coverage.report]
@@ -151,11 +148,10 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
-# test_cyclone_adapter.py and test_fast_adapter.py gate their imports
+# test_cyclone_adapter.py gates its imports
 # behind `pytest.importorskip` at module top, so adapter imports must
 # come after: E402 is intentional.
 "tests/test_cyclone_adapter.py" = ["B011", "E402"]
-"tests/test_fast_adapter.py" = ["B011", "E402"]
 # Each example is a standalone script that puts examples/dds on sys.path
 # before importing the shared harness.
 "examples/dds/*/run.py" = ["E402"]

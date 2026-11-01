@@ -1,7 +1,7 @@
 """Derived views of DDS results that save a client from counting or joining by hand.
 
 Pure functions over the result models, applied by the `Inspector` after an adapter
-answers, so every backend (mock, Cyclone, Fast DDS) gets them:
+answers, so every backend (mock, Cyclone) gets them:
 
 - `restarts_by_name`: how many GUIDs each participant name carried, and how often it left;
 - `compact_endpoints`: the `fields="compact"` form of an endpoint listing;

@@ -17,11 +17,11 @@ from topicforge.constants import DEFAULT_MAX_SAMPLE_BYTES
 Mode = Literal["mock", "live", "auto"]
 ResolvedMode = Literal["mock", "live"]
 
-DdsBackend = Literal["mock", "cyclone", "fast", "auto"]
-ResolvedDdsBackend = Literal["mock", "cyclone", "fast"]
+DdsBackend = Literal["mock", "cyclone", "auto"]
+ResolvedDdsBackend = Literal["mock", "cyclone"]
 
 _VALID_MODES: tuple[Mode, ...] = ("mock", "live", "auto")
-_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "fast", "auto")
+_VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "auto")
 # Identifiers that older releases accepted but that never served. They get a hint
 # so an existing deployment learns what to use instead.
 _RETIRED_DDS_BACKENDS: frozenset[str] = frozenset(
@@ -39,13 +39,12 @@ _MAX_SAMPLE_BYTES_MAX = 64 * 1024 * 1024
 
 # Vendor -> Python module, shared by `auto` resolution and `HealthService`.
 DDS_BACKEND_MODULES: dict[str, str] = {
-    "fast": "fastdds",
     "cyclone": "cyclonedds",
 }
 
 # Priority for `dds_backend == "auto"`: the first importable module wins, else
 # mock. Only backends with a working adapter belong here.
-_DDS_AUTO_DETECT_ORDER: tuple[str, ...] = ("fast", "cyclone")
+_DDS_AUTO_DETECT_ORDER: tuple[str, ...] = ("cyclone",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +135,12 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
     raw_dds_backend = src.get("TOPICFORGE_DDS_BACKEND", "mock").strip().lower()
     if raw_dds_backend not in _VALID_DDS_BACKENDS:
         hint = ""
-        if raw_dds_backend in _RETIRED_DDS_BACKENDS:
+        if raw_dds_backend == "fast":
+            hint = (
+                " Fast DDS participants are observed through the `cyclone` backend (standard "
+                "RTPS discovery); the fastdds-based adapter was removed in 0.9.0."
+            )
+        elif raw_dds_backend in _RETIRED_DDS_BACKENDS:
             hint = (
                 " Use `cyclone`: through standard RTPS discovery it already sees participants "
                 "of every conformant vendor (RTI, OpenDDS, CoreDX, OpenSplice, Dust)."

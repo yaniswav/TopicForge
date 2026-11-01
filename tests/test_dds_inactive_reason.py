@@ -56,12 +56,6 @@ def test_selected_but_binding_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "TOPICFORGE_DDS_BACKEND=cyclone" in reason and "not installed" in reason
 
 
-def test_fast_binding_missing_does_not_suggest_pip(monkeypatch: pytest.MonkeyPatch) -> None:
-    _installed(monkeypatch)
-    reason = factory._dds_inactive_reason(_settings("fast"))
-    assert "`fastdds`" in reason and "not installed" in reason and "pip install" not in reason
-
-
 def test_selected_binding_installed_but_adapter_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     _installed(monkeypatch, "cyclonedds")
     reason = factory._dds_inactive_reason(_settings("cyclone"))

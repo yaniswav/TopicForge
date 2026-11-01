@@ -79,10 +79,10 @@ def test_explicit_dds_backend_cyclone() -> None:
     assert s.effective_dds_backend == "cyclone"
 
 
-def test_explicit_dds_backend_fast() -> None:
-    """'fast' is an accepted value."""
-    s = load_settings(env={"TOPICFORGE_DDS_BACKEND": "fast", "TOPICFORGE_MODE": "live"})
-    assert s.effective_dds_backend == "fast"
+def test_dds_backend_fast_is_refused_with_the_cyclone_route() -> None:
+    """The fastdds-based adapter left in 0.9.0; Cyclone observes Fast DDS participants."""
+    with pytest.raises(ValueError, match="observed through the `cyclone` backend"):
+        load_settings(env={"TOPICFORGE_DDS_BACKEND": "fast", "TOPICFORGE_MODE": "live"})
 
 
 def test_invalid_dds_backend_rejected() -> None:
@@ -99,7 +99,7 @@ def test_unusable_dds_backends_rejected_naming_the_valid_values(backend: str) ->
         load_settings(env={"TOPICFORGE_DDS_BACKEND": backend, "TOPICFORGE_MODE": "live"})
     message = str(excinfo.value)
     assert "TOPICFORGE_DDS_BACKEND" in message
-    for valid in ("mock", "cyclone", "fast", "auto"):
+    for valid in ("mock", "cyclone", "auto"):
         assert valid in message
 
 
@@ -115,22 +115,6 @@ def test_dds_backend_mock_global_forces_dds_mock() -> None:
     assert s.effective_dds_backend == "mock"
 
 
-def test_dds_auto_prefers_fast_when_both_importable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """auto prefers Fast over Cyclone when both are installed."""
-    import importlib.util
-
-    real_find_spec = importlib.util.find_spec
-
-    def fake(name: str, *args: object, **kwargs: object) -> object | None:
-        if name in ("fastdds", "cyclonedds"):
-            return object()  # both importable
-        return real_find_spec(name, *args, **kwargs)
-
-    monkeypatch.setattr(importlib.util, "find_spec", fake)
-    s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
-    assert s.effective_dds_backend == "fast"
-
-
 def test_dds_auto_falls_back_to_cyclone_when_only_cyclone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -140,8 +124,6 @@ def test_dds_auto_falls_back_to_cyclone_when_only_cyclone(
     real_find_spec = importlib.util.find_spec
 
     def fake(name: str, *args: object, **kwargs: object) -> object | None:
-        if name == "fastdds":
-            return None
         if name == "cyclonedds":
             return object()
         return real_find_spec(name, *args, **kwargs)
@@ -157,7 +139,7 @@ def test_dds_auto_falls_back_to_mock_when_neither_importable(
     import importlib.util
 
     real_find_spec = importlib.util.find_spec
-    _AUTO_DETECT_MODULES = {"fastdds", "cyclonedds"}
+    _AUTO_DETECT_MODULES = {"cyclonedds"}
 
     def fake(name: str, *args: object, **kwargs: object) -> object | None:
         if name in _AUTO_DETECT_MODULES:
@@ -170,7 +152,7 @@ def test_dds_auto_falls_back_to_mock_when_neither_importable(
 
 
 # ---------------------------------------------------------------------------
-# Auto-detect priority chain: fast > cyclone > mock.
+# Auto-detect: cyclone, else mock.
 # ---------------------------------------------------------------------------
 
 
@@ -179,7 +161,7 @@ def _patch_find_spec(monkeypatch: pytest.MonkeyPatch, present: set[str]) -> None
     import importlib.util
 
     real_find_spec = importlib.util.find_spec
-    _AUTO_DETECT_MODULES = {"fastdds", "cyclonedds"}
+    _AUTO_DETECT_MODULES = {"cyclonedds"}
 
     def fake(name: str, *args: object, **kwargs: object) -> object | None:
         if name in _AUTO_DETECT_MODULES:
@@ -189,11 +171,11 @@ def _patch_find_spec(monkeypatch: pytest.MonkeyPatch, present: set[str]) -> None
     monkeypatch.setattr(importlib.util, "find_spec", fake)
 
 
-def test_dds_auto_picks_fast_over_cyclone(monkeypatch: pytest.MonkeyPatch) -> None:
-    """auto order is Fast, then Cyclone."""
-    _patch_find_spec(monkeypatch, present={"fastdds", "cyclonedds"})
+def test_dds_auto_picks_cyclone_when_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`auto` looks for `cyclonedds` only (the Fast adapter left in 0.9.0)."""
+    _patch_find_spec(monkeypatch, present={"cyclonedds"})
     s = load_settings(env={"TOPICFORGE_MODE": "live", "TOPICFORGE_DDS_BACKEND": "auto"})
-    assert s.effective_dds_backend == "fast"
+    assert s.effective_dds_backend == "cyclone"
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +185,7 @@ def test_dds_auto_picks_fast_over_cyclone(monkeypatch: pytest.MonkeyPatch) -> No
 _NO_ROS2 = "definitely-not-a-real-binary-xyz"
 
 
-@pytest.mark.parametrize("backend", ["cyclone", "fast"])
+@pytest.mark.parametrize("backend", ["cyclone"])
 def test_auto_mode_without_ros2_keeps_explicit_dds_backend(backend: str) -> None:
     """DDS-only users: naming a backend must not be overridden by the missing ros2."""
     s = load_settings(

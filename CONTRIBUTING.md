@@ -17,8 +17,8 @@ TopicForge is a small project run by one maintainer, so the contribution loop is
 - Cross-platform regressions. TopicForge is Windows-first ; if you
   hit a Mac / Linux-specific breakage, file it with the stack trace.
 - Reports from a real DDS bus. The Cyclone adapter has run against
-  Cyclone and Dust participants; the Fast adapter and other vendors on
-  the bus have not been observed yet. What you see there (what worked,
+  Cyclone, Fast DDS and Dust participants; RTI, OpenDDS and other
+  vendors on the bus have not been observed yet. What you see there (what worked,
   what raised, what looked wrong) helps more than anything else.
   Include the vendors on your bus and the `health_check` output.
   `python examples/dds/run_all.py` is a quick way to produce one.

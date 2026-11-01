@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `tools/list` test ceiling moves from 100,000 to 105,000 bytes to make room for `diagnose`
   (`docs/CONTRACT.md` section 9.20).
 
+### Removed
+
+- The fastdds-based DDS adapter (`adapters/dds_fast/`, 487 lines). It never ran against a bus,
+  and its `fastdds` binding is not on PyPI, so no user could install it. Fast DDS participants
+  are still observed through the `cyclone` backend by standard RTPS discovery, as the CI bench
+  and the OmniSim kit show. `TOPICFORGE_DDS_BACKEND=fast` is now refused at startup with that
+  route, and `auto` only probes `cyclonedds`. `health_check.dds_backend` keeps `fast` in its
+  schema enum but never emits it. `demo-fast.yml` (a C++ Fast DDS publisher seen by Cyclone)
+  stays.
+
 ### Fixed
 
 - `detect_qos_mismatches` on a live DDS backend now fills `reader_node` and `writer_node`. 0.8.1

@@ -474,7 +474,7 @@ def register_tools(
     ) -> GraphDiff:
         return inspector.graph_diff(baseline, bag_path)
 
-    # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone`, `fast` or
+    # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone` or
     # `mock`; with the `ros2_cli` adapter alone they raise AdapterError.
 
     @mcp.tool(
@@ -605,8 +605,7 @@ def register_tools(
             "and `departures` per name over the window, so do not count GUIDs by hand. Capped "
             "at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows "
             "what happened since it started watching (`health_check.observer_started_ns`). "
-            "**Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the "
-            "background every 0.5 s, so a participant cycle faster than the reader's history "
+            "**Backends**: Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history "
             "depth between two passes can be missed; mock returns a fixture timeline. Right "
             "after start the call waits up to 3 s for discovery. **Read-only by "
             "architecture**. **Raises an MCP error** when no DDS module is active." + _DDS_LANE_NOTE
