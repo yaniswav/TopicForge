@@ -395,3 +395,32 @@ def test_the_runner_defaults_to_loopback_and_one_port() -> None:
     args = scenarios.build_parser().parse_args(["tf_stale"])
     assert (args.host, args.port, args.variant) == ("127.0.0.1", 8801, "tools")
     assert args.prompt == "inspect-ros2-robot"
+
+
+def test_the_diagnose_variant_ranks_critical_and_warning_only() -> None:
+    answer = {
+        "findings": [
+            {"severity": "critical", "check": "dds", "subject": "/scan_edge"},
+            {"severity": "warning", "check": "tf", "subject": "odom"},
+            {"severity": "info", "check": "environment", "subject": None},
+        ],
+        "critical_count": 1,
+        "warning_count": 1,
+        "checks_skipped": [],
+        "elapsed_s": 21.5,
+        "verdict": "1 critical and 1 warning finding(s) in the 7 checks run",
+    }
+    summary = scenarios.diagnose_summary("qos_mismatch", answer, 22.04)
+    assert [r["subject"] for r in summary["ranked"]] == ["/scan_edge", "odom"]
+    assert summary["variant"] == "diagnose" and summary["wall_s"] == 22.0
+    assert summary["error"] is None
+
+
+def test_the_diagnose_variant_keeps_a_tool_error() -> None:
+    summary = scenarios.diagnose_summary("healthy", {"isError": True, "content": ["busy"]}, 1.0)
+    assert summary["ranked"] == [] and summary["error"] == ["busy"]
+
+
+def test_the_diagnose_variant_plan_says_no_agent() -> None:
+    steps = scenarios.plan("healthy", 8801, "diagnose", "inspect-ros2-robot")
+    assert steps[-1].startswith("no agent: one diagnose(budget_s=40)")
