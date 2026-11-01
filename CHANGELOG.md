@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- `tools/list` is 95,391 bytes (-1,924): shorter lane notes, no duplicated "Read-only" phrase,
+  and every output field description at most 120 characters, with a test that keeps it so. The
+  `tools/list` test ceiling moves from 100,000 to 105,000 bytes to make room for `diagnose`
+  (`docs/CONTRACT.md` section 9.20).
+
 ### Fixed
 
 - `detect_qos_mismatches` on a live DDS backend now fills `reader_node` and `writer_node`. 0.8.1

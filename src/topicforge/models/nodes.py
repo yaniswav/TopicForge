@@ -39,8 +39,8 @@ class NodeListItem(BaseModel):
     lifecycle: bool = Field(
         default=False,
         description=(
-            "True when the graph has `<full_name>/get_state` of type "
-            "`lifecycle_msgs/srv/GetState` (a managed node). The state itself is never read."
+            "True when the graph has `<full_name>/get_state` (`lifecycle_msgs/srv/GetState`). The "
+            "state itself is never read."
         ),
     )
 

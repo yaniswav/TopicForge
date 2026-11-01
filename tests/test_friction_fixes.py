@@ -307,12 +307,37 @@ def tools() -> dict[str, Tool]:
 
 
 def test_tool_listing_stays_small(tools: dict[str, Tool]) -> None:
-    """tools/list was about 178 KB compact in 0.7.0 and truncated by some clients."""
+    """tools/list was about 178 KB compact in 0.7.0 and truncated by some clients.
+
+    The ceiling moved from 100 000 to 105 000 in 0.9.0 to fit `diagnose`, after four more
+    compaction levers. No known client breaks between 97 and 105 KB: those that truncate do it
+    near 40 000 characters, a line crossed since 0.7.0. The real cost is context per session.
+    """
     total = sum(
         len(json.dumps(t.model_dump(by_alias=True, exclude_none=True), separators=(",", ":")))
         for t in tools.values()
     )
-    assert total < 100_000, total
+    assert total < 105_000, total
+
+
+def _long_descriptions(node: object, path: str = "") -> list[str]:
+    if isinstance(node, list):
+        return [p for item in node for p in _long_descriptions(item, path)]
+    if not isinstance(node, dict):
+        return []
+    found = []
+    text = node.get("description")
+    if path and isinstance(text, str) and len(text) > 120:
+        found.append(f"{path} ({len(text)})")
+    for key, value in node.items():
+        found += _long_descriptions(value, f"{path}/{key}")
+    return found
+
+
+def test_output_field_descriptions_stay_short(tools: dict[str, Tool]) -> None:
+    """At most 120 characters per output field (0.9.0): the long story lives in CONTRACT.md."""
+    long = [p for t in tools.values() for p in _long_descriptions(t.output_schema or {}, t.name)]
+    assert not long, long
 
 
 def test_schemas_carry_no_generated_titles_but_keep_the_output_type_name(

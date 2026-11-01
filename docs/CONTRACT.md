@@ -1295,3 +1295,22 @@ scan built its endpoints without that map, so both fields were `null` on every p
 `list_endpoints` named the nodes. The mock already filled them, which is why the tests did not
 see it. Comparator: section `visibility`, row "QoS pairs name the writer node" on
 `06_detect_qos_mismatches`.
+
+### 9.20 `tools/list` size: lane notes, field descriptions, ceiling (0.9.0)
+
+Descriptions only, no shape change. `tools/list` goes from 97,315 to 95,391 bytes before
+`diagnose` (measured like `test_tool_listing_stays_small`).
+
+- **Lane notes.** The `**Duration**` sentence of section 9.13 is shorter:
+  ``**Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.`` (DDS lock for
+  the DDS tools). Same facts; `test_tool_descriptions.py` still checks the lock, `45 s` and `busy`.
+- **Read-only phrases.** "Read-only; no side effects." and its variants are gone from the ROS 2
+  tool descriptions: every tool declares `readOnlyHint` (section 2). "**Read-only by
+  architecture**" stays on the DDS tools, which join the bus.
+- **Output field descriptions** are at most 120 characters, rewritten by hand with the same facts
+  (`test_output_field_descriptions_stay_short`). Two lost a pointer only: `vendor` no longer names
+  `vendor_source`, and `seen_count` no longer names `restarts_by_name`.
+- **Ceiling.** The test ceiling moves from 100,000 to 105,000 bytes, and the comparator's
+  `tools/list bytes` row with it. No known client breaks in that range; the clients that truncate
+  do it near 40,000 characters, a line crossed since 0.7.0.
+

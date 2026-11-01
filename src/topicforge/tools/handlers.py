@@ -172,15 +172,9 @@ _SUMMARY_RATE_NOTE = (
     "multi-publisher topic such as `/tf` reads `erratic` without being broken."
 )
 
-_ROS_LANE_NOTE = (
-    " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; "
-    "`busy` error if the lock is held (retry)."
-)
+_ROS_LANE_NOTE = " **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held."
 
-_DDS_LANE_NOTE = (
-    " **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; "
-    "`busy` error if the lock is held (retry)."
-)
+_DDS_LANE_NOTE = " **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held."
 
 _NO_LOCK_NOTE = (
     " **Duration**: never waits for a lock and never runs the `ros2` CLI; it answers at once."
@@ -216,8 +210,8 @@ def register_tools(
             "with `ros_backend` `none` is a DDS-only setup: use `list_endpoints`. With "
             "`dds_backend` `none`, `dds_inactive_note` says why. `payload_decoding` is "
             "`disabled` (DDS user-topic payloads are not decoded); `dds_security` is "
-            "`not_supported`. **Always succeeds**: call it first when something looks wrong. "
-            "Read-only; no side effects." + _NO_LOCK_NOTE
+            "`not_supported`. **Always succeeds**: call it first when something looks wrong."
+            + _NO_LOCK_NOTE
         ),
     )
     @guarded(None)
@@ -233,7 +227,7 @@ def register_tools(
             "`message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a "
             "real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty "
             "`topics`** when the graph has none or live discovery times out. **Raises an MCP "
-            "error** without a `ros2` CLI. Read-only; no side effects." + _ROS_LANE_NOTE
+            "error** without a `ros2` CLI." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -249,8 +243,8 @@ def register_tools(
             "mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where "
             "`transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a "
             "`null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. "
-            "**Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. "
-            "Read-only; no side effects." + _ROS_LANE_NOTE
+            "**Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI."
+            + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -267,11 +261,12 @@ def register_tools(
             "the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a "
             "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` "
             "(managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. "
-            "`duplicates` lists full names used by several nodes (a per-node tool then answers for one of "
+            "`duplicates` lists full names used by several nodes (a per-node tool then answers for "
+            "one of "
             "them, unidentified). Nodes starting with an underscore are hidden and a node on "
             "another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. "
             "Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a "
-            "`ros2` CLI. Read-only; cheap (two CLI calls)." + _ROS_LANE_NOTE
+            "`ros2` CLI. Cheap (two CLI calls)." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -331,7 +326,8 @@ def register_tools(
             "stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), "
             "`static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they "
             "hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and "
-            "`target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF "
+            "`target_frame` for the `path` between them. It also reads `/robot_description` and "
+            "flags URDF "
             "links with no frame (`declared_not_published`). **Empty `frames`** when nothing is "
             "published (read `note`). The listening is capped (3000 messages): `echo` can drop "
             "messages at high rates, so the tree is exact but frequencies are approximate "
@@ -382,7 +378,7 @@ def register_tools(
             "65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap "
             "(`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns "
             "demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for "
-            "an unknown topic, or when the CLI fails. Read-only; never publishes. **Logs**: "
+            "an unknown topic, or when the CLI fails. Never publishes. **Logs**: "
             "`min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most "
             "2000 messages) and return the NEWEST `count` matches in stamp order; "
             "`peek_bag_samples` returns the FIRST matches."
@@ -445,8 +441,7 @@ def register_tools(
             "`ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` "
             "use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like "
             "path, and only mock detects anomalies. **Raises an MCP error** for a malformed or "
-            "missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no "
-            "side effects." + _ROS_LANE_NOTE
+            "missing path (live), unparseable output, or without a `ros2` CLI." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -468,7 +463,7 @@ def register_tools(
             "`builtin_changes_count`. The first call stores a snapshot and says so in `note`. "
             "Snapshots stay in memory (16, lost on restart). **Raises an MCP error** for an "
             "unknown id, a bad bag path or without a `ros2` CLI. **Mock mode**: the first call "
-            "reports 3 changes, the next 0. Read-only." + _ROS_LANE_NOTE
+            "reports 3 changes, the next 0." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -756,7 +751,7 @@ def register_tools(
             "it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless "
             "`include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, "
             "`rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 "
-            "endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. "
+            "endpoints (`truncated`, `total`); `by_topic` covers all matches. "
             "**Raises an MCP error** when no DDS module is active; mock returns a fixture."
             + _DDS_LANE_NOTE
         ),

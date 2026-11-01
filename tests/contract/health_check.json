@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Health check"
   },
-  "description": "Report TopicForge environment state as a `HealthReport`: `mode`, `ros_backend`, `dds_backend`, `ros_tools_available`, `ros2_distro`, `rmw_implementation`, `dds_domain_id` and `observed_domain_note` (only the domain joined at startup is observed), server version and sample cap; for a live DDS backend also `observer_started_ns` / `now_ns` (nothing earlier was watched) and the discovery tracker status `tracker_*` (errors, evictions or a stale pass mean gaps). `live` with `ros_backend` `none` is a DDS-only setup: use `list_endpoints`. With `dds_backend` `none`, `dds_inactive_note` says why. `payload_decoding` is `disabled` (DDS user-topic payloads are not decoded); `dds_security` is `not_supported`. **Always succeeds**: call it first when something looks wrong. Read-only; no side effects. **Duration**: never waits for a lock and never runs the `ros2` CLI; it answers at once.",
+  "description": "Report TopicForge environment state as a `HealthReport`: `mode`, `ros_backend`, `dds_backend`, `ros_tools_available`, `ros2_distro`, `rmw_implementation`, `dds_domain_id` and `observed_domain_note` (only the domain joined at startup is observed), server version and sample cap; for a live DDS backend also `observer_started_ns` / `now_ns` (nothing earlier was watched) and the discovery tracker status `tracker_*` (errors, evictions or a stale pass mean gaps). `live` with `ros_backend` `none` is a DDS-only setup: use `list_endpoints`. With `dds_backend` `none`, `dds_inactive_note` says why. `payload_decoding` is `disabled` (DDS user-topic payloads are not decoded); `dds_security` is `not_supported`. **Always succeeds**: call it first when something looks wrong. **Duration**: never waits for a lock and never runs the `ros2` CLI; it answers at once.",
   "inputSchema": {
     "properties": {},
     "type": "object"
@@ -62,7 +62,7 @@
         "type": "boolean"
       },
       "mode": {
-        "description": "Mode serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools only); may differ from `requested_mode` after a fallback.",
+        "description": "Mode serving: `mock` or `live` (`live` + `ros_backend` `none`: DDS tools only); may differ from `requested_mode`.",
         "type": "string"
       },
       "note": {
@@ -193,7 +193,7 @@
         "type": "string"
       },
       "sim_clock_published": {
-        "description": "Whether `/clock` had a publisher at the last graph read (stamps may be sim time); `None` in mock or without a recent read.",
+        "description": "Whether `/clock` had a publisher at the last graph read (stamps may be sim time); `None` in mock or unread.",
         "type": [
           "boolean",
           "null"

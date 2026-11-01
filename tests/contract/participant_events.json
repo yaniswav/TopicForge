@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "DDS participant events"
   },
-  "description": "Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, `observed_ns`, `age_s` (seconds before the response; live only), optional `name` (announced name), `hostname` and `domain_id`. `time_source` is `dds_source_timestamp` (timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` timestamp is an upper bound of the death: exact after a clean shutdown, the lease expiry after a crash, so the process died up to one lease earlier (10 s Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. **Restarts**: a restarted node is a new participant (one `lost` and one `discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` and `departures` per name over the window, so do not count GUIDs by hand. Capped at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows what happened since it started watching (`health_check.observer_started_ns`). **Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
+  "description": "Return DDS participant lifecycle events (`discovered` / `lost`) from a recent window, e.g. 'who left in the last 5 minutes?', as a `ParticipantEventListing`, newest first: `guid`, `event_type`, `vendor`, `timestamp_ns`, `time_source`, `observed_ns`, `age_s` (seconds before the response; live only), optional `name` (announced name), `hostname` and `domain_id`. `time_source` is `dds_source_timestamp` (timestamp of the announcement or dispose) or `observed_local` (when TopicForge noticed, weakest). **Crash caveat**: a `lost` timestamp is an upper bound of the death: exact after a clean shutdown, the lease expiry after a crash, so the process died up to one lease earlier (10 s Cyclone, 20 s Fast DDS, 100 s RTI); the two cases cannot be told apart. **Restarts**: a restarted node is a new participant (one `lost` and one `discovered`, different `guid`, same `name`); `restarts_by_name` gives `lives` and `departures` per name over the window, so do not count GUIDs by hand. Capped at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows what happened since it started watching (`health_check.observer_started_ns`). **Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history depth between two passes can be missed; mock returns a fixture timeline. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active. **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held.",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -97,7 +97,7 @@
             ]
           },
           "time_source": {
-            "description": "`dds_source_timestamp` (DDS timestamp of the announcement or dispose; for `lost` an upper bound of the death) or `observed_local` (when TopicForge noticed, weakest).",
+            "description": "`dds_source_timestamp` (of the announcement or dispose; for `lost` an upper bound) or `observed_local` (weakest).",
             "enum": [
               "dds_source_timestamp",
               "observed_local"
@@ -169,7 +169,7 @@
         "additionalProperties": {
           "$ref": "#/$defs/NameLifecycle"
         },
-        "description": "Names seen with several GUIDs or lost at least once (absent: ran once and stayed). A restart is a new GUID with the same name. Window only.",
+        "description": "Names seen with several GUIDs or lost at least once (absent: ran once). A restart is a new GUID, same name. Window only.",
         "type": "object"
       },
       "restarts_note": {

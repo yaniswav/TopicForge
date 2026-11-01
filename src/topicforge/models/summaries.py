@@ -235,8 +235,8 @@ class TopicRate(BaseModel):
     clock_basis: Literal["wall", "sim", "none", "mixed"] = Field(
         default="none",
         description=(
-            "Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` "
-            "(no stamps), `mixed` (several kinds, e.g. two publishers)."
+            "Stamp clock: `wall` (dates), `sim` (since a start), `none` (no stamps), `mixed` "
+            "(several kinds, e.g. two publishers)."
         ),
     )
     stamp_age_median_s: float | None = Field(
@@ -251,9 +251,8 @@ class TopicRate(BaseModel):
     )
     verdict: RateVerdict = Field(
         description=(
-            "First match: `silent` (none), `insufficient` (under 5), `intermittent` (an"
-            " interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), "
-            "`erratic`. Describes this window, not a diagnosis."
+            "Window only: `silent`, `insufficient` (<5), `intermittent` (gap>3x median), `stable` "
+            "(cv<.2), `jittery` (<.5), `erratic`"
         )
     )
     verdict_note: str = Field(description="The verdict in plain words.")

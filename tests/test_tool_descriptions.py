@@ -115,6 +115,6 @@ def test_sample_count_description_is_coherent(tools: dict[str, Tool]) -> None:
     schema = tools["sample_messages"].output_schema or {}
     assert not re.search(r"\bthe the\b", json.dumps(schema))
     count_desc = next(
-        d for _, d in _descriptions(schema, "out") if d.startswith("Number of samples in")
+        d for _, d in _descriptions(schema, "out") if d.startswith("Samples in `samples`")
     )
     assert "capped to 50" in count_desc and "without warning" not in count_desc

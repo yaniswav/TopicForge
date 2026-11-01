@@ -1283,7 +1283,7 @@ def test_listing_size_row_passes_fails_and_warns_when_absent(
 
     results = _bench_results(bench_truth)
     assert row(results, "ok")["verdict"] == "PASS"
-    results["_tools"] = [{"name": "t", "description": "x" * 100_000}]
+    results["_tools"] = [{"name": "t", "description": "x" * 105_000}]
     assert row(results, "big")["verdict"] == "FAIL"
     del results["_tools"]
     assert row(results, "absent")["verdict"] == "WARN"

@@ -1968,7 +1968,7 @@ def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
 
 
 # ---------------------------------------------------------------------------- report
-LISTING_MAX_BYTES = 100_000
+LISTING_MAX_BYTES = 105_000
 
 
 def _drop_none(node: Any) -> Any:
