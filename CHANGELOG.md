@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-02
+
 ### Added
 
 - `diagnose`, the seventeenth tool: one bounded sweep of the ROS 2 graph and the DDS bus that
@@ -16,7 +18,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   `warning`, `info` with evidence and, for QoS, the `suggested_fixes` of `detect_qos_mismatches`.
   A check that errors or runs out of budget is listed in `checks_skipped` and the verdict then
   says the sweep is incomplete: it never reads as an all-clear. It holds the ROS lock for up to
-  `budget_s`. `tools/list` is 99,658 bytes (`diagnose` 4,267) against the 105,000 ceiling. The
+  `budget_s`. `tools/list` is 99,634 bytes (`diagnose` 4,267) against the 105,000 ceiling. The
   bench gains `50_diagnose` and `51_diagnose_node` and a comparator section that requires the
   exact set of seeded findings (`docs/CONTRACT.md` section 9.21).
 
@@ -1941,7 +1943,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...v0.7.2
