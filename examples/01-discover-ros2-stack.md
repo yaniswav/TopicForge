@@ -45,10 +45,12 @@ You:
 
 Claude answers along these lines:
 
-> This is a small mobile robot. Three sensor topics
-> (`/scan` from a 2D LIDAR, `/camera/image_raw` from an RGB camera,
-> `/tf` for transforms), one odometry feedback (`/odom`), and one
-> command input (`/cmd_vel`). All of it is mocked from
+> This is a small mobile robot. Three sensors (`/scan` from a 2D
+> LIDAR, `/camera/image_raw` from an RGB camera, `/imu/data` from an
+> IMU), transforms on `/tf` and `/tf_static`, the URDF on
+> `/robot_description`, one odometry feedback (`/odom`), one command
+> input (`/cmd_vel`), plus `/rosout` and a lifecycle event topic from
+> the camera driver. All of it is mocked from
 > deterministic fixtures: `health_check` reports `mode="mock"` and
 > every result carries `mode_effective="mock"`. None of this
 > comes from a real graph.

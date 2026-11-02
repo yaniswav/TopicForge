@@ -50,7 +50,7 @@ Each participant is reported as `ready` or `skipped (<what is missing>)`.
 Two participants are required, and the driver exits with an error without
 them:
 
-- Python / Cyclone: `pip install topicforge` (`setup` does it).
+- Python / Cyclone: `pip install -e ".[dds]"` (`setup` does it).
 - Rust / Dust: `cargo build --release` in `publishers/dust_publisher`.
 
 Every other participant is optional. It joins the bus automatically when its
@@ -86,7 +86,7 @@ nobody has built or started it.
 | OpenSplice | C | `opensplice_publisher/` | writes `DemoStatus` | Written, not run (experimental) |
 
 `.github/workflows/demo-fast.yml` builds the Fast DDS C++ participant and
-starts it for ten seconds (see the CI section).
+starts it for ten seconds. It has no run to show yet.
 
 Four vendor and language combinations have no binding at all and are not
 covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust. Two

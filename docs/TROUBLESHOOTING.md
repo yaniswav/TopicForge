@@ -7,7 +7,8 @@ Common errors and what to do about them. Each section is titled with a substring
 The server prints one line to stderr and exits with code 2, so your MCP client reports that it failed to start. One of the `TOPICFORGE_*` variables holds a value the settings loader rejects; it is deliberately strict so a typo cannot silently change behaviour. The common cases:
 
 - `Invalid TOPICFORGE_TELEMETRY=...`: only `on`, `1`, `true`, `yes`, `enabled` turn telemetry on, and only unset, `off`, `0`, `false`, `no`, `disabled` turn it off.
-- `Invalid TOPICFORGE_DDS_BACKEND='rti'; expected one of ('mock', 'cyclone', 'auto'). Use `cyclone`: ...` (also `fast`, `opensplice`, `coredx`, `intercom`, `opendds`, `dust`): these identifiers are rejected. Use `cyclone` or `auto`; a Cyclone participant still discovers RTI, CoreDX, OpenDDS, OpenSplice and Dust participants through standard RTPS discovery.
+- `Invalid TOPICFORGE_DDS_BACKEND='rti'; expected one of ('mock', 'cyclone', 'auto'). Use `cyclone`: ...` (also `opensplice`, `coredx`, `intercom`, `opendds`, `dust`): these identifiers, the retired Pro tier values and two permanent stubs, are rejected. Use `cyclone` or `auto`; a Cyclone participant still discovers RTI, CoreDX, OpenDDS, OpenSplice and Dust participants through standard RTPS discovery.
+- `Invalid TOPICFORGE_DDS_BACKEND='fast'; ... Fast DDS participants are observed through the `cyclone` backend`: the fastdds-based adapter was removed in 0.9.0. Use `cyclone`; it sees Fast DDS participants through standard RTPS discovery.
 - `Invalid TOPICFORGE_MODE`, `TOPICFORGE_LOG_LEVEL`, `TOPICFORGE_DDS_DOMAIN_ID` (an integer in `0..232`).
 
 Fix the variable in the `env` block of your MCP client configuration (or in the shell that spawns the server) and restart the client. Desktop clients show the stderr line in their MCP log.
