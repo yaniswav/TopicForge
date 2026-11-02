@@ -2580,9 +2580,16 @@ def _dg_severity_row(
         if not any(_dg_matches(e, f) for e in expected)
     ]
     missing = [_dg_label(e) for e in expected if _dg_missing(e, got, infos)]
+    # A responsiveness WARNING on an unseeded node is a 3 s parameter read that a loaded runner
+    # can miss (the finding itself says "or a loaded host"): machine dependent, WARN at most.
+    # The seeded blocked node and every other check stay exact.
+    slow = [a for a in false_alarms if severity == "warning" and a.startswith("responsiveness:")]
+    hard = [a for a in false_alarms if a not in slow]
     note = "the exact set the bench seeds"
-    if false_alarms:
-        note += f"; false alarm: {false_alarms}"
+    if hard:
+        note += f"; false alarm: {hard}"
+    if slow:
+        note += f"; slow parameter read (machine dependent, WARN at most): {slow}"
     if missing:
         note += f"; missing: {missing}"
     rep.add(
@@ -2590,7 +2597,7 @@ def _dg_severity_row(
         f"{call} {severity} findings",
         sorted(_dg_label(e) for e in expected),
         sorted(f"{f.get('check')}:{f.get('subject')}" for f in got),
-        "FAIL" if false_alarms or missing else "PASS",
+        "FAIL" if hard or missing else "WARN" if slow else "PASS",
         note,
         wall,
     )

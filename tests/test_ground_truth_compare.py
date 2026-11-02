@@ -1553,6 +1553,27 @@ def test_a_false_alarm_fails_the_cell_and_is_named(tmp_path: Path, bench_truth: 
     assert "false alarm" in notes and "topics:/goal_pose" in notes and "dds:/x" in notes
 
 
+def test_a_slow_parameter_read_on_an_unseeded_node_only_warns(
+    tmp_path: Path, bench_truth: dict
+) -> None:
+    call = bench_truth["diagnose"]["node"]["call"]
+
+    def mutate(r: dict) -> None:
+        extra = [_finding("warning", "responsiveness", "/bench_robot")]
+        _set_findings(r, call, r[call]["parsed"][0]["findings"] + extra)
+
+    code, failed, report = _dg_run(tmp_path, bench_truth, mutate)
+    assert code == 0 and not failed
+    assert f"{call} warning findings" in _metrics(report, "WARN")
+    critical = [_finding("critical", "responsiveness", "/bench_robot")]
+    code, failed, _ = _dg_run(
+        tmp_path / "critical",
+        bench_truth,
+        lambda r: _set_findings(r, call, r[call]["parsed"][0]["findings"] + critical),
+    )
+    assert code == 1 and f"{call} critical findings" in failed
+
+
 def test_a_seeded_fault_that_is_not_reported_fails_the_cell(
     tmp_path: Path, bench_truth: dict
 ) -> None:
