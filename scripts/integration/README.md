@@ -75,7 +75,7 @@ nobody has built or started it.
 | Cyclone DDS | Python | `cyclone_publisher.py` | writes `DemoOdom`, reads `DemoLidarScan` | Tested |
 | Dust DDS | Rust | `dust_publisher/` | writes `DemoLidarScan` | Tested |
 | Dust DDS | Python | `dust_py/` | `DemoHeartbeat` | Tested |
-| Fast DDS | C++ | `fast_publisher_cpp/` | writes `DemoImu`, reads `DemoOdom` | Written, not run |
+| Fast DDS | C++ | `fast_publisher_cpp/` | writes `DemoImu`, reads `DemoOdom` | Starts in CI (`demo-fast.yml`), not yet observed by TopicForge |
 | Fast DDS | Python | `fast_py/` | `DemoHeartbeat` | Written, not run (Linux only, built from source) |
 | RTI Connext | Python | `rti_publisher.py` | writes `DemoHeartbeat`, reads `DemoImu` | Written, not run (local, license) |
 | RTI Connext | C | `rti_c/` | `DemoHeartbeat` | Written, not run (local, license) |
@@ -86,7 +86,8 @@ nobody has built or started it.
 | OpenSplice | C | `opensplice_publisher/` | writes `DemoStatus` | Written, not run (experimental) |
 
 `.github/workflows/demo-fast.yml` builds the Fast DDS C++ participant and
-starts it for ten seconds. It has no run to show yet.
+starts it for ten seconds, weekly; it proves the participant starts, not that
+TopicForge observes it (green on 2026-10-19 and 2026-10-26).
 
 Four vendor and language combinations have no binding at all and are not
 covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust. Two
