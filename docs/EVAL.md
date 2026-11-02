@@ -321,9 +321,9 @@ What the runs taught:
 
 ## 0.9.0 campaign (v3)
 
-**Status: the `diagnose` variant ran on 2026-11-01** (branch `release/0.9.0`, ROS 2 Jazzy in WSL
-Ubuntu 24.04, Fast DDS for the robot, Cyclone for the observer). The agent variant is still to
-run.
+**Status: run on 2026-11-01 (`diagnose` variant) and 2026-11-02 (agent variant)** (branch
+`release/0.9.0`, ROS 2 Jazzy in WSL Ubuntu 24.04, Fast DDS for the robot, Cyclone for the
+observer, one blind Sonnet agent per run).
 
 ### What it is for
 
@@ -358,3 +358,36 @@ Two runs only partly cover the scenario:
 - **`graph_v1_v2`:** there is nothing to report, because a launch change is not a fault. That question belongs to `graph_diff`. `diagnose` stays silent on it, which is the right result for a sweep that compares with nothing.
 
 `blocked_executor` comes out as a warning, not a critical: `/bench_blocked` is not named, and a timed-out read on an unnamed node is a warning by design (`docs/CONTRACT.md` section 9.21).
+
+### Results: an agent with the seventeen tools, no prompt
+
+| Scenario | Grade | Tool calls (broker) | First call | Sequence |
+|---|---|---|---|---|
+| `healthy` | correct, no false alarm | 11 | `health_check`, then `diagnose` | the agent re-checked every area after a clean `diagnose` |
+| `blocked_executor` | correct | 7 | `diagnose` | confirmed with `get_node_info(timeout_s=8)` |
+| `tf_stale` | correct (`map -> odom` stale, `/bench_robot`) | 6 | `inspect_tf` | `diagnose` third |
+| `qos_mismatch` | correct (Reliability, both nodes named, both fixes) | 2 | `detect_qos_mismatches` | |
+| `restart_loop` | correct (`/path_planner`, 10 restarts; truth 9 at first call, 12 at stop) | 5 | `diagnose` | |
+| `declared_drift` | correct (`max_range`, `extra_gain`, `arm_link`) | 7 | `list_nodes` | four `sample_messages`, to read the URDF by hand |
+| `graph_v1_v2` | correct (the three changes, nothing else) | 3 | `graph_diff` | |
+
+Seven correct answers out of seven, and no false alarm. The median is 6 calls, against 12 for v2
+with the prompt alone (v2 tools-only sum 63, v3 sum 41). The plan's target of 4 or fewer is not
+met. The roadmap's original rule, 6 calls or fewer, is met. Two runs carry the median:
+
+- **`healthy` (11 calls):** the question ("before we ship") invites a full audit. The agent
+  called `diagnose` second, then re-checked each area by hand.
+- **`declared_drift` (7 calls):** the parameter half needs `params_file`, which `diagnose` does
+  not take, and the agent read the URDF itself to check the joint parents.
+
+The agents' feedback, in short:
+- `diagnose` was named the right entry point in every run where it was called.
+- Its verdict caveat ("data flow itself is not observed") kept a clean result from being read as
+  "healthy".
+- Wanted: `suggested_fixes` on the non-QoS findings, a restart count that says it is still
+  growing, and node names in `participant_events`.
+- `inspect_tf` with the default `stale_after_s` 2 and `window_s` 5 missed the stale edge on the
+  first call. `diagnose` uses 8 s and caught it.
+- The `<node_name>` placeholder in the QoS fix text could be the known node.
+- Static frames (`age_s` null, `last_stamp_ns` 0) read as missing data.
+
