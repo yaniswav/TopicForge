@@ -191,7 +191,7 @@ def _backends_from_adapter_name(name: str) -> tuple[RosBackendTag, DdsBackendTag
     """Split an adapter tag into its ROS2 and DDS halves.
 
     `mock` serves both halves, `ros2_cli` is ROS2 only, a bare DDS tag
-    (`cyclone`, `fast`, ...) is DDS only, and `ros2_cli+<dds>` is a
+    (`cyclone`) is DDS only, and `ros2_cli+<dds>` is a
     composite. A half the adapter does not serve reports `"none"`.
     """
     if name == "mock":

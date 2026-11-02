@@ -388,9 +388,8 @@ class TopicMetrics(BaseModel):
     """Temporal metrics for a single DDS topic over a recent window.
 
     Built from samples that pass through `peek_dds_samples`. The buffer is
-    filled on demand because neither the `cyclonedds` nor the `fastdds`
-    Python binding has a reliable per-sample callback, so a burst between two
-    calls is not seen.
+    filled on demand because the `cyclonedds` Python binding has no reliable
+    per-sample callback, so a burst between two calls is not seen.
 
     Numeric fields are `None` (`0` for `sequence_gaps_count`) when the data is
     missing: no samples, no source timestamps, no sequence number in the

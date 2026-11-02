@@ -1,6 +1,6 @@
 """Tests for the vendor QoS -> canonical QosProfile normalizers.
 
-These were extracted from the Cyclone and Fast adapters so they can be tested WITHOUT the `cyclonedds` /
+These were extracted from the Cyclone adapter (and the Fast adapter, removed in 0.9.0) so they can be tested WITHOUT the `cyclonedds` /
 `fastdds` bindings installed. Before the extraction the entire QoS
 normalization path (the feeder of `detect_qos_mismatches`, the flagship
 DDS diagnostic) was unreachable by the suite, so a renamed policy key

@@ -172,7 +172,7 @@ class DiscoverySnapshot:
         """Every live endpoint as `EndpointInfo`, with its ROS 2 node name when known.
 
         The one place that builds endpoints from a snapshot, so no caller can
-        forget the gid -> node map (0.8.1 left it out of the QoS scan).
+        forget the gid -> node map.
         """
         return endpoint_infos_from_samples(
             self.participants,

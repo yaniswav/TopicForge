@@ -1,6 +1,6 @@
 """Tests for the binding-free DDS discovery-sample introspection helpers.
 
-Extracted from the Cyclone and Fast adapters so
+Extracted from the Cyclone adapter (and the Fast adapter, removed in 0.9.0) so
 the `getattr`-with-fallback field extraction is testable without the
 `cyclonedds` / `fastdds` bindings. The helpers stay vendor-qualified
 because the two vendors expose subtly different sample shapes; the tests

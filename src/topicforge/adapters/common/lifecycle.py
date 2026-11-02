@@ -1,9 +1,9 @@
 """Participant tracking shared by the DDS adapters.
 
 A bounded ring of `ParticipantEvent` plus a map of known participants,
-read by `participant_events`. The Fast adapter feeds it from listener
-callbacks, Cyclone from the `DiscoveryTracker` thread
-(`common/discovery_tracker.py`); the buffer starts no thread itself.
+read by `participant_events`. The Cyclone adapter feeds it from the
+`DiscoveryTracker` thread (`common/discovery_tracker.py`); the buffer starts
+no thread itself.
 
 The event ring holds `MAX_EVENTS` entries and the participant map
 `MAX_PARTICIPANTS` (tombstoned `"left"` entries are dropped first). A
@@ -179,8 +179,8 @@ class LifecycleBuffer:
     ) -> None:
         """Mark every active GUID of this domain missing from `observed_guids` as lost.
 
-        For polling adapters (Cyclone); Fast DDS reports losses through its
-        listener and calls `record_lost` directly.
+        For polling adapters (Cyclone). A callback-driven adapter would call
+        `record_lost` directly instead.
         """
         with self._lock:
             for guid, info in list(self._participants.items()):
