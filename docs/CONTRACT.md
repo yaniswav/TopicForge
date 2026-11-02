@@ -523,7 +523,7 @@ moves to the envelope of the listing.
 ### 7.3 Dead fields removed from `TopicInfo`
 
 `reader_count`, `writer_count` and `qos_profile` are removed. Checked by grep over `src/`:
-no adapter (`ros2_live`, `ros2_mock`, `dds_cyclone`, `dds_fast`, `composite`) and no
+no adapter (`ros2_live`, `ros2_mock`, `dds_cyclone`, `dds_fast` (removed in 0.9.0), `composite`) and no
 service ever assigns them, so they have always been `null`. Not to be confused with
 `TopicSummary.writer_count` and `TopicSummary.reader_count` in `list_endpoints`, which are
 filled and stay.
@@ -579,7 +579,7 @@ payloads are `_decode_status`, `_decode_note`, `_truncated_fields`, `_raw_text`,
   overloaded: this is additive.
 - `MessageSample.stamp_source` becomes non-nullable, with five values (2.2). It is set
   explicitly in `adapters/dds_cyclone/adapter.py` (lines 165 and 442),
-  `adapters/dds_fast/adapter.py` (line 314), `adapters/common/dds_helpers.py`
+  `adapters/dds_fast/adapter.py` (line 314; adapter removed in 0.9.0), `adapters/common/dds_helpers.py`
   (line 135) and the DDS fixtures of the mock adapter.
 
 ### 7.7 Decided by audit

@@ -367,11 +367,13 @@ Two runs only partly cover the scenario:
 | `blocked_executor` | correct | 7 | `diagnose` | confirmed with `get_node_info(timeout_s=8)` |
 | `tf_stale` | correct (`map -> odom` stale, `/bench_robot`) | 6 | `inspect_tf` | `diagnose` third |
 | `qos_mismatch` | correct (Reliability, both nodes named, both fixes) | 2 | `detect_qos_mismatches` | |
-| `restart_loop` | correct (`/path_planner`, 10 restarts; truth 9 at first call, 12 at stop) | 5 | `diagnose` | |
+| `restart_loop` | correct (`/path_planner`, 10 restarts; truth 9 at first call, 12 at stop) | 5 | `diagnose` | graded on the count while the agent read it (see below) |
 | `declared_drift` | correct (`max_range`, `extra_gain`, `arm_link`) | 7 | `list_nodes` | four `sample_messages`, to read the URDF by hand |
 | `graph_v1_v2` | correct (the three changes, nothing else) | 3 | `graph_diff` | |
 
-Seven correct answers out of seven, and no false alarm. The median is 6 calls, against 12 for v2
+The `restart_loop` count is graded against the restarts while the agent was reading (9 at its
+first call, 12 at stop), not against v2's `restarts_at_question` (5): the loop keeps running, and
+this agent started later than v2's. Seven correct answers out of seven, and no false alarm. The median is 6 calls, against 12 for v2
 with the prompt alone (v2 tools-only sum 63, v3 sum 41). The plan's target of 4 or fewer is not
 met. The roadmap's original rule, 6 calls or fewer, is met. Two runs carry the median:
 

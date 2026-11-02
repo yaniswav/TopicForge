@@ -57,7 +57,7 @@ On Linux or WSL with ROS 2 sourced (or in the bench image), one scenario at a ti
 
 ```
 source /opt/ros/humble/setup.bash
-python scripts/agent_eval/ros2_scenarios.py <scenario> [--variant tools|prompt] --out eval_runs
+python scripts/agent_eval/ros2_scenarios.py <scenario> [--variant tools|prompt|diagnose] --out eval_runs
 ```
 
 Scenarios: `healthy`, `blocked_executor`, `tf_stale`, `qos_mismatch`, `restart_loop`,
@@ -65,7 +65,8 @@ Scenarios: `healthy`, `blocked_executor`, `tf_stale`, `qos_mismatch`, `restart_l
 prints `READY`, the question, and the paths of the agent's prompt (`prompt.txt`) and working
 folder (`work/`, only `tf.py` and a README). Create the `stop` file in the run folder when the
 agent is done: the runner writes `summary.json` (the agent's tool calls, counted by the broker,
-and the true restart count for `restart_loop`). `--variant prompt` adds the text of
+and the true restart count for `restart_loop`). `--variant diagnose` (0.9.0) runs no agent: it calls `diagnose(budget_s=40)` once and writes
+`diagnose.json` and a ranked `summary.json`. `--variant prompt` adds the text of
 `inspect-ros2-robot` (or `--prompt diagnose-nav2`) to the instructions. `--print-only` shows the
 plan and the question without ROS 2. The Docker command, the procedure and the table of results
 are in `docs/EVAL.md`, "0.8.0 campaign (v2)"; the expected diagnoses are in `TRUTH_ROS2.md`.
