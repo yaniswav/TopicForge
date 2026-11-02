@@ -523,7 +523,7 @@ moves to the envelope of the listing.
 ### 7.3 Dead fields removed from `TopicInfo`
 
 `reader_count`, `writer_count` and `qos_profile` are removed. Checked by grep over `src/`:
-no adapter (`ros2_live`, `ros2_mock`, `dds_cyclone`, `dds_fast`, `composite`) and no
+no adapter (`ros2_live`, `ros2_mock`, `dds_cyclone`, `dds_fast` (removed in 0.9.0), `composite`) and no
 service ever assigns them, so they have always been `null`. Not to be confused with
 `TopicSummary.writer_count` and `TopicSummary.reader_count` in `list_endpoints`, which are
 filled and stay.
@@ -579,7 +579,7 @@ payloads are `_decode_status`, `_decode_note`, `_truncated_fields`, `_raw_text`,
   overloaded: this is additive.
 - `MessageSample.stamp_source` becomes non-nullable, with five values (2.2). It is set
   explicitly in `adapters/dds_cyclone/adapter.py` (lines 165 and 442),
-  `adapters/dds_fast/adapter.py` (line 314), `adapters/common/dds_helpers.py`
+  `adapters/dds_fast/adapter.py` (line 314; adapter removed in 0.9.0), `adapters/common/dds_helpers.py`
   (line 135) and the DDS fixtures of the mock adapter.
 
 ### 7.7 Decided by audit
@@ -1286,3 +1286,104 @@ Additive. `tools/list` grows by 467 bytes, to 97,315 (measured like `test_tool_l
   `/robot_description` (section 9.15).
 - HTTP transport: `TOPICFORGE_HTTP_TOKEN` and `--host` (SECURITY.md, docs/CLIENTS.md). No output
   change.
+
+### 9.19 Node names on QoS pairs (0.9.0, fix)
+
+No shape change. On a live DDS backend, `detect_qos_mismatches` fills `reader_node` and
+`writer_node` from the same gid -> node map as `list_endpoints` (section 9.16). In 0.8.1 the QoS
+scan built its endpoints without that map, so both fields were `null` on every pair even when
+`list_endpoints` named the nodes. The mock already filled them, which is why the tests did not
+see it. Comparator: section `visibility`, row "QoS pairs name the writer node" on
+`06_detect_qos_mismatches`.
+
+### 9.20 `tools/list` size: lane notes, field descriptions, ceiling (0.9.0)
+
+Descriptions only, no shape change. `tools/list` goes from 97,315 to 95,391 bytes before
+`diagnose` (measured like `test_tool_listing_stays_small`).
+
+- **Lane notes.** The `**Duration**` sentence of section 9.13 is shorter:
+  ``**Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.`` (DDS lock for
+  the DDS tools). Same facts; `test_tool_descriptions.py` still checks the lock, `45 s` and `busy`.
+- **Read-only phrases.** "Read-only; no side effects." and its variants are gone from the ROS 2
+  tool descriptions: every tool declares `readOnlyHint` (section 2). "**Read-only by
+  architecture**" stays on the DDS tools, which join the bus.
+- **Output field descriptions** are at most 120 characters, rewritten by hand with the same facts
+  (`test_output_field_descriptions_stay_short`). Two lost a pointer only: `vendor` no longer names
+  `vendor_source`, and `seen_count` no longer names `restarts_by_name`.
+- **Ceiling.** The test ceiling moves from 100,000 to 105,000 bytes, and the comparator's
+  `tools/list bytes` row with it. No known client breaks in that range; the clients that truncate
+  do it near 40,000 characters, a line crossed since 0.7.0.
+
+### 9.21 diagnose (tool 17, 0.9.0)
+
+The seventeenth tool served (the slot numbered 18 in the plan; 16 stays reserved for `get_image`).
+Additive: no existing tool changes shape. `tools/list` goes from 95,391 to 99,658 bytes (`diagnose`
+is 4,267: description 775, input schema 449, output schema 2,842), under the 105,000 test ceiling
+of section 9.20.
+
+**Call.** `diagnose(scope="all", budget_s=30, node=null)`. `scope` is `all`, `graph` (nodes,
+topics, parameter reads), `tf`, `dds` or `logs`; `budget_s` is 10..40; `node` is read first. Only
+invalid input raises (an `AdapterError`, so `isError: true`); a failing check never does.
+
+**Lane and budget.** ROS lane. The call holds the ROS lock for up to `budget_s`: other ROS tools
+answer `busy` meanwhile, `health_check` does not. The internal deadline is
+`min(now + budget_s, guard deadline - 2 s)`; a check that no longer fits is listed in
+`checks_skipped` with reason `budget`. The tf window shrinks to what is left (an `info` says so).
+
+**Sources.** Existing services only, no adapter method added: `list_nodes`, `list_topics`,
+`get_node_info`, `inspect_tf` (`window_s` 8, `stale_after_s` 2), `sample_messages` (`/rosout`, 50,
+`min_log_level` `error`, `timeout_s` 5: only lines logged while it listens), `detect_qos_mismatches`, `participant_events` (300 s),
+`list_participants` and the health report. On the DDS side it never calls `peek_dds_samples` or
+`topic_metrics`: the three DDS calls it makes are answered by the discovery caches
+(`tests/test_diagnose.py` records the adapter methods called and fails on either).
+
+**Checks, in execution order, and the severity table.** A `critical` exists only for a row below.
+
+| Check | critical | warning | info |
+|---|---|---|---|
+| `environment` | - | - | mock mode; SROS2 enabled. A missing backend is a `checks_skipped` entry |
+| `nodes` | - | a duplicated name; no node on a live graph | lifecycle nodes (state not read) |
+| `topics` | - | - | subscribers without a publisher, one finding (normal for command inputs such as `/cmd_vel`); publishers without a subscriber, one finding (`/rosout` and `/parameter_events` left out) |
+| `dds` | an `incompatible` QoS pair; a pair that never matches (partition, type name); a node with 3 or more lives in the window | a `risky` pair; a near-homonym topic hint; a node with 2 lives | participants that left; no endpoint visible |
+| `tf` | - | `stale`, `two_parents`, `cycle`, `static_and_dynamic`; a URDF link with no frame | several roots; `urdf_note`; a window cut by the budget |
+| `logs` | - | one per node that logged an `error` or `fatal` line (the newest line quoted) | no such line |
+| `responsiveness` | the node named in `node` did not answer a parameter read in 6 s | another node did not answer in 3 s (the text says to confirm with `get_node_info(node, timeout_s=8)`) | nodes the budget did not reach, named |
+
+`responsiveness` runs last, as the budget sink: nodes in the order named, lifecycle, then by name
+(`_ros2cli_*` left out), 3 s each while the budget lasts. A writer without a reader is never above
+`info`, and `ros_discovery_info` pairs stay out of the QoS scan.
+
+**Skips.** An `AdapterError` inside a check, or a backend the health report says is absent (no
+`ros2` CLI for the ROS checks, no DDS backend for `dds`), becomes a `checks_skipped` entry
+`{check, reason}` carrying the message. A node whose read raises (the named node is not on the
+graph) is listed the same way, with the node in `reason`, and the other nodes are still read.
+
+**Output.** `Diagnosis`: `findings` sorted by severity (`critical`, `warning`, `info`), then
+`check`, then `subject`, capped at 50 with `findings_total`; `critical_count`, `warning_count` and
+`info_count` cover all findings; `checks_run`, `checks_skipped`, `budget_s`, `elapsed_s`,
+`verdict`, `mode_effective`, `note`. A `Finding` has `severity`, `check`, `subject` (topic, node or
+frame), `text`, `evidence` (`{tool, field, value}`, `value` cut at 200 characters) and
+`suggested_fixes` (the `SuggestedFix` of section 3.1, copied from `detect_qos_mismatches`, empty
+elsewhere; the forbidden-verb test covers the copy).
+
+**Never healthy with a skip.** The verdict is one line and never says an all-clear while a check
+was skipped or the scope left checks out: it starts `Incomplete sweep:` and names what did not
+run. Only a full sweep with no skip and no critical or warning finding says `no critical or
+warning finding in the N checks run; data flow itself is not observed`. The word "healthy" is
+not used: discovery and `/rosout` show declared state, not data flow. On a live ROS 2-only setup
+(no DDS backend) the `dds` check is always skipped, so the verdict is never the clean line.
+
+**Mock.** The fixtures give one `critical` (the RELIABLE reader against the BEST_EFFORT writer on
+`/dds/qos_mismatch`, with its fixes), warnings for the stale `map -> odom`, the URDF link
+`gripper_link` and one per node with an error on `/rosout`, and three `info`; `checks_skipped` is
+empty and `elapsed_s` is under 1 s (`test_the_mock_diagnosis_is_derived_from_the_fixtures`).
+
+**Bench.** `calls_diagnose.json` (between `calls_nav_primitives.json` and `calls_graph_diff.json`,
+bench only): `50_diagnose` (`budget_s` 40) and `51_diagnose_node` (`node` `/bench_blocked`). The
+truth is the exact set of critical and warning findings the bench seeds (`stale` `map -> odom`,
+`tool` with two parents, `arm_link`, the errors of `/bench_robot`, the blocked node: a `warning`
+in `50`, or an `info` that names it if the budget did not reach it; a `critical` in `51`). Any
+other critical or warning is a false alarm and fails the cell. Also required: `checks_skipped`
+empty, `elapsed_s` within `budget_s`, counts that match the findings, a verdict that is not the
+clean line. Comparator section: `diagnose`.
+

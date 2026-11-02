@@ -110,9 +110,8 @@ _CLOCK_HINT_TTL_SEC = 120.0
 _DEFAULT_DDS_INACTIVE_REASON = (
     "install the Cyclone binding and select it: "
     '`pip install "topicforge[dds-cyclone]"` + '
-    "`TOPICFORGE_DDS_BACKEND=cyclone`. Fast DDS also works "
-    "(`TOPICFORGE_DDS_BACKEND=fast`) but its Python binding is not on "
-    "PyPI and must be built from eProsima's sources."
+    "`TOPICFORGE_DDS_BACKEND=cyclone`. Cyclone also observes Fast DDS "
+    "and other vendors' participants on the same domain."
 )
 
 

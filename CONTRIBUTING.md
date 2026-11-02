@@ -17,15 +17,15 @@ TopicForge is a small project run by one maintainer, so the contribution loop is
 - Cross-platform regressions. TopicForge is Windows-first ; if you
   hit a Mac / Linux-specific breakage, file it with the stack trace.
 - Reports from a real DDS bus. The Cyclone adapter has run against
-  Cyclone and Dust participants; the Fast adapter and other vendors on
-  the bus have not been observed yet. What you see there (what worked,
+  Cyclone, Fast DDS and Dust participants; RTI, OpenDDS and other
+  vendors on the bus have not been observed yet. What you see there (what worked,
   what raised, what looked wrong) helps more than anything else.
   Include the vendors on your bus and the `health_check` output.
   `python examples/dds/run_all.py` is a quick way to produce one.
 
 ## What contributions are harder to land
 
-- New MCP tools. The tool surface is kept deliberately small. File an issue describing the use case first; the
+- New MCP tools. The tool surface (seventeen tools, all read-only) is kept deliberately small, and the contract is additive-only. File an issue describing the use case first; the
   maintainer will close, defer, or sponsor the work.
 - New backends. The `MiddlewareAdapter` protocol is
   designed to take new adapters, but each one comes with a long-term
@@ -37,7 +37,7 @@ TopicForge is a small project run by one maintainer, so the contribution loop is
 
 ## Development setup
 
-Requires Python 3.10+. CI runs Python 3.10 / 3.11 / 3.12 / 3.13 on
+Requires Python 3.10+. CI runs Python 3.10 to 3.14 on
 Ubuntu and Windows, so avoid syntax or dependencies newer than 3.10.
 
 ```bash
@@ -51,7 +51,7 @@ pip install -e ".[dev]"
 
 ## The contract before a PR
 
-Every PR runs through CI on the matrix above. Locally:
+Every PR runs through CI on that matrix. Locally:
 
 ```bash
 make check       # lint + tests (Linux / macOS / WSL)
@@ -61,7 +61,7 @@ python -m ruff format --check src tests
 python -m pytest -q
 ```
 
-A green `make check` on Python 3.12 and your own platform is enough;
+A green run of those checks on Python 3.12 and your own platform is enough;
 CI covers the rest.
 
 ### Mock-first development

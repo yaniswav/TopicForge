@@ -3,7 +3,8 @@
 Kept here so the `getattr`-with-fallback logic is unit-testable without
 `cyclonedds` or `fastdds` installed. The two vendors expose different
 sample shapes, so the helpers stay vendor-qualified (`cyclone_*`, `fast_*`)
-and are not merged: the Fast paths have never run against a real bus.
+and are not merged. The `fast_*` helpers have no caller since the Fast DDS
+adapter was removed, and they never ran against a real bus.
 
 Every helper returns `None` or a safe default rather than raising, so one
 odd sample cannot fail a tool call.

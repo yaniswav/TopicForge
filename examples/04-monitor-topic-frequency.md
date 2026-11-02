@@ -91,12 +91,10 @@ Claude answers:
 ## What happens on a live bus
 
 `topic_metrics` only has data for the builtin topics. The buffer is filled
-when `peek_dds_samples` surfaces samples, neither binding exposes an
+when `peek_dds_samples` surfaces samples; the Cyclone binding exposes no
 at-receive callback, and only the builtin DCPS topics (`DCPSParticipant`,
-`DCPSSubscription`, `DCPSPublication`) surface any.
-Since 0.5.3 a user topic returns `samples_observed=0` with every metric
-`null`; before that, the Fast adapter counted placeholder samples it had
-made up. On a builtin topic:
+`DCPSSubscription`, `DCPSPublication`) surface any. A user topic returns `samples_observed=0` with every metric
+`null`. On a builtin topic:
 
 - `observed_frequency_hz` reflects how often you call
   `peek_dds_samples`. Samples from one call share one capture instant,
@@ -109,17 +107,12 @@ made up. On a builtin topic:
 `participant_events` works on live adapters. On Cyclone a background thread
 reads the builtin discovery topics every 0.5 s, so the timeline does not depend
 on when you call it; a participant that cycles faster than the discovery
-history depth between two passes can still be missed. Fast DDS uses listener
-callbacks and captures both arrival and removal, but that adapter has never
-run against a live bus.
+history depth between two passes can still be missed.
 
 ```bash
-pip install topicforge[dds-cyclone]
+pip install topicforge
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
-
-The Fast DDS adapter (`TOPICFORGE_DDS_BACKEND=fast`) needs a Python
-binding built from eProsima's sources; there is no PyPI extra for it.
 
 ## What to do about the jittery heartbeat
 

@@ -13,7 +13,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 ```
 
 The mock fixture models a small differential robot with LIDAR + RGB
-camera. Five ROS2 topics, deterministic across runs.
+camera. Ten ROS2 topics (including `/tf_static`, `/rosout` and `/imu/data`), deterministic across runs.
 
 ## Conversation
 
@@ -23,9 +23,9 @@ You:
 
 Claude calls: `health_check()` -> confirms `mode="mock"`,
 `requested_mode="mock"`, `ros_backend="mock"`. Then `list_topics()` ->
-returns a `TopicListing` of 5 topics: `/cmd_vel`, `/odom`, `/scan`, `/tf`,
-`/camera/image_raw` with publisher/subscriber counts and message types
-(`returned` 5, `total` 5, `truncated` false). QoS is not in the listing.
+returns a `TopicListing` of 10 topics, among them `/cmd_vel`, `/odom`, `/scan`, `/tf` and
+`/camera/image_raw`, with publisher/subscriber counts and message types
+(`returned` 10, `total` 10, `truncated` false). QoS is not in the listing.
 
 You:
 
@@ -45,10 +45,12 @@ You:
 
 Claude answers along these lines:
 
-> This is a small mobile robot. Three sensor topics
-> (`/scan` from a 2D LIDAR, `/camera/image_raw` from an RGB camera,
-> `/tf` for transforms), one odometry feedback (`/odom`), and one
-> command input (`/cmd_vel`). All five are mocked from
+> This is a small mobile robot. Three sensors (`/scan` from a 2D
+> LIDAR, `/camera/image_raw` from an RGB camera, `/imu/data` from an
+> IMU), transforms on `/tf` and `/tf_static`, the URDF on
+> `/robot_description`, one odometry feedback (`/odom`), one command
+> input (`/cmd_vel`), plus `/rosout` and a lifecycle event topic from
+> the camera driver. All of it is mocked from
 > deterministic fixtures: `health_check` reports `mode="mock"` and
 > every result carries `mode_effective="mock"`. None of this
 > comes from a real graph.

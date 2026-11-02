@@ -41,8 +41,8 @@ class QosProfile(BaseModel):
     )
     durability: Literal["VOLATILE", "TRANSIENT_LOCAL", "TRANSIENT", "PERSISTENT"] = Field(
         description=(
-            "`VOLATILE` keeps nothing for late joiners, `TRANSIENT_LOCAL` does; a "
-            "TRANSIENT_LOCAL reader cannot match a VOLATILE writer."
+            "`VOLATILE` keeps nothing for late joiners, `TRANSIENT_LOCAL` does; TRANSIENT_LOCAL "
+            "readers skip VOLATILE writers."
         )
     )
     history: Literal["KEEP_LAST", "KEEP_ALL"] | None = Field(
@@ -97,8 +97,8 @@ class QosProfile(BaseModel):
     partitions: list[str] | None = Field(
         default=None,
         description=(
-            'Partition names; the default partition is `[""]`, never `[]`. Endpoints '
-            "match only if partitions intersect; `None` when unreadable."
+            'Partition names; default `[""]`, never `[]`. Endpoints match only if '
+            "partitions intersect; `None` if unreadable."
         ),
     )
     latency_budget_ns: int | None = Field(
@@ -119,8 +119,8 @@ class QosProfile(BaseModel):
     unknown_policies: list[str] | None = Field(
         default=None,
         description=(
-            "Policies announced but unreadable (e.g. `Deadline`): their fields are "
-            "`None`, which does NOT mean infinite; the scan does not compare them."
+            "Announced but unreadable (e.g. `Deadline`): fields are `None`, which does NOT mean "
+            "infinite; the scan skips them."
         ),
     )
 
@@ -167,9 +167,8 @@ class ParticipantInfo(BaseModel):
     )
     vendor: _DdsVendor = Field(
         description=(
-            "DDS implementation read from the GUID vendor prefix: cyclone, fast, rti, "
-            "rti_micro, opensplice, opendds, coredx, intercom, dust, mock or `unknown` "
-            "(Dust DDS and RTI Connext do not put theirs there); see `vendor_source`."
+            "GUID vendor prefix: cyclone, fast, rti, rti_micro, opensplice, opendds, coredx, "
+            "intercom, dust, mock or `unknown`."
         )
     )
     hostname: str | None = Field(
@@ -211,8 +210,8 @@ class ParticipantInfo(BaseModel):
         default=1,
         ge=1,
         description=(
-            "Discovery observations of this GUID in this server's lifetime. Not a "
-            "restart count: a restart is a new GUID (see `restarts_by_name`)."
+            "Discovery observations of this GUID since server start. Not a restart count: a "
+            "restart is a new GUID."
         ),
     )
     announced_ns: int | None = Field(
@@ -227,9 +226,8 @@ class ParticipantInfo(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Once `left`: ns upper bound of the death (exact after a clean shutdown; "
-            "after a crash the lease expiry, up to one lease earlier: 10 s Cyclone, 20 "
-            "s Fast, 100 s RTI). `None` while active."
+            "Once `left`, ns upper bound of the death; after a crash up to one lease late (Cyclone "
+            "10 s, Fast 20 s, RTI 100 s)."
         ),
     )
     lost_time_source: TimeSource | None = Field(
@@ -273,8 +271,8 @@ class NameLifecycle(BaseModel):
 
 
 _RESTARTS_DESC = (
-    "Names seen with several GUIDs or lost at least once (absent: ran once and stayed). "
-    "A restart is a new GUID with the same name."
+    "Names seen with several GUIDs or lost at least once (absent: ran once). A restart is a new "
+    "GUID, same name."
 )
 _RESTARTS_NOTE_DESC = "Set when unnamed participants were left out of `restarts_by_name`."
 
@@ -341,9 +339,8 @@ class ParticipantEvent(BaseModel):
     time_source: TimeSource = Field(
         default="observed_local",
         description=(
-            "`dds_source_timestamp` (DDS timestamp of the announcement or dispose; for "
-            "`lost` an upper bound of the death) or `observed_local` (when TopicForge "
-            "noticed, weakest)."
+            "`dds_source_timestamp` (of the announcement or dispose; for `lost` an upper bound) or "
+            "`observed_local` (weakest)."
         ),
     )
     observed_ns: int | None = Field(
@@ -391,9 +388,8 @@ class TopicMetrics(BaseModel):
     """Temporal metrics for a single DDS topic over a recent window.
 
     Built from samples that pass through `peek_dds_samples`. The buffer is
-    filled on demand because neither the `cyclonedds` nor the `fastdds`
-    Python binding has a reliable per-sample callback, so a burst between two
-    calls is not seen.
+    filled on demand because the `cyclonedds` Python binding has no reliable
+    per-sample callback, so a burst between two calls is not seen.
 
     Numeric fields are `None` (`0` for `sequence_gaps_count`) when the data is
     missing: no samples, no source timestamps, no sequence number in the
@@ -429,8 +425,8 @@ class TopicMetrics(BaseModel):
     declared_frequency_hz: float | None = Field(
         default=None,
         description=(
-            "`1 / deadline` of the shortest writer Deadline announced: the promised "
-            "rate, not the observed one; `None` when none announced."
+            "`1 / deadline` of the shortest announced writer Deadline: promised, not observed; "
+            "`None` when none announced."
         ),
     )
     status: Literal["ok", "no_samples_yet", "unsupported_user_topic"] = Field(
@@ -599,9 +595,8 @@ class NotMatchedPair(BaseModel):
     suggested_fixes: list[SuggestedFix] = Field(
         default_factory=list,
         description=(
-            "Fixes proposed as text for a human to apply; TopicForge never applies them. "
-            "Only for a `partition` split, and only on the first pair of identical splits "
-            "on a topic. Empty when it proposes none for this finding."
+            "Text fixes for a human, never applied. Only for a `partition` split, on the first of "
+            "identical splits per topic."
         ),
     )
 
@@ -630,8 +625,8 @@ class MatchedPair(BaseModel):
     late_joiner: bool = Field(
         default=False,
         description=(
-            "True for a VOLATILE writer whose reader joined over 1 s later on the same "
-            "host: earlier samples are not delivered. Normal."
+            "True for a VOLATILE writer whose same-host reader joined over 1 s later: earlier "
+            "samples are lost. Normal."
         ),
     )
     late_joiner_note: str | None = Field(
@@ -649,8 +644,8 @@ class MismatchScan(BaseModel):
     )
     not_matched: list[NotMatchedPair] = Field(
         description=(
-            "Pairs DDS never matches (partition or type name). Non-empty with empty "
-            "`reports` is NOT all-clear: no data flows between them."
+            "Pairs DDS never matches (partition or type name). Non-empty with empty `reports` is "
+            "NOT all-clear: no data flows."
         )
     )
     matched: list[MatchedPair] = Field(
@@ -822,8 +817,8 @@ class MessageSample(BaseModel):
     message_type: str = Field()
     timestamp_ns: int = Field(
         description=(
-            "Publisher-clock ns: `header.stamp`, else the time in the body of `Clock`, "
-            "`TFMessage` or `Log`, else 0 (see `stamp_source`); not the arrival time."
+            "Publisher-clock ns, not arrival: `header.stamp`, else the `Clock`/`TFMessage`/`Log` "
+            "body time, else 0 (`stamp_source`)."
         )
     )
     stamp_source: Literal["header", "payload", "recorded", "dds_source", "none"] = Field(
@@ -845,9 +840,8 @@ class MessageSample(BaseModel):
     payload: dict[str, object] = Field(
         default_factory=dict,
         description=(
-            "Message fields as nested values; `nan`/`inf` are strings. Live "
-            "`sample_messages` adds `_truncated_fields` (cut paths) and `_raw_text` "
-            "(unparsable output)."
+            "Message fields, nested; `nan`/`inf` as strings. Live adds `_truncated_fields` (cut "
+            "paths), `_raw_text` (unparsable)."
         ),
     )
     summary: Annotated[MessageSummary | None, WithJsonSchema(_SUMMARY_ADVERTISED)] = Field(
@@ -880,9 +874,8 @@ class BagTopicStats(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Average Hz: (count - 1) over the topic's own time span (see "
-            "`frequency_basis`); `null` under 2 messages, a zero span, or a latched "
-            "start-up burst (all within 1 s)."
+            "(count - 1) / the topic's own span (`frequency_basis`); `null` under 2 messages, zero "
+            "span or a latched 1 s burst."
         ),
     )
     first_timestamp_ns: int | None = Field(
@@ -944,8 +937,8 @@ class BagAnalysis(BaseModel):
     start_ns: int | None = Field(
         default=None,
         description=(
-            "Record time in ns of the bag's first message (rosbag2 `starting_time`): the zero "
-            "of `peek_bag_samples` `start_s` / `end_s`. `null` when unreadable."
+            "Record ns of the bag's first message (rosbag2 `starting_time`), the zero of "
+            "`start_s`/`end_s`; `null` if unreadable."
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)
@@ -974,8 +967,8 @@ class SampleResult(BaseModel):
     count: int = Field(
         ge=0,
         description=(
-            "Number of samples in `samples`: fewer than requested when the topic gave "
-            "fewer, never more than 50 (a larger request is capped to 50)."
+            "Samples in `samples`: fewer than requested when the topic gave fewer; a request above "
+            "50 is capped to 50."
         ),
     )
     samples: list[MessageSample] = Field(description="The samples, in backend order.")
@@ -1000,8 +993,8 @@ class HealthReport(BaseModel):
 
     mode: str = Field(
         description=(
-            "Mode serving: `mock` or `live` (`live` with `ros_backend` `none`: DDS tools "
-            "only); may differ from `requested_mode` after a fallback."
+            "Mode serving: `mock` or `live` (`live` + `ros_backend` `none`: DDS tools only); may "
+            "differ from `requested_mode`."
         )
     )
     requested_mode: str = Field(description="Mode requested by configuration (may be `auto`).")
@@ -1030,7 +1023,7 @@ class HealthReport(BaseModel):
     ] = Field(
         default="none",
         description=(
-            "DDS backend serving: `mock`, `cyclone`, `fast`, or `none` (DDS module inactive)."
+            "DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive); `fast` is retired."
         ),
     )
     dds_inactive_note: str | None = Field(
@@ -1104,8 +1097,8 @@ class HealthReport(BaseModel):
     sim_clock_published: bool | None = Field(
         default=None,
         description=(
-            "Whether `/clock` had a publisher at the last graph read (stamps may be sim "
-            "time); `None` in mock or without a recent read."
+            "Whether `/clock` had a publisher at the last graph read (stamps may be sim time); "
+            "`None` in mock or unread."
         ),
     )
     payload_decoding: Literal["disabled", "enabled"] = Field(
@@ -1321,8 +1314,8 @@ class EndpointListing(BaseModel):
         default=0,
         ge=0,
         description=(
-            "Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, "
-            "`ros_discovery_info`) left out while `include_internal` is false."
+            "Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) "
+            "hidden unless `include_internal`."
         ),
     )
     hints: list[str] = Field(

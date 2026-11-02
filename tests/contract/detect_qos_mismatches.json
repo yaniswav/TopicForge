@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Detect QoS mismatches"
   },
-  "description": "Explain why DDS readers and writers on a topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `summary` (one line, read it first), `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists what would also break once fixed), `hints` (probable typos in orphan topic names, type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, where announced). **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot see). Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; `*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose reader joined later on the same host: normal. Reports and partition splits carry `suggested_fixes`: text for a human, never applied by TopicForge; `verify_with` names the call that confirms the repair. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; mock returns fixtures. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
+  "description": "Explain why DDS readers and writers on a topic do not talk, and who will. Pairs every reader with every writer per topic and returns a `MismatchScan`: `summary` (one line, read it first), `matched` (pairs DDS will connect given the announced QoS; data flow is not observed), `reports` (incompatible or risky QoS pairs, with participant names, requested vs offered values and the failed rule in `details`), `not_matched` (pairs DDS never matches: different partitions or type names; the QoS rules are NOT evaluated for them, and `latent_incompatible_policies` lists what would also break once fixed), `hints` (probable typos in orphan topic names, type id notes), plus `pairs_checked`, `topics_scanned`, `policies_checked` and `policies_unchecked`. Checked: Partition (`*` and `?` wildcards), type name, Reliability, Durability, Deadline, Liveliness, LatencyBudget, Ownership, DestinationOrder, DataRepresentation, History (risky only, where announced). **An empty `reports` with a non-empty `not_matched` still means no data flows**, and an all-empty result does not prove the bus healthy: discovery shows the QoS DECLARED, not runtime behavior (a 'deadline missed' log with compatible QoS means the writer's real period exceeds the deadline, which TopicForge cannot see). Pass `topic` to scope the scan. The lists are capped at 200 each (`truncated`; `*_total` keep the counts). A `late_joiner` match is a VOLATILE writer whose reader joined later on the same host: normal. Reports and partition splits carry `suggested_fixes`: text for a human, never applied by TopicForge; `verify_with` names the call that confirms the repair. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active; mock returns fixtures. **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held.",
   "inputSchema": {
     "properties": {
       "topic": {
@@ -31,7 +31,7 @@
         "additionalProperties": false,
         "properties": {
           "late_joiner": {
-            "description": "True for a VOLATILE writer whose reader joined over 1 s later on the same host: earlier samples are not delivered. Normal.",
+            "description": "True for a VOLATILE writer whose same-host reader joined over 1 s later: earlier samples are lost. Normal.",
             "type": "boolean"
           },
           "late_joiner_note": {
@@ -249,7 +249,7 @@
             "type": "string"
           },
           "suggested_fixes": {
-            "description": "Fixes proposed as text for a human to apply; TopicForge never applies them. Only for a `partition` split, and only on the first pair of identical splits on a topic. Empty when it proposes none for this finding.",
+            "description": "Text fixes for a human, never applied. Only for a `partition` split, on the first of identical splits per topic.",
             "items": {
               "$ref": "#/$defs/SuggestedFix"
             },
@@ -386,7 +386,7 @@
         "type": "string"
       },
       "not_matched": {
-        "description": "Pairs DDS never matches (partition or type name). Non-empty with empty `reports` is NOT all-clear: no data flows between them.",
+        "description": "Pairs DDS never matches (partition or type name). Non-empty with empty `reports` is NOT all-clear: no data flows.",
         "items": {
           "$ref": "#/$defs/NotMatchedPair"
         },

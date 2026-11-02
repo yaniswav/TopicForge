@@ -55,7 +55,9 @@ import tf  # noqa: E402
 
 DEFAULT_PORT = 8801
 PROMPTS = ("inspect-ros2-robot", "diagnose-nav2")
-VARIANTS = ("tools", "prompt")
+VARIANTS = ("tools", "prompt", "diagnose")
+# `diagnose` (0.9.0): no agent; the runner calls the tool once and records what it found.
+DIAGNOSE_BUDGET_S = 40
 # Seconds between "the robot is up" and "the agent starts": past the point where the fault
 # can be seen (restart_loop needs several restarts; tf_stale a few tf captures).
 SETTLE_S = {
@@ -234,9 +236,12 @@ def plan(fault: str, port: int, variant: str, prompt_name: str) -> list[str]:
     if fault == faults.GRAPH_V1_V2:
         steps.append(f"graph_diff baseline {BASELINE_AFTER_S} s in, then the change, then wait")
     steps.append(f"settle {SETTLE_S[fault]} s")
-    steps.append(
-        "agent: tools only" if variant == "tools" else f"agent: tools + prompt {prompt_name}"
-    )
+    if variant == "diagnose":
+        steps.append(f"no agent: one diagnose(budget_s={DIAGNOSE_BUDGET_S}) call, then stop")
+    elif variant == "tools":
+        steps.append("agent: tools only")
+    else:
+        steps.append(f"agent: tools + prompt {prompt_name}")
     return steps
 
 
@@ -305,6 +310,43 @@ def _interrupt(signum: int, frame: object) -> None:
     raise KeyboardInterrupt
 
 
+def diagnose_summary(fault: str, answer: dict[str, Any], elapsed_s: float) -> dict[str, Any]:
+    """The `diagnose` variant's summary: what was found, by severity, in ranked order."""
+    out = {} if answer.get("isError") else answer
+    findings = out.get("findings") or []
+    ranked = [
+        {"severity": f.get("severity"), "check": f.get("check"), "subject": f.get("subject")}
+        for f in findings
+        if f.get("severity") in ("critical", "warning")
+    ]
+    return {
+        "scenario": fault,
+        "variant": "diagnose",
+        "budget_s": DIAGNOSE_BUDGET_S,
+        "wall_s": round(elapsed_s, 1),
+        "elapsed_s": out.get("elapsed_s"),
+        "critical_count": out.get("critical_count"),
+        "warning_count": out.get("warning_count"),
+        "checks_skipped": out.get("checks_skipped") or [],
+        "verdict": out.get("verdict"),
+        "ranked": ranked,
+        "error": answer.get("content") if answer.get("isError") else None,
+    }
+
+
+def record_diagnose(run_dir: Path, fault: str, port: int) -> int:
+    """Call `diagnose` once, keep the raw answer and a ranked summary."""
+    started = time.monotonic()
+    answer = tf.ask(
+        "127.0.0.1", port, {"tool": "diagnose", "args": {"budget_s": DIAGNOSE_BUDGET_S}}
+    )
+    (run_dir / "diagnose.json").write_text(json.dumps(answer, indent=1), encoding="ascii")
+    summary = diagnose_summary(fault, answer, time.monotonic() - started)
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=1), encoding="ascii")
+    print(json.dumps(summary), flush=True)
+    return 0
+
+
 def run(a: argparse.Namespace) -> int:
     fault, port = a.scenario, a.port
     if os.name == "nt":
@@ -359,6 +401,8 @@ def run(a: argparse.Namespace) -> int:
         time.sleep(SETTLE_S[fault])
         tf.ask("127.0.0.1", port, {"tool": "list_participants", "args": {}})  # seen everyone
 
+        if a.variant == "diagnose":
+            return record_diagnose(run_dir, fault, port)
         prompt_text = None
         if a.variant == "prompt":
             prompt_text = tf.ask("127.0.0.1", port, {"prompt": a.prompt, "args": {}})["text"]

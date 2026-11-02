@@ -16,7 +16,8 @@ INSTRUCTIONS = (
     "TopicForge is a read-only observer of ROS 2 and DDS: it never publishes, commands "
     "or changes QoS, and no tool can. Call `health_check` first: it always answers, "
     "tells a real bus (`mode` live) from fixtures (`mode` mock), and reports "
-    f"`contract_version` (this server speaks {CONTRACT_VERSION}). Then use `list_topics` / "
+    f'`contract_version` (this server speaks {CONTRACT_VERSION}). For "is anything wrong", '
+    "call `diagnose` first: one ranked sweep. Then use `list_topics` / "
     "`get_topic_info` / `list_nodes` / `get_node_info` / `inspect_tf` / `sample_messages` for a ROS 2 graph, `list_participants` / "
     "`list_endpoints` / `detect_qos_mismatches` / `participant_events` for a DDS bus, and "
     "`analyze_bag` / `peek_bag_samples` for recordings. Every result carries "
@@ -54,7 +55,7 @@ _INSPECT = """\
 Inspect a ROS 2 robot or a recorded bag with the TopicForge tools. They only read; \
 never suggest publishing, commanding or changing the robot.
 {focus}
-Live graph:
+Live graph (when the question is "is anything wrong", call `diagnose` first: one ranked sweep that holds the ROS lock up to `budget_s`; then read what it names with the steps below):
 
 1. `health_check`. If `mode` is `mock`, the data is a fictional demo robot, not the user's: say so. If `ros_backend` is `none` there is no ROS 2 CLI; use `list_endpoints` instead.
 2. `list_topics`: names, types, publisher and subscriber counts, in `topics`. QoS is not in the listing: `get_topic_info` gives `publisher_qos`, `subscription_qos` and the node names on each side.

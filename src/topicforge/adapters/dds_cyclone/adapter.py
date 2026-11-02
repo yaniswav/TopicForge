@@ -439,13 +439,7 @@ class CycloneDdsAdapter:
         to `common.qos_scan.scan_endpoints`.
         """
         snap = self._caches.snapshot(self._domain_id)
-        parts, pubs, subs = snap.participants, snap.publications, snap.subscriptions
-        endpoints = endpoint_infos_from_samples(
-            parts,
-            pubs,
-            subs,
-            observer_guid=self._observer_guid(),
-        )
+        endpoints = snap.endpoint_infos(self._observer_guid())
         hostnames = {p.guid: p.hostname for p in snap.participant_infos}
         return scan_endpoints(endpoints, topic=topic, mode_effective="live", hostnames=hostnames)
 

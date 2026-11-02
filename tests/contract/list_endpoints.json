@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "List DDS endpoints"
   },
-  "description": "List every DDS endpoint (writer and reader) announced on the bus as an `EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. `rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS topic), `type_name`, `type_id`, the owning `participant_guid` with `participant_name`, and a structured `qos`. Use it instead of parsing `peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` `compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, `announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with `topic` or `participant_guid` to read one topic's full QoS. **Orphans**: `by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, `orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader nobody publishes to) and the union of partitions. In `qos`, a duration or policy of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers; which one owns an instance is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (listed in `endpoints` only with `include_departed`), so a topic that lost its only writer is explained in one call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching nothing returns a `note` with the closest topics. **This lists discovery facts, not data flow**: it cannot tell a silent or hung writer from a healthy one; pair it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless `include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. **Raises an MCP error** when no DDS module is active; mock returns a fixture. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
+  "description": "List every DDS endpoint (writer and reader) announced on the bus as an `EndpointListing`; one `EndpointInfo` each with `role`, `dds_topic` (raw, e.g. `rt/scan`), `ros_topic` (`/scan`; `null` with `ros_topic_note` for a non-ROS topic), `type_name`, `type_id`, the owning `participant_guid` with `participant_name`, and a structured `qos`. Use it instead of parsing `peek_dds_samples` and joining GUID prefixes. **Large buses**: pass `fields` `compact` to replace each `qos` by a one-line `qos_summary` and drop `type_id`, `announced_ns` and `ros_topic_note`; the default `full` is verbose, so scope with `topic` or `participant_guid` to read one topic's full QoS. **Orphans**: `by_topic` rolls endpoints up per topic with `writer_count`, `reader_count`, `orphan` (`no_reader` = a writer nobody subscribes to, `no_writer` = a reader nobody publishes to) and the union of partitions. In `qos`, a duration or policy of `None` is infinite/unset or not announced. Among EXCLUSIVE writers the live one with the highest `ownership_strength` delivers; which one owns an instance is runtime state TopicForge cannot observe. **Departed endpoints**: a leaving participant's endpoints are remembered (last 200, 1 h) and shown in `by_topic` as `departed_writers` / `departed_readers` (listed in `endpoints` only with `include_departed`), so a topic that lost its only writer is explained in one call. **Topic filter**: `rt/scan` and `scan` match each other; a filter matching nothing returns a `note` with the closest topics. **This lists discovery facts, not data flow**: it cannot tell a silent or hung writer from a healthy one; pair it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless `include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 endpoints (`truncated`, `total`); `by_topic` covers all matches. **Raises an MCP error** when no DDS module is active; mock returns a fixture. **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held.",
   "inputSchema": {
     "properties": {
       "domain_id": {
@@ -255,7 +255,7 @@
             ]
           },
           "durability": {
-            "description": "`VOLATILE` keeps nothing for late joiners, `TRANSIENT_LOCAL` does; a TRANSIENT_LOCAL reader cannot match a VOLATILE writer.",
+            "description": "`VOLATILE` keeps nothing for late joiners, `TRANSIENT_LOCAL` does; TRANSIENT_LOCAL readers skip VOLATILE writers.",
             "enum": [
               "VOLATILE",
               "TRANSIENT_LOCAL",
@@ -340,7 +340,7 @@
             ]
           },
           "partitions": {
-            "description": "Partition names; the default partition is `[\"\"]`, never `[]`. Endpoints match only if partitions intersect; `None` when unreadable.",
+            "description": "Partition names; default `[\"\"]`, never `[]`. Endpoints match only if partitions intersect; `None` if unreadable.",
             "items": {
               "type": "string"
             },
@@ -358,7 +358,7 @@
             "type": "string"
           },
           "unknown_policies": {
-            "description": "Policies announced but unreadable (e.g. `Deadline`): their fields are `None`, which does NOT mean infinite; the scan does not compare them.",
+            "description": "Announced but unreadable (e.g. `Deadline`): fields are `None`, which does NOT mean infinite; the scan skips them.",
             "items": {
               "type": "string"
             },
@@ -499,7 +499,7 @@
         "type": "string"
       },
       "hidden_internal_endpoint_count": {
-        "description": "Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) left out while `include_internal` is false.",
+        "description": "Service/action endpoints (`rq/`, `rr/`, `rs/`, `rp/`, `ra/`, `ros_discovery_info`) hidden unless `include_internal`.",
         "minimum": 0,
         "type": "integer"
       },

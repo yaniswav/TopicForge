@@ -1,8 +1,8 @@
 # DDS quickstart
 
-A short tour of TopicForge's DDS observability tools. The server joins the bus as a read-only DDS-RTPS participant and reads the builtin discovery topics, which the OMG protocol standardizes for every conformant vendor (observed so far: Cyclone DDS and Dust DDS). The `MiddlewareAdapter` protocol has no write method, so the MCP client cannot publish back on any backend. This guide does not assume ROS2.
+A short tour of TopicForge's DDS observability tools. The server joins the bus as a read-only DDS-RTPS participant and reads the builtin discovery topics, which the OMG protocol standardizes for every conformant vendor (observed so far: Cyclone DDS, Fast DDS and Dust DDS). The `MiddlewareAdapter` protocol has no write method, so the MCP client cannot publish back on any backend. This guide does not assume ROS2.
 
-Validation status. The Cyclone adapter has run against a live bus, with a Python / Cyclone participant and Dust DDS participants in Rust, Python and C, on Windows and in CI (Ubuntu and Windows, `.github/workflows/demo.yml`); see [`scripts/integration/README.md`](../scripts/integration/README.md). Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) are observed by the Cyclone adapter on every run of the ROS 2 test bench in CI; the Fast DDS adapter itself (joining through the `fastdds` binding) has never run against a bus, and no RTI, OpenDDS, CoreDX or OpenSplice participant has been observed yet. For runnable live scenarios (who is on the bus, why two nodes cannot talk, a node that crashed, a late joiner that misses data), see [`examples/dds/README.md`](../examples/dds/README.md). Multi-vendor positioning: [`dds-interop-matrix.md`](dds-interop-matrix.md).
+Validation status. The Cyclone adapter has run against a live bus, with a Python / Cyclone participant and Dust DDS participants in Rust, Python and C, on Windows and in CI (Ubuntu and Windows, `.github/workflows/demo.yml`); see [`scripts/integration/README.md`](../scripts/integration/README.md). Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) are observed by the Cyclone adapter on every run of the ROS 2 test bench in CI. No RTI, OpenDDS, CoreDX or OpenSplice participant has been observed yet. For runnable live scenarios (who is on the bus, why two nodes cannot talk, a node that crashed, a late joiner that misses data), see [`examples/dds/README.md`](../examples/dds/README.md). Multi-vendor positioning: [`dds-interop-matrix.md`](dds-interop-matrix.md).
 
 ## 1. Mock mode
 
@@ -23,22 +23,20 @@ The mock illustrates payload shapes that no live adapter produces today, such as
 
 ## 2. Live mode: choose a backend
 
-Cyclone is the one with a PyPI install path:
+Cyclone is the one backend:
 
 ```bash
-pip install topicforge[dds]             # same as [dds-cyclone]
+pip install topicforge
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-`cyclonedds` publishes wheels for CPython 3.10 to 3.13 on Windows, Linux and macOS (as of 11.0.1), and `topicforge` depends on it only there. Elsewhere (Linux aarch64, Python 3.14, Windows ARM64) `health_check` reports why in `dds_inactive_note`. A background thread reads the builtin DCPS topics through `BuiltinDataReader`. On a real bus `list_participants` reports each participant's `name` (EntityName QoS) and `hostname` (the `__Hostname` discovery property) when the remote participant sets them, and the vendor from the first two bytes of the GUID prefix; implementations that do not follow that convention (Dust DDS, RTI by default) show vendor `unknown`.
+`cyclonedds` publishes wheels for CPython 3.10 to 3.13 on Windows x64, Linux x86_64 and macOS (as of 11.0.1), and `topicforge` depends on it only there; `topicforge[dds]` (alias `[dds-cyclone]`) forces a source build elsewhere. Elsewhere (Linux aarch64, Python 3.14, Windows ARM64) `health_check` reports why in `dds_inactive_note`. A background thread reads the builtin DCPS topics through `BuiltinDataReader`. On a real bus `list_participants` reports each participant's `name` (EntityName QoS) and `hostname` (the `__Hostname` discovery property) when the remote participant sets them, and the vendor from the first two bytes of the GUID prefix; implementations that do not follow that convention (Dust DDS, RTI by default) show vendor `unknown`.
 
-Fast DDS has no PyPI install path. The `fastdds` binding is not published, so TopicForge declares no extra for it. Build eProsima's [Fast-DDS-python](https://github.com/eProsima/Fast-DDS-python) from source (it needs the Fast DDS C++ libraries and SWIG), install it into the same environment, then `TOPICFORGE_DDS_BACKEND=fast`. The adapter was written against the 2.6.x API and has never run against a bus.
+Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) need no backend of their own: the Cyclone backend observes them through standard RTPS discovery.
 
-Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes importable bindings in the order `fast`, `cyclone`, `mock`. With only the PyPI extra installed it resolves to Cyclone. Any other value (`opendds`, `dust`, `rti`, ...) is rejected at startup with an error that lists the valid ones.
+Auto (`TOPICFORGE_DDS_BACKEND=auto`) probes the `cyclonedds` binding, then falls back to `mock`. Any other value is rejected at startup with an error that lists the valid ones: `fast` (its adapter was removed in 0.9.0, see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)), `rti`, `opensplice`, `coredx`, `intercom`, `opendds` and `dust`. You do not need them to observe those vendors: the Cyclone backend sees their participants through standard discovery. Secure domains (DDS Security) and shared-memory-only deployments stay invisible to a foreign participant.
 
 Domain. `TOPICFORGE_DDS_DOMAIN_ID` (`0..232`, default `0`) is joined at startup; the `domain_id` tool parameter exists for protocol uniformity only. Changing domains needs a restart.
-
-Commercial vendors. `rti`, `opensplice`, `coredx` and `intercom` are rejected at startup with a configuration error. You do not need them to observe an RTI bus: the Cyclone backend sees RTI participants through standard discovery. Secure domains (DDS Security) and shared-memory-only deployments stay invisible to a foreign participant.
 
 ## 3. The QoS mismatch scenario
 
@@ -54,6 +52,7 @@ The canonical "my subscriber does not receive" case. Against the mock:
       "topic": "/dds/qos_mismatch",
       "reader_guid": "...", "writer_guid": "...",
       "reader_participant_name": "lidar_driver", "writer_participant_name": "nav_planner",
+      "reader_node": "/lidar_driver", "writer_node": "/nav_planner",
       "incompatible_policies": ["Reliability"],
       "severity": "incompatible",
       "details": [{"policy": "Reliability", "requested": "RELIABLE",
@@ -76,24 +75,24 @@ Order of checks per reader/writer pair: Partition first (wildcards `*` and `?` o
 
 ## 4. Composite adapter and backend selection
 
-When `ros2` is on PATH and a DDS backend starts, TopicForge builds both a `Ros2CliAdapter` and the DDS adapter behind a `CompositeAdapter`: the eight `ros2` CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `graph_diff`, `sample_messages`, `analyze_bag`) go to the CLI and the six DDS tools to the DDS backend; `peek_bag_samples` reads bags without the CLI. An explicit DDS backend (`cyclone`, `fast`, `auto`) is honoured in every mode except `mock`, including on a host without `ros2`.
+When `ros2` is on PATH and a DDS backend starts, TopicForge builds both a `Ros2CliAdapter` and the DDS adapter behind a `CompositeAdapter`: the nine `ros2` CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `graph_diff`, `diagnose`, `sample_messages`, `analyze_bag`) go to the CLI and the six DDS tools to the DDS backend; `peek_bag_samples` goes to the ROS half but runs no `ros2` process. An explicit DDS backend (`cyclone`, `auto`) is honoured in every mode except `mock`, including on a host without `ros2`.
 
 | `TOPICFORGE_MODE` | `TOPICFORGE_DDS_BACKEND` | `ros2` on PATH | Active adapter | ROS2 graph and bag tools | DDS tools |
 | --- | --- | --- | --- | --- | --- |
 | `mock` | any | any | `MockAdapter` | fixtures | fixtures |
 | `live` / `auto` | `mock` (default) | yes | `Ros2CliAdapter` | CLI | raise "DDS module is not active" |
-| `live` / `auto` | `cyclone` / `fast` / `auto` | yes | `CompositeAdapter` | CLI | real binding |
-| `live` / `auto` | `cyclone` / `fast` / `auto` | no | the DDS adapter alone | raise "DDS observability only" | real binding |
-| `live` / `auto` | `cyclone` / `fast`, binding missing or participant fails | any | `Ros2CliAdapter` if `ros2` is on PATH, else `MockAdapter` | CLI, or fixtures | raise, or fixtures |
+| `live` / `auto` | `cyclone` / `auto` | yes | `CompositeAdapter` | CLI | real binding |
+| `live` / `auto` | `cyclone` / `auto` | no | the DDS adapter alone | raise "DDS observability only" | real binding |
+| `live` / `auto` | `cyclone`, binding missing or participant fails | any | `Ros2CliAdapter` if `ros2` is on PATH, else `MockAdapter` | CLI, or fixtures | raise, or fixtures |
 | `live` / `auto` | `mock` | no | `MockAdapter` | fixtures | fixtures |
 
-A DDS problem never prevents startup: the server logs a warning naming the cause and keeps going. Only an invalid or removed configuration value stops it. `health_check` reports what was actually built: `mode` (can differ from `requested_mode`), `ros_backend` (`ros2_cli`, `mock`, `none`) and `dds_backend` (`cyclone`, `fast`, `mock`, `none`).
+A DDS problem never prevents startup: the server logs a warning naming the cause and keeps going. Only an invalid or removed configuration value stops it. `health_check` reports what was actually built: `mode` (can differ from `requested_mode`), `ros_backend` (`ros2_cli`, `mock`, `none`) and `dds_backend` (`cyclone`, `mock`, `none`; `fast` is still in the schema but never emitted).
 
 ## 5. Scope of the discovery tools
 
-`list_endpoints` returns every announced writer and reader as a typed record: role, topic, type, owning participant (guid, name, vendor), structured QoS and announcement time. Its `by_topic` roll-up flags orphans (`no_reader`, `no_writer`) and lists endpoints of participants that left under `departed_writers` / `departed_readers`. TopicForge's own endpoints are excluded unless `include_observer` is set. Cyclone and the mock serve it; the Fast DDS backend raises "not supported yet". Use it first to find out who talks on which topic, and `detect_qos_mismatches` to learn why they do not match.
+`list_endpoints` returns every announced writer and reader as a typed record: role, topic, type, owning participant (guid, name, vendor), structured QoS and announcement time. Its `by_topic` roll-up flags orphans (`no_reader`, `no_writer`) and lists endpoints of participants that left under `departed_writers` / `departed_readers`. TopicForge's own endpoints are excluded unless `include_observer` is set. Cyclone and the mock serve it. Use it first to find out who talks on which topic, and `detect_qos_mismatches` to learn why they do not match.
 
-`peek_dds_samples` is structured on the three builtin discovery topics, with both backends. Builtin names carry no leading `/`:
+`peek_dds_samples` is structured on the three builtin discovery topics, on Cyclone and in the mock. Builtin names carry no leading `/`:
 
 ```
 peek_dds_samples(topic="DCPSParticipant", count=5)
@@ -115,12 +114,12 @@ User topics are not decoded. For a user topic the tool returns count 0 and a `no
 }
 ```
 
-An empty result says nothing about traffic. The earlier decode path never worked on either backend and is disabled until it can be validated against a real bus. The `"full"` and `"partial"` decode statuses stay in the schema and the mock emits examples of them, but no live adapter produces them.
+An empty result says nothing about traffic. The earlier decode path never worked on a live backend and is disabled until it can be validated against a real bus. The `"full"` and `"partial"` decode statuses stay in the schema and the mock emits examples of them, but no live adapter produces them.
 
 `topic_metrics` only has data for the builtin topics. For a user topic it returns `status="unsupported_user_topic"`, and its null fields are not a measurement. For a builtin topic, `observed_frequency_hz` is how often you called `peek_dds_samples` (one call yields `null`), `sequence_numbers_available` is `false` and the latency percentiles are `null`, because builtin samples carry no publish timestamp. `declared_frequency_hz` is `1 / deadline` for the shortest Deadline a writer announced, when there is one. Use it to watch discovery-layer churn, not to check a publish rate.
 
-Lifecycle. On Cyclone a background thread (0.5 s period) reads the three builtin discovery topics and feeds the caches behind every discovery tool, so `participant_events` and `list_participants` do not depend on when you call them. A participant that cycles faster than the discovery history depth between two passes can still be missed. Event times come from DDS (`announced_ns`, `lost_ns`), with `time_source` saying which clock. A `lost` time is an upper bound of the death: a crash is only noticed when the lease expires, and a crash cannot be told from a clean leave. A writer that is alive but silent is not observable without reading its data. Fast DDS captures arrival and removal through listener callbacks.
+Lifecycle. On Cyclone a background thread (0.5 s period) reads the three builtin discovery topics and feeds the caches behind every discovery tool, so `participant_events` and `list_participants` do not depend on when you call them. A participant that cycles faster than the discovery history depth between two passes can still be missed. Event times come from DDS (`announced_ns`, `lost_ns`), with `time_source` saying which clock. A `lost` time is an upper bound of the death: a crash is only noticed when the lease expires, and a crash cannot be told from a clean leave. A writer that is alive but silent is not observable without reading its data.
 
 ## 6. Open work
 
-Wider real-bus validation (Fast DDS, RTI, OpenDDS, CoreDX, OpenSplice; re-enabling user-topic decoding depends on it), an opt-in data probe to catch a hung writer (planned for 0.5.6), and DDS Security, which is not handled at all: a participant without credentials sees an empty secure bus. Errors and fixes: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). Report what you see on a real domain at https://github.com/yaniswav/TopicForge/issues.
+Wider real-bus validation (RTI, OpenDDS, CoreDX, OpenSplice; re-enabling user-topic decoding depends on it), an opt-in data probe to catch a hung writer, and DDS Security, which is not handled at all: a participant without credentials sees an empty secure bus. Errors and fixes: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md). Report what you see on a real domain at https://github.com/yaniswav/TopicForge/issues.

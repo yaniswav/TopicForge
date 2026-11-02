@@ -326,10 +326,12 @@ def visibility_truth() -> dict[str, Any]:
     writer's node on every RMW (Fast DDS names all its participants `/`, so the node name is the
     only link), its participant carries the node's parameter services, `/rosout`, the graph
     plumbing and the topics, which is well over `min_endpoint_count`, and the bench environment
-    sets no SROS2 variable.
+    sets no SROS2 variable. From 0.9.0 the QoS scan names the same node on its pairs (0.8.1 left
+    `writer_node` null there, as it built its endpoints without the gid map).
     """
     return {
         "endpoints_call": "05s_list_endpoints_scan",
+        "qos_call": "06_detect_qos_mismatches",
         "topic": "/scan",
         "writer_nodes": ["/bench_robot"],
         "participants_call": "04_list_participants",
@@ -337,6 +339,45 @@ def visibility_truth() -> dict[str, Any]:
         "min_endpoint_count": 12,
         "health_call": "01_health_check",
         "ros_security_enabled": False,
+    }
+
+
+DIAGNOSE_BUDGET_S = 40
+DIAGNOSE_BLOCKED_NODE = "/bench_blocked"
+
+
+def diagnose_truth() -> dict[str, Any]:
+    """The exact set of critical and warning findings `50_diagnose` and `51_diagnose_node` give.
+
+    The bench seeds its own faults and every one of them is listed here: the `map -> odom` edge
+    that stops (`stale`), `tool` with two parents, the URDF link nothing publishes
+    (`arm_link`), the ERROR lines of `/bench_robot` on `/rosout`, and the blocked executor of
+    `/bench_blocked`. Any other critical or warning is a false alarm and fails the cell.
+    `calls_diagnose.json` runs before `calls_graph_diff.json`, so `graph_change.py` has not
+    started. A `subject_starts` entry matches a subject by its beginning (`two_parents` lists the
+    child first); `optional` means the finding is allowed to be absent when an `info` of the same
+    check names the subject instead (the node was not reached by the budget).
+    """
+    seeded = [
+        {"check": "tf", "subject": f"{TF_FLAKY_EDGE[0]}->{TF_FLAKY_EDGE[1]}"},
+        {"check": "tf", "subject_starts": "tool,"},
+        {"check": "tf", "subject": URDF_UNPUBLISHED_LINK},
+        {"check": "logs", "subject": "/bench_robot"},
+    ]
+    blocked = {"check": "responsiveness", "subject": DIAGNOSE_BLOCKED_NODE}
+    return {
+        "budget_s": DIAGNOSE_BUDGET_S,
+        "full": {
+            "call": "50_diagnose",
+            "critical": [],
+            "warning": [*seeded, {**blocked, "optional": True}],
+        },
+        "node": {
+            "call": "51_diagnose_node",
+            "node": DIAGNOSE_BLOCKED_NODE,
+            "critical": [blocked],
+            "warning": seeded,
+        },
     }
 
 
@@ -543,6 +584,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         "nav_primitives": nav_primitives_truth(),
         "visibility": visibility_truth(),
         "declared": declared_truth(),
+        "diagnose": diagnose_truth(),
         "graph": {"before_capture": _graph()},
         "bag": None,
     }

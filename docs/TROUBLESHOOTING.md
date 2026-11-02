@@ -7,7 +7,8 @@ Common errors and what to do about them. Each section is titled with a substring
 The server prints one line to stderr and exits with code 2, so your MCP client reports that it failed to start. One of the `TOPICFORGE_*` variables holds a value the settings loader rejects; it is deliberately strict so a typo cannot silently change behaviour. The common cases:
 
 - `Invalid TOPICFORGE_TELEMETRY=...`: only `on`, `1`, `true`, `yes`, `enabled` turn telemetry on, and only unset, `off`, `0`, `false`, `no`, `disabled` turn it off.
-- `Invalid TOPICFORGE_DDS_BACKEND='rti'; expected one of ('mock', 'cyclone', 'fast', 'auto'). Use `cyclone`: ...` (also `opensplice`, `coredx`, `intercom`, `opendds`, `dust`): these identifiers are rejected, the retired Pro tier values and the two permanent stubs. Use `cyclone`, `fast` or `auto`; a Cyclone participant still discovers RTI, CoreDX, OpenDDS, OpenSplice and Dust participants through standard RTPS discovery.
+- `Invalid TOPICFORGE_DDS_BACKEND='rti'; expected one of ('mock', 'cyclone', 'auto'). Use `cyclone`: ...` (also `opensplice`, `coredx`, `intercom`, `opendds`, `dust`): these identifiers, the retired Pro tier values and two permanent stubs, are rejected. Use `cyclone` or `auto`; a Cyclone participant still discovers RTI, CoreDX, OpenDDS, OpenSplice and Dust participants through standard RTPS discovery.
+- `Invalid TOPICFORGE_DDS_BACKEND='fast'; ... Fast DDS participants are observed through the `cyclone` backend`: the fastdds-based adapter was removed in 0.9.0. Use `cyclone`; it sees Fast DDS participants through standard RTPS discovery.
 - `Invalid TOPICFORGE_MODE`, `TOPICFORGE_LOG_LEVEL`, `TOPICFORGE_DDS_DOMAIN_ID` (an integer in `0..232`).
 
 Fix the variable in the `env` block of your MCP client configuration (or in the shell that spawns the server) and restart the client. Desktop clients show the stderr line in their MCP log.
@@ -21,17 +22,17 @@ which ros2          # Linux / WSL: /opt/ros/<distro>/bin/ros2
 where.exe ros2      # Windows: the ros2 launcher, normally ros2.exe
 ```
 
-If `ros2` is missing, source the setup file in the parent shell before launching the MCP client, or point at the binary with `TOPICFORGE_ROS2_BIN=/opt/ros/humble/bin/ros2`. TopicForge resolves the executable with `shutil.which` and runs it by absolute path, never through a shell. If you selected a DDS backend explicitly (`cyclone`, `fast`), the server does not fall back to mock without `ros2`: it serves the DDS tools through a DDS-only adapter, see the next section.
+If `ros2` is missing, source the setup file in the parent shell before launching the MCP client, or point at the binary with `TOPICFORGE_ROS2_BIN=/opt/ros/humble/bin/ros2`. TopicForge resolves the executable with `shutil.which` and runs it by absolute path, never through a shell. If you selected a DDS backend explicitly (`cyclone`), the server does not fall back to mock without `ros2`: it serves the DDS tools through a DDS-only adapter, see the next section.
 
 ## "DDS observability only"
 
-You called a ROS2 graph or bag tool (`list_topics`, `get_topic_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`) but only a DDS adapter is active in this process. The composite adapter, which serves both halves, only engages when both the `ros2` CLI and the chosen DDS backend come up.
+You called a ROS2 graph or bag tool (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `graph_diff`, `sample_messages`, `analyze_bag`, `peek_bag_samples`) but only a DDS adapter is active in this process. The composite adapter, which serves both halves, only engages when both the `ros2` CLI and the chosen DDS backend come up.
 
 1. Confirm `ros2 --help` works in the shell that spawns TopicForge (source `/opt/ros/<distro>/setup.bash`, or `call C:\dev\ros2_humble\local_setup.bat` on native Windows).
 2. Re-run with `TOPICFORGE_MODE=live` and your existing `TOPICFORGE_DDS_BACKEND`.
 3. Check `health_check`: `ros_backend` should be `"ros2_cli"` and `dds_backend` your vendor.
 
-If you want a DDS-only deployment, the message is expected: you use the six DDS tools and `peek_bag_samples` (it reads bags without the CLI), and the eight ros2-CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `graph_diff`, `sample_messages`, `analyze_bag`) raise it. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active: ...", ends with the cause: the backend was not selected (`TOPICFORGE_DDS_BACKEND` is `mock`, the default, which means no DDS backend; set it to `cyclone` even when the binding is installed), the binding is not installed, or it is installed but the adapter failed to start (the server log has the error). `health_check` shows the same text as `dds_inactive_note`.
+If you want a DDS-only deployment, the message is expected: you use the six DDS tools (`list_participants`, `detect_qos_mismatches`, `peek_dds_samples`, `participant_events`, `topic_metrics`, `list_endpoints`), and the nine tools listed above raise it; `diagnose` still runs and lists its ROS 2 checks as skipped. For offline work use `TOPICFORGE_MODE=mock`. The opposite error, "DDS module is not active: ...", ends with the cause: the backend was not selected (`TOPICFORGE_DDS_BACKEND` is `mock`, the default, which means no DDS backend; set it to `cyclone` even when the binding is installed), the binding is not installed, or it is installed but the adapter failed to start (the server log has the error). `health_check` shows the same text as `dds_inactive_note`.
 
 ## "rosbags"
 
@@ -47,15 +48,9 @@ The message carries the underlying exception type and text. In order:
 
 A `Timeout` points at 1 or 2; a `FileNotFoundError` or `OSError` points at 3.
 
-## "Fast DDS DomainParticipant creation returned None"
+## "Fast DDS participants are observed through the `cyclone` backend"
 
-Almost always an ABI mismatch between the Python `fastdds` binding and the native Fast DDS libraries on the host. Ignore the "pin and reinstall `fastdds`" part of the message: the binding is not on PyPI and you should not `pip install fastdds`, because whatever a registry returns under that name is not eProsima's package. Instead:
-
-1. Rebuild [eProsima/Fast-DDS-python](https://github.com/eProsima/Fast-DDS-python) against the same Fast DDS native libraries installed on the host and install it into the TopicForge environment.
-2. If you set `FastDDS_DEFAULT_PROFILES_FILE`, unset it: a broken profile XML causes the same symptom.
-3. If several native installs exist, make sure `LD_LIBRARY_PATH` (or `PATH` on Windows) points at the one the binding was built against.
-
-The adapter was written against the 2.6.x binding and has never run against a bus. If the binding cannot be imported at all, the server does not fail: it logs a warning and falls back to the ROS2 CLI alone, or to mock.
+`TOPICFORGE_DDS_BACKEND=fast` is refused at startup (exit code 2) since 0.9.0. The adapter that joined the bus through the `fastdds` Python binding was removed: the binding is not on PyPI, it needed a source build whose ABI had to match the host's native libraries, and the adapter never ran against a bus. You do not need it to observe Fast DDS. Set `TOPICFORGE_DDS_BACKEND=cyclone` (or `auto`): the Cyclone participant sees ROS 2 nodes on `rmw_fastrtps_cpp` through standard RTPS discovery, on every run of the ROS 2 test bench in CI.
 
 ## Argument errors
 
@@ -68,7 +63,7 @@ The adapter was written against the 2.6.x binding and has never run against a bu
 ## Other
 
 - `topicforge: command not found`: the entry point is not on PATH. Re-activate the venv, or use `python -m topicforge`.
-- `sample_messages` returns fewer samples than asked: live mode waits `timeout_s` seconds (default 10, max 60, counted from the start of the `ros2` CLI, which can take a few seconds on a slow machine) and `note` says `N of M messages` and whether a publisher exists. Raise `timeout_s` for a topic slower than 1 Hz; check `ros2 topic info -v <topic>`.
+- `sample_messages` returns fewer samples than asked: live mode waits `timeout_s` seconds (default 10, max 40, counted from the start of the `ros2` CLI, which can take a few seconds on a slow machine) and `note` says `N of M messages` and whether a publisher exists. Raise `timeout_s` for a topic slower than 1 Hz; check `ros2 topic info -v <topic>`.
 - `analyze_bag` says the path does not exist: the path is resolved in the shell where TopicForge runs. Under WSL use `/mnt/c/demos/run.mcap`, not `C:\demos\run.mcap`. In mock mode only `.mcap`, `.db3`, `.bag` or extensionless paths are accepted.
 - Claude Desktop shows no tools: check Help -> View Logs -> MCP, confirm `topicforge --version` runs from the same environment (or use the absolute path of the binary in the config), and validate the config with `python -m json.tool claude_desktop_config.json`, since a JSON error silently drops the whole file.
 - First live call is slow: `ros2 topic list -t` initializes the DDS middleware, a 1-2 second warm-up.

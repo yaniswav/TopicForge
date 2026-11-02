@@ -110,7 +110,7 @@ The two bag tools behave differently in live mode, and both need the
   `bag_format` stays `null`, `anomalies` is empty. The path
   must exist.
 - `peek_bag_samples` reads the file with `rosbags` and decodes
-  messages (`rosbags` is a core dependency since 0.6.4). There is no
+  messages (`rosbags` is a core dependency). There is no
   fallback: without the library it raises an error carrying the
   reinstall command.
 

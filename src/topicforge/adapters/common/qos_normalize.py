@@ -4,9 +4,10 @@ Lives outside the adapters because they import their SDK at module top
 level and so cannot be tested without it. A renamed policy key here would
 silently return `None` and hide every mismatch.
 
-The Cyclone path keys policies by binding class name. The Fast path keys
-by integer enum value, so `fast_qos_to_profile` takes the three int->str
-maps as parameters and this module imports no binding.
+The Cyclone path keys policies by binding class name. The Fast DDS path (no
+caller since the Fast adapter was removed) keys by integer enum value, so
+`fast_qos_to_profile` takes the three int->str maps as parameters and this
+module imports no binding.
 """
 
 from __future__ import annotations

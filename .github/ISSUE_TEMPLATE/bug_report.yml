@@ -42,7 +42,6 @@ body:
         - "n/a: bug is on the ROS2 side"
         - mock
         - cyclone
-        - fast
         - none
     validations:
       required: false

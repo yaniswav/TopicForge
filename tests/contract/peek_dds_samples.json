@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Peek DDS samples"
   },
-  "description": "Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_messages` but read from the DDS layer (works without ROS 2). `count` defaults to 5, clamped to 50. (a) The builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) return structured discovery records: on Cyclone the CURRENT state (one per live participant or endpoint), not recent events (use `participant_events`); `DCPSPublication` / `DCPSSubscription` are the raw data behind `list_endpoints`. The topic may be `/scan`, `scan` or `rt/scan`. (b) User topics: payload decoding is DISABLED on every backend, so the call returns `count` 0, empty `samples` and a `note`; that does NOT mean the topic is silent. Use `list_endpoints` for its presence, writers, readers and QoS. A user topic not announced on the bus raises an error. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**: it cannot publish. **Raises an MCP error** when no DDS module is active or the topic is not announced. **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; `busy` error if the lock is held (retry).",
+  "description": "Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_messages` but read from the DDS layer (works without ROS 2). `count` defaults to 5, clamped to 50. (a) The builtin discovery topics (`DCPSParticipant`, `DCPSSubscription`, `DCPSPublication`) return structured discovery records: on Cyclone the CURRENT state (one per live participant or endpoint), not recent events (use `participant_events`); `DCPSPublication` / `DCPSSubscription` are the raw data behind `list_endpoints`. The topic may be `/scan`, `scan` or `rt/scan`. (b) User topics: payload decoding is DISABLED on every backend, so the call returns `count` 0, empty `samples` and a `note`; that does NOT mean the topic is silent. Use `list_endpoints` for its presence, writers, readers and QoS. A user topic not announced on the bus raises an error. Right after start the call waits up to 3 s for discovery. **Read-only by architecture**: it cannot publish. **Raises an MCP error** when no DDS module is active or the topic is not announced. **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held.",
   "inputSchema": {
     "properties": {
       "count": {
@@ -36,7 +36,7 @@
           },
           "payload": {
             "additionalProperties": true,
-            "description": "Message fields as nested values; `nan`/`inf` are strings. Live `sample_messages` adds `_truncated_fields` (cut paths) and `_raw_text` (unparsable output).",
+            "description": "Message fields, nested; `nan`/`inf` as strings. Live adds `_truncated_fields` (cut paths), `_raw_text` (unparsable).",
             "type": "object"
           },
           "received_ns": {
@@ -87,7 +87,7 @@
             ]
           },
           "timestamp_ns": {
-            "description": "Publisher-clock ns: `header.stamp`, else the time in the body of `Clock`, `TFMessage` or `Log`, else 0 (see `stamp_source`); not the arrival time.",
+            "description": "Publisher-clock ns, not arrival: `header.stamp`, else the `Clock`/`TFMessage`/`Log` body time, else 0 (`stamp_source`).",
             "type": "integer"
           },
           "topic": {
@@ -114,7 +114,7 @@
             "type": "string"
           },
           "clock_basis": {
-            "description": "Stamp clock: `wall` (stamps are dates), `sim` (since a start), `none` (no stamps), `mixed` (several kinds, e.g. two publishers).",
+            "description": "Stamp clock: `wall` (dates), `sim` (since a start), `none` (no stamps), `mixed` (several kinds, e.g. two publishers).",
             "enum": [
               "wall",
               "sim",
@@ -202,7 +202,7 @@
             ]
           },
           "verdict": {
-            "description": "First match: `silent` (none), `insufficient` (under 5), `intermittent` (an interval over 3x the median), `stable` (cv < 0.2), `jittery` (< 0.5), `erratic`. Describes this window, not a diagnosis.",
+            "description": "Window only: `silent`, `insufficient` (<5), `intermittent` (gap>3x median), `stable` (cv<.2), `jittery` (<.5), `erratic`",
             "enum": [
               "silent",
               "insufficient",
@@ -245,7 +245,7 @@
     "description": "Samples returned by `sample_messages`, `peek_dds_samples` and `peek_bag_samples`.",
     "properties": {
       "count": {
-        "description": "Number of samples in `samples`: fewer than requested when the topic gave fewer, never more than 50 (a larger request is capped to 50).",
+        "description": "Samples in `samples`: fewer than requested when the topic gave fewer; a request above 50 is capped to 50.",
         "minimum": 0,
         "type": "integer"
       },

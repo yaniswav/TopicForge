@@ -27,7 +27,9 @@ has one), nav_primitives (the Nav2 building blocks of the `diagnose-nav2` prompt
 `get_node_info.action_servers`, `/bond` samples; only the bench truth has one). Reads output contract 2 (0.7:
 has one), declared (the URDF links against the TF frames in the `17_inspect_tf` answer, and
 `param_diff` in the `03p_node_info_params` answer of `calls_declared.json`; only the bench truth
-has one). Reads output contract 2 (0.7:
+has one), diagnose (`50_diagnose` and `51_diagnose_node` of `calls_diagnose.json`: the exact
+set of critical and warning findings the bench seeds, no false alarm, nothing skipped; only the
+bench truth has one). Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -1968,7 +1970,7 @@ def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
 
 
 # ---------------------------------------------------------------------------- report
-LISTING_MAX_BYTES = 100_000
+LISTING_MAX_BYTES = 105_000
 
 
 def _drop_none(node: Any) -> Any:
@@ -2353,12 +2355,43 @@ def _check_vis_health(truth: dict, res: Results, rep: Report) -> None:
 
 
 @guard("visibility")
+def _check_vis_qos_nodes(truth: dict, res: Results, rep: Report) -> None:
+    """The QoS scan names the writer's node on its pairs (null on every pair in 0.8.1)."""
+    name = truth.get("qos_call")
+    if not name:
+        return
+    data = res.load(name)
+    err = tool_err(data)
+    wall = res.times.get(name)
+    metric = "QoS pairs name the writer node"
+    if data is None or err:
+        verdict, got = ("WARN", "absent") if data is None else ("FAIL", err)
+        rep.add("visibility", metric, truth["node"], got, verdict, "", wall)
+        return
+    pairs = listing(data, "matched")
+    named = sorted({p["writer_node"] for p in pairs if p.get("writer_node")})
+    if not pairs:
+        note = "no reader on a user topic here, nothing to name (the unit tests cover it)"
+        rep.add("visibility", metric, truth["node"], "no matched pair", "INFO", note, wall)
+        return
+    rep.add(
+        "visibility",
+        metric,
+        truth["node"],
+        named,
+        "PASS" if truth["node"] in named else "FAIL",
+        f"{len(pairs)} matched pair(s) listed",
+        wall,
+    )
+
+
 def check_visibility(gt: dict, res: Results, rep: Report) -> None:
     """DDS visibility: endpoint node names, participant endpoint counts, SROS2 health (0.8.0)."""
     truth = gt.get("visibility")
     if not truth:
         return
     _check_vis_endpoints(truth, res, rep)
+    _check_vis_qos_nodes(truth, res, rep)
     _check_vis_participant(truth, res, rep)
     _check_vis_health(truth, res, rep)
 
@@ -2507,6 +2540,150 @@ def check_declared(gt: dict, res: Results, rep: Report) -> None:
     _check_declared_params(truth["params"], res, rep)
 
 
+# ---------------------------------------------------------------------------- diagnose
+# Self-contained: the `diagnose` section of the truth (only the bench writes one) against
+# `50_diagnose` and `51_diagnose_node` of `calls_diagnose.json` (0.9.0). The bench seeds its own
+# faults, so the truth is the EXACT set of critical and warning findings: a seeded one that is
+# missing fails, and so does any other (a false alarm). `info` findings are not judged, except
+# that an optional warning may be replaced by an info naming its subject.
+def _dg_matches(entry: dict, finding: dict) -> bool:
+    if entry["check"] != finding.get("check"):
+        return False
+    subject = finding.get("subject") or ""
+    if "subject" in entry:
+        return subject == entry["subject"]
+    return subject.startswith(entry["subject_starts"])
+
+
+def _dg_label(entry: dict) -> str:
+    return f"{entry['check']}:{entry.get('subject') or entry.get('subject_starts', '') + '*'}"
+
+
+def _dg_missing(entry: dict, got: list[dict], infos: list[dict]) -> bool:
+    """True when a seeded finding is absent (an optional one may be an info naming its subject)."""
+    if any(_dg_matches(entry, f) for f in got):
+        return False
+    if entry.get("optional"):
+        named = [f for f in infos if f.get("check") == entry["check"]]
+        return not any(entry.get("subject", "") in str(f.get("text")) for f in named)
+    return True
+
+
+def _dg_severity_row(
+    rep: Report, call: str, severity: str, expected: list[dict], findings: list[dict], wall: Any
+) -> None:
+    got = [f for f in findings if f.get("severity") == severity]
+    infos = [f for f in findings if f.get("severity") == "info"]
+    false_alarms = [
+        f"{f.get('check')}:{f.get('subject')}"
+        for f in got
+        if not any(_dg_matches(e, f) for e in expected)
+    ]
+    missing = [_dg_label(e) for e in expected if _dg_missing(e, got, infos)]
+    # A responsiveness WARNING on an unseeded node is a 3 s parameter read that a loaded runner
+    # can miss (the finding itself says "or a loaded host"): machine dependent, WARN at most.
+    # The seeded blocked node and every other check stay exact.
+    slow = [a for a in false_alarms if severity == "warning" and a.startswith("responsiveness:")]
+    hard = [a for a in false_alarms if a not in slow]
+    note = "the exact set the bench seeds"
+    if hard:
+        note += f"; false alarm: {hard}"
+    if slow:
+        note += f"; slow parameter read (machine dependent, WARN at most): {slow}"
+    if missing:
+        note += f"; missing: {missing}"
+    rep.add(
+        "diagnose",
+        f"{call} {severity} findings",
+        sorted(_dg_label(e) for e in expected),
+        sorted(f"{f.get('check')}:{f.get('subject')}" for f in got),
+        "FAIL" if hard or missing else "WARN" if slow else "PASS",
+        note,
+        wall,
+    )
+
+
+def _dg_envelope_rows(rep: Report, call: str, out: dict, budget_s: Any, wall: Any) -> None:
+    skipped = out.get("checks_skipped")
+    rep.add(
+        "diagnose",
+        f"{call} checks_skipped",
+        [],
+        skipped,
+        "PASS" if skipped == [] else "FAIL",
+        "a skipped check is not verified",
+        wall,
+    )
+    elapsed = out.get("elapsed_s")
+    ok = isinstance(elapsed, (int, float)) and elapsed <= budget_s
+    rep.add(
+        "diagnose",
+        f"{call} elapsed_s",
+        f"<= {budget_s}",
+        elapsed,
+        "PASS" if ok else "FAIL",
+        "",
+        wall,
+    )
+    findings = out.get("findings") or []
+    counts = {
+        s: sum(1 for f in findings if f.get("severity") == s) for s in ("critical", "warning")
+    }
+    consistent = out.get("findings_total") != len(findings) or (
+        out.get("critical_count") == counts["critical"]
+        and out.get("warning_count") == counts["warning"]
+    )
+    rep.add(
+        "diagnose",
+        f"{call} counts match findings",
+        counts,
+        {k: out.get(f"{k}_count") for k in counts},
+        "PASS" if consistent else "FAIL",
+        "",
+        wall,
+    )
+    verdict = str(out.get("verdict") or "")
+    clear = "no critical or warning finding" in verdict
+    seeded = bool(counts["critical"] or counts["warning"])
+    rep.add(
+        "diagnose",
+        f"{call} verdict",
+        "names the findings" if seeded else "a clean line",
+        verdict,
+        "PASS" if verdict and (clear != seeded) and "healthy" not in verdict.lower() else "FAIL",
+        "",
+        wall,
+    )
+
+
+def _check_dg_call(truth: dict, budget_s: Any, res: Results, rep: Report) -> None:
+    call = truth["call"]
+    data = res.load(call)
+    err = tool_err(data)
+    wall = res.times.get(call)
+    if err == "missing":
+        rep.add("diagnose", f"{call} result", "a result", "absent", "WARN", "older run", wall)
+        return
+    if err:
+        rep.add("diagnose", f"{call} result", "a result", err, "FAIL", "", wall)
+        return
+    out = (objs(data) or [{}])[0]
+    findings = out.get("findings") or []
+    _dg_severity_row(rep, call, "critical", truth["critical"], findings, wall)
+    _dg_severity_row(rep, call, "warning", truth["warning"], findings, wall)
+    _dg_envelope_rows(rep, call, out, budget_s, wall)
+
+
+@guard("diagnose")
+def check_diagnose(gt: dict, res: Results, rep: Report) -> None:
+    """`diagnose` against the faults the bench seeds: the exact set, no false alarm (0.9.0)."""
+    truth = gt.get("diagnose")
+    if not truth:
+        return
+    _check_dg_call(truth["full"], truth["budget_s"], res, rep)
+    _check_dg_call(truth["node"], truth["budget_s"], res, rep)
+
+
 SECTIONS = (
     check_graph,
     check_scan,
@@ -2521,6 +2698,7 @@ SECTIONS = (
     check_nav_primitives,
     check_visibility,
     check_declared,
+    check_diagnose,
     check_listing,
 )
 

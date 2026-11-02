@@ -5,6 +5,48 @@ All notable changes to TopicForge are documented in this file.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.9.0] - 2026-11-02
+
+### Added
+
+- `diagnose`, the seventeenth tool: one bounded sweep of the ROS 2 graph and the DDS bus that
+  answers "is anything wrong". It runs `environment`, `nodes`, `topics`, `dds`, `tf`, `logs` and
+  `responsiveness` (a parameter read per node, the `node` argument first) from the existing
+  services, within `budget_s` (10..40, default 30), and returns findings ranked `critical`,
+  `warning`, `info` with evidence and, for QoS, the `suggested_fixes` of `detect_qos_mismatches`.
+  A check that errors or runs out of budget is listed in `checks_skipped` and the verdict then
+  says the sweep is incomplete: it never reads as an all-clear. It holds the ROS lock for up to
+  `budget_s`. `tools/list` is 99,634 bytes (`diagnose` 4,267) against the 105,000 ceiling. The
+  bench gains `50_diagnose` and `51_diagnose_node` and a comparator section that requires the
+  exact set of seeded findings (`docs/CONTRACT.md` section 9.21).
+
+### Changed
+
+- `tools/list` is 95,391 bytes (-1,924): shorter lane notes, no duplicated "Read-only" phrase,
+  and every output field description at most 120 characters, with a test that keeps it so. The
+  `tools/list` test ceiling moves from 100,000 to 105,000 bytes to make room for `diagnose`
+  (`docs/CONTRACT.md` section 9.20).
+
+### Removed
+
+- The fastdds-based DDS adapter (`adapters/dds_fast/`, 487 lines). It never ran against a bus,
+  and its `fastdds` binding is not on PyPI, so no user could install it. Fast DDS participants
+  are still observed through the `cyclone` backend by standard RTPS discovery, as the CI bench
+  and the OmniSim kit show. `TOPICFORGE_DDS_BACKEND=fast` is now refused at startup with that
+  route, and `auto` only probes `cyclonedds`. `health_check.dds_backend` keeps `fast` in its
+  schema enum but never emits it. `demo-fast.yml` (a C++ Fast DDS publisher seen by Cyclone)
+  stays.
+
+### Fixed
+
+- `detect_qos_mismatches` on a live DDS backend now fills `reader_node` and `writer_node`. 0.8.1
+  built the scan's endpoints without the gid -> node map that `list_endpoints` uses, so both
+  fields stayed `null` on every pair (seen on Fast DDS in the OmniSim kit). Both tools now build
+  their endpoints through one snapshot method. The Docker bench checks the writer node on the
+  scan's pairs (`docs/CONTRACT.md` section 9.19).
+
 ## [0.8.1] - 2026-10-26
 
 The 0.8.0 evaluation findings, a URDF read from the robot_state_publisher parameter, an optional
@@ -1901,7 +1943,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/yaniswav/TopicForge/compare/v0.7.1...v0.7.2

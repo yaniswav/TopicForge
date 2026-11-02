@@ -6,9 +6,8 @@ standard RTPS discovery topics, with no vendor-specific binding. The questions
 are asked by the official MCP client over stdio, the same path Claude Desktop
 or Claude Code uses.
 
-This is the first thing in the repository that runs the DDS adapters against
-live traffic. The status of each participant is listed below; most have not
-been run yet.
+The status of each participant is listed below; the Cyclone and Dust ones run,
+most of the others have not been run yet.
 
 TopicForge never publishes. The participants in `publishers/` are demo
 programs written for this directory; TopicForge itself only reads discovery
@@ -51,7 +50,7 @@ Each participant is reported as `ready` or `skipped (<what is missing>)`.
 Two participants are required, and the driver exits with an error without
 them:
 
-- Python / Cyclone: `pip install "topicforge[dds]"`.
+- Python / Cyclone: `pip install -e ".[dds]"` (`setup` does it).
 - Rust / Dust: `cargo build --release` in `publishers/dust_publisher`.
 
 Every other participant is optional. It joins the bus automatically when its
@@ -67,7 +66,7 @@ QoS story; the seven language participants each write one topic,
 language.
 
 "Tested" means it ran on the bus and was
-seen by TopicForge, on Windows 11 only. "Written, not run" means the source
+seen by TopicForge, on Windows 11 (the Cyclone and Rust / Dust ones also in `demo.yml`). "Written, not run" means the source
 exists and was written from the vendor's documentation or example sources, but
 nobody has built or started it.
 
@@ -76,7 +75,7 @@ nobody has built or started it.
 | Cyclone DDS | Python | `cyclone_publisher.py` | writes `DemoOdom`, reads `DemoLidarScan` | Tested |
 | Dust DDS | Rust | `dust_publisher/` | writes `DemoLidarScan` | Tested |
 | Dust DDS | Python | `dust_py/` | `DemoHeartbeat` | Tested |
-| Fast DDS | C++ | `fast_publisher_cpp/` | writes `DemoImu`, reads `DemoOdom` | Written, not run |
+| Fast DDS | C++ | `fast_publisher_cpp/` | writes `DemoImu`, reads `DemoOdom` | Starts in CI (`demo-fast.yml`), not yet observed by TopicForge |
 | Fast DDS | Python | `fast_py/` | `DemoHeartbeat` | Written, not run (Linux only, built from source) |
 | RTI Connext | Python | `rti_publisher.py` | writes `DemoHeartbeat`, reads `DemoImu` | Written, not run (local, license) |
 | RTI Connext | C | `rti_c/` | `DemoHeartbeat` | Written, not run (local, license) |
@@ -87,7 +86,8 @@ nobody has built or started it.
 | OpenSplice | C | `opensplice_publisher/` | writes `DemoStatus` | Written, not run (experimental) |
 
 `.github/workflows/demo-fast.yml` builds the Fast DDS C++ participant and
-starts it for ten seconds. It has no run to show yet.
+starts it for ten seconds, weekly; it proves the participant starts, not that
+TopicForge observes it (green on 2026-10-19 and 2026-10-26).
 
 Four vendor and language combinations have no binding at all and are not
 covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust. Two

@@ -51,7 +51,6 @@ from topicforge.services import factory
 # ---------------------------------------------------------------------------
 
 _CYCLONE_MODULE = "topicforge.adapters.dds_cyclone"
-_FAST_MODULE = "topicforge.adapters.dds_fast"
 _NO_ROS2 = "definitely-not-a-real-binary-xyz"
 
 
@@ -311,19 +310,6 @@ def test_auto_mode_with_explicit_cyclone_and_missing_binding_warns_and_falls_bac
     assert any("cyclonedds" in m and "topicforge[dds-cyclone]" in m for m in messages)
 
 
-def test_auto_mode_with_explicit_fast_and_missing_binding_explains_the_build(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    monkeypatch.setitem(sys.modules, _FAST_MODULE, None)
-
-    with caplog.at_level(logging.WARNING, logger=factory.__name__):
-        adapter = factory.build_adapter(_auto_settings(dds_backend="fast"))
-
-    assert isinstance(adapter, MockAdapter)
-    messages = [r.getMessage() for r in caplog.records]
-    assert any("not published on PyPI" in m and "eProsima" in m for m in messages)
-
-
 @pytest.mark.parametrize("dds_backend", ["mock", "auto"])
 def test_auto_mode_without_ros2_and_no_explicit_dds_backend_is_silent_mock(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, dds_backend: str
@@ -391,10 +377,10 @@ def test_dds_constructor_raising_adapter_error_keeps_ros2_cli(
     def boom(domain_id: int = 0) -> object:
         raise AdapterError("cannot join domain")
 
-    _install_fake_adapter_module(monkeypatch, _FAST_MODULE, "FastDdsAdapter", boom)
+    _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", boom)
     monkeypatch.setattr(Ros2CliAdapter, "is_available", lambda self: True)
 
-    adapter = factory.build_adapter(_live_settings(dds_backend="fast"))
+    adapter = factory.build_adapter(_live_settings(dds_backend="cyclone"))
 
     assert isinstance(adapter, Ros2CliAdapter)
 

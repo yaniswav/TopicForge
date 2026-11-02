@@ -19,15 +19,18 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import BeforeValidator, Field
 
 from topicforge.constants import (
+    DEFAULT_DIAGNOSE_BUDGET_S,
     DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
     DEFAULT_TF_STALE_AFTER_S,
     DEFAULT_TF_WINDOW_S,
+    MAX_DIAGNOSE_BUDGET_S,
     MAX_NODE_TIMEOUT_S,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
     MAX_TF_STALE_AFTER_S,
     MAX_TF_WINDOW_S,
+    MIN_DIAGNOSE_BUDGET_S,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
     MIN_TF_STALE_AFTER_S,
@@ -35,6 +38,7 @@ from topicforge.constants import (
 )
 from topicforge.models import (
     BagAnalysis,
+    Diagnosis,
     EndpointListing,
     GraphDiff,
     HealthReport,
@@ -50,6 +54,7 @@ from topicforge.models import (
     TopicMetrics,
 )
 from topicforge.services import HealthService, Inspector
+from topicforge.services.diagnose import DiagnoseService
 from topicforge.telemetry import TelemetryClient, instrument
 from topicforge.tools.annotations import read_only_annotations
 from topicforge.tools.guard import guarded
@@ -172,15 +177,9 @@ _SUMMARY_RATE_NOTE = (
     "multi-publisher topic such as `/tf` reads `erratic` without being broken."
 )
 
-_ROS_LANE_NOTE = (
-    " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; ends within 45 s; "
-    "`busy` error if the lock is held (retry)."
-)
+_ROS_LANE_NOTE = " **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held."
 
-_DDS_LANE_NOTE = (
-    " **Duration**: DDS binding behind the DDS lock, one call at a time; ends within 45 s; "
-    "`busy` error if the lock is held (retry)."
-)
+_DDS_LANE_NOTE = " **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held."
 
 _NO_LOCK_NOTE = (
     " **Duration**: never waits for a lock and never runs the `ros2` CLI; it answers at once."
@@ -203,6 +202,7 @@ def register_tools(
     With telemetry disabled (the default), `instrument(...)` returns the
     handler unchanged.
     """
+    diagnoser = DiagnoseService(inspector, health)
 
     @mcp.tool(
         annotations=read_only_annotations("Health check", open_world=False),
@@ -216,8 +216,8 @@ def register_tools(
             "with `ros_backend` `none` is a DDS-only setup: use `list_endpoints`. With "
             "`dds_backend` `none`, `dds_inactive_note` says why. `payload_decoding` is "
             "`disabled` (DDS user-topic payloads are not decoded); `dds_security` is "
-            "`not_supported`. **Always succeeds**: call it first when something looks wrong. "
-            "Read-only; no side effects." + _NO_LOCK_NOTE
+            "`not_supported`. **Always succeeds**: call it first when something looks wrong."
+            + _NO_LOCK_NOTE
         ),
     )
     @guarded(None)
@@ -233,7 +233,7 @@ def register_tools(
             "`message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a "
             "real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty "
             "`topics`** when the graph has none or live discovery times out. **Raises an MCP "
-            "error** without a `ros2` CLI. Read-only; no side effects." + _ROS_LANE_NOTE
+            "error** without a `ros2` CLI." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -249,8 +249,8 @@ def register_tools(
             "mode, `publisher_qos` / `subscription_qos` (`reliability`, `durability` where "
             "`transient_local` marks a latched topic such as `/tf_static`, `endpoint_count`; a "
             "`null` side says why in its `_note`) and `publisher_nodes` / `subscriber_nodes`. "
-            "**Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI. "
-            "Read-only; no side effects." + _ROS_LANE_NOTE
+            "**Raises an MCP error** for a malformed or unknown topic, or without a `ros2` CLI."
+            + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -267,11 +267,12 @@ def register_tools(
             "the ROS 2 graph (or the mock graph) from one `ros2 node list` call as a "
             "`NodeListing`: `name`, `namespace`, `full_name`, `duplicate_count`, `lifecycle` "
             "(managed node; state not read, `lifecycle_note` if unknown), `by_namespace` counts. "
-            "`duplicates` lists full names used by several nodes (a per-node tool then answers for one of "
+            "`duplicates` lists full names used by several nodes (a per-node tool then answers for "
+            "one of "
             "them, unidentified). Nodes starting with an underscore are hidden and a node on "
             "another `ROS_DOMAIN_ID` is invisible. **Empty `nodes`** when the graph has none. "
             "Use `get_node_info` for one node's interfaces. **Raises an MCP error** without a "
-            "`ros2` CLI. Read-only; cheap (two CLI calls)." + _ROS_LANE_NOTE
+            "`ros2` CLI. Cheap (two CLI calls)." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -331,7 +332,8 @@ def register_tools(
             "stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), "
             "`static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they "
             "hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and "
-            "`target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF "
+            "`target_frame` for the `path` between them. It also reads `/robot_description` and "
+            "flags URDF "
             "links with no frame (`declared_not_published`). **Empty `frames`** when nothing is "
             "published (read `note`). The listening is capped (3000 messages): `echo` can drop "
             "messages at high rates, so the tree is exact but frequencies are approximate "
@@ -382,7 +384,7 @@ def register_tools(
             "65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap "
             "(`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns "
             "demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for "
-            "an unknown topic, or when the CLI fails. Read-only; never publishes. **Logs**: "
+            "an unknown topic, or when the CLI fails. Never publishes. **Logs**: "
             "`min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most "
             "2000 messages) and return the NEWEST `count` matches in stamp order; "
             "`peek_bag_samples` returns the FIRST matches."
@@ -445,8 +447,7 @@ def register_tools(
             "`ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` "
             "use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like "
             "path, and only mock detects anomalies. **Raises an MCP error** for a malformed or "
-            "missing path (live), unparseable output, or without a `ros2` CLI. Read-only; no "
-            "side effects." + _ROS_LANE_NOTE
+            "missing path (live), unparseable output, or without a `ros2` CLI." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -468,7 +469,7 @@ def register_tools(
             "`builtin_changes_count`. The first call stores a snapshot and says so in `note`. "
             "Snapshots stay in memory (16, lost on restart). **Raises an MCP error** for an "
             "unknown id, a bad bag path or without a `ros2` CLI. **Mock mode**: the first call "
-            "reports 3 changes, the next 0. Read-only." + _ROS_LANE_NOTE
+            "reports 3 changes, the next 0." + _ROS_LANE_NOTE
         ),
     )
     @guarded("ros")
@@ -479,7 +480,44 @@ def register_tools(
     ) -> GraphDiff:
         return inspector.graph_diff(baseline, bag_path)
 
-    # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone`, `fast` or
+    @mcp.tool(
+        annotations=read_only_annotations("Diagnose the robot", open_world=True),
+        description=(
+            'Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and rank '
+            "what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, "
+            "`topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` "
+            "errors), `responsiveness` (parameter reads, `node` first); `scope` runs one "
+            "group. `findings` are `critical`, `warning` or `info`, with `evidence` and, for "
+            "QoS, `suggested_fixes`; `verdict` is one line. A check that errors or runs out of "
+            "`budget_s` is in `checks_skipped`, never a tool error, and the verdict then says "
+            "it is not verified. A clean result does not prove data flows. **Mock mode**: "
+            "fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; "
+            "other ROS tools get `busy` meanwhile, `health_check` stays free."
+        ),
+    )
+    @guarded("ros")
+    @instrument(telemetry, "diagnose")
+    def diagnose(
+        scope: Annotated[
+            Literal["all", "graph", "tf", "dds", "logs"],
+            Field(description="`all`, or one group: `graph`, `tf`, `dds`, `logs`."),
+        ] = "all",
+        budget_s: Annotated[
+            float,
+            Field(
+                description="Seconds for the sweep, 10..40, default 30.",
+                ge=MIN_DIAGNOSE_BUDGET_S,
+                le=MAX_DIAGNOSE_BUDGET_S,
+            ),
+        ] = DEFAULT_DIAGNOSE_BUDGET_S,
+        node: Annotated[
+            str | None,
+            Field(description="Node read first (6 s); a failed read is critical."),
+        ] = None,
+    ) -> Diagnosis:
+        return diagnoser.diagnose(scope, budget_s, node)
+
+    # DDS tools: they need TOPICFORGE_DDS_BACKEND set to `cyclone` or
     # `mock`; with the `ros2_cli` adapter alone they raise AdapterError.
 
     @mcp.tool(
@@ -610,8 +648,7 @@ def register_tools(
             "and `departures` per name over the window, so do not count GUIDs by hand. Capped "
             "at 200 events (`truncated`, `note`; reduce `lookback_s`). TopicForge only knows "
             "what happened since it started watching (`health_check.observer_started_ns`). "
-            "**Backends**: Fast DDS uses listener callbacks; Cyclone polls discovery in the "
-            "background every 0.5 s, so a participant cycle faster than the reader's history "
+            "**Backends**: Cyclone polls discovery in the background every 0.5 s, so a participant cycle faster than the reader's history "
             "depth between two passes can be missed; mock returns a fixture timeline. Right "
             "after start the call waits up to 3 s for discovery. **Read-only by "
             "architecture**. **Raises an MCP error** when no DDS module is active." + _DDS_LANE_NOTE
@@ -756,7 +793,7 @@ def register_tools(
             "it with `detect_qos_mismatches`. The observer's own endpoints are excluded unless "
             "`include_observer`; ROS 2 service and action endpoints (`rq/`, `rr/`, `rs/`, "
             "`rp/`, `ra/`, `ros_discovery_info`) unless `include_internal`. Capped at 500 "
-            "endpoints (`truncated`, `total`); `by_topic` covers all matches. Read-only. "
+            "endpoints (`truncated`, `total`); `by_topic` covers all matches. "
             "**Raises an MCP error** when no DDS module is active; mock returns a fixture."
             + _DDS_LANE_NOTE
         ),

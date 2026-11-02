@@ -578,3 +578,55 @@ def test_the_mock_endpoints_carry_node_names_and_participants_carry_counts() -> 
     assert example.reader_nodes == ["/nav_planner"]
     counts = {p.name: p.endpoint_count for p in adapter.list_participants()}
     assert counts == {"lidar_driver": 2, "nav_planner": 3, "camera_driver": 1, None: 1}
+
+
+def _snapshot(pubs: list[Any], subs: list[Any], nodes: dict[str, str]) -> Any:
+    from topicforge.adapters.common.discovery_tracker import DiscoverySnapshot
+
+    return DiscoverySnapshot(
+        participants=[],
+        publications=pubs,
+        subscriptions=subs,
+        departed=[],
+        participant_infos=[],
+        endpoint_nodes=nodes,
+    )
+
+
+def test_snapshot_endpoints_carry_node_names() -> None:
+    snap = _snapshot(
+        [_endpoint_sample(key=1, topic="rt/scan")],
+        [_endpoint_sample(key=2, topic="rt/scan")],
+        {_guid_of(1): "/lidar_driver", _guid_of(2): "/edge_viewer"},
+    )
+    by_guid = {e.guid: e.node_name for e in snap.endpoint_infos(None)}
+    assert by_guid == {_guid_of(1): "/lidar_driver", _guid_of(2): "/edge_viewer"}
+
+
+def test_qos_scan_from_a_snapshot_names_both_nodes() -> None:
+    """0.8.1 built the scan's endpoints without the gid map: nodes came out null."""
+    from topicforge.adapters.common.qos_scan import scan_endpoints
+
+    best_effort = [
+        _policy("Reliability.BestEffort"),
+        _policy("Durability.Volatile"),
+        _policy("History.KeepLast", depth=5),
+    ]
+    snap = _snapshot(
+        [
+            _endpoint_sample(key=1, topic="rt/scan", qos=best_effort),
+            _endpoint_sample(key=3, topic="rt/odom"),
+        ],
+        [_endpoint_sample(key=2, topic="rt/scan"), _endpoint_sample(key=4, topic="rt/odom")],
+        {
+            _guid_of(1): "/lidar_driver",
+            _guid_of(2): "/edge_viewer",
+            _guid_of(3): "/odom_pub",
+            _guid_of(4): "/odom_sub",
+        },
+    )
+    scan = scan_endpoints(snap.endpoint_infos(None))
+    (report,) = scan.reports
+    assert (report.writer_node, report.reader_node) == ("/lidar_driver", "/edge_viewer")
+    (pair,) = scan.matched
+    assert (pair.writer_node, pair.reader_node) == ("/odom_pub", "/odom_sub")

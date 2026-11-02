@@ -29,12 +29,13 @@ You:
 Claude calls: `list_participants(domain_id=0)` -> returns 4
 participants with `vendor`, `hostname`, `guid`, lifecycle fields
 (`first_seen_ns`, `status="active"`, `seen_count`). The
-mixed vendors are mock data; on a live bus the author has observed Cyclone DDS and Dust DDS. `list_endpoints()` then gives every writer and reader with its
+mixed vendors are mock data; live buses with Cyclone DDS, Fast DDS and Dust DDS participants have been observed. `list_endpoints()` then gives every writer and reader with its
 participant, type and structured QoS, and a `by_topic` roll-up that flags
 topics with a writer and no reader. Then `detect_qos_mismatches(topic=None)` -> returns a
 `MismatchScan` whose `reports` hold 1 `MismatchReport` for
 `/dds/qos_mismatch` with `incompatible_policies=["Reliability"]`,
-`severity="incompatible"`, the two participant names and
+`severity="incompatible"`, the two participant names, the ROS 2 node
+names (`reader_node`, `writer_node`) and
 `details=[{policy: "Reliability", requested: "RELIABLE", offered:
 "BEST_EFFORT", rule: ...}]`. `not_matched` is empty (no partition or type
 split) and `hints` notes that `/dds/topicforge/opaque` has a writer and no
@@ -73,7 +74,7 @@ returns `_decode_status="full"` with decoded fields, `/dds/topicforge/opaque`
 returns `_decode_status="raw"` with a `_raw_bytes_hex` preview.
 
 Mock only. Those samples show the wire shape, not live behaviour. On a
-real bus, Cyclone and Fast do not decode user-topic payloads:
+real bus, the Cyclone backend does not decode user-topic payloads:
 `peek_dds_samples` on a user topic returns `count=0` and a `note` saying
 decoding is disabled and that this does not mean the topic is silent. Use
 `list_endpoints` to see who writes and reads the topic. Neither `"full"` nor
@@ -83,21 +84,17 @@ decoding is disabled and that this does not mean the topic is silent. Use
 ## Going live
 
 ```bash
-pip install topicforge[dds-cyclone]    # [dds] is equivalent
+pip install topicforge
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
-
-The Fast DDS adapter (`TOPICFORGE_DDS_BACKEND=fast`) has no PyPI extra:
-it needs a Python binding built from eProsima's sources.
 
 `list_participants`, `list_endpoints` and `detect_qos_mismatches` are
 discovery-based and work against any real DDS domain: Cyclone observes every
 conformant vendor on the wire (RTI Connext, OpenDDS, CoreDX, Dust DDS, etc.)
-via the OMG protocol guarantee. `list_endpoints` is not served by the Fast DDS
-backend. `peek_dds_samples` on a user topic cannot show what is flowing. See
+via the OMG protocol guarantee. `peek_dds_samples` on a user topic cannot show what is flowing. See
 [`docs/dds-interop-matrix.md`](../docs/dds-interop-matrix.md). Cyclone and Dust
-DDS participants have been run together on a live bus; the other vendors are
-covered by the protocol guarantee only.
+DDS participants have been run together on a live bus, and Fast DDS ones are observed
+in CI; the other vendors are covered by the protocol guarantee only.
 
 ## How the analysis works
 

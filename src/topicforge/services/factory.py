@@ -141,8 +141,8 @@ def _dds_inactive_reason(settings: Settings) -> str:
     if backend == "mock":
         if settings.dds_backend == "auto":
             return (
-                "`TOPICFORGE_DDS_BACKEND=auto` found no DDS binding (`fastdds` or "
-                f"`cyclonedds`) installed. {_cyclone_hint()}"
+                "`TOPICFORGE_DDS_BACKEND=auto` found no DDS binding (`cyclonedds`) "
+                f"installed. {_cyclone_hint()}"
             )
         if module_is_importable(DDS_BACKEND_MODULES["cyclone"]):
             return (
@@ -171,8 +171,6 @@ def _try_build_dds(settings: Settings) -> MiddlewareAdapter | None:
     imported lazily from `topicforge.adapters.dds_<vendor>`.
     """
     dds_backend = settings.effective_dds_backend
-    if dds_backend == "fast":
-        return _try_build_fast(settings)
     if dds_backend == "cyclone":
         return _try_build_cyclone(settings)
     return None
@@ -203,32 +201,6 @@ def _try_build_cyclone(settings: Settings) -> MiddlewareAdapter | None:
     return _instantiate(
         "CycloneDdsAdapter", lambda: CycloneDdsAdapter(domain_id=settings.dds_domain_id)
     )
-
-
-def _try_build_fast(settings: Settings) -> MiddlewareAdapter | None:
-    """Instantiate `FastDdsAdapter`, or `None` on failure.
-
-    The only place that imports `fastdds`, so other installs never load it.
-    """
-    try:
-        from topicforge.adapters.dds_fast import FastDdsAdapter
-    except ImportError:
-        log.warning(
-            "TOPICFORGE_DDS_BACKEND=fast but the `fastdds` Python binding is "
-            "not installed. It is not published on PyPI: build it from "
-            "eProsima's Fast-DDS-python sources (see docs/DDS_QUICKSTART.md). "
-            "The DDS module is unavailable."
-        )
-        return None
-    except Exception as exc:  # a native library can fail to load (OSError)
-        log.warning(
-            "DDS binding failed to load (%s: %s); the DDS module is unavailable.",
-            type(exc).__name__,
-            exc,
-        )
-        return None
-
-    return _instantiate("FastDdsAdapter", lambda: FastDdsAdapter(domain_id=settings.dds_domain_id))
 
 
 def _instantiate(label: str, build: Callable[[], MiddlewareAdapter]) -> MiddlewareAdapter | None:

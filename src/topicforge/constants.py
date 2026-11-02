@@ -49,6 +49,12 @@ DEFAULT_TF_STALE_AFTER_S = 2.0
 MIN_TF_STALE_AFTER_S = 0.1
 MAX_TF_STALE_AFTER_S = 3600.0
 
+# `diagnose` wall budget in seconds: the whole sweep, run behind the ROS lock. The 45 s a call
+# may take, lock wait included, leaves room for the 2 s kept back inside it.
+DEFAULT_DIAGNOSE_BUDGET_S = 30.0
+MIN_DIAGNOSE_BUDGET_S = 10.0
+MAX_DIAGNOSE_BUDGET_S = 40.0
+
 # Size of the participant lifecycle event log. `participant_events` returns at most this
 # many events; a full result is reported as truncated.
 MAX_PARTICIPANT_EVENTS = 200

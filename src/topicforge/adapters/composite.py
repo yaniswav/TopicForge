@@ -1,6 +1,6 @@
 """Composite adapter: routes ROS2 graph calls to one adapter, DDS calls to another.
 
-`TOPICFORGE_MODE=live` and `TOPICFORGE_DDS_BACKEND=cyclone|fast` are
+`TOPICFORGE_MODE=live` and `TOPICFORGE_DDS_BACKEND=cyclone` are
 independent settings. When both are active the factory puts a
 `Ros2CliAdapter` and a DDS adapter behind this wrapper, so one process
 serves all tools.

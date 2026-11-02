@@ -1,6 +1,6 @@
 """Payload shape for decoded or raw DDS user-topic samples.
 
-Owning the shape here keeps the Cyclone and Fast adapters' output
+Owning the shape here keeps every DDS adapter's output
 identical. Three builders extend `MessageSample.payload`:
 
 * `annotate_full(fields)`: every field decoded, `_decode_status="full"`.

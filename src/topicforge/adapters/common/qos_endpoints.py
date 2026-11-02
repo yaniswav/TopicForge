@@ -1,9 +1,9 @@
 """Build `EndpointInfo` records from vendor-native samples, then scan them.
 
-Fast DDS entry point of `detect_qos_mismatches`. Its listener keeps raw
-discovery objects whose layout has not been checked on a real bus, so
-records are built with the vendor's `qos_to_profile` / `extract_*` callables
-and carry no participant names. Cyclone goes through
+Entry point for vendors that keep raw discovery objects (the Fast DDS shape;
+no adapter calls it since the Fast adapter was removed). Records are built
+with the vendor's `qos_to_profile` / `extract_*` callables and carry no
+participant names. Cyclone goes through
 `common.endpoints.endpoint_infos_from_samples`. Both end in
 `qos_scan.scan_endpoints`.
 """

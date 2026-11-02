@@ -39,8 +39,9 @@ MVP_TOOLS = {
     "get_node_info",
     # TF tree
     "inspect_tf",
-    # What changed in the graph
+    # What changed in the graph, and the one-call sweep
     "graph_diff",
+    "diagnose",
 }
 
 
@@ -55,10 +56,10 @@ def test_build_app_succeeds() -> None:
     assert app is not None
 
 
-def test_tool_surface_is_locked_at_sixteen() -> None:
+def test_tool_surface_is_locked_at_seventeen() -> None:
     names = {t.name for t in asyncio.run(_mock_app().list_tools())}
     assert names == MVP_TOOLS
-    assert len(names) == 16
+    assert len(names) == 17
 
 
 def test_all_mvp_tools_registered() -> None:
@@ -118,6 +119,7 @@ _EXPECTED_OUTPUT_TITLES = {
     "get_node_info": "NodeInfo",
     "inspect_tf": "TfReport",
     "graph_diff": "GraphDiff",
+    "diagnose": "Diagnosis",
 }
 
 

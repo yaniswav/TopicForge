@@ -31,11 +31,11 @@ Add it to your MCP client. For Claude Desktop, edit `claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. All sixteen tools appear under the hammer icon. Ask something like:
+Restart Claude Desktop. All seventeen tools appear under the hammer icon. Ask something like:
 
 > What topics are being published right now, and what message types do they carry?
 
-The agent calls `list_topics`. In mock mode you'll see the five fixture topics of the demo robot (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw`), deterministic across runs, which lets you learn the tool surface before pointing it at a real graph.
+The agent calls `list_topics`. In mock mode you'll see the fixture topics of the demo robot (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw`, ...), deterministic across runs, which lets you learn the tool surface before pointing it at a real graph.
 
 When you're ready for a real ROS2 environment, switch `TOPICFORGE_MODE` to `live` or `auto`: see the [README](../README.md) configuration section, and [`TESTING.md`](TESTING.md) for full setup paths per OS.
 
@@ -132,7 +132,7 @@ Regardless of the telemetry setting, TopicForge never transmits topic names, mes
 
 ## Where to go next
 
-- [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md): a tour of the DDS module: mock and live walkthroughs per backend, the QoS mismatch scenario, the composite-adapter routing table, and what `peek_dds_samples` and `topic_metrics` do and do not cover.
-- [`TESTING.md`](TESTING.md): five paths to a working ROS2 environment (WSL2, native Linux, Docker, native Windows), plus MCP client wiring for Claude Desktop, Claude Code, and others.
+- [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md): a tour of the DDS module: mock and live walkthroughs, the QoS mismatch scenario, the composite-adapter routing table, and what `peek_dds_samples` and `topic_metrics` do and do not cover.
+- [`TESTING.md`](TESTING.md): paths to a working ROS2 environment (mock, WSL2, native Linux, Docker, native Windows), plus MCP client wiring for Claude Desktop, Claude Code, and others.
 - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md): the error messages, what they mean, and how to fix them.
 - [`dds-interop-matrix.md`](dds-interop-matrix.md): why TopicForge sees participants from any OMG-DDS-RTPS-conformant vendor, not just the one it's bound to.

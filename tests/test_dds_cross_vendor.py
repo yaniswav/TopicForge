@@ -1,25 +1,13 @@
-"""Cross-vendor parametrized tests for the DDS adapters.
+"""Protocol-shape tests for the DDS adapter.
 
-The same test runs once with CycloneDdsAdapter and once with FastDdsAdapter
-via `@pytest.fixture(params=["cyclone", "fast"])`. Each backend auto-skips
-when its binding is not installed: the fixture calls `importorskip`
-inside the parameter branch, so the parametrize matrix surfaces an
-explicit "skipped" entry per backend rather than failing at collection.
-
-The point of cross-vendor testing is to confirm that:
-  * Both adapters satisfy the same `MiddlewareAdapter` protocol shape
-  * Both return Pydantic models with canonical vendor-neutral enum values
-    (this would catch a Cyclone adapter accidentally emitting `"Reliable"`
-    instead of `"RELIABLE"`, etc.)
-  * Both raise `DDS_ONLY_ERROR_MSG` on the 4 ROS2 methods uniformly
-  * Both raise the v0.3.x XTypes/IDL roadmap message uniformly
-  * `detect_qos_mismatches` returns the same `MismatchScan` shape
-    regardless of which discovery path produced the QoS pair
-
-Note: when both bindings are installed and tests run in parallel, the
-Cyclone and Fast participants will discover each other on domain 0 via
-the OMG-RTPS protocol guarantee. That is the multi-vendor positioning
-in action ; the tests deliberately do not pin participant counts.
+Ran against Cyclone and Fast until 0.9.0, when the fastdds-based adapter was removed:
+Cyclone observes Fast DDS (and every conformant vendor) through standard RTPS discovery.
+The fixture stays parametrized so a future backend slots in. It skips without
+`cyclonedds`. The tests confirm that the adapter:
+  * satisfies the `MiddlewareAdapter` protocol shape
+  * returns Pydantic models with canonical vendor-neutral enum values
+  * raises `DDS_ONLY_ERROR_MSG` on the ROS 2 methods
+  * returns the expected `MismatchScan` shape from `detect_qos_mismatches`
 """
 
 from __future__ import annotations
@@ -32,24 +20,12 @@ from topicforge.adapters.base import AdapterError, MiddlewareAdapter
 from topicforge.adapters.common import VendorTag
 
 
-@pytest.fixture(params=["cyclone", "fast"])
+@pytest.fixture(params=["cyclone"])
 def dds_adapter(request: pytest.FixtureRequest) -> Any:
-    backend = request.param
-    if backend == "cyclone":
-        pytest.importorskip("cyclonedds")
-        from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
+    pytest.importorskip("cyclonedds")
+    from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
 
-        adapter = CycloneDdsAdapter(domain_id=0)
-        yield adapter
-    else:
-        pytest.importorskip("fastdds")
-        from topicforge.adapters.dds_fast import FastDdsAdapter
-
-        adapter = FastDdsAdapter(domain_id=0)
-        try:
-            yield adapter
-        finally:
-            adapter.close()
+    return CycloneDdsAdapter(domain_id=0)
 
 
 def test_adapter_satisfies_middleware_protocol(dds_adapter: Any) -> None:
@@ -58,7 +34,7 @@ def test_adapter_satisfies_middleware_protocol(dds_adapter: Any) -> None:
 
 
 def test_adapter_name_is_canonical_tag(dds_adapter: Any) -> None:
-    assert dds_adapter.name in ("cyclone", "fast")
+    assert dds_adapter.name == "cyclone"
 
 
 def test_adapter_effective_mode_is_live(dds_adapter: Any) -> None:

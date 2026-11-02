@@ -50,8 +50,8 @@ adapter. A search of `src/` for `create_publisher`, `call_service`,
 `set_parameters`, `DataWriter` and `Publisher(` finds nothing; the only
 `publish` matches are field names and comments (`publish_ns`, "publisher
 count", log text). The ros2 adapter only runs `ros2 topic list`,
-`topic info`, `topic echo`, `bag info`, `node list`, `node info` and
-`param dump`; it never runs `topic pub`, `service call`, `param set`,
+`topic info`, `topic echo`, `service list`, `bag info`, `node list`,
+`node info` and `param dump`; it never runs `topic pub`, `service call`, `param set`,
 `action send_goal` or `bag record`. The
 Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
@@ -59,7 +59,7 @@ the DDS adapters or in `adapters/common`.
 
 **The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no other service call, no parameter set, no lifecycle transition, no action goal.
 
-**Declaration.** All sixteen tools carry MCP `ToolAnnotations`:
+**Declaration.** All seventeen tools carry MCP `ToolAnnotations`:
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, a
 `title`, and an honest `openWorldHint` (true for tools that observe a
 live ROS 2 graph or DDS bus, false for `health_check`, `analyze_bag` and
@@ -72,10 +72,10 @@ architecture.
 
 **Proof.** `tests/test_tool_annotations.py` builds the app in mock mode,
 lists the tools through the MCP layer as a client would, and fails if the
-tool count is not sixteen, if any tool lacks annotations, is not read-only,
+tool count is not seventeen, if any tool lacks annotations, is not read-only,
 non-destructive and idempotent, has no title or a non-boolean
 `openWorldHint`, or if the set of closed-world tools differs from the
-three above. Adding a sixteenth tool without annotations fails the suite.
+three above. Adding an eighteenth tool without annotations fails the suite.
 
 **What read-only does not mean: not perfectly passive.**
 
@@ -84,8 +84,7 @@ three above. Adding a sixteenth tool without annotations fails the suite.
   other participants see it, and it creates builtin discovery readers
   (DCPSParticipant, DCPSPublication, DCPSSubscription). It never creates a
   writer, and it creates no reader on user topics: the typed user-topic
-  reader code is disabled and unreachable (payload decoding is off). The
-  `dds_fast` adapter has never run against a bus.
+  reader code is disabled and unreachable (payload decoding is off).
 - The ros2 CLI path starts `ros2` processes, which can start the ros2
   daemon if it is not already running. `sample_messages` runs
   `ros2 topic echo`, which creates a temporary subscription (a reader) on
@@ -149,8 +148,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest release receives security patches: `0.8.1` at the
-time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
+Only the latest release on PyPI receives security patches. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure
 
