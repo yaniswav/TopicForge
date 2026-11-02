@@ -15,11 +15,11 @@ How to get a working ROS2 environment to point TopicForge at, and how to wire it
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install topicforge
-python -m topicforge --version                      # -> topicforge 0.8.1
+python -m topicforge --version                      # -> topicforge <version>
 TOPICFORGE_MODE=mock python -m topicforge           # blocks on stdio; MCP clients spawn it
 ```
 
-The mock graph has five topics modeling a small differential robot with LIDAR + RGB camera, deterministic across runs. To call the tools, configure a client as in [Connect an MCP client](#connect-an-mcp-client) with `"env": { "TOPICFORGE_MODE": "mock" }`.
+The mock graph models a small differential robot with LIDAR + RGB camera (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw` and a few more), deterministic across runs. To call the tools, configure a client as in [Connect an MCP client](#connect-an-mcp-client) with `"env": { "TOPICFORGE_MODE": "mock" }`.
 
 ## WSL2 + ROS2 Humble (Windows, recommended)
 
@@ -41,7 +41,7 @@ python3 -m venv ~/topicforge-venv && source ~/topicforge-venv/bin/activate
 pip install topicforge          # Ubuntu 22.04 ships Python 3.10, which is enough
 ```
 
-Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge 0.8.1 ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
+Then run live mode with three terminals. In the first, `ros2 run demo_nodes_cpp talker` publishes `/chatter` at about 1 Hz. In the second, `ros2 topic list` should show `/chatter`. In the third, source ROS2, activate the venv and run `TOPICFORGE_MODE=live python -m topicforge`. The startup line reads `topicforge <version> ready (mode=live, requested_mode=live, adapter=ros2_cli, telemetry=off)`; `mode=mock` means `ros2` was not found and the server fell back to fixtures.
 
 ## Linux native
 
@@ -75,7 +75,7 @@ TopicForge resolves the `ros2` launcher with `shutil.which` (normally `ros2.exe`
 
 ## Test scenarios
 
-Discover the graph. Ask "What topics are currently being published, and what message types do they carry?" TopicForge calls `list_topics`. Live mode shows `/chatter` plus `/rosout` and `/parameter_events`; mock mode shows `/cmd_vel`, `/odom`, `/scan`, `/tf`, `/tf_static` and `/camera/image_raw`.
+Discover the graph. Ask "What topics are currently being published, and what message types do they carry?" TopicForge calls `list_topics`. Live mode shows `/chatter` plus `/rosout` and `/parameter_events`; mock mode shows the robot's topics (`/cmd_vel`, `/odom`, `/scan`, `/tf`, `/camera/image_raw`, ...).
 
 Inspect and sample. Ask "Show me the latest message on /chatter." TopicForge calls `get_topic_info` then `sample_messages`. The payload has the message fields as nested named values. `timestamp_ns` is the `header.stamp` and the body time of `/clock`, `/tf` and `/rosout`, and `0` for other headerless types such as `std_msgs/String` (`stamp_source` says which).
 

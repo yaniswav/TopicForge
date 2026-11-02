@@ -92,9 +92,9 @@ pip install "topicforge[dds]"                    # alias, kept so older commands
 TOPICFORGE_DDS_BACKEND=cyclone python -m topicforge
 ```
 
-`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone` and `auto` (`cyclone` if the binding imports, else `mock`). The default `mock` selects no DDS backend: installing the Cyclone binding is not enough, you must also set `TOPICFORGE_DDS_BACKEND=cyclone`. With `TOPICFORGE_MODE=live` and no backend selected, the DDS tools raise `DDS module is not active: ...` with the actual cause (backend not selected, binding not installed, or binding installed but the adapter failed to start), and `health_check` reports `dds_backend: "none"` plus `dds_inactive_note`. An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the nine `ros2` CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `graph_diff`, `diagnose`, `sample_messages`, `analyze_bag`) to the CLI and the six DDS tools to the DDS backend; `peek_bag_samples` reads bags without the CLI.
+`TOPICFORGE_DDS_BACKEND` accepts `mock` (default), `cyclone` and `auto` (`cyclone` if the binding imports, else `mock`). The default `mock` selects no DDS backend: installing the Cyclone binding is not enough, you must also set `TOPICFORGE_DDS_BACKEND=cyclone`. With `TOPICFORGE_MODE=live` and no backend selected, the DDS tools raise `DDS module is not active: ...` with the actual cause (backend not selected, binding not installed, or binding installed but the adapter failed to start), and `health_check` reports `dds_backend: "none"` plus `dds_inactive_note`. An explicit value is honoured with or without `ros2` on PATH, in any mode except `mock`. If the binding is missing or the participant cannot start, the server logs a warning naming the cause and falls back to the ROS2 CLI alone, or to the mock fixtures. When both `ros2` and a DDS backend are up, a composite adapter routes the nine `ros2` CLI tools (`list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `graph_diff`, `diagnose`, `sample_messages`, `analyze_bag`) to the CLI and the six DDS tools to the DDS backend; `peek_bag_samples` goes to the ROS half but runs no `ros2` process.
 
-Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) are observed by the Cyclone backend through standard RTPS discovery. The adapter that joined through the `fastdds` binding was removed in 0.9.0, and `TOPICFORGE_DDS_BACKEND=fast` is refused at startup. Any other value (`fast`, `rti`, `opensplice`, `coredx`, `intercom`, `opendds`, `dust`) is rejected at startup with an error that lists the valid ones; Cyclone already sees those vendors' participants through standard discovery. Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md); error messages are in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) need no backend of their own: the Cyclone backend observes them through standard RTPS discovery. Since 0.9.0 `TOPICFORGE_DDS_BACKEND=fast` is refused, like `rti`, `opensplice`, `coredx`, `intercom`, `opendds` and `dust`: startup stops with an error that lists the valid values (see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)). Full backend selection, the routing table and the QoS mismatch scenario are in [`docs/DDS_QUICKSTART.md`](docs/DDS_QUICKSTART.md).
 
 ## Configuration reference
 
@@ -127,7 +127,7 @@ External validation against a simulated robot's ground truth (OmniSim): [docs/VA
 - Calls are serialized per backend (one `ros2` call at a time, one DDS call at a time) and each call has a 45 s wall budget, lock wait included; a call that cannot get its lane fails at once with `busy`. `health_check` and `peek_bag_samples` take no lock.
 - No streaming or push subscriptions: tools are strictly request/response.
 
-Next: an opt-in probe to tell a hung writer from a healthy one, wider real-bus validation (RTI, OpenDDS), and DDS Security. Open work is tracked in [issues](https://github.com/yaniswav/TopicForge/issues).
+Not done yet: an opt-in probe to tell a hung writer from a healthy one, wider real-bus validation (RTI, OpenDDS) and DDS Security. Open work is tracked in [issues](https://github.com/yaniswav/TopicForge/issues).
 
 ## Telemetry
 
@@ -192,8 +192,8 @@ src/topicforge/
   config/      settings and mode resolution
   telemetry/   opt-in, off by default
 examples/      mock walkthroughs (*.md) and runnable live DDS examples (dds/)
-scripts/       real-bus interop checks
-docs/          guides, product plan
+scripts/       real-bus interop checks, ground-truth comparator, agent evaluation
+docs/          guides and reference
 tests/         pytest suite, mock-only, no ROS2 or DDS required
 ```
 

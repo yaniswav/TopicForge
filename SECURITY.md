@@ -50,8 +50,8 @@ adapter. A search of `src/` for `create_publisher`, `call_service`,
 `set_parameters`, `DataWriter` and `Publisher(` finds nothing; the only
 `publish` matches are field names and comments (`publish_ns`, "publisher
 count", log text). The ros2 adapter only runs `ros2 topic list`,
-`topic info`, `topic echo`, `bag info`, `node list`, `node info` and
-`param dump`; it never runs `topic pub`, `service call`, `param set`,
+`topic info`, `topic echo`, `service list`, `bag info`, `node list`,
+`node info` and `param dump`; it never runs `topic pub`, `service call`, `param set`,
 `action send_goal` or `bag record`. The
 Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
@@ -148,8 +148,7 @@ Genuine threat-model gaps are in-scope and welcome.
 
 ## Supported versions
 
-Only the latest release receives security patches: `0.8.1` at the
-time of writing. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
+Only the latest release on PyPI receives security patches. Releases 0.3.0 to 0.5.2 are yanked from PyPI.
 
 ## Disclosure
 

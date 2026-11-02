@@ -23,9 +23,9 @@ One of the six is written in Rust: at the wire level the language does not matte
 
 ## What this means for TopicForge
 
-When you install TopicForge with DDS support (`pip install topicforge[dds]`, which installs the CycloneDDS Python binding), it joins the domain you point it at as a read-only participant. Fast DDS participants are observed through that same Cyclone binding; the adapter that joined through eProsima's `fastdds` binding was removed in 0.9.0 (see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md)).
+When the Cyclone backend is on (`pip install topicforge`, which brings the CycloneDDS Python binding where wheels exist, and `TOPICFORGE_DDS_BACKEND=cyclone`), it joins the domain you point it at as a read-only participant. Fast DDS participants are observed through that same Cyclone binding, with no Fast DDS binding (see [`DDS_QUICKSTART.md`](DDS_QUICKSTART.md)).
 
-From there, TopicForge's discovery-based tools (`list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, and `peek_dds_samples` on the builtin `DCPS*` topics) should see every conformant participant on the bus (observed so far: Cyclone DDS and Dust DDS), regardless of:
+From there, TopicForge's discovery-based tools (`list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, and `peek_dds_samples` on the builtin `DCPS*` topics) should see every conformant participant on the bus (observed so far: Cyclone DDS, Fast DDS and Dust DDS), regardless of:
 
 - The vendor: RTI Connext, OpenDDS, CoreDX, Fast DDS, Cyclone, InterCOM, Dust DDS, or any other DDS-RTPS conformant stack
 - The host language: C, C++11/14/17/20, Rust, Java, .NET, Python, Ada, anything with a binding

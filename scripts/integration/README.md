@@ -6,9 +6,8 @@ standard RTPS discovery topics, with no vendor-specific binding. The questions
 are asked by the official MCP client over stdio, the same path Claude Desktop
 or Claude Code uses.
 
-This is the first thing in the repository that runs the DDS adapters against
-live traffic. The status of each participant is listed below; most have not
-been run yet.
+The status of each participant is listed below; the Cyclone and Dust ones run,
+most of the others have not been run yet.
 
 TopicForge never publishes. The participants in `publishers/` are demo
 programs written for this directory; TopicForge itself only reads discovery
@@ -51,7 +50,7 @@ Each participant is reported as `ready` or `skipped (<what is missing>)`.
 Two participants are required, and the driver exits with an error without
 them:
 
-- Python / Cyclone: `pip install "topicforge[dds]"`.
+- Python / Cyclone: `pip install topicforge` (`setup` does it).
 - Rust / Dust: `cargo build --release` in `publishers/dust_publisher`.
 
 Every other participant is optional. It joins the bus automatically when its
@@ -67,7 +66,7 @@ QoS story; the seven language participants each write one topic,
 language.
 
 "Tested" means it ran on the bus and was
-seen by TopicForge, on Windows 11 only. "Written, not run" means the source
+seen by TopicForge, on Windows 11 (the Cyclone and Rust / Dust ones also in `demo.yml`). "Written, not run" means the source
 exists and was written from the vendor's documentation or example sources, but
 nobody has built or started it.
 
@@ -87,7 +86,7 @@ nobody has built or started it.
 | OpenSplice | C | `opensplice_publisher/` | writes `DemoStatus` | Written, not run (experimental) |
 
 `.github/workflows/demo-fast.yml` builds the Fast DDS C++ participant and
-starts it for ten seconds. It has no run to show yet.
+starts it for ten seconds (see the CI section).
 
 Four vendor and language combinations have no binding at all and are not
 covered: Fast DDS C, Fast DDS Rust, Dust DDS C++ and OpenSplice Rust. Two
