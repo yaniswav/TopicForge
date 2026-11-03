@@ -152,6 +152,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `action_clients` | `list[NodeInterface]` | yes | Actions the node calls. |
 | `parameters` | `array \| null` | no | Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none. |
 | `parameters_note` | `string \| null` | no | Why `parameters` is `None`, or what was masked or cut; `None` when complete. |
+| `parameters_status` | `"timeout" \| "no_parameter_services" \| "no_budget" \| "failed" \| null` | no | Why `parameters` is `None`; `None` when it was read. |
 | `use_sim_time` | `boolean \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
 | `use_sim_time_note` | `string \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
 | `lifecycle` | `bool` | no | True when `service_servers` has `<full_name>/get_state` (GetState). |

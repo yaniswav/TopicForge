@@ -285,7 +285,10 @@ def test_list_topics_reads_counts_from_the_verbose_list(
     topics = {t.name: t for t in Ros2CliAdapter().list_topics()}
     assert (topics["/tf"].publisher_count, topics["/tf"].subscriber_count) == (2, 3)
     assert (topics["/cmd_vel"].publisher_count, topics["/cmd_vel"].subscriber_count) == (0, 1)
-    assert all(set(t.model_dump()) == set(TopicListItem.model_fields) for t in topics.values())
+    assert all(
+        set(t.model_dump()) == set(TopicListItem.model_fields) - {"counts_unknown"}
+        for t in topics.values()
+    )
     # Only the topic absent from both sections costs a per-topic call.
     assert sum(c[1:3] == ["topic", "info"] for c in cli.commands) == 1
 
@@ -473,3 +476,12 @@ def test_live_analyze_bag_keeps_duration_basis_when_the_bag_is_not_readable_here
 def test_live_analyze_bag_missing_path_raises() -> None:
     with pytest.raises(AdapterError, match="does not exist"):
         Ros2CliAdapter().analyze_bag(str(_BAG_DIR / "absent"))
+
+
+def test_list_topics_flags_counts_that_could_not_be_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed `topic info` lookup is `counts_unknown`, not an orphan with zero endpoints."""
+    cli = _Cli({"topic list": _LIST_T, "topic list -v": 1, "topic info": 1})
+    _install(monkeypatch, cli)
+    topics = Ros2CliAdapter().list_topics()
+    assert topics and all(t.counts_unknown is True for t in topics)
+    assert "counts_unknown" in topics[0].model_dump()

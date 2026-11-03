@@ -17,6 +17,13 @@
       "TopicListItem": {
         "additionalProperties": false,
         "properties": {
+          "counts_unknown": {
+            "description": "True when the counts could not be read (shown as 0).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "message_type": {
             "type": "string"
           },

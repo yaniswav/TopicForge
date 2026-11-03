@@ -137,6 +137,7 @@ def test_get_node_info_assembles_graph_and_parameters(cli: FakeCli) -> None:
     assert [i.name for i in info.publishers] == ["/cmd_vel", "/parameter_events", "/rosout"]
     assert info.action_servers[0].type == "nav2_msgs/action/NavigateToPose"
     assert info.parameters is not None and info.parameters_note is None
+    assert info.parameters_status is None
     assert info.parameters[0].name == "goal_tolerance"
     assert info.use_sim_time is False and info.use_sim_time_note is None
     assert info.duplicate_count == 1 and info.note is None
@@ -159,7 +160,7 @@ def test_param_dump_output_is_capped_at_one_mebibyte(cli: FakeCli) -> None:
 def test_a_param_timeout_is_a_diagnosis_not_an_error(cli: FakeCli) -> None:
     cli.replies["param dump"] = TIMED_OUT
     info = _info(Ros2CliAdapter(), timeout_s=3)
-    assert info.parameters is None
+    assert info.parameters is None and info.parameters_status == "timeout"
     assert info.parameters_note == (
         "The node announced its parameter services but did not answer within 3 s: "
         "its executor is probably blocked."
@@ -189,7 +190,7 @@ def test_the_param_read_is_shortened_by_what_the_call_already_spent(cli: FakeCli
 def test_no_budget_left_for_the_param_read_is_said_plainly(cli: FakeCli) -> None:
     with budget.deadline_at(time.monotonic() + 1.5):
         info = _info(Ros2CliAdapter(), timeout_s=20)
-    assert info.parameters is None
+    assert info.parameters is None and info.parameters_status == "no_budget"
     assert info.parameters_note is not None and "No time was left" in info.parameters_note
     assert "executor" not in info.parameters_note  # not a diagnosis of the node
     assert cli.ran("param dump") == []  # nothing was started with no time to run
@@ -229,7 +230,7 @@ def test_a_node_without_parameter_services_skips_the_dump(cli: FakeCli) -> None:
     cli.replies["node info"] = _ok(_read("node_info_no_param_services.txt"))
     info = _info(Ros2CliAdapter(), "/legacy_bridge")
     assert cli.ran("param dump") == []
-    assert info.parameters is None
+    assert info.parameters is None and info.parameters_status == "no_parameter_services"
     assert (
         info.parameters_note is not None
         and "does not offer parameter services" in info.parameters_note
@@ -266,7 +267,7 @@ def test_a_dump_over_the_cap_is_reported_not_parsed(cli: FakeCli) -> None:
         truncated=True,
     )
     info = _info(Ros2CliAdapter())
-    assert info.parameters is None
+    assert info.parameters is None and info.parameters_status == "failed"
     assert info.parameters_note is not None and "1 MiB" in info.parameters_note
 
 
@@ -275,7 +276,7 @@ def test_a_failing_param_dump_is_a_note(cli: FakeCli) -> None:
         returncode=1, stdout="", stderr="Node not found\n", timed_out=False, truncated=False
     )
     info = _info(Ros2CliAdapter())
-    assert info.parameters is None
+    assert info.parameters is None and info.parameters_status == "failed"
     assert info.parameters_note is not None and "exit 1" in info.parameters_note
     assert "Node not found" in info.parameters_note
 
@@ -284,6 +285,7 @@ def test_a_non_yaml_dump_is_a_note(cli: FakeCli) -> None:
     cli.replies["param dump"] = _ok("this is not a parameter document")
     info = _info(Ros2CliAdapter())
     assert info.parameters is None and info.parameters_note
+    assert info.parameters_status == "failed"
 
 
 def test_nothing_is_written_to_the_working_directory(

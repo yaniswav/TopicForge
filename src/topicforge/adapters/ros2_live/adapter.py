@@ -83,6 +83,7 @@ from topicforge.models import (
     TopicMetrics,
     TopicRate,
 )
+from topicforge.models.nodes import ParametersStatus
 
 log = logging.getLogger(__name__)
 
@@ -254,10 +255,11 @@ class Ros2CliAdapter:
                 f"Could not read the interfaces of node {node!r}: unrecognized "
                 "`ros2 node info` output."
             )
-        parameters, parameters_note = None, None
+        parameters, parameters_note, status = None, None, None
         if offers_parameter_services(node, interfaces["service_servers"]):
-            parameters, parameters_note = self._read_parameters(node, timeout_s)
+            parameters, parameters_note, status = self._read_parameters(node, timeout_s)
         else:
+            status = "no_parameter_services"
             parameters_note = (
                 "The node does not offer parameter services (no "
                 f"{node}/list_parameters), so its parameters cannot be read."
@@ -269,6 +271,7 @@ class Ros2CliAdapter:
             parameters_note=parameters_note,
             duplicate_count=names.count(node),
             mode=self.effective_mode,
+            parameters_status=status,
         )
 
     def robot_description_parameter(self, timeout_s: float) -> tuple[str | None, str]:
@@ -324,13 +327,21 @@ class Ros2CliAdapter:
 
     def _read_parameters(
         self, node: str, timeout_s: float
-    ) -> tuple[list[NodeParameter] | None, str | None]:
-        """`(parameters, note)` from `ros2 param dump <node>`; `(None, why)` when unreadable."""
+    ) -> tuple[list[NodeParameter] | None, str | None, ParametersStatus | None]:
+        """`(parameters, note, status)` from `ros2 param dump <node>`.
+
+        Unreadable gives `(None, why, status)`: `no_budget` (nothing left to wait with),
+        `timeout` (the only real non-answer), or `failed` (exit, size or format).
+        """
         wait = call_budget.clamp(timeout_s, _PARAM_STOP_RESERVE_SEC)
         if wait <= 0:
-            return None, (
-                "No time was left in this call's budget to read the parameters (the call "
-                "waited for the ROS lock or for the graph queries): retry."
+            return (
+                None,
+                (
+                    "No time was left in this call's budget to read the parameters (the call "
+                    "waited for the ROS lock or for the graph queries): retry."
+                ),
+                "no_budget",
             )
         result, shown = self._exec(
             [self._exe, "param", "dump", node],
@@ -338,22 +349,35 @@ class Ros2CliAdapter:
             max_output_bytes=_PARAM_DUMP_MAX_BYTES,
         )
         if result.timed_out:
-            return None, (
-                "The node announced its parameter services but did not answer within "
-                f"{shown:g} s: its executor is probably blocked."
+            return (
+                None,
+                (
+                    "The node announced its parameter services but did not answer within "
+                    f"{shown:g} s: its executor is probably blocked."
+                ),
+                "timeout",
             )
         if result.returncode != 0:
             tail = [ln for ln in result.stderr.strip().splitlines() if ln][-1:]
-            return None, (
-                f"`ros2 param dump` failed (exit {result.returncode}): "
-                f"{tail[0] if tail else 'no stderr'}"
+            return (
+                None,
+                (
+                    f"`ros2 param dump` failed (exit {result.returncode}): "
+                    f"{tail[0] if tail else 'no stderr'}"
+                ),
+                "failed",
             )
         if result.truncated:
-            return None, "The parameter dump is larger than 1 MiB and was not read."
+            return None, "The parameter dump is larger than 1 MiB and was not read.", "failed"
         raw = parse_param_dump(result.stdout)
         if raw is None:
-            return None, "`ros2 param dump` printed something that is not a parameter document."
-        return build_parameters(raw)
+            return (
+                None,
+                "`ros2 param dump` printed something that is not a parameter document.",
+                "failed",
+            )
+        parameters, note = build_parameters(raw)
+        return parameters, note, None
 
     def list_topics(self) -> list[TopicListItem]:
         """Topics with types and publisher/subscriber counts; QoS is not read here.
@@ -369,13 +393,18 @@ class Ros2CliAdapter:
         topics: list[TopicListItem] = []
         for name, msg_type in listed:
             counts = graph_counts.get(name) if graph_counts is not None else None
-            pub_count, sub_count = counts if counts is not None else self._safe_counts(name)
+            unknown = False
+            if counts is None:
+                counts = self._safe_counts(name)
+                unknown = counts is None
+            pub_count, sub_count = counts or (0, 0)
             topics.append(
                 TopicListItem(
                     name=name,
                     message_type=msg_type,
                     publisher_count=pub_count,
                     subscriber_count=sub_count,
+                    counts_unknown=True if unknown else None,
                 )
             )
         return topics
@@ -630,12 +659,12 @@ class Ros2CliAdapter:
             return None
         return parse_topic_list_verbose(text)
 
-    def _safe_counts(self, topic: str) -> tuple[int, int]:
-        """`(pub_count, sub_count)` for a topic, `(0, 0)` if the lookup fails."""
+    def _safe_counts(self, topic: str) -> tuple[int, int] | None:
+        """`(pub_count, sub_count)` for a topic, `None` if the lookup fails."""
         try:
             text = self._run([self._exe, "topic", "info", topic])
         except AdapterError:
-            return (0, 0)
+            return None
         return parse_pub_sub_counts(text)
 
     def _exec(

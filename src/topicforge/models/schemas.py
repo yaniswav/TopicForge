@@ -6,9 +6,16 @@ extra key fail in tests instead of reaching clients.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    WithJsonSchema,
+    model_serializer,
+)
 
 from topicforge.models.summaries import MessageSummary, TopicRate
 
@@ -705,6 +712,17 @@ class TopicListItem(BaseModel):
     subscriber_count: int = Field(
         ge=0,
     )
+    counts_unknown: bool | None = Field(
+        default=None, description="True when the counts could not be read (shown as 0)."
+    )
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_flag(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Leave `counts_unknown` out of the payload unless it is set, to keep listings small."""
+        data = handler(self)
+        if data.get("counts_unknown") is None:
+            data.pop("counts_unknown", None)
+        return data
 
 
 class TopicListing(BaseModel):
