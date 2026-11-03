@@ -3,14 +3,17 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch: # dry run: build + smoke only, nothing is published
+
+permissions:
+  contents: read
+
 jobs:
-  publish:
+  build:
+    # No id-token here: this job runs build tooling and must not hold the
+    # publishing credential.
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/topicforge
     permissions:
-      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v7
@@ -20,6 +23,122 @@ jobs:
       - run: python -m pip install --upgrade pip build twine
       - run: python -m build
       - run: python -m twine check dist/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+      - name: Pack the MCP Bundle
+        run: |
+          VERSION="$(jq -r .version mcpb/manifest.json)"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            test "${GITHUB_REF_NAME#v}" = "$VERSION"
+          fi
+          mkdir -p mcpb-out
+          npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb "mcpb-out/topicforge-${VERSION}.mcpb"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcpb
+          path: mcpb-out/
+          if-no-files-found: error
+
+  smoke:
+    # Installs the built wheel (not the source tree) in a fresh venv and talks
+    # to the server over stdio in mock mode. No ROS needed.
+    needs: build
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.14"]
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Install the wheel in a fresh venv
+        shell: bash
+        run: |
+          python -m venv smoke-venv
+          if [ -x smoke-venv/Scripts/python.exe ]; then PY="$PWD/smoke-venv/Scripts/python.exe"; else PY="$PWD/smoke-venv/bin/python"; fi
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install dist/*.whl
+          echo "PY=$PY" >> "$GITHUB_ENV"
+      - name: Version and entry point
+        shell: bash
+        run: |
+          WHEEL_VERSION="$(ls dist/*.whl | head -n 1 | sed -E 's|.*/topicforge-([^-]+)-.*|\1|')"
+          INSTALLED="$("$PY" -c 'import topicforge; print(topicforge.__version__)')"
+          echo "wheel=$WHEEL_VERSION installed=$INSTALLED ref=$GITHUB_REF_NAME"
+          test "$WHEEL_VERSION" = "$INSTALLED"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            test "${GITHUB_REF_NAME#v}" = "$INSTALLED"
+          fi
+          "$PY" -m topicforge --version
+      - name: List tools over stdio (mock mode)
+        shell: bash
+        env:
+          TOPICFORGE_MODE: mock
+          TOPICFORGE_DDS_BACKEND: mock
+          TOPICFORGE_TELEMETRY: "off"
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cat > "$RUNNER_TEMP/smoke/smoke_stdio.py" <<'PYEOF'
+          import asyncio
+          import sys
+
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          EXPECTED_TOOLS = 17
+
+
+          async def main() -> None:
+              params = StdioServerParameters(command=sys.executable, args=["-m", "topicforge"])
+              async with stdio_client(params) as (read, write):
+                  async with ClientSession(read, write) as session:
+                      await session.initialize()
+                      tools = (await session.list_tools()).tools
+                      names = sorted(t.name for t in tools)
+                      print(len(names), "tools:", ", ".join(names))
+                      assert len(names) == EXPECTED_TOOLS, f"expected {EXPECTED_TOOLS} tools"
+                      result = await session.call_tool("health_check", {})
+                      assert not result.is_error, "health_check returned an error"
+                      print("health_check ok")
+
+
+          asyncio.run(main())
+          PYEOF
+          # Venv interpreter, run from a directory without the source tree.
+          cd "$RUNNER_TEMP/smoke"
+          "$PY" smoke_stdio.py
+
+  publish:
+    # The only job holding id-token: write. It builds nothing: it uploads the
+    # exact artifact the smoke job installed and tested.
+    needs: smoke
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/topicforge
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   mcp-registry:
@@ -27,6 +146,7 @@ jobs:
     # PyPI publish job succeeded, because the registry validates that the
     # pinned package version exists on PyPI.
     needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       id-token: write # GitHub OIDC login to the registry
@@ -69,27 +189,25 @@ jobs:
         run: ./mcp-publisher publish
 
   mcpb:
-    # Packs the MCP Bundle (one-click Claude Desktop install) and attaches it
-    # to the GitHub release of the tag.
+    # Attaches the MCP Bundle (one-click Claude Desktop install, packed in the
+    # build job) to the GitHub release of the tag.
     needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release / upload the asset
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v5
+      - uses: actions/download-artifact@v8
         with:
-          node-version: "lts/*"
-      - name: Pack the bundle
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          test "$VERSION" = "$(jq -r .version mcpb/manifest.json)"
-          npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb "topicforge-${VERSION}.mcpb"
+          name: mcpb
+          path: mcpb-out
       - name: Attach to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          FILE="topicforge-${GITHUB_REF_NAME#v}.mcpb"
+          FILE="mcpb-out/topicforge-${GITHUB_REF_NAME#v}.mcpb"
+          test -f "$FILE"
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$FILE" --clobber
           else
