@@ -563,6 +563,83 @@ def test_old_departures_outside_the_window_are_not_a_restart_loop() -> None:
     assert [f for f in found if f.severity != "info"] == []
 
 
+def test_a_name_with_an_active_participant_never_left_and_did_not_come_back() -> None:
+    now = time.time_ns()
+    gone = {"first_seen_ns": now - 86400 * _NS, "last_seen_ns": now - 80000 * _NS}
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [
+        _participant("x", "g0", "left").model_copy(update=gone),
+        _participant("x", "g1", "left").model_copy(update=gone),
+        _participant("x", "g2"),
+        _participant("y", "g3", "left").model_copy(update=gone),
+    ]
+    infos = [f.text for f in _by(_run(adapter), "dds", "info")]
+    assert not any("/x" in t for t in infos)
+    assert any("/y" in t for t in infos)  # a real departure is still reported
+
+
+def test_the_restart_evidence_names_the_window_not_the_all_time_field() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    found = [f for f in _by(_run(adapter), "dds") if f.severity == "critical"]
+    assert len(found) == 1
+    ev = found[0].evidence[0]
+    assert "restarts_by_node" not in ev.field and "300" in ev.field and ev.value == "3"
+
+
+def test_parameters_without_a_status_are_unreadable_not_silent_and_not_answered() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status["/a"] = None  # type: ignore[assignment]
+    result = _run(adapter)
+    assert [f for f in _by(result, "responsiveness") if f.severity != "info"] == []
+    assert any(
+        "could not be read" in f.text and "/a" in f.text for f in _by(result, "responsiveness")
+    )
+
+
+def test_findings_about_the_named_node_survive_the_cap_behind_many_criticals() -> None:
+    reports = []
+    for i in range(MAX_FINDINGS + 10):
+        reports += _readers(1, f"w{i}").reports
+        reports[-1] = reports[-1].model_copy(update={"topic": f"/t{i:03d}"})
+    risky = (
+        _readers(1, "wz")
+        .reports[0]
+        .model_copy(update={"topic": "/zzz", "severity": "risky", "reader_node": "/camera_driver"})
+    )
+    adapter = _calm(Scripted(), ["/a", "/camera_driver"])
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(
+        update={"reports": [*reports, risky]}
+    )
+    del adapter.over["sample_messages"]
+    result = _run(adapter, node="/camera_driver")
+    assert len(result.findings) == MAX_FINDINGS
+    mine = [(f.check, f.severity) for f in result.findings if f.severity == "warning"]
+    assert ("logs", "warning") in mine and ("dds", "warning") in mine
+
+
+def test_writers_without_identity_stay_apart_and_differing_requests_are_all_shown() -> None:
+    base = fixtures.mock_mismatch_scan(None).reports[0]
+    anon = base.model_copy(
+        update={"writer_guid": None, "writer_node": None, "writer_participant_name": None}
+    )
+    one = anon.model_copy(update={"reader_node": "/r1"})
+    two = anon.model_copy(update={"reader_node": "/r2"})
+    adapter = _calm(Scripted())
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(update={"reports": [one, two]})
+    assert len(_by(_run(adapter), "dds", "critical")) == 2
+    d0 = base.details[0]
+    a = base.model_copy(
+        update={"reader_node": "/r1", "details": [d0.model_copy(update={"requested": "AAA"})]}
+    )
+    b = a.model_copy(
+        update={"reader_node": "/r2", "details": [d0.model_copy(update={"requested": "BBB"})]}
+    )
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(update={"reports": [a, b]})
+    found = _by(_run(adapter), "dds", "critical")
+    assert len(found) == 1 and "AAA" in found[0].text and "BBB" in found[0].text
+
+
 def test_recent_departures_still_count_and_a_fresh_loss_event_ties_an_old_guid_in() -> None:
     now = time.time_ns()
     stale = {"first_seen_ns": now - 86400 * _NS, "last_seen_ns": now - 3600 * _NS}

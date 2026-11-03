@@ -425,7 +425,7 @@ List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `ve
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, `message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty `topics`** when the graph has none or live discovery times out. **Raises an MCP error** without a `ros2` CLI. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
+ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, `message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a real graph from fixtures. QoS is not listed: use `get_topic_info`. `counts_unknown: true` = counts 0/0 are unknown, not an orphan. **Empty `topics`** when the graph has none or live discovery times out. **Raises an MCP error** without a `ros2` CLI. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
 
 ### Input parameters
 
