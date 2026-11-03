@@ -26,6 +26,7 @@ from topicforge.adapters.ros2_mock.adapter import MockAdapter
 from topicforge.services import Inspector
 
 _MODULE = "topicforge.adapters.ros2_live.adapter"
+_SAMPLER = "topicforge.adapters.ros2_live.sampler"
 _LOG_INFO = (
     "Type: rcl_interfaces/msg/Log\nPublisher count: 2\nSubscription count: 0\n"
     "\nNode name: bench_robot\nEndpoint type: PUBLISHER\nReliability: RELIABLE\n"
@@ -220,7 +221,7 @@ def _stub_live(
         kws.append(kw)
         return run
 
-    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
     return cmds, kws
 
 

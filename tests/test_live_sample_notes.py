@@ -9,12 +9,13 @@ from typing import Any
 import pytest
 
 from topicforge.adapters.base import AdapterError
-from topicforge.adapters.ros2_live import adapter as adapter_module
 from topicforge.adapters.ros2_live import sample_extras
+from topicforge.adapters.ros2_live import sampler as sampler_module
 from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
 from topicforge.adapters.ros2_live.echo_stream import EchoDocument, EchoRun
 
 _MODULE = "topicforge.adapters.ros2_live.adapter"
+_SAMPLER = "topicforge.adapters.ros2_live.sampler"
 _INFO = "Type: sensor_msgs/msg/Imu\nPublisher count: 1\nSubscription count: 0\n"
 _LATCHED_INFO = (
     _INFO
@@ -47,7 +48,7 @@ def _stub_echo(monkeypatch: pytest.MonkeyPatch, run: EchoRun) -> list[dict[str, 
         seen.append(kw)
         return run
 
-    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
     return seen
 
 
@@ -136,7 +137,7 @@ def test_decoding_stops_when_the_time_budget_is_exhausted(
         return real(text, **kw)
 
     monkeypatch.setattr(sample_extras, "parse_echo_document", slow_parse)
-    monkeypatch.setattr(adapter_module, "_PARSE_GRACE_SEC", 0.0)
+    monkeypatch.setattr(sampler_module, "_PARSE_GRACE_SEC", 0.0)
     result = Ros2CliAdapter().sample_messages("/imu", count=3, timeout_s=1)
     assert result.count == 2
     assert result.note is not None and "1 message(s) were received but not decoded" in result.note

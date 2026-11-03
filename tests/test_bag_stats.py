@@ -21,7 +21,8 @@ from topicforge.adapters.common.bag_stats import (
     read_db3_spans,
     span_frequency,
 )
-from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter, parse_bag_info
+from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
+from topicforge.adapters.ros2_live.parsers import parse_bag_info
 
 BAG_DIR = Path(__file__).parent / "fixtures" / "bags" / "omnisim_humble"
 BAG_DB3 = BAG_DIR / "omnisim_husky_topicforge_20261002_190546_0.db3"

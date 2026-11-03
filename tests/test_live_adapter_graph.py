@@ -13,14 +13,12 @@ from types import SimpleNamespace
 import pytest
 
 from topicforge.adapters.base import AdapterError
-from topicforge.adapters.ros2_live.adapter import (
-    Ros2CliAdapter,
-    parse_topic_info,
-)
+from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
 from topicforge.adapters.ros2_live.echo_stream import EchoRun
 from topicforge.adapters.ros2_live.parsers import (
     EndpointQos,
     parse_topic_endpoint_qos,
+    parse_topic_info,
     parse_topic_list_verbose,
     qualified_node_name,
     side_nodes,
@@ -30,6 +28,7 @@ from topicforge.models import SideQos, TopicListItem
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _MODULE = "topicforge.adapters.ros2_live.adapter"
+_SAMPLER = "topicforge.adapters.ros2_live.sampler"
 _BAG_DIR = _FIXTURES / "bags" / "omnisim_humble"
 
 
@@ -353,7 +352,7 @@ def _echo_command(
         seen.append(cmd)
         return EchoRun()
 
-    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
     Ros2CliAdapter().sample_messages("/scan", 1, **options)  # type: ignore[arg-type]
     return seen[0]
 

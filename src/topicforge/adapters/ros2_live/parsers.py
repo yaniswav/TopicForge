@@ -1,7 +1,7 @@
 """Pure parsers for `ros2 topic list -v` and the QoS block of `ros2 topic info --verbose`.
 
-Module-level functions over CLI text, tested without ROS 2. The older parsers
-(`parse_topic_list`, `parse_topic_info`, ...) live in `adapter.py`.
+Module-level functions over CLI text, tested without ROS 2. Also holds the
+`ros2 topic list -t`, `ros2 topic info` and `ros2 bag info` parsers.
 """
 
 from __future__ import annotations
@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from topicforge.models import SideQos
+from topicforge.adapters.base import EffectiveMode
+from topicforge.adapters.common.bag_kind import classify_bag_topic
+from topicforge.models import BagAnalysis, BagTopicStats, SideQos, TopicInfo
 
 _VERBOSE_LIST_HEADER = re.compile(r"^\s*(Published|Subscribed) topics:\s*$")
 _VERBOSE_LIST_ITEM = re.compile(r"^\s*\*\s+(\S+)\s+\[.*\]\s+(\d+)\s+(?:publisher|subscriber)s?\s*$")
@@ -179,3 +181,122 @@ def _agree(values: list[str | None]) -> str | None:
     if not known:
         return None
     return known.pop() if len(known) == 1 else "mixed"
+
+
+# Topic list, topic info and bag info
+
+_LIST_LINE = re.compile(r"^(\S+)\s+\[(.+)\]\s*$")
+_TYPE_LINE = re.compile(r"^\s*Type:\s*(.+)$")
+_PUB_COUNT = re.compile(r"^\s*Publisher count:\s*(\d+)\s*$")
+_SUB_COUNT = re.compile(r"^\s*Subscription count:\s*(\d+)\s*$")
+_BAG_DUR = re.compile(r"Duration:\s*([\d.]+)\s*s")
+_BAG_COUNT = re.compile(r"Messages:\s*(\d+)")
+_BAG_STORAGE = re.compile(r"Storage id:\s*(\S+)")
+_BAG_TOPIC = re.compile(
+    r"Topic:\s*(\S+)\s*\|\s*Type:\s*(\S+)\s*\|\s*Count:\s*(\d+)\s*\|\s*Serialization Format:"
+)
+
+
+def parse_topic_list(stdout: str) -> list[tuple[str, str]]:
+    """Parse `ros2 topic list -t` output. Returns (name, type) pairs."""
+    pairs: list[tuple[str, str]] = []
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = _LIST_LINE.match(line)
+        if m:
+            pairs.append((m.group(1), m.group(2)))
+    return pairs
+
+
+def parse_pub_sub_counts(stdout: str) -> tuple[int, int]:
+    """Parse publisher / subscription counts from `ros2 topic info` output."""
+    pub = sub = 0
+    for line in stdout.splitlines():
+        if m := _PUB_COUNT.match(line):
+            pub = int(m.group(1))
+        elif m := _SUB_COUNT.match(line):
+            sub = int(m.group(1))
+    return pub, sub
+
+
+def parse_topic_info(
+    stdout: str, *, fallback_name: str, mode_effective: EffectiveMode
+) -> TopicInfo | None:
+    """Parse `ros2 topic info <topic> --verbose` output.
+
+    Returns None when no message type is found (the adapter reports the topic
+    as not found). `fallback_name` and `mode_effective` come from the caller,
+    not from the output. `publisher_qos` and `subscription_qos` summarize the QoS block
+    of each side (see `summarize_side_qos`); `publisher_nodes` and `subscriber_nodes` come
+    from the `Node name:` / `Node namespace:` lines.
+    """
+    msg_type: str | None = None
+    pub = sub = 0
+    for line in stdout.splitlines():
+        if m := _TYPE_LINE.match(line):
+            msg_type = m.group(1).strip()
+        elif m := _PUB_COUNT.match(line):
+            pub = int(m.group(1))
+        elif m := _SUB_COUNT.match(line):
+            sub = int(m.group(1))
+    if msg_type is None:
+        return None
+    endpoints = parse_topic_endpoint_qos(stdout)
+    publisher_qos, publisher_note = summarize_side_qos(endpoints, "PUBLISHER", pub)
+    subscription_qos, subscription_note = summarize_side_qos(endpoints, "SUBSCRIPTION", sub)
+    return TopicInfo(
+        name=fallback_name,
+        message_type=msg_type,
+        publisher_count=pub,
+        subscriber_count=sub,
+        publisher_qos=publisher_qos,
+        publisher_qos_note=publisher_note,
+        subscription_qos=subscription_qos,
+        subscription_qos_note=subscription_note,
+        publisher_nodes=side_nodes(endpoints, "PUBLISHER"),
+        subscriber_nodes=side_nodes(endpoints, "SUBSCRIPTION"),
+        mode_effective=mode_effective,
+    )
+
+
+def parse_bag_info(
+    stdout: str, *, fallback_path: str, mode_effective: EffectiveMode
+) -> BagAnalysis:
+    """Parse `ros2 bag info <path>` output. `fallback_path` and `mode_effective` come from the caller."""
+    duration = 0.0
+    msg_count = 0
+    storage: str | None = None
+    topics: list[BagTopicStats] = []
+
+    for line in stdout.splitlines():
+        if m := _BAG_DUR.search(line):
+            duration = float(m.group(1))
+        if m := _BAG_COUNT.search(line):
+            msg_count = int(m.group(1))
+        if m := _BAG_STORAGE.search(line):
+            storage = m.group(1)
+        if m := _BAG_TOPIC.search(line):
+            name, msg_type, count = m.group(1), m.group(2), int(m.group(3))
+            freq = (count / duration) if duration > 0 else None
+            topics.append(
+                BagTopicStats(
+                    name=name,
+                    message_type=msg_type,
+                    message_count=count,
+                    kind=classify_bag_topic(name),
+                    frequency_hz=freq,
+                    frequency_basis="bag_duration" if freq is not None else None,
+                )
+            )
+
+    return BagAnalysis(
+        path=fallback_path,
+        storage_format=storage,
+        duration_s=duration,
+        message_count=msg_count,
+        topics=topics,
+        anomalies=[],
+        mode_effective=mode_effective,
+    )
