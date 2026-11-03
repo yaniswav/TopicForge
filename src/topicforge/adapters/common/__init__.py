@@ -31,12 +31,7 @@ from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_topic_name,
     cyclone_extract_type_name,
     cyclone_extract_vendor_id,
-    fast_extract_guid,
-    fast_extract_hostname,
-    fast_extract_topic_name,
-    fast_extract_vendor_id,
     is_alive_sample,
-    is_removal,
     vendor_id_from_guid,
 )
 from topicforge.adapters.common.discovery_tracker import (
@@ -74,11 +69,9 @@ from topicforge.adapters.common.qos_analyzer import (
     format_duration,
     partitions_match,
 )
-from topicforge.adapters.common.qos_endpoints import detect_mismatches_across_endpoints
 from topicforge.adapters.common.qos_normalize import (
     cyclone_qos_to_profile,
     duration_to_ns,
-    fast_qos_to_profile,
 )
 from topicforge.adapters.common.qos_scan import POLICIES_CHECKED, POLICIES_UNCHECKED, scan_endpoints
 from topicforge.adapters.common.xtypes import (
@@ -129,23 +122,16 @@ __all__ = [
     "decode_dynamic_sample",
     "decode_field_value",
     "detect_mismatches",
-    "detect_mismatches_across_endpoints",
     "duration_to_ns",
     "dynamic_type_name",
     "endpoint_infos_from_samples",
     "endpoint_record",
     "extract_publish_ns_from_payload",
     "extract_seq_from_payload",
-    "fast_extract_guid",
-    "fast_extract_hostname",
-    "fast_extract_topic_name",
-    "fast_extract_vendor_id",
-    "fast_qos_to_profile",
     "format_duration",
     "format_guid",
     "format_participant_key",
     "is_alive_sample",
-    "is_removal",
     "iter_field_names",
     "listing_from_samples",
     "metrics_status",

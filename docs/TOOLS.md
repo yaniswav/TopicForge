@@ -250,7 +250,7 @@ None.
 | `server_version` | `str` | yes | TopicForge version. |
 | `contract_version` | `int` | no | Output contract version; changes when a field is renamed, removed or retyped. |
 | `max_sample_count` | `int` | yes | Server cap on samples per call; larger requests are clamped. |
-| `dds_backend` | `"mock" \| "cyclone" \| "fast" \| "none"` | no | DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive); `fast` is retired. |
+| `dds_backend` | `"mock" \| "cyclone" \| "none"` | no | DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive). |
 | `dds_inactive_note` | `string \| null` | no | Why `dds_backend` is `none` while ROS 2 serves; else `null`. |
 | `dds_domain_id` | `integer \| null` | no | DDS domain id observed when the DDS module is active. |
 | `observed_domain_note` | `string \| null` | no | Which DDS domain is observed: only the one joined at startup; others are invisible. |

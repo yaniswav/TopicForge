@@ -1036,13 +1036,10 @@ class HealthReport(BaseModel):
     dds_backend: Literal[
         "mock",
         "cyclone",
-        "fast",
         "none",
     ] = Field(
         default="none",
-        description=(
-            "DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive); `fast` is retired."
-        ),
+        description=("DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive)."),
     )
     dds_inactive_note: str | None = Field(
         default=None,

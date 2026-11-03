@@ -22,11 +22,10 @@
         "type": "integer"
       },
       "dds_backend": {
-        "description": "DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive); `fast` is retired.",
+        "description": "DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive).",
         "enum": [
           "mock",
           "cyclone",
-          "fast",
           "none"
         ],
         "type": "string"

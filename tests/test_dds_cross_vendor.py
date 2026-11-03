@@ -1,7 +1,7 @@
 """Protocol-shape tests for the DDS adapter.
 
-Ran against Cyclone and Fast until 0.9.0, when the fastdds-based adapter was removed:
-Cyclone observes Fast DDS (and every conformant vendor) through standard RTPS discovery.
+Runs against Cyclone only (the fastdds-based adapter was removed in 0.9.0:
+Cyclone observes Fast DDS and every conformant vendor through standard RTPS discovery).
 The fixture stays parametrized so a future backend slots in. It skips without
 `cyclonedds`. The tests confirm that the adapter:
   * satisfies the `MiddlewareAdapter` protocol shape

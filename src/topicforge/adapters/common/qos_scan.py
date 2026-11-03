@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Literal
 
+from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.qos_analyzer import (
     RXO_POLICIES,
     PairAnalysis,
@@ -108,7 +109,8 @@ def _report(
     reader: EndpointInfo, writer: EndpointInfo
 ) -> tuple[MismatchReport | None, PairAnalysis]:
     """RxO analysis of a pair that DDS would match: the report (if any) and the analysis."""
-    assert reader.qos and writer.qos
+    if not (reader.qos and writer.qos):
+        raise AdapterError("internal error: QoS analysis requested for an endpoint without QoS")
     analysis = analyze_pair(reader.qos, writer.qos)
     if not analysis.details:
         return None, analysis

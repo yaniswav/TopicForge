@@ -875,5 +875,3 @@ def register_tools(
 
     # TODO(roadmap): URDF tools: validate / inspect / generate URDF & xacro.
     # TODO(roadmap): bag anomaly detection: clock jumps, frame drops, TF gaps.
-    # TODO(roadmap): dataset export: rosbag -> COCO / Hugging Face Datasets.
-    # TODO(roadmap): synthetic data pipeline: Blender / Gazebo / Isaac control.

@@ -628,27 +628,6 @@ MOCK_DDS_TOPICS: tuple[str, ...] = (
 )
 
 
-def mock_qos_for(topic: str) -> QosProfile | None:
-    """Return a deterministic QoS profile for a mock DDS topic, else None."""
-    if topic == "/dds/well_matched":
-        return QosProfile(
-            reliability="RELIABLE",
-            durability="VOLATILE",
-            history="KEEP_LAST",
-            history_depth=10,
-            deadline_ns=None,
-        )
-    if topic == "/dds/qos_mismatch":
-        return QosProfile(
-            reliability="BEST_EFFORT",
-            durability="VOLATILE",
-            history="KEEP_LAST",
-            history_depth=10,
-            deadline_ns=None,
-        )
-    return None
-
-
 def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
     """Deterministic DDS samples for a mock DDS topic, wrapped in SampleResult."""
     if topic == "/dds/well_matched":
