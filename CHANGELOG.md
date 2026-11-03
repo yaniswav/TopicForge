@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+Fixes to `diagnose` found after 0.9.0, a release workflow that tests the built wheel before
+publishing, and internal refactors with no output change. Two optional fields are added
+(`docs/CONTRACT.md` section 9.22). `tools/list` is 99,971 bytes (0.9.0: 99,634), under the
+105,000 ceiling.
+
+### Added
+
+- `TopicListItem.counts_unknown` in `list_topics`: `true` when `ros2 topic info` failed for that
+  topic, so its `0`/`0` counts are unknown rather than an orphan. Omitted when not set.
+  `diagnose` reports such topics instead of reading them as unconnected.
+- `NodeInfo.parameters_status` in `get_node_info`: why `parameters` is `null`, one of `timeout`,
+  `no_parameter_services`, `no_budget`, `failed`; `null` when the parameters were read.
+
+### Fixed
+
+- `diagnose` reports a node as unresponsive only on a parameter-read `timeout`, not when it
+  offers no parameter service, the budget ran out or the dump failed.
+- `diagnose` counts restarts within the 300 s window only, and never reports a node that is still
+  active as having left.
+- `diagnose` folds incompatible QoS pairs into one finding per topic, writer and policy set.
+- `diagnose`: findings about the node named in `node` survive the 50-finding cap, one unreadable
+  node no longer marks the whole `responsiveness` check as not run, and the `/rosout` all-clear
+  states the window it listened to.
+
+### Changed
+
+- `publish.yml` runs in stages: `build`, then `smoke` (Ubuntu and Windows, Python 3.10 and 3.14:
+  installs the built wheel, checks its version against the tag, lists the 17 tools over stdio in
+  mock mode and calls `health_check`), then `publish`, the only job with `id-token: write`, then
+  the MCP Registry and `.mcpb` jobs. A manual `workflow_dispatch` runs `build` and `smoke` only.
+- Internal layering: adapters no longer import the service layer. The bag reader moved from
+  `services/bag_service.py` to `adapters/common/bag_read.py` (`BagService` stays in
+  `services/bag_service.py` as a thin facade), and `services/bag_stats.py` and
+  `services/summaries/` moved to `adapters/common/`.
+- Tool descriptions moved to `tools/descriptions.py` and tool registration is split in four
+  groups; `tools/list` is byte-identical. `Ros2CliAdapter` is split into `parsers.py`,
+  `sampler.py` and `node_reader.py`.
+- The serving branch of `main()` is covered by a test.
+
+### Removed
+
+- `fast` from the `health_check.dds_backend` schema enum (0.9.0 kept it but never emitted it).
+  The `fast` vendor id on GUID prefixes stays.
+- Fast DDS leftovers in `adapters/common`: `fast_extract_guid`, `fast_extract_hostname`,
+  `fast_extract_topic_name`, `fast_extract_vendor_id`, `is_removal`, `fast_qos_to_profile` and
+  the `qos_endpoints` module (`detect_mismatches_across_endpoints`); also `mock_qos_for` and
+  `echo_parser._is_int`. Four production `assert` statements became explicit checks.
+
 ## [0.9.0] - 2026-11-02
 
 ### Added

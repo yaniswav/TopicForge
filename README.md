@@ -187,7 +187,8 @@ src/topicforge/
   server/      MCP bootstrap, build_app(settings), prompts and instructions
   tools/       thin MCPServer handlers, no backend logic
   services/    input validation, orchestration, adapter factory
-  adapters/    ros2_live, ros2_mock, dds_cyclone, common/ (binding-free logic)
+  adapters/    ros2_live, ros2_mock, dds_cyclone, common/ (binding-free logic: QoS, CDR,
+               discovery buffers, bag reader, message summaries)
   models/      frozen Pydantic schemas, the contract with MCP clients
   config/      settings and mode resolution
   telemetry/   opt-in, off by default
@@ -197,7 +198,7 @@ docs/          guides and reference
 tests/         pytest suite, mock-only, no ROS2 or DDS required
 ```
 
-Layers are strictly separated: handlers never call `subprocess`, adapters are the only code that talks to a backend, and new backends implement the `MiddlewareAdapter` protocol in `adapters/base.py`.
+Layers are strictly separated: handlers never call `subprocess`, adapters are the only code that talks to a backend and never import the service layer, and new backends implement the `MiddlewareAdapter` protocol in `adapters/base.py`.
 
 ## License
 

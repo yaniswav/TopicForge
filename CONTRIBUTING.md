@@ -78,7 +78,8 @@ unless its participants are built, see `scripts/integration/README.md`.
 
 The architecture is intentionally layered (`server/ -> tools/ ->
 services/ -> adapters/`). Tool handlers never call `subprocess` ;
-adapters never validate MCP-level inputs ; services never know which
+adapters never validate MCP-level inputs nor import `services/` ;
+services never know which
 backend they're talking to. PRs that violate this earn a "rework"
 review.
 
