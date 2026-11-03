@@ -375,7 +375,8 @@ def test_bag_log_filter_returns_the_first_matches_in_bag_order(tmp_path: Path) -
 
 
 def test_bag_start_ns_is_the_metadata_starting_time(tmp_path: Path) -> None:
-    from topicforge.services.bag_service import BagService, read_start_ns
+    from topicforge.adapters.common.bag_read import read_start_ns
+    from topicforge.services.bag_service import BagService
 
     bag = _write_bag(tmp_path / "bag")
     assert read_start_ns(bag) == _BASE
@@ -384,7 +385,7 @@ def test_bag_start_ns_is_the_metadata_starting_time(tmp_path: Path) -> None:
 
 
 def test_bag_start_ns_zero_is_reported_as_zero(tmp_path: Path) -> None:
-    from topicforge.services.bag_service import _reader_start_ns, read_start_ns
+    from topicforge.adapters.common.bag_read import _reader_start_ns, read_start_ns
 
     assert _reader_start_ns(0) == 0
     assert _reader_start_ns(5) == 5
@@ -420,7 +421,7 @@ class _EndlessReader:
 
 
 def _patch_endless(monkeypatch: pytest.MonkeyPatch) -> _EndlessReader:
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     reader = _EndlessReader()
     monkeypatch.setattr(bag_service, "_open_reader", lambda _p: (reader, "fake"))
@@ -432,7 +433,7 @@ def _patch_endless(monkeypatch: pytest.MonkeyPatch) -> _EndlessReader:
 
 
 def test_filtered_bag_peek_stops_at_the_hard_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     reader = _patch_endless(monkeypatch)
     monkeypatch.setattr(bag_service, "PEEK_SCAN_MAX_SECONDS", 0.05)
@@ -450,7 +451,7 @@ def test_filtered_bag_peek_stops_when_the_call_budget_is_spent(
     import time
 
     from topicforge import budget
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     _patch_endless(monkeypatch)
     with budget.deadline_at(time.monotonic() - 1):

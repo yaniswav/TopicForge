@@ -889,7 +889,7 @@ clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
 - `stamp_regression_count`: messages, in basis order, whose non-zero stamp is strictly lower
   than the previous non-zero stamp. A topic with several publishers interleaves and reads high;
   a simulation restart counts once. Default 0.
-- Computed by the pure `services/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
+- Computed by the pure `adapters/common/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
   of the messages that were decoded; messages dropped for size or decode errors are not seen.
 
 ### 9.12 `/rosout` filter and bag ranges (0.8.0, planned as 0.7.3)

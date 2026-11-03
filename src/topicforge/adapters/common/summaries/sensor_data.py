@@ -10,8 +10,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from topicforge.adapters.common.summaries._common import as_int, frame_id, text
 from topicforge.models.summaries import ImageSummary, PointCloud2Summary, PointFieldSummary
-from topicforge.services.summaries._common import as_int, frame_id, text
 
 _POINT_FIELD_TYPES = {
     1: "INT8",

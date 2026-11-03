@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from topicforge.services.summaries import compute_rate
+from topicforge.adapters.common.summaries import compute_rate
 
 S = 1_000_000_000
 T0 = 1_760_000_000 * S

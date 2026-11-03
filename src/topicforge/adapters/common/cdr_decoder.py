@@ -1,7 +1,7 @@
 """Vendor-agnostic CDR / dynamic-type payload decoder.
 
 Shared by live DDS samples (Cyclone dynamic types) and recorded bag samples
-(`services/bag_service.py`). The helpers operate on plain Python value
+(`adapters/common/bag_read.py`). The helpers operate on plain Python value
 shapes and import no DDS or ROS binding.
 """
 

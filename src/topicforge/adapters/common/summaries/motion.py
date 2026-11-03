@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from topicforge.models.summaries import ImuSummary, OdometrySummary
-from topicforge.services.summaries._common import (
+from topicforge.adapters.common.summaries._common import (
     as_float,
     euler_from_quaternion,
     frame_id,
@@ -16,6 +15,7 @@ from topicforge.services.summaries._common import (
     text,
     vector,
 )
+from topicforge.models.summaries import ImuSummary, OdometrySummary
 
 
 def summarize_odometry(

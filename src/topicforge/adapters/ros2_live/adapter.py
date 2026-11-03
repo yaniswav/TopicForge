@@ -21,6 +21,7 @@ from pathlib import Path
 
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common import bag_read, bag_stats
 from topicforge.adapters.common.bag_kind import classify_bag_topic
 from topicforge.adapters.common.log_filter import (
     LOG_READER_DEPTH,
@@ -197,9 +198,7 @@ class Ros2CliAdapter:
         Raises `AdapterError` with an install hint when `rosbags` is missing;
         there is no fallback.
         """
-        from topicforge.services.bag_service import BagService
-
-        return BagService().peek_samples(
+        return bag_read.peek_bag_samples(
             path,
             topic,
             count,
@@ -625,14 +624,10 @@ class Ros2CliAdapter:
             out, fallback_path=str(bag_path), mode_effective=self.effective_mode
         )
         # `ros2 bag info` has no per-topic times: add them when the bag is readable here.
-        # Imported here because `services` imports this package.
-        from topicforge.services.bag_service import read_start_ns, scan_topic_spans
-        from topicforge.services.bag_stats import overlay_spans
-
-        analysis = analysis.model_copy(update={"start_ns": read_start_ns(bag_path)})
-        spans, note = scan_topic_spans(bag_path)
+        analysis = analysis.model_copy(update={"start_ns": bag_read.read_start_ns(bag_path)})
+        spans, note = bag_read.scan_topic_spans(bag_path)
         if spans:
-            topics = overlay_spans(analysis.topics, spans)
+            topics = bag_stats.overlay_spans(analysis.topics, spans)
             analysis = analysis.model_copy(update={"topics": topics})
         if note:
             analysis = analysis.model_copy(update={"note": note})

@@ -464,7 +464,7 @@ def test_live_analyze_bag_keeps_duration_basis_when_the_bag_is_not_readable_here
 ) -> None:
     info = (_BAG_DIR / "ros2_bag_info.txt").read_text()
     monkeypatch.setattr(Ros2CliAdapter, "_run", lambda self, cmd, timeout=8.0: info)
-    monkeypatch.setattr("topicforge.services.bag_service.is_rosbags_available", lambda: False)
+    monkeypatch.setattr("topicforge.adapters.common.bag_read.is_rosbags_available", lambda: False)
     unreadable = tmp_path / "x.mcap"
     unreadable.write_bytes(b"")
     result = Ros2CliAdapter().analyze_bag(str(unreadable))

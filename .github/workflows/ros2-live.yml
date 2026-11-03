@@ -13,7 +13,9 @@ on:
     branches: [main]
     paths:
       - "src/topicforge/adapters/ros2_live/**"
-      - "src/topicforge/services/bag_service.py"
+      - "src/topicforge/adapters/common/bag_read.py"
+      - "src/topicforge/adapters/common/bag_stats.py"
+      - "src/topicforge/adapters/common/summaries/**"
       - "src/topicforge/services/**"
       - "src/topicforge/adapters/common/cdr_decoder.py"
       - "src/topicforge/adapters/common/nodes.py"
@@ -27,7 +29,9 @@ on:
     branches: [main]
     paths:
       - "src/topicforge/adapters/ros2_live/**"
-      - "src/topicforge/services/bag_service.py"
+      - "src/topicforge/adapters/common/bag_read.py"
+      - "src/topicforge/adapters/common/bag_stats.py"
+      - "src/topicforge/adapters/common/summaries/**"
       - "src/topicforge/services/**"
       - "src/topicforge/adapters/common/cdr_decoder.py"
       - "src/topicforge/adapters/common/nodes.py"

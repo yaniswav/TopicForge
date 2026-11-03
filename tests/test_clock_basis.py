@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from topicforge.services.summaries import compute_rate
-from topicforge.services.summaries.clock import classify_stamp, compute_clock
+from topicforge.adapters.common.summaries import compute_rate
+from topicforge.adapters.common.summaries.clock import classify_stamp, compute_clock
 
 S = 1_000_000_000
 T0 = 1_760_000_000 * S
