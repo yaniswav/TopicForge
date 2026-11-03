@@ -47,6 +47,7 @@ from topicforge.constants import (
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
     DEFAULT_SAMPLE_TIMEOUT_S,
+    ROS2_CLI_TIMEOUT_S,
 )
 from topicforge.models import (
     BagAnalysis,
@@ -65,7 +66,7 @@ from topicforge.models import (
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_TIMEOUT_SEC = 8.0
+_DEFAULT_TIMEOUT_SEC = ROS2_CLI_TIMEOUT_S
 # A `/clock` publisher hint older than this is reported as unknown.
 _CLOCK_HINT_TTL_SEC = 120.0
 

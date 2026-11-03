@@ -24,6 +24,10 @@ MAX_ARRAY_LENGTH = 65536
 DEFAULT_MAX_SAMPLE_BYTES = 1024 * 1024
 MAX_SAMPLE_CALL_FACTOR = 4
 
+# Default timeout of one `ros2` CLI call in the live adapter, also the
+# longest wait for the topic lookup of a sample.
+ROS2_CLI_TIMEOUT_S = 8.0
+
 # `sample_messages` wall deadline in seconds, from the start of the call (topic
 # lookup and CLI start-up included). `timeout_s` accepts MIN..MAX. The maximum
 # keeps the worst case (this plus stopping the CLI and decoding, about 3 s)

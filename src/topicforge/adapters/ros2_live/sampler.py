@@ -27,11 +27,13 @@ from topicforge.adapters.ros2_live.sample_extras import (
     rate_of_run,
     wants_whole_arrays,
 )
-from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
+from topicforge.constants import (
+    DEFAULT_MAX_ARRAY_LENGTH,
+    DEFAULT_SAMPLE_TIMEOUT_S,
+    ROS2_CLI_TIMEOUT_S,
+)
 from topicforge.models import MessageSample, SampleResult, TopicInfo, TopicRate
 
-# Longest wait for the topic lookup of a sample.
-_TOPIC_INFO_TIMEOUT_SEC = 8.0
 # Wait for `sample_messages` on a topic with no announced publisher.
 _NO_PUBLISHER_WAIT_SEC = 3.0
 # `sample_messages` returns within about `timeout_s` plus this: stopping the CLI
@@ -89,7 +91,7 @@ def sample_messages(
     timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
     if timeout_s <= 0:
         raise AdapterError("busy: no time left in this call's budget for sampling, retry")
-    info = topic_info(topic, min(_TOPIC_INFO_TIMEOUT_SEC, timeout_s))
+    info = topic_info(topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
     log_filter = LogFilter.of(min_log_level, node)
     if log_filter is not None:
         require_log_topic(topic, info.message_type)

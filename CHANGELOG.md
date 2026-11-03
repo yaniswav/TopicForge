@@ -30,13 +30,22 @@ publishing, and internal refactors with no output change. Two optional fields ar
 - `diagnose`: findings about the node named in `node` survive the 50-finding cap, one unreadable
   node no longer marks the whole `responsiveness` check as not run, and the `/rosout` all-clear
   states the window it listened to.
+- `get_node_info` no longer starts a parameter read with less than 2 s left in the call budget
+  (it returns `no_budget`), so a read cut short by the budget is not mistaken for a blocked
+  executor; the silent-node finding no longer quotes the requested wait. `diagnose` lists
+  `responsiveness` as not run when the budget let it read no node at all, does not count
+  undated departures as restarts, and keeps never-matching pairs of the named node under the cap.
 
 ### Changed
 
-- `publish.yml` runs in stages: `build`, then `smoke` (Ubuntu and Windows, Python 3.10 and 3.14:
+- `publish.yml` runs in stages: `build` (on a tag, also checks that `mcpb/manifest.json` and
+  `server.json` carry the tag's version), then `smoke` (Ubuntu and Windows, Python 3.10 and 3.14:
   installs the built wheel, checks its version against the tag, lists the 17 tools over stdio in
-  mock mode and calls `health_check`), then `publish`, the only job with `id-token: write`, then
-  the MCP Registry and `.mcpb` jobs. A manual `workflow_dispatch` runs `build` and `smoke` only.
+  mock mode and calls `health_check`; one cell also installs the sdist), then `publish`, which
+  uploads that exact `dist` artifact. The `.mcpb` is packed in its own job, so an npm failure no
+  longer blocks PyPI. `publish` and the MCP Registry job (after it) are the only jobs with
+  `id-token: write`. Publishing jobs run only on a tag push: a manual `workflow_dispatch`, even
+  on a tag, runs `build`, `smoke` and the bundle packing only.
 - Internal layering: adapters no longer import the service layer. The bag reader moved from
   `services/bag_service.py` to `adapters/common/bag_read.py` (`BagService` stays in
   `services/bag_service.py` as a thin facade), and `services/bag_stats.py` and
