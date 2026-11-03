@@ -995,3 +995,59 @@ def test_diagnose_takes_the_ros_lane_and_answers_busy_when_it_is_held() -> None:
                 guard.TOOL_BUDGET_S = old
     finally:
         held.release()
+
+
+# ---- review follow-ups (PR #45) ------------------------------------------------------------
+
+
+def test_the_check_is_skipped_when_the_budget_left_no_node_read() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status.update({"/a": "no_budget", "/b": "no_budget"})
+    result = _run(adapter)
+    assert [s.check for s in result.checks_skipped] == ["responsiveness"]
+    assert "responsiveness" not in result.checks_run
+    assert (
+        result.verdict.startswith("Incomplete") and "responsiveness did not run" in result.verdict
+    )
+
+
+def test_undated_departures_outside_any_event_are_not_a_restart_loop() -> None:
+    undated = {"first_seen_ns": None, "last_seen_ns": None}
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [
+        _participant("x", "g0", "left").model_copy(update=undated),
+        _participant("x", "g1", "left").model_copy(update=undated),
+        _participant("x", "g2"),
+    ]
+    assert [f for f in _by(_run(adapter), "dds") if f.severity != "info"] == []
+
+
+def test_a_never_match_pair_on_the_named_node_survives_the_cap() -> None:
+    reports = []
+    for i in range(MAX_FINDINGS + 10):
+        reports += _readers(1, f"w{i}").reports
+        reports[-1] = reports[-1].model_copy(update={"topic": f"/t{i:03d}"})
+    pair = NotMatchedPair(
+        topic="/zzz",
+        reader_guid="r",
+        reader_participant_guid="rp",
+        writer_guid="w",
+        writer_participant_guid="wp",
+        reason="partition",
+        detail="writer ['a'] reader ['b']",
+        reader_node="/cam",
+    )
+    adapter = _calm(Scripted(), ["/a", "/cam"])
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(
+        update={"reports": reports, "not_matched": [pair]}
+    )
+    result = _run(adapter, node="/cam")
+    assert len(result.findings) == MAX_FINDINGS
+    assert any(f.subject == "/zzz" and f.severity == "critical" for f in result.findings)
+
+
+def test_the_silent_text_does_not_claim_a_wait_the_budget_cut_short() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status["/b"] = "timeout"
+    found = _by(_run(adapter, node="/b"), "responsiveness", "critical")
+    assert "in time" in found[0].text and " s:" not in found[0].text

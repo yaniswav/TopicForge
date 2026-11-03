@@ -191,9 +191,18 @@ def test_no_budget_left_for_the_param_read_is_said_plainly(cli: FakeCli) -> None
     with budget.deadline_at(time.monotonic() + 1.5):
         info = _info(Ros2CliAdapter(), timeout_s=20)
     assert info.parameters is None and info.parameters_status == "no_budget"
-    assert info.parameters_note is not None and "No time was left" in info.parameters_note
+    assert info.parameters_note is not None and "Not enough time was left" in info.parameters_note
     assert "executor" not in info.parameters_note  # not a diagnosis of the node
     assert cli.ran("param dump") == []  # nothing was started with no time to run
+
+
+def test_a_param_read_the_budget_would_cut_short_is_not_started(cli: FakeCli) -> None:
+    # 3.5 s left minus the 2 s stop reserve leaves 1.5 s: too short to tell a blocked
+    # executor from a slow answer, so it is `no_budget`, never `timeout`.
+    with budget.deadline_at(time.monotonic() + 3.5):
+        info = _info(Ros2CliAdapter(), timeout_s=20)
+    assert info.parameters_status == "no_budget"
+    assert cli.ran("param dump") == []
 
 
 def test_unknown_node_lists_close_matches(cli: FakeCli) -> None:

@@ -30,6 +30,9 @@ from topicforge.models.nodes import ParametersStatus
 _PARAM_DUMP_MAX_BYTES = 1024 * 1024
 # Time `get_node_info` keeps back from the call budget for killing a stuck `ros2 param`.
 _PARAM_STOP_RESERVE_SEC = 2.0
+# Shortest dump wait worth starting: below it a healthy node may not answer in time, and a
+# cut-short read would pass for a blocked executor. Shorter waits report `no_budget`.
+_PARAM_MIN_WAIT_SEC = 2.0
 # Node whose `robot_description` parameter `inspect_tf` reads when the topic is absent.
 _URDF_NODE_BASENAME = "robot_state_publisher"
 
@@ -137,12 +140,12 @@ def _read_parameters(
     `timeout` (the only real non-answer), or `failed` (exit, size or format).
     """
     wait = call_budget.clamp(timeout_s, _PARAM_STOP_RESERVE_SEC)
-    if wait <= 0:
+    if wait <= 0 or wait < min(_PARAM_MIN_WAIT_SEC, timeout_s):
         return (
             None,
             (
-                "No time was left in this call's budget to read the parameters (the call "
-                "waited for the ROS lock or for the graph queries): retry."
+                "Not enough time was left in this call's budget to read the parameters (the "
+                "call waited for the ROS lock or for the graph queries): retry."
             ),
             "no_budget",
         )

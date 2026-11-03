@@ -353,17 +353,20 @@ def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
     for (topic, reason), pairs in sorted(seen.items()):
         first = pairs[0]
         fixes = next((p.suggested_fixes for p in pairs if p.suggested_fixes), [])
-        out.append(
-            _finding(
-                "critical",
-                "dds",
-                topic,
-                f"{len(pairs)} reader/writer pair(s) on {topic} never match ({reason}): "
-                f"{first.detail}. No data flows between them.",
-                _ev("detect_qos_mismatches", "not_matched[].reason", reason),
-                fixes=list(fixes),
-            )
+        finding = _finding(
+            "critical",
+            "dds",
+            topic,
+            f"{len(pairs)} reader/writer pair(s) on {topic} never match ({reason}): "
+            f"{first.detail}. No data flows between them.",
+            _ev("detect_qos_mismatches", "not_matched[].reason", reason),
+            fixes=list(fixes),
         )
+        out.append(finding)
+        if ctx.node is not None and ctx.node in (
+            {x.writer_node for x in pairs} | {x.reader_node for x in pairs}
+        ):
+            ctx.named_ids.add(id(finding))
     for hint in scan.hints:
         if _TYPO_HINT in hint:
             m = _TYPO_TOPIC_RE.match(hint)
@@ -385,8 +388,8 @@ def _recent_node_lives(
     """Lives per ROS node name inside the lookback window, from the participant table.
 
     A participant is a life of its node when it is active, was seen since `cutoff_ns`, has a
-    discovery or loss event in the window, or carries no timestamp. Participants that left
-    before the window (an old relaunch) are history, not a restart loop.
+    discovery or loss event in the window. Participants that left before the window (an old
+    relaunch), or left with no timestamp and no event in it, are history, not a restart loop.
     """
     in_window = {e.guid for e in events}
     guids: dict[str, set[str]] = {}
@@ -396,8 +399,7 @@ def _recent_node_lives(
         recent = (
             p.status == "active"
             or p.guid in in_window
-            or p.last_seen_ns is None
-            or p.last_seen_ns >= cutoff_ns
+            or (p.last_seen_ns is not None and p.last_seen_ns >= cutoff_ns)
         )
         if recent:
             for node in p.node_names:
@@ -593,11 +595,13 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             unreadable.append((name, info.parameters_note or "parameters not reported"))
         elif info.parameters is None and status == "timeout":
             answered += 1
-            out.append(_silent_finding(name, named, timeout, info.parameters_note))
+            out.append(_silent_finding(name, named, info.parameters_note))
         else:  # read, or no parameter services (nothing to ask): the node is not shown silent
             answered += 1
     if unreadable and not answered:
         raise AdapterError(f"no node could be read: {unreadable[0][0]}: {unreadable[0][1]}")
+    if candidates and not answered:
+        raise AdapterError("no node could be read: the call budget ran out before any answer")
     if unreadable:
         names = [n for n, _ in unreadable]
         out.append(
@@ -624,24 +628,26 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
     return out
 
 
-def _silent_finding(name: str, named: bool, timeout: float, note: str | None) -> Finding:
-    """The finding for a node whose parameter services were announced but never answered."""
+def _silent_finding(name: str, named: bool, note: str | None) -> Finding:
+    """The finding for a node whose parameter services were announced but never answered.
+
+    The wait actually granted (the budget can shorten it) is in the evidence note, not here.
+    """
     evidence = _ev("get_node_info", "parameters_note", note or "null")
     if named:
         return _finding(
             "critical",
             "responsiveness",
             name,
-            f"{name} did not answer a parameter read within {timeout:g} s: its executor "
-            "is probably blocked.",
+            f"{name} did not answer a parameter read in time: its executor is probably blocked.",
             evidence,
         )
     return _finding(
         "warning",
         "responsiveness",
         name,
-        f"{name} did not answer a parameter read within {timeout:g} s (blocked "
-        "executor, or a loaded host): confirm with get_node_info(node, timeout_s=8).",
+        f"{name} did not answer a parameter read in time (blocked executor, or a loaded "
+        "host): confirm with get_node_info(node, timeout_s=8).",
         evidence,
     )
 
