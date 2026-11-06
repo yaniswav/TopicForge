@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from topicforge.services.summaries import (
+from topicforge.adapters.common.summaries import (
     needs_whole_arrays,
     summarize_message,
     supports_summary,

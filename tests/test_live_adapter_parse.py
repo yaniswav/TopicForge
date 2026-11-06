@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from topicforge.adapters.ros2_live.adapter import (
+from topicforge.adapters.ros2_live.parsers import (
     parse_bag_info,
     parse_pub_sub_counts,
     parse_topic_info,

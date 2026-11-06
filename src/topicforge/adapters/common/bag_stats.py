@@ -3,7 +3,7 @@
 A topic's rate is `(n - 1) / (last - first)` over its own messages, not
 `n / bag duration`. For rosbag2 `.db3` bags the spans come from one stdlib
 `sqlite3` query, so no ROS 2 install and no `rosbags` are needed. Other
-containers go through `rosbags` (see `bag_service.py`), which feeds the same
+containers go through `rosbags` (see `bag_read.py`), which feeds the same
 `TopicSpan` and `build_topic_stats`.
 """
 

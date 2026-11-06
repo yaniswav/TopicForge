@@ -152,6 +152,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `action_clients` | `list[NodeInterface]` | yes | Actions the node calls. |
 | `parameters` | `array \| null` | no | Parameters sorted by name; `None` when unreadable (see `parameters_note`); an empty list means none. |
 | `parameters_note` | `string \| null` | no | Why `parameters` is `None`, or what was masked or cut; `None` when complete. |
+| `parameters_status` | `"timeout" \| "no_parameter_services" \| "no_budget" \| "failed" \| null` | no | Why `parameters` is `None`; `None` when it was read. |
 | `use_sim_time` | `boolean \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
 | `use_sim_time_note` | `string \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
 | `lifecycle` | `bool` | no | True when `service_servers` has `<full_name>/get_state` (GetState). |
@@ -249,7 +250,7 @@ None.
 | `server_version` | `str` | yes | TopicForge version. |
 | `contract_version` | `int` | no | Output contract version; changes when a field is renamed, removed or retyped. |
 | `max_sample_count` | `int` | yes | Server cap on samples per call; larger requests are clamped. |
-| `dds_backend` | `"mock" \| "cyclone" \| "fast" \| "none"` | no | DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive); `fast` is retired. |
+| `dds_backend` | `"mock" \| "cyclone" \| "none"` | no | DDS backend serving: `mock`, `cyclone` or `none` (DDS module inactive). |
 | `dds_inactive_note` | `string \| null` | no | Why `dds_backend` is `none` while ROS 2 serves; else `null`. |
 | `dds_domain_id` | `integer \| null` | no | DDS domain id observed when the DDS module is active. |
 | `observed_domain_note` | `string \| null` | no | Which DDS domain is observed: only the one joined at startup; others are invisible. |
@@ -424,7 +425,7 @@ List DDS participants observed on the bus as a `ParticipantListing`: `guid`, `ve
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, `message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a real graph from fixtures. QoS is not listed: use `get_topic_info`. **Empty `topics`** when the graph has none or live discovery times out. **Raises an MCP error** without a `ros2` CLI. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
+ROS 2 graph only; on a DDS-only setup use `list_endpoints`. List the topics on the ROS 2 graph (or the mock graph) as a `TopicListing`: each has `name`, `message_type`, `publisher_count` and `subscriber_count`; `mode_effective` tells a real graph from fixtures. QoS is not listed: use `get_topic_info`. `counts_unknown: true` = counts 0/0 are unknown, not an orphan. **Empty `topics`** when the graph has none or live discovery times out. **Raises an MCP error** without a `ros2` CLI. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
 
 ### Input parameters
 

@@ -1,7 +1,6 @@
 """Summary and rate for `sample_messages`, built from what the echo stream collected.
 
-Kept apart from the adapter so the adapter stays short. `topicforge.services`
-is imported inside the functions: loading it imports the adapters.
+Kept apart from the adapter so the adapter stays short.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ def wants_whole_arrays(
     and for array contents. With `max_array_length` null the stream is uncut
     anyway; with `arrays_summary_only` there is no array to read.
     """
-    from topicforge.services.summaries import needs_whole_arrays
+    from topicforge.adapters.common.summaries import needs_whole_arrays
 
     return (
         needs_whole_arrays(message_type)
@@ -43,7 +42,7 @@ def decode_with_summary(
     With `whole_arrays` the document is uncut: the summary reads it whole, then the
     returned payload is cut to `max_array_length` as the CLI would have done.
     """
-    from topicforge.services.summaries import summarize_message
+    from topicforge.adapters.common.summaries import summarize_message
 
     if whole_arrays:
         whole = parse_echo_document(text, truncate_length=None)
@@ -69,7 +68,7 @@ def rate_of_run(
     Messages dropped for size count: they arrived. The trailing gap is measured
     only when collection ended on the deadline and not on `count`.
     """
-    from topicforge.services.summaries import compute_rate
+    from topicforge.adapters.common.summaries import compute_rate
 
     arrivals = [d.received_ns for d in run.documents] + run.oversized_received_ns
     return compute_rate(

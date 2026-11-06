@@ -13,11 +13,8 @@ import importlib.util
 import pytest
 
 from topicforge.adapters.base import AdapterError
-from topicforge.services.bag_service import (
-    BagService,
-    detect_bag_format,
-    is_rosbags_available,
-)
+from topicforge.adapters.common.bag_read import detect_bag_format, is_rosbags_available
+from topicforge.services.bag_service import BagService
 
 # --------------------------------------------------------------------------
 # Pure-Python: run in default make check
@@ -58,7 +55,7 @@ def test_bag_service_analyze_raises_clearly_without_rosbags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When rosbags is absent the AdapterError points at the install command."""
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: False)
     svc = BagService()
@@ -69,7 +66,7 @@ def test_bag_service_analyze_raises_clearly_without_rosbags(
 def test_bag_service_peek_raises_clearly_without_rosbags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: False)
     svc = BagService()
@@ -81,7 +78,7 @@ def test_bag_service_analyze_raises_on_nonexistent_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Even with rosbags available, missing paths raise AdapterError."""
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
     svc = BagService()
@@ -93,7 +90,7 @@ def test_bag_service_peek_rejects_negative_count(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
 ) -> None:
     """`count < 0` short-circuits before touching the filesystem."""
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
     svc = BagService()
@@ -106,7 +103,7 @@ def test_bag_service_analyze_surfaces_exception_type_in_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
 ) -> None:
     """The error message names the exception type (`PermissionError`, `IsADirectoryError`, ...)."""
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     fake_bag = tmp_path / "x.mcap"  # type: ignore[attr-defined]
     fake_bag.write_bytes(b"")
@@ -126,7 +123,7 @@ def test_bag_service_peek_surfaces_exception_type_in_error(
 ) -> None:
     """Same as analyze: exception class name + str(exc) must appear in the message
     so the caller can pivot without inspecting `__cause__`."""
-    from topicforge.services import bag_service
+    from topicforge.adapters.common import bag_read as bag_service
 
     fake_bag = tmp_path / "x.mcap"  # type: ignore[attr-defined]
     fake_bag.write_bytes(b"")

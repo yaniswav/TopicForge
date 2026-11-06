@@ -9,10 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter, parse_bag_info
-from topicforge.services import bag_service
-from topicforge.services.bag_service import read_topic_spans, scan_topic_spans
-from topicforge.services.bag_stats import (
+from topicforge.adapters.common import bag_read as bag_service
+from topicforge.adapters.common.bag_read import read_topic_spans, scan_topic_spans
+from topicforge.adapters.common.bag_stats import (
     TopicSpan,
     build_topic_stats,
     db3_files,
@@ -22,6 +21,8 @@ from topicforge.services.bag_stats import (
     read_db3_spans,
     span_frequency,
 )
+from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
+from topicforge.adapters.ros2_live.parsers import parse_bag_info
 
 BAG_DIR = Path(__file__).parent / "fixtures" / "bags" / "omnisim_humble"
 BAG_DB3 = BAG_DIR / "omnisim_husky_topicforge_20261002_190546_0.db3"

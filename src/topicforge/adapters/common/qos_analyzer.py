@@ -121,7 +121,8 @@ def _liveliness_text(kind: str, lease_ns: int | None) -> str:
 
 
 def _check_liveliness(reader: QosProfile, writer: QosProfile) -> PolicyMismatch | None:
-    assert reader.liveliness_kind and writer.liveliness_kind
+    if not (reader.liveliness_kind and writer.liveliness_kind):
+        return None  # the caller reports Liveliness as unchecked before calling
     kind_ok = _LIVELINESS_ORDER.index(writer.liveliness_kind) >= _LIVELINESS_ORDER.index(
         reader.liveliness_kind
     )

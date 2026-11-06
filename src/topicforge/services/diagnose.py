@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -34,7 +34,10 @@ from topicforge.models import (
     Finding,
     HealthReport,
     MismatchScan,
+    NameLifecycle,
     NotMatchedPair,
+    ParticipantEvent,
+    ParticipantInfo,
     SkippedCheck,
     SuggestedFix,
 )
@@ -74,6 +77,8 @@ _LOG_COUNT = 50
 _NODE_READ_S = 3.0
 _NAMED_NODE_READ_S = 6.0
 _EVENT_LOOKBACK_S = 300
+_NS_PER_S = 1_000_000_000
+_LOG_STOP_RESERVE_S = 3.0  # the live adapter keeps this back from a sampling call
 _LIST_NAMES = 8
 _UNTESTED_NAMES = 20
 _TYPO_HINT = "Likely a topic name typo"
@@ -98,8 +103,10 @@ class _Ctx:
     report: HealthReport | None = None
     nodes: list[str] | None = None
     lifecycle: frozenset[str] = frozenset()
+    wall_ns: Callable[[], int] = time.time_ns
     skipped: list[SkippedCheck] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    named_ids: set[int] = field(default_factory=set)  # id() of findings that involve `node`
 
     def left(self) -> float:
         return self.deadline - self.clock()
@@ -212,6 +219,19 @@ def check_topics(ctx: _Ctx) -> list[Finding]:
     """
     topics = [t for t in ctx.inspector.list_topics().topics if t.name not in BUILTIN_COUNT_TOPICS]
     out = []
+    unknown = [t.name for t in topics if t.counts_unknown]
+    if unknown:
+        out.append(
+            _finding(
+                "info",
+                "topics",
+                None,
+                f"{len(unknown)} topic(s) whose publisher and subscriber counts could not be "
+                f"read, so they are not judged: {_names(unknown)}.",
+                _ev("list_topics", "counts_unknown", f"true on {_names(unknown, 4)}"),
+            )
+        )
+    topics = [t for t in topics if not t.counts_unknown]
     waiting = [t.name for t in topics if t.subscriber_count > 0 and t.publisher_count == 0]
     if waiting:
         out.append(
@@ -244,15 +264,23 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
     scan = ctx.inspector.detect_qos_mismatches()
     events = ctx.inspector.participant_events(0, _EVENT_LOOKBACK_S)
     parts = ctx.inspector.list_participants(0)
-    out = _qos_findings(scan)
-    lives = _lives(parts.restarts_by_node, events.restarts_by_name)
+    out = _qos_findings(scan, ctx)
+    recent = _recent_node_lives(
+        parts.participants, events.events, ctx.wall_ns() - _EVENT_LOOKBACK_S * _NS_PER_S
+    )
+    lives = _lives(recent, events.restarts_by_name)
     out += _restart_findings(lives)
     left = [
         (p.node_names[0] if p.node_names else (p.name or p.guid[:8]))
         for p in parts.participants
         if p.status == "left" and not p.is_topicforge_cli and not p.is_observer
     ]
-    left = sorted({n for n in left if lives.get(n.lstrip("/"), 0) < 2})
+    running = {
+        n.lstrip("/") for p in parts.participants if p.status == "active" for n in p.node_names
+    }
+    left = sorted(
+        {n for n in left if lives.get(n.lstrip("/"), 0) < 2 and n.lstrip("/") not in running}
+    )
     if left:
         out.append(
             _finding(
@@ -270,45 +298,75 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
     return out
 
 
-def _qos_findings(scan: MismatchScan) -> list[Finding]:
+def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
     out: list[Finding] = []
-    for i, r in enumerate(scan.reports):
+    groups: dict[tuple[str, str, str, tuple[str, ...]], list[int]] = {}
+    for i, r in enumerate(scan.reports):  # one finding per (topic, writer, severity, policies)
+        writer = r.writer_guid or r.writer_node or r.writer_participant_name or f"#{i}"
+        key = (r.topic, writer, r.severity, tuple(sorted(r.incompatible_policies)))
+        groups.setdefault(key, []).append(i)  # a writer with no identity never merges
+    for indexes in groups.values():
+        members = [scan.reports[i] for i in indexes]
+        r = members[0]
         writer = r.writer_node or r.writer_participant_name or "a writer"
-        reader = r.reader_node or r.reader_participant_name or "a reader"
+        readers = [
+            x.reader_node or x.reader_participant_name or x.reader_guid or "a reader"
+            for x in members
+        ]
         policies = ", ".join(r.incompatible_policies)
         blocked = r.severity == "incompatible"
         verb = "cannot connect to" if blocked else "may lose data towards"
-        values = "; ".join(
-            f"{d.policy}: requested {d.requested}, offered {d.offered}" for d in r.details
-        )
-        out.append(
-            _finding(
-                "critical" if blocked else "warning",
-                "dds",
-                r.topic,
-                f"Writer {writer} {verb} reader {reader} on {r.topic} ({policies}). {values}".strip(),
-                _ev("detect_qos_mismatches", f"reports[{i}].incompatible_policies", policies),
-                _ev("detect_qos_mismatches", f"reports[{i}].details", values),
-                fixes=list(r.suggested_fixes),
+        who = f"reader {readers[0]}"
+        if len(readers) > 1:
+            who = f"{len(readers)} readers ({_names(readers)})"
+        distinct = list(
+            dict.fromkeys(
+                "; ".join(
+                    f"{d.policy}: requested {d.requested}, offered {d.offered}" for d in x.details
+                )
+                for x in members
             )
         )
+        values = " | ".join(distinct[:3]) + (" | ..." if len(distinct) > 3 else "")
+        fixes = next((x.suggested_fixes for x in members if x.suggested_fixes), [])
+        finding = _finding(
+            "critical" if blocked else "warning",
+            "dds",
+            r.topic,
+            f"Writer {writer} {verb} {who} on {r.topic} ({policies}). {values}".strip(),
+            _ev(
+                "detect_qos_mismatches",
+                f"reports[{indexes[0]}].incompatible_policies",
+                policies,
+            ),
+            _ev("detect_qos_mismatches", f"reports[{indexes[0]}].details", values),
+            fixes=list(fixes),
+        )
+        out.append(finding)
+        if ctx.node is not None and ctx.node in (
+            {x.writer_node for x in members} | {x.reader_node for x in members}
+        ):
+            ctx.named_ids.add(id(finding))
     seen: dict[tuple[str, str], list[NotMatchedPair]] = {}
     for pair in scan.not_matched:
         seen.setdefault((pair.topic, pair.reason), []).append(pair)
     for (topic, reason), pairs in sorted(seen.items()):
         first = pairs[0]
         fixes = next((p.suggested_fixes for p in pairs if p.suggested_fixes), [])
-        out.append(
-            _finding(
-                "critical",
-                "dds",
-                topic,
-                f"{len(pairs)} reader/writer pair(s) on {topic} never match ({reason}): "
-                f"{first.detail}. No data flows between them.",
-                _ev("detect_qos_mismatches", "not_matched[].reason", reason),
-                fixes=list(fixes),
-            )
+        finding = _finding(
+            "critical",
+            "dds",
+            topic,
+            f"{len(pairs)} reader/writer pair(s) on {topic} never match ({reason}): "
+            f"{first.detail}. No data flows between them.",
+            _ev("detect_qos_mismatches", "not_matched[].reason", reason),
+            fixes=list(fixes),
         )
+        out.append(finding)
+        if ctx.node is not None and ctx.node in (
+            {x.writer_node for x in pairs} | {x.reader_node for x in pairs}
+        ):
+            ctx.named_ids.add(id(finding))
     for hint in scan.hints:
         if _TYPO_HINT in hint:
             m = _TYPO_TOPIC_RE.match(hint)
@@ -324,13 +382,40 @@ def _qos_findings(scan: MismatchScan) -> list[Finding]:
     return out
 
 
-def _lives(by_node: dict, by_name: dict) -> dict[str, int]:
+def _recent_node_lives(
+    participants: list[ParticipantInfo], events: list[ParticipantEvent], cutoff_ns: int
+) -> dict[str, int]:
+    """Lives per ROS node name inside the lookback window, from the participant table.
+
+    A participant is a life of its node when it is active, was seen since `cutoff_ns`, has a
+    discovery or loss event in the window. Participants that left before the window (an old
+    relaunch), or left with no timestamp and no event in it, are history, not a restart loop.
+    """
+    in_window = {e.guid for e in events}
+    guids: dict[str, set[str]] = {}
+    for p in participants:
+        if p.is_topicforge_cli:
+            continue
+        recent = (
+            p.status == "active"
+            or p.guid in in_window
+            or (p.last_seen_ns is not None and p.last_seen_ns >= cutoff_ns)
+        )
+        if recent:
+            for node in p.node_names:
+                guids.setdefault(node, set()).add(p.guid)
+    return {node: len(found) for node, found in guids.items()}
+
+
+def _lives(by_node: dict[str, int], by_name: Mapping[str, NameLifecycle]) -> dict[str, int]:
     """Lives per participant or node name; the largest count wins when both views have one."""
     lives: dict[str, int] = {}
-    for table in (by_node, by_name):
-        for name, life in table.items():
-            key = name.lstrip("/")
-            lives[key] = max(lives.get(key, 0), life.lives)
+    for name, count in by_node.items():
+        key = name.lstrip("/")
+        lives[key] = max(lives.get(key, 0), count)
+    for name, life in by_name.items():
+        key = name.lstrip("/")
+        lives[key] = max(lives.get(key, 0), life.lives)
     return lives
 
 
@@ -350,7 +435,11 @@ def _restart_findings(lives: dict[str, int]) -> list[Finding]:
                     if loop
                     else f"/{name} restarted once (2 participants carried its name)."
                 ),
-                _ev("list_participants", f"restarts_by_node[/{name}].lives", count),
+                _ev(
+                    "participant_events",
+                    f"participants of /{name} in the last {_EVENT_LOOKBACK_S} s",
+                    count,
+                ),
             )
         )
     return out
@@ -427,6 +516,8 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
 
 def check_logs(ctx: _Ctx) -> list[Finding]:
     """One warning per node that logged an error or fatal line while `/rosout` was listened to."""
+    # The live adapter listens for the timeout less its own stop reserve out of what is left.
+    window = max(min(_LOG_TIMEOUT_S, ctx.left() - _LOG_STOP_RESERVE_S), 0.0)  # an upper bound
     result = ctx.inspector.sample_messages(
         "/rosout", _LOG_COUNT, timeout_s=_LOG_TIMEOUT_S, min_log_level="error"
     )
@@ -441,7 +532,12 @@ def check_logs(ctx: _Ctx) -> list[Finding]:
                 "info",
                 "logs",
                 None,
-                f"No error-level line on /rosout in the {_LOG_TIMEOUT_S:g} s listened to.",
+                (
+                    f"No error-level line on /rosout in the {_LOG_TIMEOUT_S:g} s listened to."
+                    if window >= _LOG_TIMEOUT_S
+                    else "No error-level line on /rosout in up to "
+                    f"{window:g} s listened to (the budget cut the window)."
+                ),
                 _ev("sample_messages", "count", result.count),
             )
         ]
@@ -477,42 +573,47 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
     candidates = _candidates(ctx)
     out: list[Finding] = []
     untested: list[str] = []
+    unreadable: list[tuple[str, str]] = []
+    answered = 0
     for i, name in enumerate(candidates):
         named = name == ctx.node
         timeout = min(_NAMED_NODE_READ_S if named else _NODE_READ_S, ctx.left())
         if timeout < _NODE_READ_S:
-            untested = candidates[i:]
+            untested += candidates[i:]
             break
         try:
             info = ctx.inspector.get_node_info(name, timeout)
         except AdapterError as exc:
-            ctx.skipped.append(SkippedCheck(check="responsiveness", reason=f"{name}: {exc}"))
+            unreadable.append((name, str(exc)))
             continue
-        if info.parameters is not None:
-            continue
-        evidence = _ev("get_node_info", "parameters_note", info.parameters_note or "null")
-        if named:
-            out.append(
-                _finding(
-                    "critical",
-                    "responsiveness",
-                    name,
-                    f"{name} did not answer a parameter read within {timeout:g} s: its executor "
-                    "is probably blocked.",
-                    evidence,
-                )
+        status = info.parameters_status
+        if info.parameters is None and status == "no_budget":
+            untested.append(name)
+        elif info.parameters is None and status == "failed":
+            unreadable.append((name, info.parameters_note or "parameter read failed"))
+        elif info.parameters is None and status is None:  # no answer and no reason: unknown
+            unreadable.append((name, info.parameters_note or "parameters not reported"))
+        elif info.parameters is None and status == "timeout":
+            answered += 1
+            out.append(_silent_finding(name, named, info.parameters_note))
+        else:  # read, or no parameter services (nothing to ask): the node is not shown silent
+            answered += 1
+    if unreadable and not answered:
+        raise AdapterError(f"no node could be read: {unreadable[0][0]}: {unreadable[0][1]}")
+    if candidates and not answered:
+        raise AdapterError("no node could be read: the call budget ran out before any answer")
+    if unreadable:
+        names = [n for n, _ in unreadable]
+        out.append(
+            _finding(
+                "info",
+                "responsiveness",
+                None,
+                f"{len(names)} node(s) could not be read, so they are not judged: "
+                f"{_names(names)} ({unreadable[0][1][:120]}).",
+                _ev("get_node_info", "error", unreadable[0][1]),
             )
-        else:
-            out.append(
-                _finding(
-                    "warning",
-                    "responsiveness",
-                    name,
-                    f"{name} did not answer a parameter read within {timeout:g} s (blocked "
-                    "executor, or a loaded host): confirm with get_node_info(node, timeout_s=8).",
-                    evidence,
-                )
-            )
+        )
     if untested:
         out.append(
             _finding(
@@ -525,6 +626,30 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             )
         )
     return out
+
+
+def _silent_finding(name: str, named: bool, note: str | None) -> Finding:
+    """The finding for a node whose parameter services were announced but never answered.
+
+    The wait actually granted (the budget can shorten it) is in the evidence note, not here.
+    """
+    evidence = _ev("get_node_info", "parameters_note", note or "null")
+    if named:
+        return _finding(
+            "critical",
+            "responsiveness",
+            name,
+            f"{name} did not answer a parameter read in time: its executor is probably blocked.",
+            evidence,
+        )
+    return _finding(
+        "warning",
+        "responsiveness",
+        name,
+        f"{name} did not answer a parameter read in time (blocked executor, or a loaded "
+        "host): confirm with get_node_info(node, timeout_s=8).",
+        evidence,
+    )
 
 
 _CHECK_FUNCTIONS: dict[str, Callable[[_Ctx], list[Finding]]] = {
@@ -550,10 +675,12 @@ class DiagnoseService:
         health: HealthService,
         *,
         clock: Callable[[], float] = time.monotonic,
+        wall_ns: Callable[[], int] = time.time_ns,
     ) -> None:
         self._inspector = inspector
         self._health = health
         self._clock = clock
+        self._wall_ns = wall_ns
 
     def diagnose(
         self,
@@ -569,7 +696,15 @@ class DiagnoseService:
         plan = _SCOPE_CHECKS[scope]
         if scope != "all":
             plan = ("environment", *plan)
-        ctx = _Ctx(self._inspector, self._health, node_name, self._clock, start + horizon, plan)
+        ctx = _Ctx(
+            self._inspector,
+            self._health,
+            node_name,
+            self._clock,
+            start + horizon,
+            plan,
+            wall_ns=self._wall_ns,
+        )
         ran: list[str] = []
         findings: list[Finding] = []
         with budget.deadline_at(time.monotonic() + horizon):
@@ -637,6 +772,23 @@ def _verdict(scope: str, counts: tuple[int, int], ran: int, skipped: list[str]) 
     return f"Incomplete sweep: {verdict}" if skipped or scope != "all" else verdict
 
 
+def _concerns_node(ctx: _Ctx, finding: Finding) -> bool:
+    return ctx.node is not None and (finding.subject == ctx.node or id(finding) in ctx.named_ids)
+
+
+def _cap(ctx: _Ctx, ordered: list[Finding]) -> list[Finding]:
+    """The first MAX_FINDINGS, except that findings about the named node always make it in."""
+    if len(ordered) <= MAX_FINDINGS:
+        return ordered
+    keep = [i for i, f in enumerate(ordered) if _concerns_node(ctx, f)][:MAX_FINDINGS]
+    chosen = set(keep)
+    for i in range(len(ordered)):
+        if len(chosen) >= MAX_FINDINGS:
+            break
+        chosen.add(i)
+    return [f for i, f in enumerate(ordered) if i in chosen]
+
+
 def _assemble(
     ctx: _Ctx,
     scope: str,
@@ -646,15 +798,23 @@ def _assemble(
     findings: list[Finding],
 ) -> Diagnosis:
     rank = {name: i for i, name in enumerate(SEVERITIES)}
-    ordered = sorted(findings, key=lambda f: (rank[f.severity], f.check, f.subject or ""))
+    ordered = sorted(
+        findings,
+        key=lambda f: (
+            rank[f.severity],
+            not _concerns_node(ctx, f),  # the named node's findings go first
+            f.check,
+            f.subject or "",
+        ),
+    )
     counts = {s: sum(1 for f in ordered if f.severity == s) for s in SEVERITIES}
     if len(ordered) > MAX_FINDINGS:
         ctx.notes.append(
             f"Showing {MAX_FINDINGS} of {len(ordered)} findings; the counts cover all."
         )
-    skipped_names = sorted({s.check for s in ctx.skipped}, key=CHECKS.index)
+    skipped_names = sorted({s.check for s in ctx.skipped} - set(ran), key=CHECKS.index)
     return Diagnosis(
-        findings=ordered[:MAX_FINDINGS],
+        findings=_cap(ctx, ordered),
         findings_total=len(ordered),
         critical_count=counts["critical"],
         warning_count=counts["warning"],

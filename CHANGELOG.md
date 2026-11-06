@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+Fixes to `diagnose` found after 0.9.0, a release workflow that tests the built wheel before
+publishing, and internal refactors with no output change. Two optional fields are added
+(`docs/CONTRACT.md` section 9.22). `tools/list` is 99,971 bytes (0.9.0: 99,634), under the
+105,000 ceiling.
+
+### Added
+
+- `TopicListItem.counts_unknown` in `list_topics`: `true` when `ros2 topic info` failed for that
+  topic, so its `0`/`0` counts are unknown rather than an orphan. Omitted when not set.
+  `diagnose` reports such topics instead of reading them as unconnected.
+- `NodeInfo.parameters_status` in `get_node_info`: why `parameters` is `null`, one of `timeout`,
+  `no_parameter_services`, `no_budget`, `failed`; `null` when the parameters were read.
+
+### Fixed
+
+- `diagnose` reports a node as unresponsive only on a parameter-read `timeout`, not when it
+  offers no parameter service, the budget ran out or the dump failed.
+- `diagnose` counts restarts within the 300 s window only, and never reports a node that is still
+  active as having left.
+- `diagnose` folds incompatible QoS pairs into one finding per topic, writer and policy set.
+- `diagnose`: findings about the node named in `node` survive the 50-finding cap, one unreadable
+  node no longer marks the whole `responsiveness` check as not run, and the `/rosout` all-clear
+  states the window it listened to.
+- `get_node_info` no longer starts a parameter read with less than 2 s left in the call budget
+  (it returns `no_budget`), so a read cut short by the budget is not mistaken for a blocked
+  executor; the silent-node finding no longer quotes the requested wait. `diagnose` lists
+  `responsiveness` as not run when the budget let it read no node at all, does not count
+  undated departures as restarts, and keeps never-matching pairs of the named node under the cap.
+
+### Changed
+
+- `publish.yml` runs in stages: `build` (on a tag, also checks that `mcpb/manifest.json` and
+  `server.json` carry the tag's version), then `smoke` (Ubuntu and Windows, Python 3.10 and 3.14:
+  installs the built wheel, checks its version against the tag, lists the 17 tools over stdio in
+  mock mode and calls `health_check`; one cell also installs the sdist), then `publish`, which
+  uploads that exact `dist` artifact. The `.mcpb` is packed in its own job, so an npm failure no
+  longer blocks PyPI. `publish` and the MCP Registry job (after it) are the only jobs with
+  `id-token: write`. Publishing jobs run only on a tag push: a manual `workflow_dispatch`, even
+  on a tag, runs `build`, `smoke` and the bundle packing only.
+- Internal layering: adapters no longer import the service layer. The bag reader moved from
+  `services/bag_service.py` to `adapters/common/bag_read.py` (`BagService` stays in
+  `services/bag_service.py` as a thin facade), and `services/bag_stats.py` and
+  `services/summaries/` moved to `adapters/common/`.
+- Tool descriptions moved to `tools/descriptions.py` and tool registration is split in four
+  groups; `tools/list` is byte-identical. `Ros2CliAdapter` is split into `parsers.py`,
+  `sampler.py` and `node_reader.py`.
+- The serving branch of `main()` is covered by a test.
+
+### Removed
+
+- `fast` from the `health_check.dds_backend` schema enum (0.9.0 kept it but never emitted it).
+  The `fast` vendor id on GUID prefixes stays.
+- Fast DDS leftovers in `adapters/common`: `fast_extract_guid`, `fast_extract_hostname`,
+  `fast_extract_topic_name`, `fast_extract_vendor_id`, `is_removal`, `fast_qos_to_profile` and
+  the `qos_endpoints` module (`detect_mismatches_across_endpoints`); also `mock_qos_for` and
+  `echo_parser._is_int`. Four production `assert` statements became explicit checks.
+
 ## [0.9.0] - 2026-11-02
 
 ### Added

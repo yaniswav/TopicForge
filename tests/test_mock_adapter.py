@@ -22,7 +22,9 @@ def test_list_topics_includes_known_fixtures(mock_adapter: MockAdapter) -> None:
     names = {t.name for t in topics}
     assert {"/cmd_vel", "/odom", "/scan", "/tf", "/camera/image_raw"} <= names
     # The listing items carry no QoS and no mode: the envelope has the mode.
-    assert all(set(t.model_dump()) == set(TopicListItem.model_fields) for t in topics)
+    assert all(
+        set(t.model_dump()) == set(TopicListItem.model_fields) - {"counts_unknown"} for t in topics
+    )
 
 
 def test_get_topic_info_returns_known_type(mock_adapter: MockAdapter) -> None:

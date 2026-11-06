@@ -13,14 +13,12 @@ from types import SimpleNamespace
 import pytest
 
 from topicforge.adapters.base import AdapterError
-from topicforge.adapters.ros2_live.adapter import (
-    Ros2CliAdapter,
-    parse_topic_info,
-)
+from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
 from topicforge.adapters.ros2_live.echo_stream import EchoRun
 from topicforge.adapters.ros2_live.parsers import (
     EndpointQos,
     parse_topic_endpoint_qos,
+    parse_topic_info,
     parse_topic_list_verbose,
     qualified_node_name,
     side_nodes,
@@ -30,6 +28,7 @@ from topicforge.models import SideQos, TopicListItem
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _MODULE = "topicforge.adapters.ros2_live.adapter"
+_SAMPLER = "topicforge.adapters.ros2_live.sampler"
 _BAG_DIR = _FIXTURES / "bags" / "omnisim_humble"
 
 
@@ -285,7 +284,10 @@ def test_list_topics_reads_counts_from_the_verbose_list(
     topics = {t.name: t for t in Ros2CliAdapter().list_topics()}
     assert (topics["/tf"].publisher_count, topics["/tf"].subscriber_count) == (2, 3)
     assert (topics["/cmd_vel"].publisher_count, topics["/cmd_vel"].subscriber_count) == (0, 1)
-    assert all(set(t.model_dump()) == set(TopicListItem.model_fields) for t in topics.values())
+    assert all(
+        set(t.model_dump()) == set(TopicListItem.model_fields) - {"counts_unknown"}
+        for t in topics.values()
+    )
     # Only the topic absent from both sections costs a per-topic call.
     assert sum(c[1:3] == ["topic", "info"] for c in cli.commands) == 1
 
@@ -350,7 +352,7 @@ def _echo_command(
         seen.append(cmd)
         return EchoRun()
 
-    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
     Ros2CliAdapter().sample_messages("/scan", 1, **options)  # type: ignore[arg-type]
     return seen[0]
 
@@ -461,7 +463,7 @@ def test_live_analyze_bag_keeps_duration_basis_when_the_bag_is_not_readable_here
 ) -> None:
     info = (_BAG_DIR / "ros2_bag_info.txt").read_text()
     monkeypatch.setattr(Ros2CliAdapter, "_run", lambda self, cmd, timeout=8.0: info)
-    monkeypatch.setattr("topicforge.services.bag_service.is_rosbags_available", lambda: False)
+    monkeypatch.setattr("topicforge.adapters.common.bag_read.is_rosbags_available", lambda: False)
     unreadable = tmp_path / "x.mcap"
     unreadable.write_bytes(b"")
     result = Ros2CliAdapter().analyze_bag(str(unreadable))
@@ -473,3 +475,12 @@ def test_live_analyze_bag_keeps_duration_basis_when_the_bag_is_not_readable_here
 def test_live_analyze_bag_missing_path_raises() -> None:
     with pytest.raises(AdapterError, match="does not exist"):
         Ros2CliAdapter().analyze_bag(str(_BAG_DIR / "absent"))
+
+
+def test_list_topics_flags_counts_that_could_not_be_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed `topic info` lookup is `counts_unknown`, not an orphan with zero endpoints."""
+    cli = _Cli({"topic list": _LIST_T, "topic list -v": 1, "topic info": 1})
+    _install(monkeypatch, cli)
+    topics = Ros2CliAdapter().list_topics()
+    assert topics and all(t.counts_unknown is True for t in topics)
+    assert "counts_unknown" in topics[0].model_dump()

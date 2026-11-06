@@ -16,9 +16,9 @@ from topicforge.constants import MAX_SAMPLE_COUNT
 from topicforge.models import HealthReport
 
 RosBackendTag = Literal["mock", "ros2_cli", "none"]
-DdsBackendTag = Literal["mock", "cyclone", "fast", "none"]
+DdsBackendTag = Literal["mock", "cyclone", "none"]
 
-_DDS_TAGS: frozenset[str] = frozenset({"mock", "cyclone", "fast"})
+_DDS_TAGS: frozenset[str] = frozenset({"mock", "cyclone"})
 
 CONTRACT_VERSION = 2
 """Version of the output contract, see `docs/CONTRACT.md`."""

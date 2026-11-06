@@ -23,6 +23,7 @@ from pydantic import JsonValue
 from topicforge.adapters.base import AdapterError
 from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH
 from topicforge.models import NodeInfo, NodeInterface, NodeListing, NodeListItem, NodeParameter
+from topicforge.models.nodes import ParametersStatus
 
 # Longest string parameter returned in full; a robot description is cut here.
 MAX_PARAM_VALUE_CHARS = 2048
@@ -241,6 +242,7 @@ def build_node_info(
     parameters_note: str | None,
     duplicate_count: int,
     mode: Mode,
+    parameters_status: ParametersStatus | None = None,
 ) -> NodeInfo:
     """Assemble the `get_node_info` result; `interfaces` maps section keys to their entries."""
     sim_time, sim_time_note = use_sim_time_of(parameters)
@@ -254,6 +256,7 @@ def build_node_info(
         action_clients=interfaces.get("action_clients", []),
         parameters=parameters,
         parameters_note=parameters_note,
+        parameters_status=None if parameters is not None else parameters_status,
         use_sim_time=sim_time,
         use_sim_time_note=sim_time_note,
         lifecycle=any(

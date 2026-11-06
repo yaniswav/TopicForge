@@ -23,6 +23,7 @@ from topicforge.config import Settings
 from topicforge.server import build_app
 
 _MODULE = "topicforge.adapters.ros2_live.adapter"
+_SAMPLER = "topicforge.adapters.ros2_live.sampler"
 S = 1_000_000_000
 T0 = 1_760_000_000 * S
 
@@ -78,7 +79,7 @@ class _Harness:
             self.cmd, self.kwargs = cmd, kw
             return run
 
-        monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+        monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
 
     def sample(self, topic: str = "/x", count: int = 5, **options: Any) -> Any:
         return Ros2CliAdapter().sample_messages(topic, count, **options)

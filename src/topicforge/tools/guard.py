@@ -21,6 +21,13 @@ Lanes. A handler names the backend it uses and runs behind that lane's lock:
 A ROS call and a DDS call can run at the same time; two calls of one lane
 cannot. The Cyclone adapter keeps its own `_BINDING_LOCK` as the innermost guard.
 
+`diagnose` and `graph_diff` run on the ROS lane but also read the DDS backend
+(QoS pairs, participants, writer QoS), so they can overlap a DDS-lane call.
+That is safe: those reads are answered from the discovery caches, and the
+lifecycle, metrics and discovery buffers in `adapters/common` each hold their
+own lock. The binding `take()` calls that feed the caches run on the tracker
+thread under `_BINDING_LOCK` in `adapters/dds_cyclone/adapter.py`.
+
 Budget. A call has `TOOL_BUDGET_S` seconds of wall time from the moment it
 starts, lock wait included (docs/CONTRACT.md section 1.7). The guard waits for
 the lane lock at most until `MIN_RUN_S` seconds remain, then raises

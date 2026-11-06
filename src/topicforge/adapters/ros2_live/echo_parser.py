@@ -142,10 +142,6 @@ def _cut(value: object, path: str, max_length: int, cut: list[str]) -> object:
     return value
 
 
-def _is_int(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def _normalize_mapping(
     data: dict[Any, Any], path: str, truncate_length: int | None, cut: list[str]
 ) -> dict[str, object]:

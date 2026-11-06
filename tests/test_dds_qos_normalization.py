@@ -1,7 +1,7 @@
 """Tests for the vendor QoS -> canonical QosProfile normalizers.
 
-These were extracted from the Cyclone adapter (and the Fast adapter, removed in 0.9.0) so they can be tested WITHOUT the `cyclonedds` /
-`fastdds` bindings installed. Before the extraction the entire QoS
+This was extracted from the Cyclone adapter so it can be tested WITHOUT the
+`cyclonedds` binding installed. Before the extraction the entire QoS
 normalization path (the feeder of `detect_qos_mismatches`, the flagship
 DDS diagnostic) was unreachable by the suite, so a renamed policy key
 would silently make every QoS profile resolve to `None` (-> no mismatch
@@ -13,12 +13,9 @@ Synthetic duck-typed objects only: no DDS middleware required.
 
 from __future__ import annotations
 
-import pytest
-
 from topicforge.adapters.common import (
     cyclone_qos_to_profile,
     detect_mismatches,
-    fast_qos_to_profile,
 )
 from topicforge.adapters.common.qos_analyzer import analyze_pair
 
@@ -115,88 +112,6 @@ def test_cyclone_renamed_policy_class_returns_none():
 
 
 # ---------------------------------------------------------------------------
-# Fast: QoS is a struct with .reliability/.durability/.history/.deadline,
-# each exposing an integer `.kind` mapped via binding-derived int->str maps.
-# ---------------------------------------------------------------------------
-
-_REL = {1: "RELIABLE", 0: "BEST_EFFORT"}
-_DUR = {0: "VOLATILE", 1: "TRANSIENT_LOCAL", 2: "TRANSIENT", 3: "PERSISTENT"}
-_HIST = {0: "KEEP_LAST", 1: "KEEP_ALL"}
-
-
-class _Kind:
-    def __init__(self, kind: int, depth: int | None = None) -> None:
-        self.kind = kind
-        if depth is not None:
-            self.depth = depth
-
-
-class _Period:
-    def __init__(self, seconds: int = 0, nanosec: int = 0) -> None:
-        self.seconds = seconds
-        self.nanosec = nanosec
-
-
-class _FastDeadline:
-    def __init__(self, seconds: int = 0, nanosec: int = 0) -> None:
-        self.period = _Period(seconds, nanosec)
-
-
-class _FastQos:
-    def __init__(
-        self,
-        *,
-        rel: int,
-        dur: int,
-        hist: int,
-        depth: int = 1,
-        deadline: _FastDeadline | None = None,
-    ) -> None:
-        self.reliability = _Kind(rel)
-        self.durability = _Kind(dur)
-        self.history = _Kind(hist, depth)
-        self.deadline = deadline
-
-
-class _FastSample:
-    def __init__(self, qos: object) -> None:
-        self.qos = qos
-
-
-def _fast(sample: object):
-    return fast_qos_to_profile(sample, reliability_map=_REL, durability_map=_DUR, history_map=_HIST)
-
-
-def test_fast_full_profile():
-    qos = _FastQos(rel=1, dur=1, hist=0, depth=7, deadline=_FastDeadline(seconds=1, nanosec=500))
-    profile = _fast(_FastSample(qos))
-    assert profile is not None
-    assert profile.reliability == "RELIABLE"
-    assert profile.durability == "TRANSIENT_LOCAL"
-    assert profile.history == "KEEP_LAST"
-    assert profile.history_depth == 7
-    assert profile.deadline_ns == 1_000_000_500
-
-
-def test_fast_no_deadline_still_builds_profile():
-    profile = _fast(_FastSample(_FastQos(rel=0, dur=0, hist=1)))
-    assert profile is not None
-    assert profile.reliability == "BEST_EFFORT"
-    assert profile.history == "KEEP_ALL"
-    assert profile.deadline_ns is None
-
-
-def test_fast_no_qos_returns_none():
-    assert _fast(_FastSample(None)) is None
-
-
-def test_fast_unknown_reliability_kind_returns_none():
-    # Regression guard: an enum int not in the map (renamed / shifted across
-    # a binding major version) must resolve the whole profile to None.
-    assert _fast(_FastSample(_FastQos(rel=99, dur=1, hist=0))) is None
-
-
-# ---------------------------------------------------------------------------
 # End-to-end: normalized profiles feed the flagship analyzer correctly.
 # ---------------------------------------------------------------------------
 
@@ -212,19 +127,15 @@ def test_normalized_profiles_feed_detect_mismatches():
     assert severity == "incompatible"
 
 
-@pytest.mark.parametrize("normalizer", ["cyclone", "fast"])
-def test_both_vendors_agree_on_identical_reliable_pair(normalizer: str):
-    if normalizer == "cyclone":
-        profile = cyclone_qos_to_profile(_CycloneSample([Reliable(), Volatile(), KeepLast()]))
-    else:
-        profile = _fast(_FastSample(_FastQos(rel=1, dur=0, hist=0)))
+def test_identical_reliable_pair_is_compatible():
+    profile = cyclone_qos_to_profile(_CycloneSample([Reliable(), Volatile(), KeepLast()]))
     assert profile is not None
-    # Identical profile pair is always compatible regardless of vendor path.
+    # An identical profile pair is always compatible.
     assert detect_mismatches(profile, profile) is None
 
 
 # ------------------ deadline / defensive branch coverage --------------------
-# The Deadline policy shape and the Fast period fields vary across binding
+# The Deadline policy shape varies across binding
 # versions; these pin the getattr-fallback branches.
 
 
@@ -252,37 +163,6 @@ def test_cyclone_deadline_via_deadline_attr_with_to_nanoseconds():
     profile = cyclone_qos_to_profile(sample)
     assert profile is not None
     assert profile.deadline_ns == 5678
-
-
-def test_fast_qos_missing_reliability_object_returns_none():
-    class _Qos:  # no reliability / m_reliability attribute at all
-        durability = _Kind(0)
-        history = _Kind(0, 1)
-        deadline = None
-
-    assert _fast(_FastSample(_Qos())) is None
-
-
-def test_fast_deadline_alt_period_field_names():
-    # Some bindings expose `.sec` / `.nanoseconds` instead of
-    # `.seconds` / `.nanosec`: the normalizer falls back to both.
-    class _Period:
-        sec = 2
-        nanoseconds = 250
-
-    class _Deadline:
-        period = _Period()
-
-    qos = _FastQos(rel=1, dur=0, hist=0, deadline=_Deadline())  # type: ignore[arg-type]
-    profile = _fast(_FastSample(qos))
-    assert profile is not None
-    assert profile.deadline_ns == 2_000_000_250
-
-
-def test_fast_history_depth_populated():
-    profile = _fast(_FastSample(_FastQos(rel=1, dur=0, hist=0, depth=42)))
-    assert profile is not None
-    assert profile.history_depth == 42
 
 
 # --- Regression: cyclonedds 11.0.1 scopes its policy class names -------------

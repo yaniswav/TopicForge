@@ -14,7 +14,6 @@ import pytest
 from topicforge.adapters.common import (
     cyclone_qos_to_profile,
     endpoint_record,
-    fast_qos_to_profile,
     format_participant_key,
     scan_endpoints,
 )
@@ -107,18 +106,6 @@ def test_profile_without_history_is_kept() -> None:
     assert profile is not None
     assert profile.reliability == "RELIABLE" and profile.durability == "VOLATILE"
     assert profile.history is None
-
-
-def test_fast_profile_without_history_is_kept() -> None:
-    kind = SimpleNamespace(kind=1)
-    sample = SimpleNamespace(qos=SimpleNamespace(reliability=kind, durability=kind))
-    profile = fast_qos_to_profile(
-        sample,
-        reliability_map={1: "RELIABLE"},
-        durability_map={1: "VOLATILE"},
-        history_map={},
-    )
-    assert profile is not None and profile.history is None
 
 
 def test_apply_history_policy_passes_none_through() -> None:

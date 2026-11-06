@@ -460,9 +460,8 @@ def mock_samples_for(
     `max_array_length` (or its long arrays shown as text with `arrays_summary_only`).
     Empty if the topic is unknown.
     """
-    # Imported here: loading `topicforge.services` imports the adapters.
+    from topicforge.adapters.common.summaries import summarize_message
     from topicforge.adapters.ros2_live.echo_parser import cut_payload
-    from topicforge.services.summaries import summarize_message
 
     out: list[MessageSample] = []
     for sample in _MOCK_SAMPLES.get(topic, [])[:count]:
@@ -478,7 +477,7 @@ def mock_samples_for(
 
 def mock_sample_rate(samples: list[MessageSample]) -> TopicRate | None:
     """Rate block of mock samples, on their synthetic arrival times; `None` without any."""
-    from topicforge.services.summaries import compute_rate
+    from topicforge.adapters.common.summaries import compute_rate
 
     arrivals = [s.received_ns for s in samples if s.received_ns is not None]
     if not arrivals:
@@ -626,27 +625,6 @@ MOCK_DDS_TOPICS: tuple[str, ...] = (
     "/dds/topicforge/example",
     "/dds/topicforge/opaque",
 )
-
-
-def mock_qos_for(topic: str) -> QosProfile | None:
-    """Return a deterministic QoS profile for a mock DDS topic, else None."""
-    if topic == "/dds/well_matched":
-        return QosProfile(
-            reliability="RELIABLE",
-            durability="VOLATILE",
-            history="KEEP_LAST",
-            history_depth=10,
-            deadline_ns=None,
-        )
-    if topic == "/dds/qos_mismatch":
-        return QosProfile(
-            reliability="BEST_EFFORT",
-            durability="VOLATILE",
-            history="KEEP_LAST",
-            history_depth=10,
-            deadline_ns=None,
-        )
-    return None
 
 
 def mock_dds_samples_for(topic: str, count: int) -> SampleResult:
@@ -1031,7 +1009,7 @@ def mock_bag_samples_for(topic: str, count: int | None = None) -> list[MessageSa
 
     Empty for an unknown topic.
     """
-    from topicforge.services.summaries import summarize_message
+    from topicforge.adapters.common.summaries import summarize_message
 
     return [
         s.model_copy(update={"summary": summarize_message(s.message_type, s.payload)})
@@ -1041,7 +1019,7 @@ def mock_bag_samples_for(topic: str, count: int | None = None) -> list[MessageSa
 
 def mock_bag_rate(samples: list[MessageSample]) -> TopicRate | None:
     """Rate block of mock bag samples on their record time; `None` without samples."""
-    from topicforge.services.summaries import compute_rate
+    from topicforge.adapters.common.summaries import compute_rate
 
     recorded = [s.recorded_ns for s in samples if s.recorded_ns is not None]
     stamped = [(s.recorded_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.recorded_ns]

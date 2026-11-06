@@ -513,7 +513,7 @@ The participant and event listings also carry `domain_id` once, in the envelope 
 its fields are always `null`. It becomes:
 
 - `TopicListItem` (in `list_topics`): `name`, `message_type`, `publisher_count`,
-  `subscriber_count`. No QoS field.
+  `subscriber_count`. No QoS field. (`counts_unknown` was added after 0.9.0, section 9.22.)
 - `TopicInfo` (in `get_topic_info`): the same four fields plus `publisher_qos`,
   `subscription_qos` and their `_note` fields (3.3), and `mode_effective`.
 
@@ -637,7 +637,7 @@ are hidden by the CLI and are not listed.
 
 `get_node_info(node, timeout_s)` returns `NodeInfo {full_name, publishers, subscribers,
 service_servers, service_clients, action_servers, action_clients, parameters, parameters_note,
-use_sim_time, use_sim_time_note, lifecycle, duplicate_count, mode_effective, note}`. An interface is
+parameters_status, use_sim_time, use_sim_time_note, lifecycle, duplicate_count, mode_effective, note}`. An interface is
 `{name, type}`. It makes up to three CLI calls: `ros2 node list` (the node must exist,
 duplicates are counted), `ros2 node info` (a graph query that never waits for the node) and
 `ros2 param dump` bounded by `timeout_s` (1..20, default 8) and by what is left of the 45 s.
@@ -647,6 +647,8 @@ Rules:
 - `parameters` is `null` only with a `parameters_note` (1.3): the node did not answer in time
   (a diagnosis, its executor is probably blocked, not an error), it offers no parameter
   service, or the dump was unreadable or over 1 MiB. The interfaces are returned anyway.
+  `parameters_status` names the case: `timeout`, `no_parameter_services`, `no_budget` (no time
+  left in the call budget) or `failed`; `null` when the parameters were read (section 9.22).
 - `use_sim_time` is a boolean read from the parameters, else `null` with `use_sim_time_note`.
 - A parameter is `{name, value, masked, truncated, original_size}`; names are dotted and
   sorted. A name containing password, secret, token, api_key or credential (any case) has its
@@ -889,7 +891,7 @@ clock the messages' own stamps are on, which `sim_frequency_hz` alone cannot.
 - `stamp_regression_count`: messages, in basis order, whose non-zero stamp is strictly lower
   than the previous non-zero stamp. A topic with several publishers interleaves and reads high;
   a simulation restart counts once. Default 0.
-- Computed by the pure `services/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
+- Computed by the pure `adapters/common/summaries/clock.py` from `(basis_ns, stamp_ns, stamp_source)`
   of the messages that were decoded; messages dropped for size or decode errors are not seen.
 
 ### 9.12 `/rosout` filter and bag ranges (0.8.0, planned as 0.7.3)
@@ -1317,7 +1319,7 @@ Descriptions only, no shape change. `tools/list` goes from 97,315 to 95,391 byte
 ### 9.21 diagnose (tool 17, 0.9.0)
 
 The seventeenth tool served (the slot numbered 18 in the plan; 16 stays reserved for `get_image`).
-Additive: no existing tool changes shape. `tools/list` goes from 95,391 to 99,658 bytes (`diagnose`
+Additive: no existing tool changes shape. `tools/list` goes from 95,391 to 99,634 bytes (`diagnose`
 is 4,267: description 775, input schema 449, output schema 2,842), under the 105,000 test ceiling
 of section 9.20.
 
@@ -1386,4 +1388,25 @@ in `50`, or an `info` that names it if the budget did not reach it; a `critical`
 other critical or warning is a false alarm and fails the cell. Also required: `checks_skipped`
 empty, `elapsed_s` within `budget_s`, counts that match the findings, a verdict that is not the
 clean line. Comparator section: `diagnose`.
+
+### 9.22 Unknown counts and parameter status (after 0.9.0, unreleased)
+
+Two optional fields, additive (1.9). `tools/list` goes from 99,634 to 99,971 bytes (measured like
+`test_tool_listing_stays_small`).
+
+- `TopicListItem.counts_unknown` (`list_topics`): `true` when `ros2 topic info` failed for the
+  topic, so `publisher_count` and `subscriber_count` read `0` but are unknown, not an orphan. The
+  key is left out of the payload when it is not set, to keep listings small. `diagnose` reports
+  such topics in its `topics` check and leaves them out of the orphan findings.
+- `NodeInfo.parameters_status` (`get_node_info`, section 8): `timeout`, `no_parameter_services`,
+  `no_budget` or `failed` when `parameters` is `null`, else `null`. `diagnose` reports a node as
+  unresponsive only on `timeout`.
+- One narrowing of an enum that was never emitted: `health_check.dds_backend` no longer lists
+  `fast` (0.9.0 removed the Fast adapter but kept the value in the enum). The `fast`
+  vendor id on GUID prefixes stays.
+- No shape change in `diagnose` (section 9.21), but these rules changed: restarts are counted
+  within the 300 s window only and an active node is never reported as left; incompatible QoS
+  pairs are folded into one finding per topic, writer and policy set; findings on the node named
+  in `node` survive the 50 cap; one unreadable node no longer marks `responsiveness` as not run;
+  the `/rosout` all-clear states its window.
 

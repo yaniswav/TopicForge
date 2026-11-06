@@ -4,15 +4,12 @@ Lives outside the adapters because they import their SDK at module top
 level and so cannot be tested without it. A renamed policy key here would
 silently return `None` and hide every mismatch.
 
-The Cyclone path keys policies by binding class name. The Fast DDS path (no
-caller since the Fast adapter was removed) keys by integer enum value, so
-`fast_qos_to_profile` takes the three int->str maps as parameters and this
-module imports no binding.
+The Cyclone path keys policies by binding class name; this module imports
+no binding.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from topicforge.models import QosProfile
@@ -188,78 +185,6 @@ def cyclone_qos_to_profile(sample: Any) -> QosProfile | None:
     )
 
 
-def fast_qos_to_profile(
-    sample: Any,
-    *,
-    reliability_map: Mapping[int, str],
-    durability_map: Mapping[int, str],
-    history_map: Mapping[int, str],
-) -> QosProfile | None:
-    """Map a Fast DDS discovery sample's QoS to a `QosProfile`.
-
-    The three maps are the binding's integer-enum -> canonical-string
-    tables, built by the adapter from `fastdds` constants. Returns `None`
-    when reliability or durability cannot be resolved.
-    """
-    qos = getattr(sample, "qos", None)
-    if qos is None:
-        return None
-
-    reliability: str | None = None
-    durability: str | None = None
-    history: str | None = None
-    history_depth: int | None = None
-    deadline_ns: int | None = None
-
-    try:
-        rel = getattr(qos, "reliability", None) or getattr(qos, "m_reliability", None)
-        if rel is not None:
-            kind = getattr(rel, "kind", None)
-            if kind is not None:
-                reliability = reliability_map.get(kind)
-
-        dur = getattr(qos, "durability", None) or getattr(qos, "m_durability", None)
-        if dur is not None:
-            kind = getattr(dur, "kind", None)
-            if kind is not None:
-                durability = durability_map.get(kind)
-
-        hist = getattr(qos, "history", None) or getattr(qos, "m_history", None)
-        if hist is not None:
-            kind = getattr(hist, "kind", None)
-            if kind is not None:
-                history = history_map.get(kind)
-            depth = getattr(hist, "depth", None)
-            if isinstance(depth, int):
-                history_depth = depth
-
-        ddl = getattr(qos, "deadline", None) or getattr(qos, "m_deadline", None)
-        if ddl is not None:
-            period = getattr(ddl, "period", None)
-            if period is not None:
-                sec = getattr(period, "seconds", None)
-                if sec is None:
-                    sec = getattr(period, "sec", None) or 0
-                nsec = getattr(period, "nanosec", None)
-                if nsec is None:
-                    nsec = getattr(period, "nanoseconds", None) or 0
-                if sec or nsec:
-                    deadline_ns = int(sec) * 1_000_000_000 + int(nsec)
-    except (TypeError, AttributeError):  # defensive
-        return None
-
-    if reliability is None or durability is None:
-        return None
-
-    return QosProfile(
-        reliability=reliability,  # type: ignore[arg-type]
-        durability=durability,  # type: ignore[arg-type]
-        history=history,  # type: ignore[arg-type]
-        history_depth=history_depth,
-        deadline_ns=deadline_ns,
-    )
-
-
 HISTORY_NOT_ANNOUNCED_NOTE = (
     "History is not carried by DDS discovery (it is not part of the builtin endpoint "
     "data), so it is not reported for this endpoint."
@@ -305,5 +230,4 @@ __all__ = [
     "cyclone_qos_to_profile",
     "duration_state",
     "duration_to_ns",
-    "fast_qos_to_profile",
 ]

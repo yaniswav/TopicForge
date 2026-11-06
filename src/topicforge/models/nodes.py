@@ -137,6 +137,9 @@ class ParamDiff(BaseModel):
     live: JsonValue
 
 
+ParametersStatus = Literal["timeout", "no_parameter_services", "no_budget", "failed"]
+
+
 class NodeInfo(BaseModel):
     """Detail of one node: its interfaces, its parameters and `use_sim_time`."""
 
@@ -163,6 +166,9 @@ class NodeInfo(BaseModel):
         description=(
             "Why `parameters` is `None`, or what was masked or cut; `None` when complete."
         ),
+    )
+    parameters_status: ParametersStatus | None = Field(
+        default=None, description="Why `parameters` is `None`; `None` when it was read."
     )
     use_sim_time: bool | None = Field(
         default=None,

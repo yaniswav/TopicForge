@@ -6,8 +6,8 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+from topicforge.adapters.common.summaries._common import as_float, frame_id, non_finite_kind
 from topicforge.models.summaries import LaserScanSummary, ScanReturn, ScanSector, ScanSectors
-from topicforge.services.summaries._common import as_float, frame_id, non_finite_kind
 
 # Sector edges in radians. A beam exactly on an edge belongs to the narrower
 # sector (front, then left or right). The epsilon (about 0.006 degrees) absorbs

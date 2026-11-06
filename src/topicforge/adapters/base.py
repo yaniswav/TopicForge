@@ -29,9 +29,7 @@ AdapterName = Literal[
     "mock",
     "ros2_cli",
     "cyclone",
-    "fast",
     "ros2_cli+cyclone",
-    "ros2_cli+fast",
 ]
 """Implementation tag for the active adapter.
 

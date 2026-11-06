@@ -114,9 +114,7 @@ def test_mock_adapter_reports_mock_on_both_halves() -> None:
     [
         ("ros2_cli", "ros2_cli", "none"),
         ("cyclone", "none", "cyclone"),
-        ("fast", "none", "fast"),
         ("ros2_cli+cyclone", "ros2_cli", "cyclone"),
-        ("ros2_cli+fast", "ros2_cli", "fast"),
     ],
 )
 def test_backends_are_deduced_from_adapter_name(

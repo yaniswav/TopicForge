@@ -4,9 +4,6 @@ Pure and binding-free: everything here works on decoded payloads (nested dicts
 and lists) and integer times, and is tested without ROS 2. A summary is
 auxiliary, so `summarize_message` never raises: a bug or an odd message gives
 `None`, not a failed tool call.
-
-Adapters import this package inside functions, not at module level: importing
-`topicforge.services` loads the factory, which loads the adapters.
 """
 
 from __future__ import annotations
@@ -15,11 +12,11 @@ import logging
 from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
+from topicforge.adapters.common.summaries.laser_scan import summarize_laser_scan
+from topicforge.adapters.common.summaries.motion import summarize_imu, summarize_odometry
+from topicforge.adapters.common.summaries.rate import compute_rate
+from topicforge.adapters.common.summaries.sensor_data import summarize_image, summarize_point_cloud2
 from topicforge.models.summaries import MessageSummary
-from topicforge.services.summaries.laser_scan import summarize_laser_scan
-from topicforge.services.summaries.motion import summarize_imu, summarize_odometry
-from topicforge.services.summaries.rate import compute_rate
-from topicforge.services.summaries.sensor_data import summarize_image, summarize_point_cloud2
 
 __all__ = ["compute_rate", "needs_whole_arrays", "summarize_message", "supports_summary"]
 

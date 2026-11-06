@@ -211,6 +211,20 @@
           "null"
         ]
       },
+      "parameters_status": {
+        "description": "Why `parameters` is `None`; `None` when it was read.",
+        "enum": [
+          "timeout",
+          "no_parameter_services",
+          "no_budget",
+          "failed",
+          null
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "publishers": {
         "description": "Topics the node publishes.",
         "items": {

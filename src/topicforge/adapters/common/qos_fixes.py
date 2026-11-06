@@ -61,6 +61,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.qos_analyzer import effective_partitions
 from topicforge.models import (
     EndpointInfo,
@@ -357,7 +358,8 @@ def _rxo_fixes(
     readers: Sequence[EndpointInfo], writers: Sequence[EndpointInfo], policies: list[str]
 ) -> list[SuggestedFix]:
     r0, w0 = readers[0], writers[0]
-    assert r0.qos and w0.qos
+    if not (r0.qos and w0.qos):
+        raise AdapterError("internal error: QoS fix requested for an endpoint without QoS")
     topic = r0.ros_topic or r0.dds_topic
     ros = r0.ros_topic is not None and r0.dds_topic.startswith("rt/")
     fixes: list[SuggestedFix] = []
@@ -484,7 +486,10 @@ def attach_partition_fixes(
     hints: list[str] = []
     for indices in groups.values():
         r0, w0 = entries[indices[0]][1], entries[indices[0]][2]
-        assert r0.qos and w0.qos
+        if not (r0.qos and w0.qos):
+            raise AdapterError(
+                "internal error: partition fix requested for an endpoint without QoS"
+            )
         topic = r0.ros_topic or r0.dds_topic
         readers = [entries[i][1] for i in indices]
         writers = [entries[i][2] for i in indices]

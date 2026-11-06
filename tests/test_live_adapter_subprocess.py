@@ -17,6 +17,7 @@ from topicforge.adapters.ros2_live.adapter import Ros2CliAdapter
 from topicforge.adapters.ros2_live.echo_stream import EchoDocument, EchoRun
 
 _MODULE = "topicforge.adapters.ros2_live.adapter"
+_SAMPLER = "topicforge.adapters.ros2_live.sampler"
 
 
 def _stub_which_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,7 +100,7 @@ def _stub_echo(monkeypatch: pytest.MonkeyPatch, run: EchoRun) -> list[list[str]]
         seen.append(cmd)
         return run
 
-    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
     return seen
 
 
@@ -150,7 +151,7 @@ def test_sample_messages_without_a_publisher_says_so_and_waits_less(
         deadlines.append(deadline_s)
         return EchoRun()
 
-    monkeypatch.setattr(f"{_MODULE}.stream_echo", fake_stream)
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", fake_stream)
     result = Ros2CliAdapter().sample_messages("/cmd_vel", count=2, timeout_s=30)
     assert len(deadlines) == 1 and 2.5 < deadlines[0] <= 3.0
     assert result.note is not None and "No publisher" in result.note

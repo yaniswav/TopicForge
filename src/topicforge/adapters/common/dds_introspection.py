@@ -1,10 +1,8 @@
 """Defensive field extraction from DDS discovery samples, without the bindings.
 
 Kept here so the `getattr`-with-fallback logic is unit-testable without
-`cyclonedds` or `fastdds` installed. The two vendors expose different
-sample shapes, so the helpers stay vendor-qualified (`cyclone_*`, `fast_*`)
-and are not merged. The `fast_*` helpers have no caller since the Fast DDS
-adapter was removed, and they never ran against a real bus.
+`cyclonedds` installed. The helpers are vendor-qualified (`cyclone_*`)
+so another binding can add its own without merging sample shapes.
 
 Every helper returns `None` or a safe default rather than raising, so one
 odd sample cannot fail a tool call.
@@ -192,100 +190,10 @@ def cyclone_extract_type_name(sample: Any) -> str | None:
     return None
 
 
-# Fast DDS variants
-
-
-def is_removal(status: Any) -> bool:
-    """True when a Fast DDS discovery status (enum or string label) means removal."""
-    if status is None:
-        return False
-    s = str(status).upper()
-    return "REMOVED" in s or "DISPOSED" in s or "DROPPED" in s
-
-
-def fast_extract_guid(sample: Any) -> bytes | None:
-    """Pull a 16-byte GUID off a Fast DDS discovery sample."""
-    for attr in ("guid", "key", "participant_key"):
-        v = getattr(sample, attr, None)
-        if v is None:
-            continue
-        if isinstance(v, bytes):
-            return v
-        for inner_attr in ("value", "data", "guidPrefix"):
-            inner = getattr(v, inner_attr, None)
-            if isinstance(inner, bytes):
-                return inner
-            if isinstance(inner, (tuple, list)) and inner:
-                try:
-                    return bytes(int(b) & 0xFF for b in inner)
-                except (TypeError, ValueError):
-                    continue
-        if isinstance(v, (tuple, list)) and v:
-            try:
-                return bytes(int(b) & 0xFF for b in v)
-            except (TypeError, ValueError):
-                continue
-    return None
-
-
-def fast_extract_vendor_id(sample: Any) -> tuple[int, int] | None:
-    """Pull the 2-byte OMG vendor_id off a Fast DDS discovery sample."""
-    v = getattr(sample, "vendor_id", None)
-    if v is None:
-        info = getattr(sample, "info", None)
-        if info is not None:
-            v = getattr(info, "vendor_id", None)
-    if v is None:
-        return None
-    if isinstance(v, bytes) and len(v) >= 2:
-        return (v[0], v[1])
-    if isinstance(v, (tuple, list)) and len(v) >= 2:
-        try:
-            return (int(v[0]), int(v[1]))
-        except (TypeError, ValueError):
-            return None
-    inner = getattr(v, "vendor_id", None)
-    if isinstance(inner, (bytes, tuple, list)) and len(inner) >= 2:
-        try:
-            return (int(inner[0]), int(inner[1]))
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def fast_extract_hostname(sample: Any) -> str | None:
-    """Pull a hostname / participant-name hint off a Fast DDS sample, if exposed."""
-    for attr in ("hostname", "participant_name", "name", "user_data"):
-        v = getattr(sample, attr, None)
-        if isinstance(v, (bytes, bytearray)):
-            try:
-                decoded = v.decode("utf-8", errors="replace")
-            except (UnicodeError, AttributeError):
-                continue
-            if decoded:
-                return decoded
-        if isinstance(v, str) and v:
-            return v
-    return None
-
-
-def fast_extract_topic_name(sample: Any) -> str | None:
-    """Pull the topic name off a Fast DDS endpoint sample (`topic_name` only)."""
-    v = getattr(sample, "topic_name", None)
-    if isinstance(v, str) and v:
-        return v
-    return None
-
-
 __all__ = [
     "cyclone_extract_guid",
     "cyclone_extract_hostname",
     "cyclone_extract_participant_name",
     "cyclone_extract_topic_name",
     "cyclone_extract_vendor_id",
-    "fast_extract_guid",
-    "fast_extract_hostname",
-    "fast_extract_topic_name",
-    "fast_extract_vendor_id",
-    "is_removal",
 ]

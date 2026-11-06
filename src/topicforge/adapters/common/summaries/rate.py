@@ -12,8 +12,8 @@ import statistics
 from collections.abc import Sequence
 from typing import Literal
 
+from topicforge.adapters.common.summaries.clock import compute_clock
 from topicforge.models.summaries import RateVerdict, TopicRate
-from topicforge.services.summaries.clock import compute_clock
 
 _NS_PER_S = 1_000_000_000
 

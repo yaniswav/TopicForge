@@ -28,6 +28,7 @@ from topicforge.models import (
     MismatchScan,
     NodeInfo,
     NotMatchedPair,
+    ParticipantEvent,
     ParticipantInfo,
     TopicListItem,
 )
@@ -65,6 +66,7 @@ class Scripted(MockAdapter):
         self.over: dict[str, Any] = {}
         self.node_reads: list[tuple[str, float]] = []
         self.nodes_ok: dict[str, bool] = {}
+        self.param_status: dict[str, str] = {}
 
     @property
     def effective_mode(self) -> Any:
@@ -91,6 +93,15 @@ class Scripted(MockAdapter):
 
     def get_node_info(self, node: str, timeout_s: float = 8.0) -> NodeInfo:
         self.node_reads.append((node, timeout_s))
+        if node in self.param_status:
+            return node_fixtures.mock_node_info("/lidar_driver").model_copy(
+                update={
+                    "full_name": node,
+                    "parameters": None,
+                    "parameters_status": self.param_status[node],
+                    "parameters_note": f"no parameters: {self.param_status[node]}",
+                }
+            )
         if self.nodes_ok.get(node, True):
             return node_fixtures.mock_node_info("/lidar_driver").model_copy(
                 update={"full_name": node}
@@ -99,6 +110,7 @@ class Scripted(MockAdapter):
             update={
                 "full_name": node,
                 "parameters": None,
+                "parameters_status": "timeout",
                 "parameters_note": "no answer: the executor is probably blocked",
             }
         )
@@ -178,8 +190,8 @@ def _participant(name: str, guid: str, status: str = "active") -> ParticipantInf
         status=status,  # type: ignore[arg-type]
         node_names=[f"/{name}"],
         node_names_source="ros_discovery_info",
-        first_seen_ns=1,
-        last_seen_ns=2,
+        first_seen_ns=time.time_ns() - 10 * _NS,
+        last_seen_ns=time.time_ns(),
     )
 
 
@@ -494,10 +506,234 @@ def test_a_node_missing_from_the_graph_is_a_skip_for_that_node_not_for_the_check
 
     adapter.get_node_info = read  # type: ignore[method-assign]
     result = _run(adapter, node="/ghost")
-    assert [s.check for s in result.checks_skipped] == ["responsiveness"]
-    assert "/ghost" in result.checks_skipped[0].reason
-    assert "responsiveness" in result.checks_run  # /a and /b were still read
+    assert result.checks_skipped == []  # /a and /b were still read: the check partly ran
+    assert "responsiveness" in result.checks_run
+    assert "did not run" not in result.verdict
+    info = [f for f in _by(result, "responsiveness", "info") if "could not be read" in f.text]
+    assert len(info) == 1 and "/ghost" in info[0].text
     assert result.critical_count == 0
+
+
+def test_the_check_is_skipped_only_when_no_node_could_be_read() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+
+    def read(node: str, timeout_s: float = 8.0) -> NodeInfo:
+        raise AdapterError(f"{node} broke")
+
+    adapter.get_node_info = read  # type: ignore[method-assign]
+    result = _run(adapter)
+    assert [s.check for s in result.checks_skipped] == ["responsiveness"]
+    assert "responsiveness did not run" in result.verdict
+    assert "responsiveness" not in result.checks_run
+
+
+def test_only_a_timeout_is_a_silent_node_the_other_causes_are_not() -> None:
+    for status in ("no_parameter_services", "failed", "no_budget"):
+        adapter = _calm(Scripted(), ["/a", "/b"])
+        adapter.param_status["/b"] = status
+        result = _run(adapter, node="/b")
+        assert result.critical_count == 0 and result.warning_count == 0, status
+        found = _by(result, "responsiveness")
+        if status == "no_parameter_services":
+            assert found == []
+        elif status == "failed":
+            assert "could not be read" in found[0].text and "/b" in found[0].text
+        else:
+            assert "not tested" in found[0].text and "/b" in found[0].text
+        assert result.checks_skipped == [], status
+
+
+def test_a_node_that_timed_out_is_still_critical_when_named() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status["/b"] = "timeout"
+    assert [(f.severity, f.subject) for f in _by(_run(adapter, node="/b"), "responsiveness")] == [
+        ("critical", "/b")
+    ]
+
+
+def test_old_departures_outside_the_window_are_not_a_restart_loop() -> None:
+    now = time.time_ns()
+    old = _participant("x", "g0", "left").model_copy(
+        update={"first_seen_ns": now - 86400 * _NS, "last_seen_ns": now - 80000 * _NS}
+    )
+    older = old.model_copy(update={"guid": "g1"})
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [old, older, _participant("x", "g2")]
+    found = _by(_run(adapter), "dds")
+    assert [f for f in found if f.severity != "info"] == []
+
+
+def test_a_name_with_an_active_participant_never_left_and_did_not_come_back() -> None:
+    now = time.time_ns()
+    gone = {"first_seen_ns": now - 86400 * _NS, "last_seen_ns": now - 80000 * _NS}
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [
+        _participant("x", "g0", "left").model_copy(update=gone),
+        _participant("x", "g1", "left").model_copy(update=gone),
+        _participant("x", "g2"),
+        _participant("y", "g3", "left").model_copy(update=gone),
+    ]
+    infos = [f.text for f in _by(_run(adapter), "dds", "info")]
+    assert not any("/x" in t for t in infos)
+    assert any("/y" in t for t in infos)  # a real departure is still reported
+
+
+def test_the_restart_evidence_names_the_window_not_the_all_time_field() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    found = [f for f in _by(_run(adapter), "dds") if f.severity == "critical"]
+    assert len(found) == 1
+    ev = found[0].evidence[0]
+    assert "restarts_by_node" not in ev.field and "300" in ev.field and ev.value == "3"
+
+
+def test_parameters_without_a_status_are_unreadable_not_silent_and_not_answered() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status["/a"] = None  # type: ignore[assignment]
+    result = _run(adapter)
+    assert [f for f in _by(result, "responsiveness") if f.severity != "info"] == []
+    assert any(
+        "could not be read" in f.text and "/a" in f.text for f in _by(result, "responsiveness")
+    )
+
+
+def test_findings_about_the_named_node_survive_the_cap_behind_many_criticals() -> None:
+    reports = []
+    for i in range(MAX_FINDINGS + 10):
+        reports += _readers(1, f"w{i}").reports
+        reports[-1] = reports[-1].model_copy(update={"topic": f"/t{i:03d}"})
+    risky = (
+        _readers(1, "wz")
+        .reports[0]
+        .model_copy(update={"topic": "/zzz", "severity": "risky", "reader_node": "/camera_driver"})
+    )
+    adapter = _calm(Scripted(), ["/a", "/camera_driver"])
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(
+        update={"reports": [*reports, risky]}
+    )
+    del adapter.over["sample_messages"]
+    result = _run(adapter, node="/camera_driver")
+    assert len(result.findings) == MAX_FINDINGS
+    mine = [(f.check, f.severity) for f in result.findings if f.severity == "warning"]
+    assert ("logs", "warning") in mine and ("dds", "warning") in mine
+
+
+def test_writers_without_identity_stay_apart_and_differing_requests_are_all_shown() -> None:
+    base = fixtures.mock_mismatch_scan(None).reports[0]
+    anon = base.model_copy(
+        update={"writer_guid": None, "writer_node": None, "writer_participant_name": None}
+    )
+    one = anon.model_copy(update={"reader_node": "/r1"})
+    two = anon.model_copy(update={"reader_node": "/r2"})
+    adapter = _calm(Scripted())
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(update={"reports": [one, two]})
+    assert len(_by(_run(adapter), "dds", "critical")) == 2
+    d0 = base.details[0]
+    a = base.model_copy(
+        update={"reader_node": "/r1", "details": [d0.model_copy(update={"requested": "AAA"})]}
+    )
+    b = a.model_copy(
+        update={"reader_node": "/r2", "details": [d0.model_copy(update={"requested": "BBB"})]}
+    )
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(update={"reports": [a, b]})
+    found = _by(_run(adapter), "dds", "critical")
+    assert len(found) == 1 and "AAA" in found[0].text and "BBB" in found[0].text
+
+
+def test_recent_departures_still_count_and_a_fresh_loss_event_ties_an_old_guid_in() -> None:
+    now = time.time_ns()
+    stale = {"first_seen_ns": now - 86400 * _NS, "last_seen_ns": now - 3600 * _NS}
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [
+        _participant("x", "g0", "left").model_copy(update=stale),
+        _participant("x", "g1", "left").model_copy(update=stale),
+        _participant("x", "g2"),
+    ]
+    adapter.over["participant_events"] = [
+        ParticipantEvent(
+            guid=g,
+            event_type="lost",
+            vendor="cyclone",
+            timestamp_ns=now,
+            domain_id=0,
+            time_source="observed_local",
+        )
+        for g in ("g0", "g1")
+    ]
+    found = [f for f in _by(_run(adapter), "dds") if f.severity != "info"]
+    assert [(f.severity, f.subject) for f in found] == [("critical", "/x")]
+
+
+def _readers(count: int, writer: str = "w") -> MismatchScan:
+    base = fixtures.mock_mismatch_scan(None).reports[0]
+    reports = [
+        base.model_copy(
+            update={
+                "writer_node": f"/{writer}",
+                "writer_guid": writer,
+                "reader_node": f"/r{i}",
+                "reader_guid": f"r{i}",
+            }
+        )
+        for i in range(count)
+    ]
+    return _empty_scan().model_copy(update={"reports": reports})
+
+
+def test_one_bad_writer_with_many_readers_is_one_finding_that_counts_them() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["detect_qos_mismatches"] = _readers(5)
+    found = _by(_run(adapter), "dds", "critical")
+    assert len(found) == 1 and "5 readers" in found[0].text and "/r0" in found[0].text
+    assert found[0].suggested_fixes
+
+
+def test_two_writers_stay_two_findings() -> None:
+    scan = _readers(2, "w1")
+    scan = scan.model_copy(update={"reports": scan.reports + _readers(2, "w2").reports})
+    adapter = _calm(Scripted())
+    adapter.over["detect_qos_mismatches"] = scan
+    assert len(_by(_run(adapter), "dds", "critical")) == 2
+
+
+def test_the_named_node_finding_survives_the_cap() -> None:
+    reports = []
+    for i in range(MAX_FINDINGS + 10):
+        reports += _readers(1, f"w{i}").reports
+        reports[-1] = reports[-1].model_copy(update={"topic": f"/t{i:03d}"})
+    adapter = _calm(Scripted(), ["/a", "/blocked"])
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(update={"reports": reports})
+    adapter.param_status["/blocked"] = "timeout"
+    result = _run(adapter, node="/blocked")
+    assert len(result.findings) == MAX_FINDINGS
+    assert result.findings[0].subject == "/blocked"
+    assert result.findings[0].check == "responsiveness"
+
+
+def test_topics_whose_counts_could_not_be_read_are_reported_not_dropped() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_topics"] = [
+        TopicListItem(
+            name="/lost",
+            message_type="t",
+            publisher_count=0,
+            subscriber_count=0,
+            counts_unknown=True,
+        ),
+        TopicListItem(name="/ok", message_type="t", publisher_count=1, subscriber_count=1),
+    ]
+    found = _by(_run(adapter), "topics")
+    assert [f.severity for f in found] == ["info"] and "/lost" in found[0].text
+    assert "could not be read" in found[0].text
+
+
+def test_the_rosout_all_clear_states_the_window_actually_listened_to() -> None:
+    adapter = _calm(Scripted())
+    adapter.cost["list_nodes"] = 17.0
+    adapter.cost["capture_tf"] = 17.0
+    result = _run(adapter, budget_s=40.0)
+    text = _by(result, "logs")[0].text
+    assert "5 s listened" not in text and "budget cut" in text
 
 
 # ---- budget, errors, order ----------------------------------------------------------------
@@ -759,3 +995,59 @@ def test_diagnose_takes_the_ros_lane_and_answers_busy_when_it_is_held() -> None:
                 guard.TOOL_BUDGET_S = old
     finally:
         held.release()
+
+
+# ---- review follow-ups (PR #45) ------------------------------------------------------------
+
+
+def test_the_check_is_skipped_when_the_budget_left_no_node_read() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status.update({"/a": "no_budget", "/b": "no_budget"})
+    result = _run(adapter)
+    assert [s.check for s in result.checks_skipped] == ["responsiveness"]
+    assert "responsiveness" not in result.checks_run
+    assert (
+        result.verdict.startswith("Incomplete") and "responsiveness did not run" in result.verdict
+    )
+
+
+def test_undated_departures_outside_any_event_are_not_a_restart_loop() -> None:
+    undated = {"first_seen_ns": None, "last_seen_ns": None}
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [
+        _participant("x", "g0", "left").model_copy(update=undated),
+        _participant("x", "g1", "left").model_copy(update=undated),
+        _participant("x", "g2"),
+    ]
+    assert [f for f in _by(_run(adapter), "dds") if f.severity != "info"] == []
+
+
+def test_a_never_match_pair_on_the_named_node_survives_the_cap() -> None:
+    reports = []
+    for i in range(MAX_FINDINGS + 10):
+        reports += _readers(1, f"w{i}").reports
+        reports[-1] = reports[-1].model_copy(update={"topic": f"/t{i:03d}"})
+    pair = NotMatchedPair(
+        topic="/zzz",
+        reader_guid="r",
+        reader_participant_guid="rp",
+        writer_guid="w",
+        writer_participant_guid="wp",
+        reason="partition",
+        detail="writer ['a'] reader ['b']",
+        reader_node="/cam",
+    )
+    adapter = _calm(Scripted(), ["/a", "/cam"])
+    adapter.over["detect_qos_mismatches"] = _empty_scan().model_copy(
+        update={"reports": reports, "not_matched": [pair]}
+    )
+    result = _run(adapter, node="/cam")
+    assert len(result.findings) == MAX_FINDINGS
+    assert any(f.subject == "/zzz" and f.severity == "critical" for f in result.findings)
+
+
+def test_the_silent_text_does_not_claim_a_wait_the_budget_cut_short() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.param_status["/b"] = "timeout"
+    found = _by(_run(adapter, node="/b"), "responsiveness", "critical")
+    assert "in time" in found[0].text and " s:" not in found[0].text
