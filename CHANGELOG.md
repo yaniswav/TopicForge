@@ -12,17 +12,18 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and one optional input are added (`docs/CONTRACT.md` sections 9.22 and
-9.23). `tools/list` is 100,519 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.23). `tools/list` is 100,535 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
 - `diagnose(params_file=...)`, with `node`: compares the named node's live parameters with a
   parameter `.yaml` and folds the differences into one `responsiveness` warning. Values are left
-  out, since a parameter may hold a secret.
+  out, and secret-named parameters are not compared. An incomplete comparison gives an `info`. A
+  scope that reads no parameters refuses the input.
 - `diagnose` findings other than QoS carry `suggested_fixes` too: one read-only `ros2` command
   that observes the problem. They never repair anything.
-- `diagnose` restart findings say whether the node is still restarting (a start in the last 60 s)
-  or stopped, and how long ago the last start was.
+- `diagnose` restart-loop findings say whether the node is still restarting, judged against the
+  loop's own pace with a floor of 60 s, and how long ago the last start was.
 - `ParticipantEvent.node_names` in `participant_events`: the participant's ROS node names, when
   known.
 - `TopicListItem.counts_unknown` in `list_topics`: `true` when `ros2 topic info` failed for that

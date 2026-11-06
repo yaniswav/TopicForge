@@ -506,10 +506,10 @@ class SuggestedFix(BaseModel):
     kind: Literal["cli", "qos_override", "dds_profile", "launch_param"] = Field(
         description="Form of `text`: a CLI command, a ROS 2 QoS override, a DDS profile or a launch parameter."
     )
-    target: str = Field(description="Which node or side to change, writer or reader.")
-    text: str = Field(description="The exact command, YAML or XML to apply.")
-    tradeoff: str = Field(description="What is lost by applying it.")
-    verify_with: str = Field(description="The TopicForge tool to run again to confirm the repair.")
+    target: str = Field(description="The node or side concerned, writer or reader.")
+    text: str = Field(description="The exact command, YAML or XML.")
+    tradeoff: str = Field(description="What applying it loses, or what a read-only command shows.")
+    verify_with: str = Field(description="The TopicForge tool to run again to confirm.")
 
 
 _NODE_DESC = "ROS 2 node (`ros_discovery_info`); `None` if not announced."

@@ -19,6 +19,7 @@ import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Literal
 
 from topicforge import budget
@@ -81,7 +82,9 @@ _NAMED_NODE_READ_S = 6.0
 _EVENT_LOOKBACK_S = 300
 _NS_PER_S = 1_000_000_000
 _STILL_RESTARTING_S = 60  # a node discovered this recently is taken to be still restarting
+_MIN_START_SPREAD_S = 2  # starts closer together than this are one discovery burst
 _MAX_PARAM_DIFFS = 5  # differing parameters named in one finding
+_SAFE_NAME = re.compile(r"[A-Za-z0-9_./~-]+")  # what may go unquoted into a command
 _LOG_STOP_RESERVE_S = 3.0  # the live adapter keeps this back from a sampling call
 _LIST_NAMES = 8
 _UNTESTED_NAMES = 20
@@ -289,8 +292,8 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
         parts.participants, events.events, ctx.wall_ns() - _EVENT_LOOKBACK_S * _NS_PER_S
     )
     lives = _lives(recent, events.restarts_by_name)
-    last_start = _last_discovery_ns(parts.participants, events.events)
-    out += _restart_findings(lives, last_start, ctx.wall_ns())
+    starts = _discovery_times(parts.participants, events.events)
+    out += _restart_findings(lives, starts, ctx.wall_ns())
     left = [
         (p.node_names[0] if p.node_names else (p.name or p.guid[:8]))
         for p in parts.participants
@@ -440,44 +443,54 @@ def _lives(by_node: dict[str, int], by_name: Mapping[str, NameLifecycle]) -> dic
     return lives
 
 
-def _last_discovery_ns(
+def _discovery_times(
     participants: list[ParticipantInfo], events: list[ParticipantEvent]
-) -> dict[str, int]:
-    """Newest `discovered` event timestamp per node or participant name, from the events."""
+) -> dict[str, list[int]]:
+    """Local times of the `discovered` events, per node or participant name, oldest first.
+
+    `observed_ns` is preferred: `timestamp_ns` can come from a remote clock.
+    """
     names: dict[str, set[str]] = {}
     for p in participants:
         for name in (*p.node_names, p.name):
             if name:
                 names.setdefault(p.guid, set()).add(name.lstrip("/"))
-    latest: dict[str, int] = {}
+    times: dict[str, list[int]] = {}
     for e in events:
         if e.event_type != "discovered":
             continue
         for key in names.get(e.guid, ()):
-            latest[key] = max(latest.get(key, 0), e.timestamp_ns)
-    return latest
+            times.setdefault(key, []).append(
+                e.timestamp_ns if e.observed_ns is None else e.observed_ns
+            )
+    return {key: sorted(found) for key, found in times.items()}
 
 
-def _restart_trend(name: str, last_start: Mapping[str, int], now_ns: int) -> str:
-    """Whether the restarts go on, from the newest discovery; empty without a timestamp."""
-    stamp = last_start.get(name)
-    if stamp is None:
+def _restart_trend(name: str, starts: Mapping[str, list[int]], now_ns: int) -> str:
+    """Whether a loop goes on, judged against its own pace; empty when the events cannot tell.
+
+    Starts all seen within `_MIN_START_SPREAD_S` are one discovery burst of a server that has
+    just joined the bus, not a pace.
+    """
+    stamps = starts.get(name, [])
+    if len(stamps) < 2 or stamps[-1] - stamps[0] < _MIN_START_SPREAD_S * _NS_PER_S:
         return ""
-    ago = max(0, (now_ns - stamp) // _NS_PER_S)
-    if ago <= _STILL_RESTARTING_S:
+    gap = max(later - earlier for earlier, later in pairwise(stamps))
+    ago = max(0, (now_ns - stamps[-1]) // _NS_PER_S)
+    if ago * _NS_PER_S <= max(_STILL_RESTARTING_S * _NS_PER_S, 2 * gap):
         return f" Still restarting: the last start was {ago} s ago."
     return f" It stopped restarting: the last start was {ago} s ago."
 
 
 def _restart_findings(
-    lives: dict[str, int], last_start: Mapping[str, int], now_ns: int
+    lives: dict[str, int], starts: Mapping[str, list[int]], now_ns: int
 ) -> list[Finding]:
     out = []
     for name, count in sorted(lives.items()):
         if count < 2:
             continue
         loop = count >= 3
-        trend = _restart_trend(name, last_start, now_ns)
+        trend = _restart_trend(name, starts, now_ns) if loop else ""
         out.append(
             _finding(
                 "critical" if loop else "warning",
@@ -495,9 +508,10 @@ def _restart_findings(
                     count,
                 ),
                 fixes=_read_fix(
-                    "ros2 topic echo /rosout --field msg",
+                    "ros2 topic echo /rosout",
                     f"/{name}",
-                    "Streams the logs of every node; read the lines of this one. Observes only.",
+                    "Streams the logs of every node; read those whose `name` is this one. "
+                    "Observes only.",
                     "participant_events",
                 ),
             )
@@ -536,10 +550,10 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
                 f"The URDF declares link {frame} but no TF frame carries it.",
                 _ev("inspect_tf", "declared_frames_missing", report.declared_frames_missing),
                 fixes=_read_fix(
-                    "ros2 topic echo /tf_static --once",
+                    "ros2 topic echo /tf_static",
                     "robot_state_publisher",
-                    "Shows whether the link is published at all; a link on a fixed joint "
-                    "is static. Observes only.",
+                    "Shows whether a fixed-joint link is published; a movable joint's link is "
+                    "on /tf instead. Observes only.",
                     "inspect_tf",
                 ),
             )
@@ -584,12 +598,13 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
 
 def _tf_fix(kind: str, frames: list[str]) -> list[SuggestedFix]:
     """A read-only look at a stale edge (parent, child); none for the other kinds."""
-    if kind != "stale" or len(frames) != 2:
+    if kind != "stale" or len(frames) != 2 or not all(_SAFE_NAME.fullmatch(f) for f in frames):
         return []
     return _read_fix(
         f"ros2 run tf2_ros tf2_echo {frames[0]} {frames[1]}",
         f"the publisher of {frames[0]}->{frames[1]}",
-        "Prints the transform live, so a stalled publisher shows as silence. Observes only.",
+        "Prints the transform live; a stalled publisher shows as a stamp that stops "
+        "advancing. Observes only.",
         "inspect_tf",
     )
 
@@ -633,10 +648,10 @@ def check_logs(ctx: _Ctx) -> list[Finding]:
                 f"latest: {msg[:160]}",
                 _ev("sample_messages", "samples[].payload.msg", msg),
                 fixes=_read_fix(
-                    "ros2 topic echo /rosout --field msg",
+                    "ros2 topic echo /rosout",
                     subject or "the logging node",
-                    "Streams the logs of every node; read the lines around the error. "
-                    "Observes only.",
+                    "Streams the logs of every node, each with its `name`; read the lines "
+                    "around the error. Observes only.",
                     "diagnose",
                 ),
             )
@@ -673,6 +688,8 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
         except AdapterError as exc:
             unreadable.append((name, str(exc)))
             continue
+        if named and ctx.params_file is not None:
+            out += _param_findings(name, info)
         status = info.parameters_status
         if info.parameters is None and status == "no_budget":
             untested.append(name)
@@ -685,8 +702,6 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             out.append(_silent_finding(name, named, info.parameters_note))
         else:  # read, or no parameter services (nothing to ask): the node is not shown silent
             answered += 1
-            if named and ctx.params_file is not None:
-                out += _param_findings(name, info)
     if unreadable and not answered:
         raise AdapterError(f"no node could be read: {unreadable[0][0]}: {unreadable[0][1]}")
     if candidates and not answered:
@@ -718,45 +733,57 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
 
 
 def _param_findings(name: str, info: NodeInfo) -> list[Finding]:
-    """The named node's parameters against its `params_file`: one warning, or one info.
+    """The named node's parameters against its `params_file`: a warning, and an info on gaps.
 
     Filed under `responsiveness`, the check that reads node parameters: a new check name
-    would change the contract. Values are left out, a parameter may hold a secret.
+    would change the contract. Values are left out, and a secret-named parameter is never a
+    difference (it is masked, so it cannot be compared) nor the target of a command.
     """
-    diff = info.param_diff
-    if diff is None:
-        if info.parameters is None or not info.param_diff_note:
-            return []
-        note = info.param_diff_note
-        return [
+    entries = info.param_diff or []
+    diff = [d for d in entries if d.status != "masked"]
+    gaps = [info.param_diff_note] if info.param_diff_note else []
+    if info.param_diff is None and not gaps:
+        gaps.append("the node's parameters were not read")
+    if len(entries) > len(diff):
+        gaps.append(f"{len(entries) - len(diff)} secret-named parameter(s) not compared")
+    out: list[Finding] = []
+    if diff:
+        shown = [f"{d.name} ({d.status})" for d in diff[:_MAX_PARAM_DIFFS]]
+        more = len(diff) - len(shown)
+        listed = ", ".join(shown) + (f" and {more} more" if more > 0 else "")
+        safe = next((d.name for d in diff if _SAFE_NAME.fullmatch(d.name)), None)
+        out.append(
+            _finding(
+                "warning",
+                "responsiveness",
+                name,
+                f"{name} runs with {len(diff)} parameter(s) that differ from params_file: "
+                f"{listed}.",
+                _ev("get_node_info", "param_diff[].name", ", ".join(d.name for d in diff[:4])),
+                fixes=(
+                    _read_fix(
+                        f"ros2 param get {name} {safe}",
+                        name,
+                        "Reads the live value to compare by eye with the file. Observes only.",
+                        "get_node_info",
+                    )
+                    if safe
+                    else []
+                ),
+            )
+        )
+    if gaps:
+        joined = "; ".join(gaps)
+        out.append(
             _finding(
                 "info",
                 "responsiveness",
                 name,
-                f"The parameters of {name} were not compared with params_file: {note[:160]}",
-                _ev("get_node_info", "param_diff_note", note),
+                f"The comparison of {name} with params_file is incomplete: {joined[:200]}.",
+                _ev("get_node_info", "param_diff_note", joined),
             )
-        ]
-    if not diff:
-        return []
-    shown = [f"{d.name} ({d.status})" for d in diff[:_MAX_PARAM_DIFFS]]
-    more = len(diff) - len(shown)
-    listed = ", ".join(shown) + (f" and {more} more" if more > 0 else "")
-    return [
-        _finding(
-            "warning",
-            "responsiveness",
-            name,
-            f"{name} runs with {len(diff)} parameter(s) that differ from params_file: {listed}.",
-            _ev("get_node_info", "param_diff[].name", ", ".join(d.name for d in diff[:4])),
-            fixes=_read_fix(
-                f"ros2 param get {name} {diff[0].name}",
-                name,
-                "Reads the live value to compare by eye with the file. Observes only.",
-                "get_node_info",
-            ),
         )
-    ]
+    return out
 
 
 def _silent_finding(name: str, named: bool, note: str | None) -> Finding:
@@ -837,7 +864,7 @@ class DiagnoseService:
         live parameters; each difference is folded into one `responsiveness` warning.
         """
         scope, budget_s, node_name = _validate(scope, budget_s, node)
-        params_path = _validate_params_file(params_file, node_name)
+        params_path = _validate_params_file(params_file, node_name, scope)
         start = self._clock()
         left = budget.remaining()
         horizon = budget_s if left is None else min(budget_s, left - _RESERVE_S)
@@ -905,11 +932,13 @@ def _validate(scope: str, budget_s: float, node: str | None) -> tuple[str, float
     return scope, float(budget_s), None if node is None else _validate_node_name(node)
 
 
-def _validate_params_file(params_file: str | None, node: str | None) -> str | None:
+def _validate_params_file(params_file: str | None, node: str | None, scope: str) -> str | None:
     if params_file is None:
         return None
     if node is None:
         raise AdapterError("params_file needs node: it is compared with that node's parameters")
+    if "responsiveness" not in _SCOPE_CHECKS[scope]:
+        raise AdapterError(f"params_file needs a scope that reads parameters, not {scope!r}")
     return validate_params_file(params_file)
 
 

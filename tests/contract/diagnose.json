@@ -167,19 +167,19 @@
             "type": "string"
           },
           "target": {
-            "description": "Which node or side to change, writer or reader.",
+            "description": "The node or side concerned, writer or reader.",
             "type": "string"
           },
           "text": {
-            "description": "The exact command, YAML or XML to apply.",
+            "description": "The exact command, YAML or XML.",
             "type": "string"
           },
           "tradeoff": {
-            "description": "What is lost by applying it.",
+            "description": "What applying it loses, or what a read-only command shows.",
             "type": "string"
           },
           "verify_with": {
-            "description": "The TopicForge tool to run again to confirm the repair.",
+            "description": "The TopicForge tool to run again to confirm.",
             "type": "string"
           }
         },

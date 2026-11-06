@@ -77,7 +77,7 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
         [
             "import topicforge.services.a",
             "from ...services import c",
-            "from .. import services",
+            "from topicforge import services",
             "def f():",
             "    from topicforge.services.d import e",
         ]

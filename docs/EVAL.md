@@ -395,21 +395,28 @@ The agents' feedback, in short:
 
 ## 0.10.0 re-check of `diagnose`
 
-**Status: run on 2026-11-06** (commit `a5b03ec`, ROS 2 Jazzy in WSL Ubuntu 24.04, same runner as
+**Status: run on 2026-11-06** (commit `3ad653c`, ROS 2 Jazzy in WSL Ubuntu 24.04, same runner as
 the 0.9.0 campaign, `--variant diagnose`, no agent). 0.10.0 changes `diagnose`'s rules
-(`docs/CONTRACT.md` section 9.22), so its result had to be measured again. `tools/list` changed by
-two optional fields and one sentence.
+(`docs/CONTRACT.md` sections 9.22 and 9.23), so its result had to be measured again.
 
 | Scenario | Rank 1 (critical or warning) | Other critical or warning | Time |
 |---|---|---|---|
-| `healthy` | none | none | 19.3 s |
+| `healthy` | none | none | 17.1 s |
 | `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 20.7 s |
-| `tf_stale` | warning `tf` on `map->odom` | none | 17.1 s |
+| `tf_stale` | warning `tf` on `map->odom` | none | 18.3 s |
 | `qos_mismatch` | critical `dds` on `rt/scan_edge` | none | 18.5 s |
-| `restart_loop` | critical `dds` on `/path_planner` | warning `logs` on `/path_planner` | 18.5 s |
+| `restart_loop` | critical `dds` on `/path_planner` | none | 19.1 s |
 | `declared_drift` | warning `tf` on `arm_link` | none | 17.1 s |
-| `graph_v1_v2` | none | none | 20.6 s |
+| `graph_v1_v2` | none | none | 18.5 s |
 
 No check was skipped. Every fault ranks first as in 0.9.0, and the healthy robot stays at 0 and 0.
+In `restart_loop` the `logs` warning of 0.9.0 did not appear in this run: the check listens to
+`/rosout` for 5 s, and no crash line fell in that window. A run on the commit before this one
+(`a5b03ec`) did show it, and the check's code did not change, so this looks like timing.
+
+The new output appears on the real robot: `/path_planner appeared with 6 different participants:
+a restart loop. Still restarting: the last start was 2 s ago.`, a `qos_overrides` fix keyed on
+`/bench_robot:`, and `ros2 run tf2_ros tf2_echo map odom` on the stale edge.
+
 The agent variant was not run again, so the 0.9.0 agent figures above (7/7, median 6 calls) were
 measured on 0.9.0, not on 0.10.0.

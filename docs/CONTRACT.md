@@ -1414,16 +1414,19 @@ Two optional fields, additive (1.9). `tools/list` goes from 99,634 to 99,971 byt
 
 ### 9.23 Evaluation feedback (0.10.0)
 
-Additive only (1.9). `tools/list` goes from 99,971 to 100,519 bytes.
+Additive only (1.9). `tools/list` goes from 99,971 to 100,535 bytes.
 
-- `diagnose` gains an optional input `params_file`, valid only with `node`; without `node` it is
-  an invalid input. Differences give one `warning` on check `responsiveness`, subject the node,
-  naming parameters but no value; a file that cannot be compared gives an `info`. No new check
-  name.
+- `diagnose` gains an optional input `params_file`, valid only with `node` and a scope that reads
+  parameters (`all`, `graph`); anything else is an invalid input. Differences give one `warning`
+  on check `responsiveness`, subject the node, naming parameters but no value. A comparison that
+  could not be made or is incomplete, secret-named parameters included, gives an `info`. No new
+  check name.
 - `suggested_fixes` is no longer QoS only: silent nodes, stale TF edges, URDF links with no frame,
   restarts and `/rosout` errors carry one `kind: cli` fix, a command that only observes. Severity,
   check and subject of these findings do not change.
-- Restart findings gain a sentence on the trend, when an event timestamp exists.
+- Restart-loop findings gain a sentence on the trend when the events show a pace: at least two
+  starts more than 2 s apart. The loop counts as going on within twice its longest interval, with
+  a floor of 60 s. The times are local (`observed_ns`) when known.
 - `ParticipantEvent.node_names`: list, empty when the names are unknown. Resolved when the events
   are read, so it reflects the participant table at that moment.
 - `qos_overrides` fix text: the YAML key is the real node name when known. Clients must not parse

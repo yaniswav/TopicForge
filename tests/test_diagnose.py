@@ -28,6 +28,7 @@ from topicforge.models import (
     MismatchScan,
     NodeInfo,
     NotMatchedPair,
+    ParamDiff,
     ParticipantEvent,
     ParticipantInfo,
     TopicListItem,
@@ -35,7 +36,7 @@ from topicforge.models import (
 from topicforge.models.diagnose import EVIDENCE_VALUE_MAX, MAX_FINDINGS
 from topicforge.server import build_app
 from topicforge.services import HealthService, Inspector
-from topicforge.services.diagnose import DiagnoseService
+from topicforge.services.diagnose import DiagnoseService, _param_findings
 
 _SETTINGS = Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
 _NS = 1_000_000_000
@@ -1066,13 +1067,13 @@ def _event(guid: str, at_ns: int, kind: str = "discovered") -> ParticipantEvent:
     )
 
 
-def _restarting(lives: int, ago_s: int) -> DiagnoseService:
-    """A node `x` with `lives` participants whose newest start was `ago_s` seconds ago."""
+def _restarting(lives: int, ago_s: int, every_s: int = 1) -> DiagnoseService:
+    """A node `x` with `lives` participants, started `every_s` apart, the newest `ago_s` ago."""
     base = time.time_ns()
     adapter = _calm(Scripted())
     adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(lives)]
     adapter.over["participant_events"] = [
-        _event(f"g{i}", base - i * _NS)
+        _event(f"g{i}", base - i * every_s * _NS)
         for i in range(lives)  # g0 is the newest
     ]
     return DiagnoseService(
@@ -1091,8 +1092,43 @@ def test_a_restart_loop_that_is_going_on_says_so_and_how_long_ago() -> None:
 
 
 def test_a_restart_loop_that_stopped_says_when() -> None:
-    found = _by(_restarting(2, 200).diagnose(), "dds", "warning")
+    found = _by(_restarting(3, 200).diagnose(), "dds", "critical")
     assert [f.subject for f in found] == ["/x"]
+    assert "It stopped restarting: the last start was 200 s ago." in found[0].text
+
+
+def test_a_slow_loop_is_still_restarting_past_the_sixty_seconds() -> None:
+    found = _by(_restarting(3, 100, every_s=90).diagnose(), "dds", "critical")
+    assert "Still restarting: the last start was 100 s ago." in found[0].text
+
+
+def test_one_restart_gets_no_trend_sentence() -> None:
+    found = _by(_restarting(2, 30).diagnose(), "dds", "warning")
+    assert "restarted once" in found[0].text and "restarting" not in found[0].text
+
+
+def test_a_discovery_burst_of_a_fresh_server_is_not_a_pace() -> None:
+    found = _by(_restarting(3, 5, every_s=0).diagnose(), "dds", "critical")
+    assert "restarting" not in found[0].text and "last start" not in found[0].text
+
+
+def test_the_trend_prefers_the_local_clock_over_a_remote_stamp() -> None:
+    base = time.time_ns()
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    adapter.over["participant_events"] = [
+        _event(f"g{i}", base + 9000 * _NS).model_copy(
+            update={"observed_ns": base - (200 + i) * _NS}
+        )
+        for i in range(3)
+    ]
+    service = DiagnoseService(
+        Inspector(adapter),
+        HealthService(_SETTINGS, adapter),
+        clock=adapter.clock,
+        wall_ns=lambda: base,
+    )
+    found = _by(service.diagnose(), "dds", "critical")
     assert "It stopped restarting: the last start was 200 s ago." in found[0].text
 
 
@@ -1251,8 +1287,44 @@ def test_the_topicforge_cli_participant_is_not_a_life_of_any_node() -> None:
     assert [f.subject for f in found] == ["/x"] and "2 participants" in found[0].text
 
 
-def test_params_file_on_a_node_without_parameter_services_adds_nothing(tmp_path: Any) -> None:
+def test_params_file_on_a_node_without_parameter_services_says_it_was_not_compared(
+    tmp_path: Any,
+) -> None:
     adapter = _calm(Scripted(), ["/a"])
     adapter.param_status["/a"] = "no_parameter_services"
     result = _run(adapter, node="/a", params_file=_yaml(tmp_path, _LIDAR_FILE))
-    assert _by(result, "responsiveness") == []
+    found = _by(result, "responsiveness")
+    assert [f.severity for f in found] == ["info"] and "incomplete" in found[0].text
+
+
+def test_params_file_needs_a_scope_that_reads_parameters(tmp_path: Any) -> None:
+    with pytest.raises(AdapterError, match="scope"):
+        _run(Scripted(), scope="logs", node="/a", params_file=_yaml(tmp_path, _LIDAR_FILE))
+
+
+def _with_param_diff(entries: list[ParamDiff], note: str | None = None) -> NodeInfo:
+    return node_fixtures.mock_node_info("/lidar_driver").model_copy(
+        update={"param_diff": entries, "param_diff_note": note}
+    )
+
+
+def test_a_secret_named_parameter_is_no_difference_and_never_a_command() -> None:
+    masked = ParamDiff(name="api_token", status="masked", declared="***", live="***")
+    other = ParamDiff(name="rate", status="different", declared=1, live=2)
+    only_masked = _param_findings("/a", _with_param_diff([masked]))
+    assert [f.severity for f in only_masked] == ["info"]
+    both = _param_findings("/a", _with_param_diff([masked, other]))
+    warning = next(f for f in both if f.severity == "warning")
+    assert "api_token" not in warning.text
+    assert warning.suggested_fixes[0].text == "ros2 param get /a rate"
+
+
+def test_a_parameter_name_unfit_for_a_command_gets_no_command() -> None:
+    bad = ParamDiff(name="a; touch /tmp/x", status="different", declared=1, live=2)
+    found = _param_findings("/a", _with_param_diff([bad]))
+    assert found[0].severity == "warning" and found[0].suggested_fixes == []
+
+
+def test_a_clean_diff_with_a_caveat_is_not_read_as_a_match() -> None:
+    found = _param_findings("/a", _with_param_diff([], "2 pattern(s) not evaluated"))
+    assert [f.severity for f in found] == ["info"] and "pattern" in found[0].text

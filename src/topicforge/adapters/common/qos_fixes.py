@@ -57,6 +57,7 @@ Verified sources (checked 2026-10-14 against primary documents and source code):
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -90,6 +91,7 @@ _LIVELINESS_ORDER = ("AUTOMATIC", "MANUAL_BY_PARTICIPANT", "MANUAL_BY_TOPIC")
 _INF = float("inf")
 _MAX_NAMED = 3
 _NODE_PLACEHOLDER = "<node_name>"
+_ROS_NODE_NAME = re.compile(r"[A-Za-z0-9_/~]+")
 
 _FAST_URL = "https://fast-dds.docs.eprosima.com/en/latest/fastdds/xml_configuration/"
 _ROS_NOTE = (
@@ -346,13 +348,13 @@ def _node_names(eps: Sequence[EndpointInfo]) -> list[str]:
     `node_name` (from ros_discovery_info) wins over `participant_name`: a participant can
     host several nodes, and some RMWs announce only "/". The key is written as the flat
     fully qualified name with a leading slash ("/ns/node:"): rcl's YAML parameter loader
-    matches a node by that string, not by nested namespace maps (ROS 2 "Node arguments"
-    how-to, YAML parameter files; not re-verified against rcl source here).
+    matches a node by that string (checked with rclpy on Jazzy, 2026-11-06). A name that
+    is not a ROS name (a free-form participant name) would be invalid YAML: placeholder.
     """
     known: list[str] = []
     for ep in eps:
         name = ep.node_name or ep.participant_name
-        if not name or name == "/":
+        if not name or name == "/" or not _ROS_NODE_NAME.fullmatch(name):
             continue
         name = name if name.startswith("/") else f"/{name}"
         if name not in known:
