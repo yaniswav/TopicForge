@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Diagnose the robot"
   },
-  "description": "Answer \"is anything wrong\": sweep the ROS 2 graph and DDS bus in one call and rank what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, `topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` errors), `responsiveness` (parameter reads, `node` first); `scope` runs one group. `findings` are `critical`, `warning` or `info`, with `evidence` and, for QoS, `suggested_fixes`; `verdict` is one line. A check that errors or runs out of `budget_s` is in `checks_skipped`, never a tool error, and the verdict then says it is not verified. A clean result does not prove data flows. **Mock mode**: fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; other ROS tools get `busy` meanwhile, `health_check` stays free.",
+  "description": "Answer \"is anything wrong\": sweep the ROS 2 graph and DDS bus in one call and rank what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, `topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` errors), `responsiveness` (parameter reads, `node` first, `params_file` diff); `scope` runs one group. `findings` are `critical`, `warning` or `info`, with `evidence` and `suggested_fixes` (QoS changes, else read-only commands); `verdict` is one line. A check that errors or runs out of `budget_s` is in `checks_skipped`, never a tool error, and the verdict then says it is not verified. A clean result does not prove data flows. **Mock mode**: fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; other ROS tools get `busy` meanwhile, `health_check` stays free.",
   "inputSchema": {
     "properties": {
       "budget_s": {
@@ -27,6 +27,18 @@
         ],
         "default": null,
         "description": "Node read first (6 s); a failed read is critical."
+      },
+      "params_file": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "With `node`: parameter `.yaml` to compare."
       },
       "scope": {
         "default": "all",
@@ -105,7 +117,7 @@
             ]
           },
           "suggested_fixes": {
-            "description": "From `detect_qos_mismatches`; text for a human, never applied.",
+            "description": "QoS changes or read-only commands; text for a human, never applied.",
             "items": {
               "$ref": "#/$defs/SuggestedFix"
             },
@@ -155,19 +167,19 @@
             "type": "string"
           },
           "target": {
-            "description": "Which node or side to change, writer or reader.",
+            "description": "The node or side concerned, writer or reader.",
             "type": "string"
           },
           "text": {
-            "description": "The exact command, YAML or XML to apply.",
+            "description": "The exact command, YAML or XML.",
             "type": "string"
           },
           "tradeoff": {
-            "description": "What is lost by applying it.",
+            "description": "What applying it loses, or what a read-only command shows.",
             "type": "string"
           },
           "verify_with": {
-            "description": "The TopicForge tool to run again to confirm the repair.",
+            "description": "The TopicForge tool to run again to confirm.",
             "type": "string"
           }
         },

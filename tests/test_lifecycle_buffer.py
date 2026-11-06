@@ -249,3 +249,11 @@ def test_eviction_falls_back_to_oldest_when_all_active() -> None:
         buf.record_seen(guid=guid, vendor="cyclone", hostname=None, domain_id=0, now_ns=ts)
     # No tombstones -> oldest-inserted ("a") evicted.
     assert {p.guid for p in buf.snapshot_participants()} == {"b", "c"}
+
+
+def test_mock_participant_events_carry_node_names() -> None:
+    from topicforge.adapters.ros2_mock.adapter import MockAdapter
+
+    by_name = {e.name: e for e in MockAdapter().participant_events(0, 300)}
+    assert by_name["nav_planner"].node_names == ["/nav_planner"]
+    assert by_name[None].node_names == []

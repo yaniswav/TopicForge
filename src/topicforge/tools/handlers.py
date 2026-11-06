@@ -297,8 +297,11 @@ def _register_ros_tools(
             str | None,
             Field(description="Node read first (6 s); a failed read is critical."),
         ] = None,
+        params_file: Annotated[
+            str | None, Field(description="With `node`: parameter `.yaml` to compare.")
+        ] = None,
     ) -> Diagnosis:
-        return diagnoser.diagnose(scope, budget_s, node)
+        return diagnoser.diagnose(scope, budget_s, node, params_file)
 
 
 def _register_dds_tools(

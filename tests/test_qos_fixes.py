@@ -360,3 +360,13 @@ def test_ros_xml_note_does_not_overclaim() -> None:
     note = scan.reports[0].suggested_fixes[0].tradeoff
     assert "may have no effect" in note and "RMW_FASTRTPS_USE_QOS_FROM_XML=1" in note
     assert "FASTRTPS_DEFAULT_PROFILES_FILE" in note
+
+
+def test_known_node_name_is_the_yaml_key_over_the_participant_name() -> None:
+    writer = _ep("writer", "rt/scan", "/", reliability="BEST_EFFORT").model_copy(
+        update={"node_name": "/ns/lidar"}
+    )
+    reader = _ep("reader", "rt/scan", "/", reliability="RELIABLE")
+    fixes = scan_endpoints([reader, writer]).reports[0].suggested_fixes
+    assert fixes[0].text.startswith("/ns/lidar:\n  ros__parameters:")
+    assert fixes[1].text.startswith("<node_name>:")

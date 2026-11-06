@@ -1,8 +1,8 @@
 """Result model of `diagnose`: ranked findings from one bounded sweep of the ROS 2 graph and DDS bus.
 
 Every finding names the check that raised it, a severity from the table in docs/CONTRACT.md
-section 9.21, the evidence behind it (tool, field, value) and, for QoS findings, the fixes
-`detect_qos_mismatches` proposes. A check that could not run is listed in `checks_skipped`
+section 9.21, the evidence behind it (tool, field, value) and any suggested fixes: QoS changes from
+`detect_qos_mismatches`, or a command that only observes. A check that could not run is listed in `checks_skipped`
 with its reason: it never turns into a tool error and never into silence.
 """
 
@@ -61,7 +61,7 @@ class Finding(BaseModel):
     text: str = Field()
     evidence: list[Evidence] = Field()
     suggested_fixes: list[SuggestedFix] = Field(
-        description="From `detect_qos_mismatches`; text for a human, never applied."
+        description="QoS changes or read-only commands; text for a human, never applied."
     )
 
 

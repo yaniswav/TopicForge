@@ -66,6 +66,7 @@ from topicforge.adapters.common import (
 )
 from topicforge.adapters.common.dds_helpers import format_guid
 from topicforge.adapters.common.dds_introspection import cyclone_extract_guid, cyclone_extract_pid
+from topicforge.adapters.common.lifecycle import with_event_node_names
 from topicforge.adapters.common.ros_discovery import with_node_names
 from topicforge.adapters.dds_cyclone.ros_info import make_ros_info_reader, take_raw
 from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
@@ -584,10 +585,11 @@ class CycloneDdsAdapter:
         """
         if lookback_s < 1 or lookback_s > 86400:
             raise AdapterError(f"lookback_s must be in 1..86400, got {lookback_s}")
-        return self._lifecycle.events_since(
+        events = self._lifecycle.events_since(
             lookback_s=lookback_s,
             domain_id=self._domain_id,
         )
+        return with_event_node_names(events, self.list_participants(self._domain_id))
 
     def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         """Metrics from the buffer that `peek_dds_samples` fills.

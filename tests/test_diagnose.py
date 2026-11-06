@@ -28,6 +28,7 @@ from topicforge.models import (
     MismatchScan,
     NodeInfo,
     NotMatchedPair,
+    ParamDiff,
     ParticipantEvent,
     ParticipantInfo,
     TopicListItem,
@@ -35,7 +36,7 @@ from topicforge.models import (
 from topicforge.models.diagnose import EVIDENCE_VALUE_MAX, MAX_FINDINGS
 from topicforge.server import build_app
 from topicforge.services import HealthService, Inspector
-from topicforge.services.diagnose import DiagnoseService
+from topicforge.services.diagnose import DiagnoseService, _param_findings
 
 _SETTINGS = Settings(mode="mock", log_level="INFO", ros2_executable="ros2", telemetry_enabled=False)
 _NS = 1_000_000_000
@@ -541,6 +542,38 @@ def test_only_a_timeout_is_a_silent_node_the_other_causes_are_not() -> None:
         else:
             assert "not tested" in found[0].text and "/b" in found[0].text
         assert result.checks_skipped == [], status
+
+
+def test_an_unnamed_node_that_answers_the_second_read_is_not_a_finding() -> None:
+    adapter = _calm(Scripted(), ["/a", "/slow"])
+    adapter.param_status["/slow"] = "timeout"
+    real = adapter.get_node_info
+    reads: list[str] = []
+
+    def once_slow(node: str, timeout_s: float = 8.0, params_file: str | None = None) -> NodeInfo:
+        reads.append(node)
+        if node == "/slow" and reads.count("/slow") == 2:
+            adapter.param_status.pop("/slow")
+        return real(node, timeout_s)
+
+    adapter.get_node_info = once_slow  # type: ignore[method-assign]
+    assert _by(_run(adapter), "responsiveness") == []
+    assert reads.count("/slow") == 2
+
+
+def test_an_unnamed_node_silent_twice_is_a_warning_and_is_read_only_twice() -> None:
+    adapter = _calm(Scripted(), ["/a", "/blocked"])
+    adapter.nodes_ok["/blocked"] = False
+    found = _by(_run(adapter), "responsiveness")
+    assert [(f.severity, f.subject) for f in found] == [("warning", "/blocked")]
+    assert [n for n, _ in adapter.node_reads].count("/blocked") == 2
+
+
+def test_a_named_node_is_not_given_a_second_read() -> None:
+    adapter = _calm(Scripted(), ["/a", "/blocked"])
+    adapter.nodes_ok["/blocked"] = False
+    _run(adapter, node="/blocked")
+    assert [n for n, _ in adapter.node_reads].count("/blocked") == 1
 
 
 def test_a_node_that_timed_out_is_still_critical_when_named() -> None:
@@ -1051,3 +1084,279 @@ def test_the_silent_text_does_not_claim_a_wait_the_budget_cut_short() -> None:
     adapter.param_status["/b"] = "timeout"
     found = _by(_run(adapter, node="/b"), "responsiveness", "critical")
     assert "in time" in found[0].text and " s:" not in found[0].text
+
+
+# ---- fixes, restart trend, params_file, merge and budget (0.10 backlog) -----------------------
+
+
+def _event(guid: str, at_ns: int, kind: str = "discovered") -> ParticipantEvent:
+    return ParticipantEvent(
+        guid=guid,
+        event_type=kind,  # type: ignore[arg-type]
+        vendor="cyclone",
+        timestamp_ns=at_ns,
+        domain_id=0,
+    )
+
+
+def _restarting(lives: int, ago_s: int, every_s: int = 1) -> DiagnoseService:
+    """A node `x` with `lives` participants, started `every_s` apart, the newest `ago_s` ago."""
+    base = time.time_ns()
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(lives)]
+    adapter.over["participant_events"] = [
+        _event(f"g{i}", base - i * every_s * _NS)
+        for i in range(lives)  # g0 is the newest
+    ]
+    return DiagnoseService(
+        Inspector(adapter),
+        HealthService(_SETTINGS, adapter),
+        clock=adapter.clock,
+        wall_ns=lambda: base + ago_s * _NS,
+    )
+
+
+def test_a_restart_loop_that_is_going_on_says_so_and_how_long_ago() -> None:
+    found = _by(_restarting(3, 12).diagnose(), "dds", "critical")
+    assert [f.subject for f in found] == ["/x"]
+    assert "a restart loop." in found[0].text
+    assert "Still restarting: the last start was 12 s ago." in found[0].text
+
+
+def test_a_restart_loop_that_stopped_says_when() -> None:
+    found = _by(_restarting(3, 200).diagnose(), "dds", "critical")
+    assert [f.subject for f in found] == ["/x"]
+    assert "It stopped restarting: the last start was 200 s ago." in found[0].text
+
+
+def test_a_slow_loop_is_still_restarting_past_the_sixty_seconds() -> None:
+    found = _by(_restarting(3, 100, every_s=90).diagnose(), "dds", "critical")
+    assert "Still restarting: the last start was 100 s ago." in found[0].text
+
+
+def test_one_restart_gets_no_trend_sentence() -> None:
+    found = _by(_restarting(2, 30).diagnose(), "dds", "warning")
+    assert "restarted once" in found[0].text and "restarting" not in found[0].text
+
+
+def test_a_discovery_burst_of_a_fresh_server_is_not_a_pace() -> None:
+    found = _by(_restarting(3, 5, every_s=0).diagnose(), "dds", "critical")
+    assert "restarting" not in found[0].text and "last start" not in found[0].text
+
+
+def test_the_trend_prefers_the_local_clock_over_a_remote_stamp() -> None:
+    base = time.time_ns()
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    adapter.over["participant_events"] = [
+        _event(f"g{i}", base + 9000 * _NS).model_copy(
+            update={"observed_ns": base - (200 + i) * _NS}
+        )
+        for i in range(3)
+    ]
+    service = DiagnoseService(
+        Inspector(adapter),
+        HealthService(_SETTINGS, adapter),
+        clock=adapter.clock,
+        wall_ns=lambda: base,
+    )
+    found = _by(service.diagnose(), "dds", "critical")
+    assert "It stopped restarting: the last start was 200 s ago." in found[0].text
+
+
+def test_a_restart_with_no_event_timestamp_gets_no_trend_sentence() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    found = _by(_run(adapter), "dds", "critical")
+    assert "restarting" not in found[0].text and "last start" not in found[0].text
+
+
+def test_a_lost_event_does_not_count_as_a_start() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(2)]
+    adapter.over["participant_events"] = [_event("g0", time.time_ns(), "lost")]
+    assert "last start" not in _by(_run(adapter), "dds", "warning")[0].text
+
+
+def test_lives_keeps_the_largest_count_of_the_two_views() -> None:
+    from topicforge.models import NameLifecycle
+    from topicforge.services.diagnose import _lives
+
+    by_node = {"/a": 2, "b": 5, "/c": 1}
+    by_name = {
+        "a": NameLifecycle(lives=4, departures=3),  # name view larger: wins
+        "/b": NameLifecycle(lives=2, departures=1),  # node view larger: wins
+        "d": NameLifecycle(lives=3, departures=2),  # only in one view
+    }
+    assert _lives(by_node, by_name) == {"a": 4, "b": 5, "c": 1, "d": 3}
+
+
+def test_a_shortened_named_read_that_reports_no_budget_is_a_skip_not_a_silence() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    adapter.cost["list_nodes"] = 6.0  # 10 s budget: 4 s left, so the 6 s named read is cut
+    adapter.param_status.update({"/a": "no_budget", "/b": "no_budget"})
+    result = _run(adapter, scope="graph", budget_s=10, node="/b")
+    assert adapter.node_reads[0] == ("/b", 4.0)
+    assert [s.check for s in result.checks_skipped] == ["responsiveness"]
+    assert result.critical_count == 0 and result.warning_count == 0
+    assert "responsiveness did not run" in result.verdict
+
+
+def test_the_non_qos_fixes_are_read_only_and_pass_the_forbidden_verb_rule() -> None:
+    adapter = _calm(Scripted(), ["/a", "/b"])
+    del adapter.over["capture_tf"], adapter.over["sample_messages"]  # mock TF and mock logs
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    adapter.param_status["/b"] = "timeout"
+    result = _run(adapter, node="/b")
+    by_check: dict[str, list[Finding]] = {}
+    for f in result.findings:
+        if f.suggested_fixes:
+            by_check.setdefault(f.check, []).append(f)
+    assert {"dds", "tf", "logs", "responsiveness"} <= set(by_check)
+    assert any(f.subject == "/b" for f in by_check["responsiveness"])
+    assert any(f.subject == "map->odom" for f in by_check["tf"])
+    assert any(f.subject == "gripper_link" for f in by_check["tf"])
+    for f in (f for group in by_check.values() for f in group):
+        assert len(f.suggested_fixes) == 1
+        fix = f.suggested_fixes[0]
+        assert fix.kind == "cli" and fix.text.startswith("ros2 ")
+        for text in (fix.text, fix.tradeoff, fix.target, fix.verify_with):
+            assert _FORBIDDEN_VERB.search(text) is None, text
+
+
+_LIDAR_FILE = (
+    "lidar_driver:\n"
+    "  ros__parameters:\n"
+    "    frame_id: laser\n"
+    "    scan_frequency: 20.0\n"
+    "    use_sim_time: false\n"
+    "    extra_gain: 1.5\n"
+)
+
+
+def _yaml(tmp_path: Any, text: str, name: str = "p.yaml") -> str:
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def test_params_file_differences_fold_into_one_warning_on_the_named_node(tmp_path: Any) -> None:
+    adapter = _calm(Scripted(), ["/lidar_driver", "/b"])
+    result = _run(adapter, node="/lidar_driver", params_file=_yaml(tmp_path, _LIDAR_FILE))
+    found = _by(result, "responsiveness", "warning")
+    assert [f.subject for f in found] == ["/lidar_driver"]
+    assert "2 parameter(s)" in found[0].text
+    assert "scan_frequency (different)" in found[0].text
+    assert "extra_gain (declared_only)" in found[0].text
+    assert "20.0" not in found[0].text  # values are not echoed
+    assert found[0].suggested_fixes[0].text.startswith("ros2 param get /lidar_driver ")
+    assert result.critical_count == 0
+
+
+def test_params_file_without_differences_adds_no_finding(tmp_path: Any) -> None:
+    same = (
+        "lidar_driver:\n  ros__parameters:\n    frame_id: laser\n"
+        "    scan_frequency: 10.0\n    use_sim_time: false\n"
+    )
+    adapter = _calm(Scripted(), ["/lidar_driver"])
+    result = _run(adapter, node="/lidar_driver", params_file=_yaml(tmp_path, same))
+    assert result.warning_count == 0 and _by(result, "responsiveness") == []
+
+
+def test_an_unreadable_params_file_is_an_info_not_a_crash(tmp_path: Any) -> None:
+    adapter = _calm(Scripted(), ["/lidar_driver"])
+    result = _run(adapter, node="/lidar_driver", params_file=str(tmp_path / "absent.yaml"))
+    found = _by(result, "responsiveness")
+    assert [(f.severity, f.subject) for f in found] == [("info", "/lidar_driver")]
+    assert "not compared" in found[0].text and "absent.yaml" in found[0].text
+    assert result.warning_count == 0 and result.checks_skipped == []
+
+
+def test_params_file_declaring_another_node_is_an_info_never_a_warning(tmp_path: Any) -> None:
+    adapter = _calm(Scripted(), ["/lidar_driver", "/b"])
+    result = _run(adapter, node="/b", params_file=_yaml(tmp_path, _LIDAR_FILE))
+    assert [(f.severity, f.subject) for f in _by(result, "responsiveness")] == [("info", "/b")]
+    assert result.warning_count == 0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"params_file": "p.yaml"}, "needs node"),
+        ({"node": "/a", "params_file": "p.txt"}, "yaml"),
+        ({"node": "/a", "params_file": ""}, "non-empty"),
+    ],
+)
+def test_params_file_is_validated_like_the_other_inputs(
+    kwargs: dict[str, str], message: str
+) -> None:
+    with pytest.raises(AdapterError, match=message):
+        _run(_calm(Scripted()), **kwargs)
+
+
+def test_tf_is_skipped_for_budget_when_the_window_it_would_get_is_under_a_second() -> None:
+    adapter = _calm(Scripted())
+    adapter.cost["list_nodes"] = 4.0  # 10 s budget: 6 s left, less 2 s overhead and 4 s for logs
+    result = _run(adapter, budget_s=10)
+    assert {s.check: s.reason for s in result.checks_skipped} == {"tf": "budget"}
+    assert "tf" not in result.checks_run
+
+
+def test_a_tf_report_without_frames_says_why_in_one_info() -> None:
+    from topicforge.models import TfCapture
+
+    adapter = _calm(Scripted())
+    adapter.over["capture_tf"] = lambda _w: TfCapture(static=[], dynamic=[], window_actual_s=1.0)
+    found = _by(_run(adapter), "tf", "info")
+    assert found and all(f.subject is None for f in found)
+
+
+def test_the_topicforge_cli_participant_is_not_a_life_of_any_node() -> None:
+    cli = _participant("x", "g9").model_copy(update={"is_topicforge_cli": True})
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", "g0"), _participant("x", "g1"), cli]
+    found = _by(_run(adapter), "dds", "warning")
+    assert [f.subject for f in found] == ["/x"] and "2 participants" in found[0].text
+
+
+def test_params_file_on_a_node_without_parameter_services_says_it_was_not_compared(
+    tmp_path: Any,
+) -> None:
+    adapter = _calm(Scripted(), ["/a"])
+    adapter.param_status["/a"] = "no_parameter_services"
+    result = _run(adapter, node="/a", params_file=_yaml(tmp_path, _LIDAR_FILE))
+    found = _by(result, "responsiveness")
+    assert [f.severity for f in found] == ["info"] and "incomplete" in found[0].text
+
+
+def test_params_file_needs_a_scope_that_reads_parameters(tmp_path: Any) -> None:
+    with pytest.raises(AdapterError, match="scope"):
+        _run(Scripted(), scope="logs", node="/a", params_file=_yaml(tmp_path, _LIDAR_FILE))
+
+
+def _with_param_diff(entries: list[ParamDiff], note: str | None = None) -> NodeInfo:
+    return node_fixtures.mock_node_info("/lidar_driver").model_copy(
+        update={"param_diff": entries, "param_diff_note": note}
+    )
+
+
+def test_a_secret_named_parameter_is_no_difference_and_never_a_command() -> None:
+    masked = ParamDiff(name="api_token", status="masked", declared="***", live="***")
+    other = ParamDiff(name="rate", status="different", declared=1, live=2)
+    only_masked = _param_findings("/a", _with_param_diff([masked]))
+    assert [f.severity for f in only_masked] == ["info"]
+    both = _param_findings("/a", _with_param_diff([masked, other]))
+    warning = next(f for f in both if f.severity == "warning")
+    assert "api_token" not in warning.text
+    assert warning.suggested_fixes[0].text == "ros2 param get /a rate"
+
+
+def test_a_parameter_name_unfit_for_a_command_gets_no_command() -> None:
+    bad = ParamDiff(name="a; touch /tmp/x", status="different", declared=1, live=2)
+    found = _param_findings("/a", _with_param_diff([bad]))
+    assert found[0].severity == "warning" and found[0].suggested_fixes == []
+
+
+def test_a_clean_diff_with_a_caveat_is_not_read_as_a_match() -> None:
+    found = _param_findings("/a", _with_param_diff([], "2 pattern(s) not evaluated"))
+    assert [f.severity for f in found] == ["info"] and "pattern" in found[0].text

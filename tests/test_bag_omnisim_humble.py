@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from topicforge.adapters.common.bag_read import analyze_bag_file
 from topicforge.services.bag_service import BagService
 
 pytestmark = pytest.mark.requires_rosbags
@@ -60,7 +61,7 @@ def test_peek_result_is_json_serializable(bag_path: str) -> None:
 
 
 def test_analyze_counts_match_ros2_bag_info(bag_path: str) -> None:
-    analysis = BagService().analyze(bag_path)
+    analysis = analyze_bag_file(bag_path)
     counts = {t.name: t.message_count for t in analysis.topics}
     assert analysis.message_count == 1434
     assert counts["/scan"] == 177
@@ -73,7 +74,7 @@ def test_analyze_counts_match_ros2_bag_info(bag_path: str) -> None:
 
 
 def test_analyze_rates_use_each_topics_own_span(bag_path: str) -> None:
-    analysis = BagService().analyze(bag_path)
+    analysis = analyze_bag_file(bag_path)
     by_name = {t.name: t for t in analysis.topics}
     assert by_name["/scan"].frequency_hz == pytest.approx(4.9974, abs=1e-4)
     assert by_name["/clock"].frequency_hz == pytest.approx(9.9965, abs=1e-4)
@@ -81,7 +82,7 @@ def test_analyze_rates_use_each_topics_own_span(bag_path: str) -> None:
 
 
 def test_analyze_flags_latched_topics(bag_path: str) -> None:
-    by_name = {t.name: t for t in BagService().analyze(bag_path).topics}
+    by_name = {t.name: t for t in analyze_bag_file(bag_path).topics}
     assert by_name["/tf_static"].latched is True
     assert by_name["/rosout"].latched is True
     assert by_name["/scan"].latched is False
@@ -123,7 +124,7 @@ def _write_mcap_bag(directory: Path) -> Path:
 def test_mcap_bag_rates_come_from_scanned_timestamps(tmp_path: Path) -> None:
     pytest.importorskip("rosbags")
     bag = _write_mcap_bag(tmp_path)
-    analysis = BagService().analyze(str(bag))
+    analysis = analyze_bag_file(str(bag))
     by_name = {t.name: t for t in analysis.topics}
     assert by_name["/fast"].message_count == 5
     assert by_name["/fast"].frequency_hz == pytest.approx(2.0)

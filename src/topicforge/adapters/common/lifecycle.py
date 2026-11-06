@@ -36,6 +36,19 @@ oldest-inserted one: so a churny bus cannot grow the map without bound."""
 EventType = Literal["discovered", "lost"]
 
 
+def with_event_node_names(
+    events: list[ParticipantEvent], participants: list[ParticipantInfo]
+) -> list[ParticipantEvent]:
+    """Copies of `events` carrying the node names the participant table knows by GUID.
+
+    Events are recorded before `ros_discovery_info` may arrive, so names resolve at read time.
+    """
+    names = {p.guid: p.node_names for p in participants if p.node_names}
+    return [
+        e.model_copy(update={"node_names": names[e.guid]}) if e.guid in names else e for e in events
+    ]
+
+
 class LifecycleBuffer:
     """Known DDS participants keyed by GUID, plus a bounded ring of events.
 

@@ -376,12 +376,11 @@ def test_bag_log_filter_returns_the_first_matches_in_bag_order(tmp_path: Path) -
 
 
 def test_bag_start_ns_is_the_metadata_starting_time(tmp_path: Path) -> None:
-    from topicforge.adapters.common.bag_read import read_start_ns
-    from topicforge.services.bag_service import BagService
+    from topicforge.adapters.common.bag_read import analyze_bag_file, read_start_ns
 
     bag = _write_bag(tmp_path / "bag")
     assert read_start_ns(bag) == _BASE
-    assert BagService().analyze(str(bag)).start_ns == _BASE
+    assert analyze_bag_file(str(bag)).start_ns == _BASE
     assert read_start_ns(tmp_path / "missing") is None
 
 

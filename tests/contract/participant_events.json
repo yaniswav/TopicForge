@@ -88,6 +88,13 @@
               "null"
             ]
           },
+          "node_names": {
+            "description": "ROS node names of the participant, resolved when read; empty if unknown.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "observed_ns": {
             "description": "Local ns when TopicForge noticed the event, never before a DDS-derived `timestamp_ns`; `None` when untracked.",
             "minimum": 0,
