@@ -544,6 +544,38 @@ def test_only_a_timeout_is_a_silent_node_the_other_causes_are_not() -> None:
         assert result.checks_skipped == [], status
 
 
+def test_an_unnamed_node_that_answers_the_second_read_is_not_a_finding() -> None:
+    adapter = _calm(Scripted(), ["/a", "/slow"])
+    adapter.param_status["/slow"] = "timeout"
+    real = adapter.get_node_info
+    reads: list[str] = []
+
+    def once_slow(node: str, timeout_s: float = 8.0, params_file: str | None = None) -> NodeInfo:
+        reads.append(node)
+        if node == "/slow" and reads.count("/slow") == 2:
+            adapter.param_status.pop("/slow")
+        return real(node, timeout_s)
+
+    adapter.get_node_info = once_slow  # type: ignore[method-assign]
+    assert _by(_run(adapter), "responsiveness") == []
+    assert reads.count("/slow") == 2
+
+
+def test_an_unnamed_node_silent_twice_is_a_warning_and_is_read_only_twice() -> None:
+    adapter = _calm(Scripted(), ["/a", "/blocked"])
+    adapter.nodes_ok["/blocked"] = False
+    found = _by(_run(adapter), "responsiveness")
+    assert [(f.severity, f.subject) for f in found] == [("warning", "/blocked")]
+    assert [n for n, _ in adapter.node_reads].count("/blocked") == 2
+
+
+def test_a_named_node_is_not_given_a_second_read() -> None:
+    adapter = _calm(Scripted(), ["/a", "/blocked"])
+    adapter.nodes_ok["/blocked"] = False
+    _run(adapter, node="/blocked")
+    assert [n for n, _ in adapter.node_reads].count("/blocked") == 1
+
+
 def test_a_node_that_timed_out_is_still_critical_when_named() -> None:
     adapter = _calm(Scripted(), ["/a", "/b"])
     adapter.param_status["/b"] = "timeout"

@@ -699,7 +699,8 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             unreadable.append((name, info.parameters_note or "parameters not reported"))
         elif info.parameters is None and status == "timeout":
             answered += 1
-            out.append(_silent_finding(name, named, info.parameters_note))
+            if named or not _answers_on_retry(ctx, name):
+                out.append(_silent_finding(name, named, info.parameters_note))
         else:  # read, or no parameter services (nothing to ask): the node is not shown silent
             answered += 1
     if unreadable and not answered:
@@ -730,6 +731,20 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             )
         )
     return out
+
+
+def _answers_on_retry(ctx: _Ctx, name: str) -> bool:
+    """One more read of an unnamed node that timed out, if the budget allows it.
+
+    A CLI start on a loaded host can eat most of the 3 s, and the warning then vanishes on the
+    next sweep. A node the caller named has had 6 s already, and its finding is what they asked.
+    """
+    if ctx.left() < _NODE_READ_S:
+        return False
+    try:
+        return ctx.inspector.get_node_info(name, _NODE_READ_S).parameters_status != "timeout"
+    except AdapterError:
+        return False
 
 
 def _param_findings(name: str, info: NodeInfo) -> list[Finding]:

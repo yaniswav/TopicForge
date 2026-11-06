@@ -42,6 +42,8 @@ change. Optional fields and one optional input are added (`docs/CONTRACT.md` sec
 - `diagnose`: findings about the node named in `node` survive the 50-finding cap, one unreadable
   node no longer marks the whole `responsiveness` check as not run, and the `/rosout` all-clear
   states the window it listened to.
+- `diagnose` reads an unnamed node a second time before reporting it silent, if the budget
+  allows: a blind agent saw one such warning on a healthy robot, gone on the next sweep.
 - `get_node_info` no longer starts a parameter read with less than 2 s left in the call budget
   (it returns `no_budget`), so a read cut short by the budget is not mistaken for a blocked
   executor; the silent-node finding no longer quotes the requested wait. `diagnose` lists

@@ -1424,6 +1424,7 @@ Additive only (1.9). `tools/list` goes from 99,971 to 100,535 bytes.
 - `suggested_fixes` is no longer QoS only: silent nodes, stale TF edges, URDF links with no frame,
   restarts and `/rosout` errors carry one `kind: cli` fix, a command that only observes. Severity,
   check and subject of these findings do not change.
+- An unnamed node is reported silent only after a second read timed out too, budget allowing.
 - Restart-loop findings gain a sentence on the trend when the events show a pace: at least two
   starts more than 2 s apart. The loop counts as going on within twice its longest interval, with
   a floor of 60 s. The times are local (`observed_ns`) when known.
