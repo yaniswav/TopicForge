@@ -393,30 +393,60 @@ The agents' feedback, in short:
 - The `<node_name>` placeholder in the QoS fix text could be the known node.
 - Static frames (`age_s` null, `last_stamp_ns` 0) read as missing data.
 
-## 0.10.0 re-check of `diagnose`
+## 0.10.0 campaign (v4)
 
-**Status: run on 2026-11-06** (commit `3ad653c`, ROS 2 Jazzy in WSL Ubuntu 24.04, same runner as
-the 0.9.0 campaign, `--variant diagnose`, no agent). 0.10.0 changes `diagnose`'s rules
-(`docs/CONTRACT.md` sections 9.22 and 9.23), so its result had to be measured again.
+**Status: run on 2026-11-07** (commit `ea24d6e`, ROS 2 Jazzy in WSL Ubuntu 24.04, same runner and
+scenarios as the 0.9.0 campaign, one blind Sonnet agent per run). 0.10.0 changes `diagnose`'s rules
+and output (`docs/CONTRACT.md` sections 9.22 and 9.23).
+
+### Results: `diagnose` alone
 
 | Scenario | Rank 1 (critical or warning) | Other critical or warning | Time |
 |---|---|---|---|
-| `healthy` | none | none | 17.1 s |
-| `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 20.7 s |
-| `tf_stale` | warning `tf` on `map->odom` | none | 18.3 s |
-| `qos_mismatch` | critical `dds` on `rt/scan_edge` | none | 18.5 s |
-| `restart_loop` | critical `dds` on `/path_planner` | none | 19.1 s |
-| `declared_drift` | warning `tf` on `arm_link` | none | 17.1 s |
+| `healthy` | none | none | 17.2 s |
+| `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 24.3 s |
+| `tf_stale` | warning `tf` on `map->odom` | none | 17.1 s |
+| `qos_mismatch` | critical `dds` on `rt/scan_edge` | none | 18.4 s |
+| `restart_loop` | critical `dds` on `/path_planner` | warning `logs` on `/path_planner` | 18.8 s |
+| `declared_drift` | warning `tf` on `arm_link` | none | 18.0 s |
 | `graph_v1_v2` | none | none | 18.5 s |
 
-No check was skipped. Every fault ranks first as in 0.9.0, and the healthy robot stays at 0 and 0.
-In `restart_loop` the `logs` warning of 0.9.0 did not appear in this run: the check listens to
-`/rosout` for 5 s, and no crash line fell in that window. A run on the commit before this one
-(`a5b03ec`) did show it, and the check's code did not change, so this looks like timing.
+No check was skipped, and the ranking matches 0.9.0. `blocked_executor` takes about 3 s longer
+because a silent unnamed node now gets a second read. On an earlier commit of this batch the
+`logs` warning was absent from one `restart_loop` run: the check listens to `/rosout` for 5 s and
+no crash line fell in that window.
 
-The new output appears on the real robot: `/path_planner appeared with 6 different participants:
-a restart loop. Still restarting: the last start was 2 s ago.`, a `qos_overrides` fix keyed on
-`/bench_robot:`, and `ros2 run tf2_ros tf2_echo map odom` on the stale edge.
+### Results: an agent with the seventeen tools, no prompt
 
-The agent variant was not run again, so the 0.9.0 agent figures above (7/7, median 6 calls) were
-measured on 0.9.0, not on 0.10.0.
+| Scenario | Grade | Tool calls (broker) | Sequence |
+|---|---|---|---|
+| `healthy` | correct, no false alarm | 13 | `diagnose`, then re-checks, six of them `sample_messages` |
+| `blocked_executor` | correct | 3 | `list_nodes`, `get_node_info`, `diagnose` |
+| `tf_stale` | correct (`map -> odom` stale, `/bench_robot`) | 5 | `inspect_tf` and `diagnose` |
+| `qos_mismatch` | correct (Reliability, both nodes, both fixes) | 1 | `detect_qos_mismatches` |
+| `restart_loop` | correct on the node; count given as 7 to 10 (truth 8 at first call, 10 at stop) | 3 | `diagnose`, then `participant_events` twice |
+| `declared_drift` | correct (`max_range`, `extra_gain`, `arm_link`) | 2 | `get_node_info(params_file=...)`, `inspect_tf` |
+| `graph_v1_v2` | correct (the three changes, nothing else) | 1 | `graph_diff` |
+
+Seven correct answers out of seven, and no false alarm. The median is 3 calls (0.9.0: 6, 0.8.0: 12),
+which meets the target of 4 or fewer that 0.9.0 missed.
+
+Limits of this comparison:
+- It is one run per scenario, so a difference of a call or two is noise.
+- The agents ran the client from Windows through the port forwarding of WSL, and from
+  `blocked_executor` on, they were asked to answer in under 250 words, which may reduce the
+  checks they make.
+- A first `healthy` run on an earlier commit got a `responsiveness` warning on `/bench_robot`, gone
+  on the next sweep. That run is why a silent unnamed node now gets a second read (`ea24d6e`), and
+  it was replaced by the run above. One clean run does not prove the warning cannot come back.
+- `declared_drift` did not use `diagnose(params_file=...)`: the agent went straight to
+  `get_node_info`, so no agent has exercised that input yet.
+
+The agents' feedback, in short:
+- `diagnose` was again the named entry point when it was called.
+- `restart_loop`: `diagnose` said 7 participants where the events showed 10 discoveries, and nothing
+  explains the difference.
+- `diagnose` and `inspect_tf` gave different staleness figures for the same edge (4.1 s and 1.2 s).
+- A topic's `frame_id` absent from the TF tree goes unreported (`/scan_edge`, found by sampling).
+- `rt/` DDS topic names sit next to ROS names without explanation, and `get_node_info` is long
+  when only `param_diff` matters.
