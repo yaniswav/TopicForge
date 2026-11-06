@@ -13,7 +13,11 @@ import importlib.util
 import pytest
 
 from topicforge.adapters.base import AdapterError
-from topicforge.adapters.common.bag_read import detect_bag_format, is_rosbags_available
+from topicforge.adapters.common.bag_read import (
+    analyze_bag_file,
+    detect_bag_format,
+    is_rosbags_available,
+)
 from topicforge.services.bag_service import BagService
 
 # --------------------------------------------------------------------------
@@ -51,16 +55,15 @@ def test_bag_service_constructs_without_rosbags() -> None:
     BagService()
 
 
-def test_bag_service_analyze_raises_clearly_without_rosbags(
+def test_analyze_bag_file_raises_clearly_without_rosbags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When rosbags is absent the AdapterError points at the install command."""
     from topicforge.adapters.common import bag_read as bag_service
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: False)
-    svc = BagService()
     with pytest.raises(AdapterError, match="rosbags"):
-        svc.analyze("/tmp/anything.mcap")
+        analyze_bag_file("/tmp/anything.mcap")
 
 
 def test_bag_service_peek_raises_clearly_without_rosbags(
@@ -74,16 +77,15 @@ def test_bag_service_peek_raises_clearly_without_rosbags(
         svc.peek_samples("/tmp/anything.mcap", "/topic", 5)
 
 
-def test_bag_service_analyze_raises_on_nonexistent_path(
+def test_analyze_bag_file_raises_on_nonexistent_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Even with rosbags available, missing paths raise AdapterError."""
     from topicforge.adapters.common import bag_read as bag_service
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
-    svc = BagService()
     with pytest.raises(AdapterError, match="does not exist"):
-        svc.analyze("/tmp/definitely-not-a-real-file-xyz.mcap")
+        analyze_bag_file("/tmp/definitely-not-a-real-file-xyz.mcap")
 
 
 def test_bag_service_peek_rejects_negative_count(
@@ -99,7 +101,7 @@ def test_bag_service_peek_rejects_negative_count(
         svc.peek_samples("/tmp/whatever.mcap", "/topic", -1)
 
 
-def test_bag_service_analyze_surfaces_exception_type_in_error(
+def test_analyze_bag_file_surfaces_exception_type_in_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
 ) -> None:
     """The error message names the exception type (`PermissionError`, `IsADirectoryError`, ...)."""
@@ -113,15 +115,14 @@ def test_bag_service_analyze_surfaces_exception_type_in_error(
 
     monkeypatch.setattr(bag_service, "is_rosbags_available", lambda: True)
     monkeypatch.setattr(bag_service, "_read_with_rosbags", _boom)
-    svc = BagService()
     with pytest.raises(AdapterError, match=r"RuntimeError.*synthetic"):
-        svc.analyze(str(fake_bag))
+        analyze_bag_file(str(fake_bag))
 
 
 def test_bag_service_peek_surfaces_exception_type_in_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
 ) -> None:
-    """Same as analyze: exception class name + str(exc) must appear in the message
+    """Same as analyze_bag_file: exception class name + str(exc) must appear in the message
     so the caller can pivot without inspecting `__cause__`."""
     from topicforge.adapters.common import bag_read as bag_service
 
@@ -144,7 +145,7 @@ def test_bag_service_peek_surfaces_exception_type_in_error(
 
 
 @pytest.mark.requires_rosbags
-def test_bag_service_analyze_returns_enriched_bag_analysis_db3(
+def test_analyze_bag_file_returns_enriched_bag_analysis_db3(
     tmp_path: pytest.TempPathFactory,
 ) -> None:  # pragma: no cover (exercised on rosbags-installed hosts)
     """Generate a tiny ROS2 .db3 bag and assert analyze() returns enriched fields."""
@@ -165,8 +166,7 @@ def test_bag_service_analyze_returns_enriched_bag_analysis_db3(
             msg = typestore.types[string_msgtype](data=f"hello-{i}")
             writer.write(conn, i * 100_000_000, typestore.serialize_cdr(msg, string_msgtype))
 
-    svc = BagService()
-    analysis = svc.analyze(str(bag_path))
+    analysis = analyze_bag_file(str(bag_path))
     assert analysis.bag_format == "db3"
     assert analysis.duration_s > 0
     assert analysis.message_count >= 5

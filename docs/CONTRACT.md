@@ -1412,3 +1412,20 @@ Two optional fields, additive (1.9). `tools/list` goes from 99,634 to 99,971 byt
   2 s to wait (`no_budget`), and `responsiveness` is reported as not run when no node could be
   read at all. A silent-node finding no longer quotes a wait; the wait granted is in its evidence.
 
+### 9.23 Evaluation feedback (0.10.0)
+
+Additive only (1.9). `tools/list` goes from 99,971 to 100,519 bytes.
+
+- `diagnose` gains an optional input `params_file`, valid only with `node`; without `node` it is
+  an invalid input. Differences give one `warning` on check `responsiveness`, subject the node,
+  naming parameters but no value; a file that cannot be compared gives an `info`. No new check
+  name.
+- `suggested_fixes` is no longer QoS only: silent nodes, stale TF edges, URDF links with no frame,
+  restarts and `/rosout` errors carry one `kind: cli` fix, a command that only observes. Severity,
+  check and subject of these findings do not change.
+- Restart findings gain a sentence on the trend, when an event timestamp exists.
+- `ParticipantEvent.node_names`: list, empty when the names are unknown. Resolved when the events
+  are read, so it reflects the participant table at that moment.
+- `qos_overrides` fix text: the YAML key is the real node name when known. Clients must not parse
+  this text; it is meant for a human.
+

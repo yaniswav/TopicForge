@@ -7,6 +7,13 @@ A message longer than a character cap is dropped while it streams, so a huge
 `Image` is never held in memory or handed to the YAML parser.
 """
 
+# Deliberate exception to "subprocess goes through `_exec`/`_run`": `stream_echo`
+# calls `subprocess.Popen` itself because a stream needs the pipe open while it
+# is read, which a run-to-completion helper cannot give. It stays bounded: the
+# read stops at `count` messages or `deadline_s`, an oversized message is dropped
+# while streaming, and the `finally` in `stream_echo` always kills the whole
+# process tree (`kill_process_tree`) and joins the reader threads.
+
 from __future__ import annotations
 
 import contextlib

@@ -96,7 +96,7 @@ Explain why DDS readers and writers on a topic do not talk, and who will. Pairs 
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and rank what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, `topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` errors), `responsiveness` (parameter reads, `node` first); `scope` runs one group. `findings` are `critical`, `warning` or `info`, with `evidence` and, for QoS, `suggested_fixes`; `verdict` is one line. A check that errors or runs out of `budget_s` is in `checks_skipped`, never a tool error, and the verdict then says it is not verified. A clean result does not prove data flows. **Mock mode**: fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; other ROS tools get `busy` meanwhile, `health_check` stays free.
+Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and rank what is found as a `Diagnosis`. Checks, in order: `environment`, `nodes`, `topics`, `dds` (QoS pairs, restarts), `tf` (8 s window), `logs` (`/rosout` errors), `responsiveness` (parameter reads, `node` first, `params_file` diff); `scope` runs one group. `findings` are `critical`, `warning` or `info`, with `evidence` and `suggested_fixes` (QoS changes, else read-only commands); `verdict` is one line. A check that errors or runs out of `budget_s` is in `checks_skipped`, never a tool error, and the verdict then says it is not verified. A clean result does not prove data flows. **Mock mode**: fixtures. **Duration**: holds the ROS lock up to `budget_s` and ends within 45 s; other ROS tools get `busy` meanwhile, `health_check` stays free.
 
 ### Input parameters
 
@@ -105,6 +105,7 @@ Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and ra
 | `scope` | `"all" \| "graph" \| "tf" \| "dds" \| "logs"` | no | `"all"` | - | `all`, or one group: `graph`, `tf`, `dds`, `logs`. |
 | `budget_s` | `float` | no | `30.0` | >= 10.0, <= 40.0 | Seconds for the sweep, 10..40, default 30. |
 | `node` | `str \| null` | no | `null` | - | Node read first (6 s); a failed read is critical. |
+| `params_file` | `str \| null` | no | `null` | - | With `node`: parameter `.yaml` to compare. |
 
 ### Output (top-level fields)
 
@@ -282,7 +283,7 @@ None.
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
+ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). A slow or intermittent publisher needs a longer `window_s` (`diagnose` uses 8 s). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
 
 ### Input parameters
 

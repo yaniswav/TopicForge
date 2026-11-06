@@ -61,7 +61,7 @@ class Finding(BaseModel):
     text: str = Field()
     evidence: list[Evidence] = Field()
     suggested_fixes: list[SuggestedFix] = Field(
-        description="From `detect_qos_mismatches`; text for a human, never applied."
+        description="QoS changes or read-only commands; text for a human, never applied."
     )
 
 

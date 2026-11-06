@@ -341,9 +341,23 @@ def _target(side: Side, eps: Sequence[EndpointInfo], topic: str) -> str:
 
 
 def _node_names(eps: Sequence[EndpointInfo]) -> list[str]:
-    names = [e.participant_name for e in _distinct(eps)[:_MAX_NAMED]]
-    known = [n if n.startswith("/") else f"/{n}" for n in names if n and n != "/"]
-    return known or [_NODE_PLACEHOLDER]
+    """Fully qualified ROS 2 node names for the parameter file, placeholder if none known.
+
+    `node_name` (from ros_discovery_info) wins over `participant_name`: a participant can
+    host several nodes, and some RMWs announce only "/". The key is written as the flat
+    fully qualified name with a leading slash ("/ns/node:"): rcl's YAML parameter loader
+    matches a node by that string, not by nested namespace maps (ROS 2 "Node arguments"
+    how-to, YAML parameter files; not re-verified against rcl source here).
+    """
+    known: list[str] = []
+    for ep in eps:
+        name = ep.node_name or ep.participant_name
+        if not name or name == "/":
+            continue
+        name = name if name.startswith("/") else f"/{name}"
+        if name not in known:
+            known.append(name)
+    return known[:_MAX_NAMED] or [_NODE_PLACEHOLDER]
 
 
 def _verify(dds_topic: str) -> str:

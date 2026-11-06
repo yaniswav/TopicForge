@@ -35,6 +35,7 @@ from topicforge.models import (
     HealthReport,
     MismatchScan,
     NameLifecycle,
+    NodeInfo,
     NotMatchedPair,
     ParticipantEvent,
     ParticipantInfo,
@@ -46,6 +47,7 @@ from topicforge.services.dds_views import join_notes
 from topicforge.services.graph_diff import BUILTIN_COUNT_TOPICS
 from topicforge.services.health import HealthService
 from topicforge.services.inspector import Inspector, _validate_node_name
+from topicforge.services.params_file import validate_params_file
 
 Scope = Literal["all", "graph", "tf", "dds", "logs"]
 
@@ -78,6 +80,8 @@ _NODE_READ_S = 3.0
 _NAMED_NODE_READ_S = 6.0
 _EVENT_LOOKBACK_S = 300
 _NS_PER_S = 1_000_000_000
+_STILL_RESTARTING_S = 60  # a node discovered this recently is taken to be still restarting
+_MAX_PARAM_DIFFS = 5  # differing parameters named in one finding
 _LOG_STOP_RESERVE_S = 3.0  # the live adapter keeps this back from a sampling call
 _LIST_NAMES = 8
 _UNTESTED_NAMES = 20
@@ -97,6 +101,7 @@ class _Ctx:
     inspector: Inspector
     health: HealthService
     node: str | None
+    params_file: str | None
     clock: Callable[[], float]
     deadline: float
     plan: tuple[str, ...]
@@ -140,6 +145,21 @@ def _finding(
 def _names(items: list[str], limit: int = _LIST_NAMES) -> str:
     shown = ", ".join(items[:limit])
     return shown + (f" and {len(items) - limit} more" if len(items) > limit else "")
+
+
+def _read_fix(
+    text: str, target: str, tradeoff: str, verify_with: str, kind: str = "cli"
+) -> list[SuggestedFix]:
+    """One read-only next step: a command that only observes. Never a repair."""
+    return [
+        SuggestedFix(
+            kind=kind,  # type: ignore[arg-type]
+            target=target,
+            text=text,
+            tradeoff=tradeoff,
+            verify_with=verify_with,
+        )
+    ]
 
 
 # ---- checks -------------------------------------------------------------------------------
@@ -269,7 +289,8 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
         parts.participants, events.events, ctx.wall_ns() - _EVENT_LOOKBACK_S * _NS_PER_S
     )
     lives = _lives(recent, events.restarts_by_name)
-    out += _restart_findings(lives)
+    last_start = _last_discovery_ns(parts.participants, events.events)
+    out += _restart_findings(lives, last_start, ctx.wall_ns())
     left = [
         (p.node_names[0] if p.node_names else (p.name or p.guid[:8]))
         for p in parts.participants
@@ -419,12 +440,44 @@ def _lives(by_node: dict[str, int], by_name: Mapping[str, NameLifecycle]) -> dic
     return lives
 
 
-def _restart_findings(lives: dict[str, int]) -> list[Finding]:
+def _last_discovery_ns(
+    participants: list[ParticipantInfo], events: list[ParticipantEvent]
+) -> dict[str, int]:
+    """Newest `discovered` event timestamp per node or participant name, from the events."""
+    names: dict[str, set[str]] = {}
+    for p in participants:
+        for name in (*p.node_names, p.name):
+            if name:
+                names.setdefault(p.guid, set()).add(name.lstrip("/"))
+    latest: dict[str, int] = {}
+    for e in events:
+        if e.event_type != "discovered":
+            continue
+        for key in names.get(e.guid, ()):
+            latest[key] = max(latest.get(key, 0), e.timestamp_ns)
+    return latest
+
+
+def _restart_trend(name: str, last_start: Mapping[str, int], now_ns: int) -> str:
+    """Whether the restarts go on, from the newest discovery; empty without a timestamp."""
+    stamp = last_start.get(name)
+    if stamp is None:
+        return ""
+    ago = max(0, (now_ns - stamp) // _NS_PER_S)
+    if ago <= _STILL_RESTARTING_S:
+        return f" Still restarting: the last start was {ago} s ago."
+    return f" It stopped restarting: the last start was {ago} s ago."
+
+
+def _restart_findings(
+    lives: dict[str, int], last_start: Mapping[str, int], now_ns: int
+) -> list[Finding]:
     out = []
     for name, count in sorted(lives.items()):
         if count < 2:
             continue
         loop = count >= 3
+        trend = _restart_trend(name, last_start, now_ns)
         out.append(
             _finding(
                 "critical" if loop else "warning",
@@ -434,11 +487,18 @@ def _restart_findings(lives: dict[str, int]) -> list[Finding]:
                     f"/{name} appeared with {count} different participants: a restart loop."
                     if loop
                     else f"/{name} restarted once (2 participants carried its name)."
-                ),
+                )
+                + trend,
                 _ev(
                     "participant_events",
                     f"participants of /{name} in the last {_EVENT_LOOKBACK_S} s",
                     count,
+                ),
+                fixes=_read_fix(
+                    "ros2 topic echo /rosout --field msg",
+                    f"/{name}",
+                    "Streams the logs of every node; read the lines of this one. Observes only.",
+                    "participant_events",
                 ),
             )
         )
@@ -464,6 +524,7 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
                     subject,
                     f.text,
                     _ev("inspect_tf", "findings[].kind", f"{f.kind}: {','.join(f.frames)}"),
+                    fixes=_tf_fix(f.kind, f.frames),
                 )
             )
     for frame in report.declared_frames_missing:
@@ -474,6 +535,13 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
                 frame,
                 f"The URDF declares link {frame} but no TF frame carries it.",
                 _ev("inspect_tf", "declared_frames_missing", report.declared_frames_missing),
+                fixes=_read_fix(
+                    "ros2 topic echo /tf_static --once",
+                    "robot_state_publisher",
+                    "Shows whether the link is published at all; a link on a fixed joint "
+                    "is static. Observes only.",
+                    "inspect_tf",
+                ),
             )
         )
     if len(report.roots) > 1:
@@ -514,6 +582,18 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
     return out
 
 
+def _tf_fix(kind: str, frames: list[str]) -> list[SuggestedFix]:
+    """A read-only look at a stale edge (parent, child); none for the other kinds."""
+    if kind != "stale" or len(frames) != 2:
+        return []
+    return _read_fix(
+        f"ros2 run tf2_ros tf2_echo {frames[0]} {frames[1]}",
+        f"the publisher of {frames[0]}->{frames[1]}",
+        "Prints the transform live, so a stalled publisher shows as silence. Observes only.",
+        "inspect_tf",
+    )
+
+
 def check_logs(ctx: _Ctx) -> list[Finding]:
     """One warning per node that logged an error or fatal line while `/rosout` was listened to."""
     # The live adapter listens for the timeout less its own stop reserve out of what is left.
@@ -552,6 +632,13 @@ def check_logs(ctx: _Ctx) -> list[Finding]:
                 f"{subject or 'A node'} logged {count} error or fatal line(s) on /rosout; "
                 f"latest: {msg[:160]}",
                 _ev("sample_messages", "samples[].payload.msg", msg),
+                fixes=_read_fix(
+                    "ros2 topic echo /rosout --field msg",
+                    subject or "the logging node",
+                    "Streams the logs of every node; read the lines around the error. "
+                    "Observes only.",
+                    "diagnose",
+                ),
             )
         )
     return out
@@ -582,7 +669,7 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             untested += candidates[i:]
             break
         try:
-            info = ctx.inspector.get_node_info(name, timeout)
+            info = ctx.inspector.get_node_info(name, timeout, ctx.params_file if named else None)
         except AdapterError as exc:
             unreadable.append((name, str(exc)))
             continue
@@ -598,6 +685,8 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
             out.append(_silent_finding(name, named, info.parameters_note))
         else:  # read, or no parameter services (nothing to ask): the node is not shown silent
             answered += 1
+            if named and ctx.params_file is not None:
+                out += _param_findings(name, info)
     if unreadable and not answered:
         raise AdapterError(f"no node could be read: {unreadable[0][0]}: {unreadable[0][1]}")
     if candidates and not answered:
@@ -628,6 +717,48 @@ def check_responsiveness(ctx: _Ctx) -> list[Finding]:
     return out
 
 
+def _param_findings(name: str, info: NodeInfo) -> list[Finding]:
+    """The named node's parameters against its `params_file`: one warning, or one info.
+
+    Filed under `responsiveness`, the check that reads node parameters: a new check name
+    would change the contract. Values are left out, a parameter may hold a secret.
+    """
+    diff = info.param_diff
+    if diff is None:
+        if info.parameters is None or not info.param_diff_note:
+            return []
+        note = info.param_diff_note
+        return [
+            _finding(
+                "info",
+                "responsiveness",
+                name,
+                f"The parameters of {name} were not compared with params_file: {note[:160]}",
+                _ev("get_node_info", "param_diff_note", note),
+            )
+        ]
+    if not diff:
+        return []
+    shown = [f"{d.name} ({d.status})" for d in diff[:_MAX_PARAM_DIFFS]]
+    more = len(diff) - len(shown)
+    listed = ", ".join(shown) + (f" and {more} more" if more > 0 else "")
+    return [
+        _finding(
+            "warning",
+            "responsiveness",
+            name,
+            f"{name} runs with {len(diff)} parameter(s) that differ from params_file: {listed}.",
+            _ev("get_node_info", "param_diff[].name", ", ".join(d.name for d in diff[:4])),
+            fixes=_read_fix(
+                f"ros2 param get {name} {diff[0].name}",
+                name,
+                "Reads the live value to compare by eye with the file. Observes only.",
+                "get_node_info",
+            ),
+        )
+    ]
+
+
 def _silent_finding(name: str, named: bool, note: str | None) -> Finding:
     """The finding for a node whose parameter services were announced but never answered.
 
@@ -641,6 +772,7 @@ def _silent_finding(name: str, named: bool, note: str | None) -> Finding:
             name,
             f"{name} did not answer a parameter read in time: its executor is probably blocked.",
             evidence,
+            fixes=_silent_fix(name),
         )
     return _finding(
         "warning",
@@ -649,6 +781,16 @@ def _silent_finding(name: str, named: bool, note: str | None) -> Finding:
         f"{name} did not answer a parameter read in time (blocked executor, or a loaded "
         "host): confirm with get_node_info(node, timeout_s=8).",
         evidence,
+        fixes=_silent_fix(name),
+    )
+
+
+def _silent_fix(name: str) -> list[SuggestedFix]:
+    return _read_fix(
+        f"ros2 param list {name}",
+        name,
+        "A blocked node answers nothing here either; watch its CPU and log output as well.",
+        "get_node_info",
     )
 
 
@@ -687,9 +829,15 @@ class DiagnoseService:
         scope: str = "all",
         budget_s: float = DEFAULT_DIAGNOSE_BUDGET_S,
         node: str | None = None,
+        params_file: str | None = None,
     ) -> Diagnosis:
-        """The sweep. Raises `AdapterError` only on invalid input; a failing check is skipped."""
+        """The sweep. Raises `AdapterError` only on invalid input; a failing check is skipped.
+
+        `params_file` (a parameter `.yaml`, with `node` only) is compared with the named node's
+        live parameters; each difference is folded into one `responsiveness` warning.
+        """
         scope, budget_s, node_name = _validate(scope, budget_s, node)
+        params_path = _validate_params_file(params_file, node_name)
         start = self._clock()
         left = budget.remaining()
         horizon = budget_s if left is None else min(budget_s, left - _RESERVE_S)
@@ -700,6 +848,7 @@ class DiagnoseService:
             self._inspector,
             self._health,
             node_name,
+            params_path,
             self._clock,
             start + horizon,
             plan,
@@ -754,6 +903,14 @@ def _validate(scope: str, budget_s: float, node: str | None) -> tuple[str, float
             f"got {budget_s}"
         )
     return scope, float(budget_s), None if node is None else _validate_node_name(node)
+
+
+def _validate_params_file(params_file: str | None, node: str | None) -> str | None:
+    if params_file is None:
+        return None
+    if node is None:
+        raise AdapterError("params_file needs node: it is compared with that node's parameters")
+    return validate_params_file(params_file)
 
 
 def _verdict(scope: str, counts: tuple[int, int], ran: int, skipped: list[str]) -> str:

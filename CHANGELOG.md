@@ -9,13 +9,22 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [0.10.0] - 2026-11-06
 
-Fixes to `diagnose` found after 0.9.0, a release workflow that tests the built wheel before
-publishing, and internal refactors with no output change. Two optional fields are added
-(`docs/CONTRACT.md` section 9.22). `tools/list` is 99,971 bytes (0.9.0: 99,634), under the
-105,000 ceiling.
+Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
+workflow that tests the built wheel before publishing, and internal refactors with no output
+change. Optional fields and one optional input are added (`docs/CONTRACT.md` sections 9.22 and
+9.23). `tools/list` is 100,519 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
+- `diagnose(params_file=...)`, with `node`: compares the named node's live parameters with a
+  parameter `.yaml` and folds the differences into one `responsiveness` warning. Values are left
+  out, since a parameter may hold a secret.
+- `diagnose` findings other than QoS carry `suggested_fixes` too: one read-only `ros2` command
+  that observes the problem. They never repair anything.
+- `diagnose` restart findings say whether the node is still restarting (a start in the last 60 s)
+  or stopped, and how long ago the last start was.
+- `ParticipantEvent.node_names` in `participant_events`: the participant's ROS node names, when
+  known.
 - `TopicListItem.counts_unknown` in `list_topics`: `true` when `ros2 topic info` failed for that
   topic, so its `0`/`0` counts are unknown rather than an orphan. Omitted when not set.
   `diagnose` reports such topics instead of reading them as unconnected.
@@ -40,6 +49,10 @@ publishing, and internal refactors with no output change. Two optional fields ar
 
 ### Changed
 
+- QoS `qos_overrides` fixes use the real node name as the YAML key when it is known (`/ns/node:`,
+  checked against rclpy on Jazzy); `<node_name>` remains when it is not.
+- `inspect_tf` says in its description that a slow publisher needs a longer `window_s`, and its
+  `age_s` and `last_stamp_ns` descriptions say null and 0 are normal for a static transform.
 - `publish.yml` runs in stages: `build` (on a tag, also checks that `mcpb/manifest.json` and
   `server.json` carry the tag's version), then `smoke` (Ubuntu and Windows, Python 3.10 and 3.14:
   installs the built wheel, checks its version against the tag, lists the 17 tools over stdio in

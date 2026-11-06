@@ -363,6 +363,10 @@ class ParticipantEvent(BaseModel):
         ge=0,
         description="Seconds between `timestamp_ns` and this response; `None` in mock mode.",
     )
+    node_names: list[str] = Field(
+        default_factory=list,
+        description="ROS node names of the participant, resolved when read; empty if unknown.",
+    )
 
 
 class ParticipantEventListing(BaseModel):

@@ -6,6 +6,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
+from topicforge.adapters.common.lifecycle import with_event_node_names
 from topicforge.adapters.common.log_filter import (
     LogFilter,
     first_matches,
@@ -223,7 +224,8 @@ class MockAdapter:
             raise AdapterError(f"domain_id must be in 0..232, got {domain_id}")
         if lookback_s < 1 or lookback_s > 86400:
             raise AdapterError(f"lookback_s must be in 1..86400, got {lookback_s}")
-        return fixtures.mock_participant_events_for(domain_id, lookback_s)
+        events = fixtures.mock_participant_events_for(domain_id, lookback_s)
+        return with_event_node_names(events, self.list_participants(domain_id))
 
     def topic_metrics(self, topic: str, window_s: int = 60, domain_id: int = 0) -> TopicMetrics:
         if domain_id < 0 or domain_id > 232:
