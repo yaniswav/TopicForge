@@ -513,7 +513,7 @@ The participant and event listings also carry `domain_id` once, in the envelope 
 its fields are always `null`. It becomes:
 
 - `TopicListItem` (in `list_topics`): `name`, `message_type`, `publisher_count`,
-  `subscriber_count`. No QoS field. (`counts_unknown` was added after 0.9.0, section 9.22.)
+  `subscriber_count`. No QoS field. (`counts_unknown` was added in 0.10.0, section 9.22.)
 - `TopicInfo` (in `get_topic_info`): the same four fields plus `publisher_qos`,
   `subscription_qos` and their `_note` fields (3.3), and `mode_effective`.
 
@@ -1389,7 +1389,7 @@ other critical or warning is a false alarm and fails the cell. Also required: `c
 empty, `elapsed_s` within `budget_s`, counts that match the findings, a verdict that is not the
 clean line. Comparator section: `diagnose`.
 
-### 9.22 Unknown counts and parameter status (after 0.9.0, unreleased)
+### 9.22 Unknown counts and parameter status (0.10.0)
 
 Two optional fields, additive (1.9). `tools/list` goes from 99,634 to 99,971 bytes (measured like
 `test_tool_listing_stays_small`).
@@ -1408,5 +1408,7 @@ Two optional fields, additive (1.9). `tools/list` goes from 99,634 to 99,971 byt
   within the 300 s window only and an active node is never reported as left; incompatible QoS
   pairs are folded into one finding per topic, writer and policy set; findings on the node named
   in `node` survive the 50 cap; one unreadable node no longer marks `responsiveness` as not run;
-  the `/rosout` all-clear states its window.
+  the `/rosout` all-clear states its window. `get_node_info` starts no parameter read with under
+  2 s to wait (`no_budget`), and `responsiveness` is reported as not run when no node could be
+  read at all. A silent-node finding no longer quotes a wait; the wait granted is in its evidence.
 

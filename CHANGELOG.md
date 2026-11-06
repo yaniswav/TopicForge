@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-06
+
 Fixes to `diagnose` found after 0.9.0, a release workflow that tests the built wheel before
 publishing, and internal refactors with no output change. Two optional fields are added
 (`docs/CONTRACT.md` section 9.22). `tools/list` is 99,971 bytes (0.9.0: 99,634), under the
@@ -2000,7 +2002,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...v0.8.0
