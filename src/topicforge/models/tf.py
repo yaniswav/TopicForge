@@ -55,7 +55,7 @@ class TfFrame(BaseModel):
         description="Newest transform stamp; 0 is normal for a static transform, `None` for a root."
     )
     age_s: float | None = Field(
-        description="Seconds its stamp trails the newest `/tf` stamp; `None` is normal for a static transform (see `kind`) or a root."
+        description="Seconds its stamp trails the newest `/tf` stamp of this capture (grows between calls); `None`: static or root."
     )
     stale: bool = Field(
         description="`age_s` above `stale_after_s`, or above 10 periods (min 1 s) of a steady edge."

@@ -139,6 +139,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `node` | `str` | yes | - | - | Fully qualified node name as `list_nodes` gives it, e.g. `/robot1/lidar_driver` (a missing leading `/` is added). |
 | `timeout_s` | `float` | no | `8.0` | >= 1.0, <= 20.0 | Seconds to wait for the parameter read, 1..20, default 8. A node that does not answer is reported in `parameters_note`, not as an error. |
 | `params_file` | `str \| null` | no | `null` | - | Server path of a ROS 2 parameter `.yaml` (1 MiB max). |
+| `param_diff_only` | `bool` | no | `false` | - | With `params_file`: return only `param_diff` and its note; interfaces and parameters are left out. |
 
 ### Output (top-level fields)
 
@@ -478,7 +479,7 @@ Return DDS participant lifecycle events (`discovered` / `lost`) from a recent wi
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=false`, `readOnlyHint=true`
 
-Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the **first** `count` messages of the topic in recording order, not the last (`sample_messages` keeps the newest log matches). `start_s` / `end_s` limit it to a bag-relative time range, empty with a `note` past the end; on `/rosout`, `min_log_level` and `node` keep the first `count` matching logs in range. **Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level header (`stamp_source` `header`), else the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); `recorded_ns` is always the record time. Each `payload` carries `_decode_status` (`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the `rosbags` library** and needs the ROS 2 side of the runtime (an error on a DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded definitions (Humble `.db3`) is decoded with those of its recorded distro, or Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists them. **Read-only by architecture**. **Raises an MCP error** when the path does not exist, the topic is not in the bag, or `rosbags` is missing. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `recorded_ns` (the bag record time of the returned messages). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS call is busy); the time follows the bag's size and how deep the first samples are.
+Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline, for post-mortem (`peek_dds_samples` and `sample_messages` are live). Formats, by extension: MCAP (`.mcap`), rosbag2 SQLite (`.db3`), ROS 1 (`.bag`). Returns the **first** `count` messages of the topic in recording order, not the last (`sample_messages` keeps the newest log matches). `start_s` / `end_s` limit it to a bag-relative time range, empty with a `note` past the end; on `/rosout`, `min_log_level` and `node` keep the first `count` matching logs in range. **Clocks**: `timestamp_ns` is `header.stamp` when the message has a top-level header (`stamp_source` `header`), else the time in the body of `Clock`, `TFMessage` or `Log` (`payload`), else the bag record time (`recorded`); `recorded_ns` is always the record time. Each `payload` carries `_decode_status` (`full` / `partial` / `raw`). `count` defaults to 5, clamped to 50. **Uses the `rosbags` library** and needs the ROS 2 side of the runtime (an error on a DDS-only setup). Mock returns fixtures on canned paths. A bag without embedded definitions (Humble `.db3`) is decoded with those of its recorded distro, or Humble; `note` says which. Arrays over 4096 elements are cut and `note` lists them. **Read-only by architecture**. **Raises an MCP error** when the path does not exist, the topic is not in the bag, or `rosbags` is missing. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image`, `PointCloud2` and `GoalStatusArray` (goals per status) samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `recorded_ns` (the bag record time of the returned messages). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: takes no lock (in-process file read, so it runs while a ROS 2 or DDS call is busy); the time follows the bag's size and how deep the first samples are.
 
 ### Input parameters
 
@@ -535,7 +536,7 @@ Peek recent samples on a raw DDS topic as a `SampleResult`, like `sample_message
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. **Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics work) and returns what arrived by the deadline: `count` is the actual number and `note` says `N of M messages` and why it is short (no publisher, silent, slow or too large to print in time; a latched topic usually holds one message, so use `count` 1). Each sample has `payload` (nested named values), `timestamp_ns` (the publisher's clock, sim time on a simulation, 0 for a headerless message such as `std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock when the CLI printed it). **Arrays**: arrays, strings and bytes are cut at 128 elements by default (a 541-beam `LaserScan` loses beams 128 and up); cut fields are listed in `payload._truncated_fields` and `note`. Raise `max_array_length` (up to 65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for an unknown topic, or when the CLI fails. Never publishes. **Logs**: `min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most 2000 messages) and return the NEWEST `count` matches in stamp order; `peek_bag_samples` returns the FIRST matches. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `received_ns` (when the CLI printed each message). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; ends within 45 s, less time to collect after a wait; `busy` error if the lock is held (retry).
+ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. **Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics work) and returns what arrived by the deadline: `count` is the actual number and `note` says `N of M messages` and why it is short (no publisher, silent, slow or too large to print in time; a latched topic usually holds one message, so use `count` 1). Each sample has `payload` (nested named values), `timestamp_ns` (the publisher's clock, sim time on a simulation, 0 for a headerless message such as `std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock when the CLI printed it). **Arrays**: arrays, strings and bytes are cut at 128 elements by default (a 541-beam `LaserScan` loses beams 128 and up); cut fields are listed in `payload._truncated_fields` and `note`. Raise `max_array_length` (up to 65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap (`TOPICFORGE_MAX_SAMPLE_BYTES`) is dropped with a `note`. **Mock mode** returns demo-robot samples instantly. **Raises an MCP error** without a `ros2` CLI, for an unknown topic, or when the CLI fails. Never publishes. **Logs**: `min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most 2000 messages) and return the NEWEST `count` matches in stamp order; `peek_bag_samples` returns the FIRST matches. **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image`, `PointCloud2` and `GoalStatusArray` (goals per status) samples carry a `summary` of the whole message (other types: null); `rate` gives frequency, interval spread and a `verdict` measured on `received_ns` (when the CLI printed each message). Use `count` >= 10 (50 above 20 Hz); a multi-publisher topic such as `/tf` reads `erratic` without being broken. **Duration**: `ros2` CLI behind the ROS lock, one call at a time; returns within `timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; ends within 45 s, less time to collect after a wait; `busy` error if the lock is held (retry).
 
 ### Input parameters
 
@@ -611,7 +612,7 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
 ## Message summaries
 
 `MessageSample.summary` is advertised in the tool schemas as an open object with a
-`summary_type` (`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`) or `null`.
+`summary_type` (`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`, `goal_status`) or `null`.
 The server builds and validates the exact shapes below. `TopicRate` is the `rate`
 block of a sample result. See [CONTRACT.md](CONTRACT.md) section 9.9.
 
@@ -704,6 +705,23 @@ Summary of a `sensor_msgs/msg/PointCloud2`. Points are never read.
 | `is_dense` | `bool \| null` | yes | True when no point is invalid. |
 | `fields` | `list[PointFieldSummary]` | yes | Point layout. |
 | `note` | `str \| null` | no | One sentence when partial; else `null`. |
+
+### `GoalStatusSummary`
+
+Summary of an `action_msgs/msg/GoalStatusArray` (`<action>/_action/status`).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `summary_type` | `"goal_status"` | yes | - |
+| `goal_count` | `int` | yes | Goals in `status_list`. |
+| `accepted` | `int` | yes | Goals with status 1. |
+| `executing` | `int` | yes | Goals with status 2. |
+| `canceling` | `int` | yes | Goals with status 3. |
+| `succeeded` | `int` | yes | Goals with status 4. |
+| `canceled` | `int` | yes | Goals with status 5. |
+| `aborted` | `int` | yes | Goals with status 6. |
+| `unknown` | `int` | yes | Goals with status 0 or a value outside 0..6. |
+| `note` | `str \| null` | no | One sentence when a status is odd; else `null`. |
 
 ### `ScanSectors`
 

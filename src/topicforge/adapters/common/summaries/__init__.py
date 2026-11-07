@@ -12,6 +12,7 @@ import logging
 from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
+from topicforge.adapters.common.summaries.action_status import summarize_goal_status
 from topicforge.adapters.common.summaries.laser_scan import summarize_laser_scan
 from topicforge.adapters.common.summaries.motion import summarize_imu, summarize_odometry
 from topicforge.adapters.common.summaries.rate import compute_rate
@@ -31,11 +32,12 @@ _SUMMARIZERS: dict[str, Summarizer] = {
     "sensor_msgs/Imu": summarize_imu,
     "sensor_msgs/Image": summarize_image,
     "sensor_msgs/PointCloud2": summarize_point_cloud2,
+    "action_msgs/GoalStatusArray": summarize_goal_status,
 }
 
 # The summaries that read an array, so the array must reach them whole. Image
 # and PointCloud2 summaries use geometry fields only: their buffers stay cut.
-_NEEDS_WHOLE_ARRAYS = frozenset({"sensor_msgs/LaserScan"})
+_NEEDS_WHOLE_ARRAYS = frozenset({"sensor_msgs/LaserScan", "action_msgs/GoalStatusArray"})
 
 
 def _key(message_type: str) -> str:

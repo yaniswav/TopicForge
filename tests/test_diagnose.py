@@ -20,6 +20,7 @@ from topicforge import budget
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.nodes import build_node_listing
 from topicforge.adapters.common.qos_scan import _typo_hint
+from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
 from topicforge.adapters.ros2_mock import MockAdapter, fixtures, node_fixtures
 from topicforge.config import Settings
 from topicforge.models import (
@@ -68,6 +69,7 @@ class Scripted(MockAdapter):
         self.node_reads: list[tuple[str, float]] = []
         self.nodes_ok: dict[str, bool] = {}
         self.param_status: dict[str, str] = {}
+        self.sample_kwargs: list[dict[str, Any]] = []
 
     @property
     def effective_mode(self) -> Any:
@@ -81,6 +83,8 @@ class Scripted(MockAdapter):
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             calls.append(item)
+            if item == "sample_messages":
+                super(Scripted, self).__getattribute__("sample_kwargs").append(kwargs)
             clock = super(Scripted, self).__getattribute__("clock")
             clock.now += self.cost.get(item, 0.0)
             if item in self.fail:
@@ -1360,3 +1364,186 @@ def test_a_parameter_name_unfit_for_a_command_gets_no_command() -> None:
 def test_a_clean_diff_with_a_caveat_is_not_read_as_a_match() -> None:
     found = _param_findings("/a", _with_param_diff([], "2 pattern(s) not evaluated"))
     assert [f.severity for f in found] == ["info"] and "pattern" in found[0].text
+
+
+# ---- the /rosout command needs a ROS node and a CLI (0.10 lot 0) ------------------------------
+
+
+def _loop_fixes(adapter: Scripted) -> list[str]:
+    found = _by(_run(adapter), "dds", "critical")
+    assert [f.subject for f in found] == ["/x"]
+    return [fix.text for f in found for fix in f.suggested_fixes]
+
+
+def test_a_restart_loop_of_a_ros_node_suggests_reading_rosout() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    assert _loop_fixes(adapter) == ["ros2 topic echo /rosout"]
+
+
+def test_a_restart_loop_of_a_non_ros_participant_suggests_no_rosout_command() -> None:
+    adapter = _calm(Scripted())
+    bare = [_participant("x", f"g{i}").model_copy(update={"node_names": []}) for i in range(3)]
+    adapter.over["list_participants"] = bare
+    adapter.over["participant_events"] = [
+        _event(f"g{i}", time.time_ns() - i * _NS).model_copy(update={"name": "x"}) for i in range(3)
+    ]
+    assert _loop_fixes(adapter) == []
+
+
+def test_a_restart_loop_without_a_ros2_cli_suggests_no_rosout_command() -> None:
+    adapter = _calm(Scripted())
+    adapter.name = "cyclone"  # type: ignore[assignment]  # DDS only: no ros2 CLI
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    result = _run(adapter, scope="dds")
+    found = _by(result, "dds", "critical")
+    assert [f.subject for f in found] == ["/x"]
+    assert all(f.suggested_fixes == [] for f in found)
+
+
+def test_a_loop_still_going_says_its_count_is_as_of_the_sweep() -> None:
+    # Eval shape: 7 lives when the check ran, 10 discoveries a sweep later (a restart every 6 s).
+    going = _by(_restarting(7, 5, every_s=6).diagnose(), "dds", "critical")[0].text
+    assert "appeared with 7 different participants" in going
+    assert "may differ on a later call" in going
+    over = _by(_restarting(7, 400, every_s=6).diagnose(), "dds", "critical")[0].text
+    assert "may differ on a later call" not in over
+
+
+def test_a_dds_topic_in_a_finding_carries_its_ros_name() -> None:
+    from topicforge.services.diagnose import _topic_label
+
+    assert _topic_label("rt/scan_edge") == "rt/scan_edge (ROS /scan_edge)"
+    assert _topic_label("ros_discovery_info") == "ros_discovery_info"
+    assert _topic_label("rq/fooRequest") == "rq/fooRequest"
+
+
+# ---- the frame_id of a stamped topic against the TF tree (0.10 lot 0) -------------------------
+
+
+def _cli_string(value: str, truncate_length: int | None) -> str:
+    if truncate_length is None or truncate_length == 128 or len(value) <= truncate_length:
+        return value
+    return value[:truncate_length] + "..."
+
+
+def _with_stamped(adapter: Scripted, frames: dict[str, str]) -> Scripted:
+    """`/scan`-like topics publishing the given frame_ids, next to the calm graph."""
+    from topicforge.models import MessageSample, SampleResult
+
+    adapter.over["list_topics"] = [
+        TopicListItem(
+            name=name,
+            message_type="sensor_msgs/msg/LaserScan",
+            publisher_count=1,
+            subscriber_count=1,
+        )
+        for name in frames
+    ]
+
+    def sample(topic: str, count: int, **kwargs: Any) -> Any:
+        if topic not in frames:
+            return _no_logs(topic, count)
+        # What the live CLI does: `--truncate-length N` (any N but the default) cuts strings too.
+        cut = kwargs.get("max_array_length")
+        text = f"header:\n  frame_id: {_cli_string(frames[topic], cut)}\n"
+        echoed = parse_echo_document(text, truncate_length=None if cut == 128 else cut)
+        one = MessageSample(
+            topic=topic,
+            message_type="sensor_msgs/msg/LaserScan",
+            timestamp_ns=0,
+            stamp_source="header",
+            payload=echoed.payload,
+        )
+        return SampleResult(topic=topic, count=1, samples=[one], mode_effective="mock")
+
+    adapter.over["sample_messages"] = sample
+    return adapter
+
+
+def test_a_frame_id_absent_from_the_tf_tree_is_one_info() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "laser", "/scan_edge": "laser_edge"})
+    result = _run(adapter)
+    found = [f for f in _by(result, "tf") if f.subject == "/scan_edge"]
+    assert [f.severity for f in found] == ["info"]
+    assert "laser_edge" in found[0].text and found[0].suggested_fixes[0].kind == "cli"
+    assert "tf2_echo odom laser_edge" in found[0].suggested_fixes[0].text
+    assert not [f for f in _by(result, "tf") if f.subject == "/scan"]
+    assert result.critical_count == 0 and result.warning_count == 0
+
+
+def test_a_frame_published_on_tf_static_counts_as_present() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "/laser"})  # laser: static, leading /
+    assert not [f for f in _by(_run(adapter), "tf") if f.subject == "/scan"]
+
+
+def test_no_tf_frames_means_no_frame_id_finding() -> None:
+    from topicforge.models import TfCapture
+
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    adapter.over["capture_tf"] = lambda _w: TfCapture(static=[], dynamic=[], window_actual_s=5.0)
+    assert not [f for f in _by(_run(adapter), "tf") if f.subject == "/scan"]
+
+
+def test_a_budget_too_small_skips_the_frame_check_silently() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    adapter.cost["capture_tf"] = 8.0
+    result = _run(adapter, budget_s=12.0)
+    assert not [f for f in _by(result, "tf") if f.subject == "/scan"]
+    assert "sample_messages" in adapter.calls  # the log check still ran
+    assert [c for c in result.checks_skipped if c.check == "tf"] == []
+
+
+def test_at_most_three_stamped_topics_are_sampled() -> None:
+    names = {f"/s{i}": "nowhere" for i in range(6)}
+    adapter = _with_stamped(_calm(Scripted()), names)
+    result = _run(adapter)
+    assert len([f for f in _by(result, "tf") if f.subject in names]) == 3
+
+
+def test_a_healthy_frame_is_not_cut_by_the_sampling_flags() -> None:
+    # A truncate length of 1 would read `l...` for `laser`; the check must not use one.
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "laser"})
+    result = _run(adapter)
+    assert not [f for f in _by(result, "tf") if f.subject == "/scan"]
+    kwargs = [c for c in adapter.sample_kwargs if c.get("arrays_summary_only")]
+    assert kwargs and all(c.get("max_array_length") in (None, 128) for c in kwargs)
+
+
+def test_a_cut_frame_id_is_not_judged() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "a_long_frame_name"})
+    real = adapter.over["sample_messages"]
+
+    def cut(topic: str, count: int, **kwargs: Any) -> Any:
+        return real(topic, count, **{**kwargs, "max_array_length": 3})
+
+    adapter.over["sample_messages"] = cut
+    assert not [f for f in _by(_run(adapter), "tf") if f.subject == "/scan"]
+
+
+def test_the_frame_check_runs_last_and_never_takes_budget_from_a_check() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    adapter.cost["capture_tf"] = 8.0
+    adapter.cost["get_node_info"] = 0.0
+    result = _run(adapter, budget_s=14.0)
+    assert result.checks_skipped == []
+    assert "responsiveness" in result.checks_run and "logs" in result.checks_run
+
+
+def test_a_truncated_or_cut_tf_capture_gives_no_frame_id_finding() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    result = _run(adapter, budget_s=12.0)  # too little: the TF window is cut
+    tf = _by(result, "tf")
+    assert any("budget cut the TF window" in f.text for f in tf)
+    assert not [f for f in tf if f.subject == "/scan"]
+
+
+def test_the_mock_graph_has_no_frame_id_finding() -> None:
+    result = DiagnoseService(
+        Inspector(MockAdapter()), HealthService(_SETTINGS, MockAdapter())
+    ).diagnose()
+    assert not [
+        f
+        for f in result.findings
+        if f.check == "tf" and f.subject in ("/scan", "/imu/data", "/camera/image_raw", "/odom")
+    ]

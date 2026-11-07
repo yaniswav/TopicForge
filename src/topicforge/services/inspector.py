@@ -61,7 +61,11 @@ from topicforge.services.dds_views import (
     with_event_ages,
 )
 from topicforge.services.graph_diff import GraphDiffService, parse_baseline
-from topicforge.services.params_file import validate_params_file, with_param_diff
+from topicforge.services.params_file import (
+    keep_param_diff_only,
+    validate_params_file,
+    with_param_diff,
+)
 from topicforge.services.sample_budget import apply_sample_budget
 
 DEFAULT_SAMPLE_COUNT = 5
@@ -140,12 +144,18 @@ class Inspector:
         node: str,
         timeout_s: float = DEFAULT_NODE_TIMEOUT_S,
         params_file: str | None = None,
+        param_diff_only: bool = False,
     ) -> NodeInfo:
         name = _validate_node_name(node)
         _validate_node_timeout_s(timeout_s)
+        if param_diff_only and params_file is None:
+            raise AdapterError("param_diff_only needs params_file: it keeps only the comparison")
         path = None if params_file is None else validate_params_file(params_file)
         info = self._adapter.get_node_info(name, timeout_s)
-        return info if path is None else with_param_diff(info, path)
+        if path is None:
+            return info
+        info = with_param_diff(info, path)
+        return keep_param_diff_only(info) if param_diff_only else info
 
     def inspect_tf(
         self,

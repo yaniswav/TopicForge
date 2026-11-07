@@ -82,6 +82,7 @@ from topicforge.tools.descriptions import (
     MAX_ARRAY_LENGTH_PARAM_DESC,
     NODE_PARAM_DESC,
     NODE_TIMEOUT_PARAM_DESC,
+    PARAM_DIFF_ONLY_PARAM_DESC,
     PARAMS_FILE_PARAM_DESC,
     PARTICIPANT_EVENTS_DESC,
     PATH_PARAM_DESC,
@@ -179,8 +180,9 @@ def _register_ros_tools(
             ),
         ] = DEFAULT_NODE_TIMEOUT_S,
         params_file: Annotated[str | None, Field(description=PARAMS_FILE_PARAM_DESC)] = None,
+        param_diff_only: Annotated[bool, Field(description=PARAM_DIFF_ONLY_PARAM_DESC)] = False,
     ) -> NodeInfo:
-        return inspector.get_node_info(node, timeout_s, params_file)
+        return inspector.get_node_info(node, timeout_s, params_file, param_diff_only)
 
     @mcp.tool(
         annotations=read_only_annotations("Inspect TF tree", open_world=True),

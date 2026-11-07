@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 
 from topicforge.models import TopicListItem
@@ -26,15 +27,44 @@ def _package_of(path: Path) -> list[str]:
     return parts if path.name == "__init__.py" else parts[:-1]
 
 
+def _dynamic_import_target(node: ast.Call) -> str | None:
+    """The literal module of `import_module("x")`, `import_module(name="x")` or `__import__("x")`.
+
+    A relative name (`import_module(".services", package="topicforge")`) resolves against a
+    literal `package`; anything not literal is not seen.
+    """
+    func = node.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+    if name not in {"import_module", "__import__"}:
+        return None
+    keywords = {k.arg: k.value for k in node.keywords}
+    first = node.args[0] if node.args else keywords.get("name")
+    if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+        return None
+    module = first.value
+    if not module.startswith("."):
+        return module
+    second = node.args[1] if len(node.args) > 1 else keywords.get("package")
+    if isinstance(second, ast.Constant) and isinstance(second.value, str):
+        return importlib.util.resolve_name(module, second.value)
+    return None
+
+
 def _imported_modules(path: Path, source: str | None = None) -> list[tuple[int, str]]:
     """Every absolute module name imported anywhere in `path` (function-local too).
+
+    Calls to `importlib.import_module` and `__import__` with a literal string count too.
 
     `source` overrides the file content; `path` still drives relative resolution.
     """
     text = path.read_text(encoding="utf-8") if source is None else source
     found: list[tuple[int, str]] = []
     for node in ast.walk(ast.parse(text, str(path))):
-        if isinstance(node, ast.Import):
+        if isinstance(node, ast.Call):
+            target = _dynamic_import_target(node)
+            if target:
+                found.append((node.lineno, target))
+        elif isinstance(node, ast.Import):
             found.extend((node.lineno, alias.name) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             base = node.module or ""
@@ -80,6 +110,12 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
             "from topicforge import services",
             "def f():",
             "    from topicforge.services.d import e",
+            "    importlib.import_module('topicforge.services.f')",
+            "    __import__('topicforge.services.g')",
+            "    import_module(name='topicforge.services.h')",
+            "    importlib.import_module('.services.i', package='topicforge')",
+            "    import_module('.services.j', 'topicforge')",
+            "    import_module(name)",
         ]
     )
     modules = {m for _, m in _imported_modules(sample, source) if _is_services(m)}
@@ -88,6 +124,11 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
         "topicforge.services",
         "topicforge.services.c",
         "topicforge.services.d",
+        "topicforge.services.f",
+        "topicforge.services.g",
+        "topicforge.services.h",
+        "topicforge.services.i",
+        "topicforge.services.j",
     }
 
 

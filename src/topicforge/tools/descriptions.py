@@ -24,6 +24,11 @@ NODE_TIMEOUT_PARAM_DESC = (
 
 PARAMS_FILE_PARAM_DESC = "Server path of a ROS 2 parameter `.yaml` (1 MiB max)."
 
+PARAM_DIFF_ONLY_PARAM_DESC = (
+    "With `params_file`: return only `param_diff` and its note; interfaces and parameters "
+    "are left out."
+)
+
 TF_FRAME_PARAM_DESC = (
     "Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get "
     "the chain between them in `path`."
@@ -101,8 +106,9 @@ BASELINE_PARAM_DESC = (
 BAG_SNAPSHOT_PARAM_DESC = "Snapshot this bag instead of the live graph."
 
 SUMMARY_RATE_NOTE = (
-    " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples "
-    "carry a `summary` of the whole message (other types: null); `rate` gives frequency, "
+    " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image`, `PointCloud2` and "
+    "`GoalStatusArray` (goals per status) samples carry a `summary` of the whole message "
+    "(other types: null); `rate` gives frequency, "
     "interval spread and a `verdict` measured on %s. Use `count` >= 10 (50 above 20 Hz); a "
     "multi-publisher topic such as `/tf` reads `erratic` without being broken."
 )

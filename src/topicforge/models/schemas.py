@@ -524,7 +524,7 @@ class MismatchReport(BaseModel):
 
     model_config = _CONFIG
 
-    topic: str = Field()
+    topic: str = Field(description="DDS name: `rt/scan` is the ROS topic `/scan`.")
     reader_guid: str | None = Field(
         default=None,
     )
@@ -576,7 +576,7 @@ class NotMatchedPair(BaseModel):
 
     model_config = _CONFIG
 
-    topic: str = Field()
+    topic: str = Field(description="DDS name: `rt/scan` is the ROS topic `/scan`.")
     reader_guid: str = Field()
     reader_participant_guid: str = Field()
     reader_participant_name: str | None = Field(
@@ -810,7 +810,7 @@ class TopicInfo(BaseModel):
     )
 
 
-# The five summary shapes are validated strictly by the server but advertised as one open
+# The six summary shapes are validated strictly by the server but advertised as one open
 # object keyed by `summary_type`: listing them in every tool's schema cost about 26 KB of
 # tools/list. The shapes are documented in docs/TOOLS.md ("Message summaries").
 _SUMMARY_ADVERTISED: dict[str, object] = {
@@ -819,8 +819,16 @@ _SUMMARY_ADVERTISED: dict[str, object] = {
             "type": "object",
             "properties": {
                 "summary_type": {
+                    "description": "Open set: ignore a value you do not know.",
                     "type": "string",
-                    "enum": ["laser_scan", "odometry", "imu", "image", "point_cloud2"],
+                    "enum": [
+                        "laser_scan",
+                        "odometry",
+                        "imu",
+                        "image",
+                        "point_cloud2",
+                        "goal_status",
+                    ],
                 }
             },
             "required": ["summary_type"],

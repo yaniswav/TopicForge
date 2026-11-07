@@ -11,8 +11,8 @@ Planned as 0.10.0, not released yet.
 
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
-change. Optional fields and one optional input are added (`docs/CONTRACT.md` sections 9.22 and
-9.23). `tools/list` is 100,535 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
+9.24). `tools/list` is 101,117 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
@@ -31,6 +31,13 @@ change. Optional fields and one optional input are added (`docs/CONTRACT.md` sec
   `diagnose` reports such topics instead of reading them as unconnected.
 - `NodeInfo.parameters_status` in `get_node_info`: why `parameters` is `null`, one of `timeout`,
   `no_parameter_services`, `no_budget`, `failed`; `null` when the parameters were read.
+
+- `get_node_info(param_diff_only=true)`, with `params_file`: returns only the comparison, the
+  interface lists and `parameters` left out.
+- `GoalStatusArray` summary (`summary_type` `goal_status`) on `sample_messages` of
+  `<action>/_action/status`: goals per status. The `diagnose-nav2` prompt and skill use it.
+- `diagnose` reports, as an `info` on check `tf`, a stamped sensor topic (up to three) whose
+  `header.frame_id` is not in the TF tree. Runs last on leftover budget; silent when the budget or the TF capture does not allow it.
 
 ### Fixed
 
@@ -52,6 +59,13 @@ change. Optional fields and one optional input are added (`docs/CONTRACT.md` sec
 
 ### Changed
 
+- `diagnose` offers the `/rosout` command of a restart loop only for a ROS node with a `ros2` CLI.
+  A loop still going says its count is taken when the DDS check runs (it may differ on a later call).
+- QoS findings and the `topic` field descriptions of the QoS reports show the ROS name next to a
+  DDS `rt/` name. The stale TF text and `age_s` say what the age is measured against.
+- README: the telemetry transport is a local log only, with no HTTP endpoint and none planned.
+- The ground-truth comparator counts a `/rosout` missing from the bag truth as zero, and the
+  layer test sees `importlib.import_module("topicforge.services...")` and `__import__`.
 - QoS `qos_overrides` fixes use the real node name as the YAML key when it is known (`/ns/node:`,
   checked against rclpy on Jazzy); `<node_name>` remains when it is not.
 - `inspect_tf` says in its description that a slow publisher needs a longer `window_s`, and its

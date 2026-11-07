@@ -439,8 +439,10 @@ Thresholds confirmed 2026-10-09 under delegation and kept at 0.2 and 0.5, the sa
 ### Message summaries
 
 `MessageSample.summary` (null for any other type, for DDS peeks, and for a scan whose arrays
-were replaced by `arrays_summary_only`) is one of five objects told apart by `summary_type`:
-`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`. It is always computed on the whole
+were replaced by `arrays_summary_only`) is one of six objects told apart by `summary_type`:
+`laser_scan`, `odometry`, `imu`, `image`, `point_cloud2`, `goal_status`. `summary_type` is an
+open set in the sense of 1.9 (declared so from 0.10.0, the advertised schema says it): a client
+ignores a summary whose type it does not know. It is always computed on the whole
 message, even when `payload` is cut at `max_array_length`. There is no `summarize` input: a
 summary is small and always on.
 
@@ -1433,3 +1435,39 @@ Additive only (1.9). `tools/list` goes from 99,971 to 100,535 bytes.
 - `qos_overrides` fix text: the YAML key is the real node name when known. Clients must not parse
   this text; it is meant for a human.
 
+
+### 9.24 Lot 0 follow-ups (0.10.0)
+
+Additive only (1.9). `tools/list` goes from 100,535 to 101,117 bytes.
+
+- `get_node_info` gains an optional input `param_diff_only` (bool, default false), valid only with
+  `params_file`; without it the call is an invalid input. The result keeps `param_diff`,
+  `param_diff_summary`, `param_diff_note` and the identity fields; the six interface lists are
+  empty, `parameters` is `null` and `note` says so. `parameters_status` is kept (`null` when the
+  read worked, so a `null` `parameters` with no status means "left out", not "unreadable").
+  `parameters_note` is kept only when a status explains a failed read, and dropped otherwise (its
+  masked-value and cut-value remarks describe `parameters`).
+- `MessageSample.summary` gains a sixth shape, `summary_type` `goal_status`, for
+  `action_msgs/msg/GoalStatusArray` (`<action>/_action/status`): `goal_count`, one count per
+  status (`accepted`, `executing`, `canceling`, `succeeded`, `canceled`, `aborted`), `unknown`
+  (status 0 or outside 0..6) and `note`. `null` when `status_list` was cut. `summary_type` was an
+  enum in the 0.9 schema without saying it could grow; it is declared an open set from this
+  version (its description says so), and this is the first value added. The advertised
+  `summary_type` enum gains `goal_status`.
+- `diagnose`, check `tf`, gains `info` findings (subject: the topic) when the `header.frame_id` of a
+  stamped sensor topic is not among the frames of the TF capture. Up to three published topics of
+  a stamped type (LaserScan, PointCloud2, Image, CompressedImage, Imu, Odometry, Range, NavSatFix,
+  MagneticField) are sampled once. The step runs after every other check, on the budget they left
+  (so it takes none from them), and only when the `topics` check ran and the TF capture saw frames
+  and was neither truncated nor cut by the budget; otherwise it is silent and adds no
+  `checks_skipped` entry (like the second read of a silent node). A sample whose `frame_id` was
+  cut is not judged. The mock robot's IMU and camera now stamp `imu_link` and `camera_link`, the
+  frames of its TF tree. Frames from `/tf_static` count
+  as present. Never above `info`.
+- Text only, not to be parsed: restart-loop findings that are still going add that the count is
+  taken when the DDS check runs; QoS findings write `rt/scan (ROS /scan)`; the stale-edge text of
+  `inspect_tf` says the figure is relative to the newest transform of that capture and grows
+  between calls. `MismatchReport.topic`, `NotMatchedPair.topic` and `TfFrame.age_s` gain a field
+  description saying the same.
+- The `ros2 topic echo /rosout` fix of a restart loop is offered only for a name that is a ROS
+  node and only when a `ros2` CLI serves; it is absent otherwise.

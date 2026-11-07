@@ -17,17 +17,20 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Literal
 
 from topicforge import budget
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.ros_names import ros_topic_of
 from topicforge.constants import (
     DEFAULT_DIAGNOSE_BUDGET_S,
+    DEFAULT_MAX_ARRAY_LENGTH,
     MAX_DIAGNOSE_BUDGET_S,
     MIN_DIAGNOSE_BUDGET_S,
+    TRUNCATED_FIELDS_KEY,
 )
 from topicforge.models import (
     Diagnosis,
@@ -42,6 +45,8 @@ from topicforge.models import (
     ParticipantInfo,
     SkippedCheck,
     SuggestedFix,
+    TfReport,
+    TopicListItem,
 )
 from topicforge.models.diagnose import CHECKS, EVIDENCE_VALUE_MAX, MAX_FINDINGS, SEVERITIES
 from topicforge.services.dds_views import join_notes
@@ -75,6 +80,21 @@ _RESERVE_S = 2.0  # kept back inside the call's own deadline
 _TF_WINDOW_S = 8.0
 _TF_STALE_AFTER_S = 2.0
 _TF_OVERHEAD_S = 2.0  # CLI start-up, URDF read and parsing around the capture
+_FRAME_TOPICS = 3  # stamped topics sampled for the frame_id check
+_FRAME_SAMPLE_S = 4.0  # whole call for one topic: the CLI start-up, the topic lookup and the echo
+_FRAME_MIN_S = 3.0  # budget left below which no further topic is sampled
+# Stamped sensor types whose `header.frame_id` names a TF frame, most telling first.
+_STAMPED_TYPES: tuple[str, ...] = (
+    "sensor_msgs/msg/LaserScan",
+    "sensor_msgs/msg/PointCloud2",
+    "sensor_msgs/msg/Image",
+    "sensor_msgs/msg/CompressedImage",
+    "sensor_msgs/msg/Imu",
+    "nav_msgs/msg/Odometry",
+    "sensor_msgs/msg/Range",
+    "sensor_msgs/msg/NavSatFix",
+    "sensor_msgs/msg/MagneticField",
+)
 _LOG_TIMEOUT_S = 5.0
 _LOG_COUNT = 50
 _NODE_READ_S = 3.0
@@ -110,6 +130,8 @@ class _Ctx:
     plan: tuple[str, ...]
     report: HealthReport | None = None
     nodes: list[str] | None = None
+    topics: list[TopicListItem] | None = None  # set by the topics check, read by the TF check
+    tf_report: TfReport | None = None  # a complete TF capture, for the frame_id pass
     lifecycle: frozenset[str] = frozenset()
     wall_ns: Callable[[], int] = time.time_ns
     skipped: list[SkippedCheck] = field(default_factory=list)
@@ -241,6 +263,7 @@ def check_topics(ctx: _Ctx) -> list[Finding]:
     listening on `/cmd_vel`, RViz on `/goal_pose`), so it is never above info.
     """
     topics = [t for t in ctx.inspector.list_topics().topics if t.name not in BUILTIN_COUNT_TOPICS]
+    ctx.topics = topics
     out = []
     unknown = [t.name for t in topics if t.counts_unknown]
     if unknown:
@@ -293,7 +316,9 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
     )
     lives = _lives(recent, events.restarts_by_name)
     starts = _discovery_times(parts.participants, events.events)
-    out += _restart_findings(lives, starts, ctx.wall_ns())
+    cli_up = ctx.report is None or ctx.report.ros_backend != "none"
+    ros_nodes = {n.lstrip("/") for n in recent} | {n.lstrip("/") for n in ctx.nodes or ()}
+    out += _restart_findings(lives, starts, ctx.wall_ns(), ros_nodes if cli_up else frozenset())
     left = [
         (p.node_names[0] if p.node_names else (p.name or p.guid[:8]))
         for p in parts.participants
@@ -320,6 +345,12 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
             _finding("info", "dds", None, parts.note, _ev("list_participants", "note", parts.note))
         )
     return out
+
+
+def _topic_label(dds_topic: str) -> str:
+    """A DDS topic with its ROS 2 name beside it: `rt/scan (ROS /scan)`; as is when there is none."""
+    ros, _ = ros_topic_of(dds_topic)
+    return f"{dds_topic} (ROS {ros})" if ros else dds_topic
 
 
 def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
@@ -357,7 +388,7 @@ def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
             "critical" if blocked else "warning",
             "dds",
             r.topic,
-            f"Writer {writer} {verb} {who} on {r.topic} ({policies}). {values}".strip(),
+            f"Writer {writer} {verb} {who} on {_topic_label(r.topic)} ({policies}). {values}".strip(),
             _ev(
                 "detect_qos_mismatches",
                 f"reports[{indexes[0]}].incompatible_policies",
@@ -381,7 +412,7 @@ def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
             "critical",
             "dds",
             topic,
-            f"{len(pairs)} reader/writer pair(s) on {topic} never match ({reason}): "
+            f"{len(pairs)} reader/writer pair(s) on {_topic_label(topic)} never match ({reason}): "
             f"{first.detail}. No data flows between them.",
             _ev("detect_qos_mismatches", "not_matched[].reason", reason),
             fixes=list(fixes),
@@ -478,13 +509,25 @@ def _restart_trend(name: str, starts: Mapping[str, list[int]], now_ns: int) -> s
     gap = max(later - earlier for earlier, later in pairwise(stamps))
     ago = max(0, (now_ns - stamps[-1]) // _NS_PER_S)
     if ago * _NS_PER_S <= max(_STILL_RESTARTING_S * _NS_PER_S, 2 * gap):
-        return f" Still restarting: the last start was {ago} s ago."
+        return (
+            f" Still restarting: the last start was {ago} s ago."
+            " The count is taken when this check runs and may differ on a later call."
+        )
     return f" It stopped restarting: the last start was {ago} s ago."
 
 
 def _restart_findings(
-    lives: dict[str, int], starts: Mapping[str, list[int]], now_ns: int
+    lives: dict[str, int],
+    starts: Mapping[str, list[int]],
+    now_ns: int,
+    log_nodes: Collection[str] = (),
 ) -> list[Finding]:
+    """One finding per name carried by several participants.
+
+    The `/rosout` command is offered only for a name in `log_nodes`: a ROS node, with a `ros2`
+    CLI to run it. A bare DDS participant logs nothing there, and without the CLI the line
+    could not be run.
+    """
     out = []
     for name, count in sorted(lives.items()):
         if count < 2:
@@ -507,12 +550,16 @@ def _restart_findings(
                     f"participants of /{name} in the last {_EVENT_LOOKBACK_S} s",
                     count,
                 ),
-                fixes=_read_fix(
-                    "ros2 topic echo /rosout",
-                    f"/{name}",
-                    "Streams the logs of every node; read those whose `name` is this one. "
-                    "Observes only.",
-                    "participant_events",
+                fixes=(
+                    _read_fix(
+                        "ros2 topic echo /rosout",
+                        f"/{name}",
+                        "Streams the logs of every node; read those whose `name` is this one. "
+                        "Observes only.",
+                        "participant_events",
+                    )
+                    if name in log_nodes
+                    else []
                 ),
             )
         )
@@ -591,6 +638,83 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
                 f"The budget cut the TF window to {window:g} s: a transform older than "
                 f"{window:g} s may be missed.",
                 _ev("inspect_tf", "window_s", window),
+            )
+        )
+    if report.frames and not report.truncated and window >= _TF_WINDOW_S:
+        ctx.tf_report = report  # only a full, uncut capture can tell a frame is absent
+    return out
+
+
+def _stamped_topics(topics: list[TopicListItem]) -> list[TopicListItem]:
+    """At most `_FRAME_TOPICS` published topics of a stamped sensor type, by type then name."""
+    rank = {t: i for i, t in enumerate(_STAMPED_TYPES)}
+    found = [
+        t
+        for t in topics
+        if t.message_type in rank and t.publisher_count > 0 and not t.counts_unknown
+    ]
+    found.sort(key=lambda t: (rank[t.message_type], t.name))
+    return found[:_FRAME_TOPICS]
+
+
+def _frame_id_findings(ctx: _Ctx) -> list[Finding]:
+    """An info per sampled sensor topic whose `header.frame_id` is not a frame of the TF tree.
+
+    Optional and silent on purpose. It runs after every other check, on the budget they left,
+    so it can never take any from them. It needs the topics check and a complete TF capture
+    (not cut by the budget, not truncated), reads one message from at most three stamped
+    topics, and stops without a trace when the budget is spent. Never above `info`: a missing
+    frame is a lead, and a dynamic frame can simply be quiet during the capture.
+    """
+    report = ctx.tf_report
+    if ctx.topics is None or report is None:
+        return []
+    known = {f.name for f in report.frames} | {f.parent for f in report.frames if f.parent}
+    known = {name.lstrip("/") for name in known}
+    out: list[Finding] = []
+    for topic in _stamped_topics(ctx.topics):
+        if ctx.left() < _FRAME_MIN_S:
+            break
+        try:
+            result = ctx.inspector.sample_messages(
+                topic.name,
+                1,
+                max_array_length=DEFAULT_MAX_ARRAY_LENGTH,  # the CLI default: no flag, strings whole
+                arrays_summary_only=True,  # `--no-arr` leaves strings alone
+                timeout_s=min(_FRAME_SAMPLE_S, ctx.left()),
+            )
+        except AdapterError:
+            continue
+        payload = result.samples[0].payload if result.samples else {}
+        cut = payload.get(TRUNCATED_FIELDS_KEY)
+        header = payload.get("header")
+        frame = header.get("frame_id") if isinstance(header, dict) else None
+        if isinstance(cut, list) and any(str(c).startswith("header.frame_id") for c in cut):
+            continue  # a cut string is not a frame name
+        if not isinstance(frame, str) or not frame or frame.lstrip("/") in known:
+            continue
+        root = report.roots[0] if report.roots else None
+        safe = all(_SAFE_NAME.fullmatch(n) for n in (frame, root or ""))
+        out.append(
+            _finding(
+                "info",
+                "tf",
+                topic.name,
+                f"{topic.name} stamps its messages with frame {frame}, which is not among the "
+                f"{len(known)} frames seen on /tf and /tf_static in the capture: no transform "
+                "leads to it (or its publisher was quiet meanwhile).",
+                _ev("sample_messages", "samples[0].payload.header.frame_id", frame),
+                fixes=(
+                    _read_fix(
+                        f"ros2 run tf2_ros tf2_echo {root} {frame}",
+                        f"the publisher of {frame}",
+                        "Prints the transform once it exists; a frame nobody publishes "
+                        "never appears. Observes only.",
+                        "inspect_tf",
+                    )
+                    if root and safe
+                    else []
+                ),
             )
         )
     return out
@@ -904,6 +1028,7 @@ class DiagnoseService:
                 if found is not None:
                     ran.append(name)
                     findings += found
+            findings += _frame_id_findings(ctx)  # last, on what the other checks left
         return _assemble(ctx, scope, budget_s, start, ran, findings)
 
     def _run_check(self, ctx: _Ctx, name: str) -> list[Finding] | None:

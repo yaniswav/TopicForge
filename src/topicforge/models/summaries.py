@@ -186,8 +186,32 @@ class PointCloud2Summary(BaseModel):
     note: str | None = Field(default=None, description="One sentence when partial; else `null`.")
 
 
+class GoalStatusSummary(BaseModel):
+    """Summary of an `action_msgs/msg/GoalStatusArray` (`<action>/_action/status`)."""
+
+    model_config = _CONFIG
+
+    summary_type: Literal["goal_status"]
+    goal_count: int = Field(ge=0, description="Goals in `status_list`.")
+    accepted: int = Field(ge=0, description="Goals with status 1.")
+    executing: int = Field(ge=0, description="Goals with status 2.")
+    canceling: int = Field(ge=0, description="Goals with status 3.")
+    succeeded: int = Field(ge=0, description="Goals with status 4.")
+    canceled: int = Field(ge=0, description="Goals with status 5.")
+    aborted: int = Field(ge=0, description="Goals with status 6.")
+    unknown: int = Field(ge=0, description="Goals with status 0 or a value outside 0..6.")
+    note: str | None = Field(
+        default=None, description="One sentence when a status is odd; else `null`."
+    )
+
+
 MessageSummary = Annotated[
-    LaserScanSummary | OdometrySummary | ImuSummary | ImageSummary | PointCloud2Summary,
+    LaserScanSummary
+    | OdometrySummary
+    | ImuSummary
+    | ImageSummary
+    | PointCloud2Summary
+    | GoalStatusSummary,
     Field(discriminator="summary_type"),
 ]
 

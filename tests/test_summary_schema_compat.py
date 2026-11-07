@@ -34,6 +34,7 @@ _MESSAGE_SUMMARY_MODELS = {
     "ImuSummary",
     "ImageSummary",
     "PointCloud2Summary",
+    "GoalStatusSummary",
     "ScanReturn",
     "ScanSector",
     "ScanSectors",
@@ -79,6 +80,7 @@ def test_summary_is_an_open_object_with_a_summary_type_or_null(
         "imu",
         "image",
         "point_cloud2",
+        "goal_status",
     ]
 
 
