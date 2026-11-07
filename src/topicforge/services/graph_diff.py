@@ -24,6 +24,7 @@ from topicforge.models.graph_diff import (
     GraphSnapshotRef,
 )
 from topicforge.services.graph_snapshot import (
+    DESCRIPTION_TOPIC,
     GraphSnapshot,
     SnapshotRing,
     build_bag_snapshot,
@@ -72,6 +73,7 @@ def diff_snapshots(baseline: GraphSnapshot, current: GraphSnapshot) -> DiffResul
     _diff_qos(baseline, current, result)
     _diff_rates(baseline, current, result)
     _diff_counts(baseline, current, result)
+    _diff_description(baseline, current, result)
     result.changes.sort(key=lambda c: (GRAPH_CHANGE_KINDS.index(c.kind), c.name, c.field or ""))
     return result
 
@@ -164,6 +166,25 @@ def _diff_counts(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> No
             if label == "subscriber_count" and cur.after_cli_call:
                 text += _CLI_LINGER_NOTE
             out.changes.append(_changed("count", name, label, str(before), str(after), text))
+
+
+def _diff_description(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> None:
+    """A changed `/robot_description` text; unknown on one side is named, never a change."""
+    before, after = base.description_hash, cur.description_hash
+    if before is None and after is None:
+        return
+    if before is None or after is None:
+        out.not_compared["robot_description"] = (
+            "the text of /robot_description is known on one side only (not read, or the bag "
+            "does not record it)"
+        )
+        return
+    if before != after:
+        text = (
+            f"The robot description on {DESCRIPTION_TOPIC} changed (sha256 {before} -> {after}): "
+            "the robot model is not the one of the baseline."
+        )
+        out.changes.append(_changed("topic", DESCRIPTION_TOPIC, "sha256", before, after, text))
 
 
 def _added(kind: str, name: str, text: str, after: str | None = None) -> GraphChange:
@@ -275,6 +296,7 @@ class GraphDiffService:
                 nodes=nodes,
                 qos=qos,
                 qos_kind=current.qos_kind,
+                description_hash=current.description_hash,
             )
         )
 
