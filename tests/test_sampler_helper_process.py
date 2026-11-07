@@ -103,6 +103,7 @@ def test_a_dead_parent_ends_the_helper(trace: Path) -> None:
         assert frame.meta["type"] == _TYPE  # no pid check: a Windows venv python is a launcher
         assert proc.stdin is not None
         proc.stdin.close()  # what the OS does when the server dies
+        proc.stdin = None  # `communicate` flushes it otherwise, and it is closed
         assert proc.wait(timeout=5) == 4
     finally:
         proc.kill()

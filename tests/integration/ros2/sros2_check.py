@@ -87,7 +87,10 @@ async def _session(env: dict[str, str], calls: list[tuple[str, dict[str, Any]]])
             if name == "sleep":
                 await asyncio.sleep(float(args["s"]))
                 continue
-            out.append((await client.call_tool(name, args)).structured_content or {})
+            result = await client.call_tool(name, args)
+            # An MCP error has no structured content: keep its text for the failure line.
+            text = " ".join(getattr(c, "text", "") for c in result.content)
+            out.append(result.structured_content or {"error": text})
     return out
 
 
