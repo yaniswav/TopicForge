@@ -91,7 +91,7 @@ def find_anomalies(
     cut = False
 
     def out_of_time() -> bool:
-        return deadline is not None and time.monotonic() > deadline
+        return deadline is not None and time.monotonic() >= deadline
 
     lines = _clock_lines(clock, origin_ns)
     steady: dict[str, float] = {}

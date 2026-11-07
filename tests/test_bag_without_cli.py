@@ -199,7 +199,7 @@ def test_omnisim_rosbags_matches_the_cli_figures() -> None:
 
 
 def test_a_file_compressed_bag_is_not_unpacked_by_the_cli_path_scan(tmp_path: Path) -> None:
-    bag = write_bag(tmp_path / "bag", _series(), storage="sqlite3", compression="file")
+    bag = write_bag(tmp_path / "bag", _series(), storage="mcap", compression="file")
     scan = bag_read.scan_bag(bag)
     assert scan.spans is None and scan.anomalies == []
     assert scan.note is not None and "file compression" in scan.note and "not checked" in scan.note
@@ -210,7 +210,7 @@ def test_a_big_file_compressed_bag_is_refused_without_unpacking(
 ) -> None:
     from topicforge.adapters.common import bag_container
 
-    bag = write_bag(tmp_path / "bag", _series(), storage="sqlite3", compression="file")
+    bag = write_bag(tmp_path / "bag", _series(), storage="mcap", compression="file")
     monkeypatch.setattr(bag_container, "FILE_COMPRESSED_MAX_BYTES", 1)
     with pytest.raises(AdapterError, match="file compression"):
         bag_read.analyze_bag_file(str(bag))
@@ -220,7 +220,7 @@ def test_a_big_file_compressed_bag_is_refused_without_unpacking(
 
 
 def test_a_small_file_compressed_bag_is_read_by_the_rosbags_only_path(tmp_path: Path) -> None:
-    bag = write_bag(tmp_path / "bag", _series(), storage="sqlite3", compression="file")
+    bag = write_bag(tmp_path / "bag", _series(), storage="mcap", compression="file")
     assert bag_read.analyze_bag_file(str(bag)).message_count == 58
 
 
