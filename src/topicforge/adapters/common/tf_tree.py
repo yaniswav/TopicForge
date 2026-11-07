@@ -23,9 +23,11 @@ from typing import Literal
 
 from topicforge.adapters.common.urdf import (
     FIXED_JOINT,
+    JointMismatch,
     UrdfModel,
     declared_frames_missing,
     frames_not_in_urdf,
+    joint_type_mismatches,
 )
 from topicforge.models import TfCapture, TfFinding, TfFrame, TfReport, TfSample
 
@@ -107,6 +109,8 @@ def build_tf_report(
     findings += path_findings
     declared = _declared(urdf, urdf_note, [f.name for f in frames])
     findings += declared.findings
+    if urdf is not None and frames:
+        findings += _joint_type_findings(urdf, edges)
 
     stamp_span_s, rtf = _clock_figures(edges, capture)
     truncated = capture.dropped_count > 0 or capture.capped
@@ -177,6 +181,49 @@ def _declared_finding(urdf: UrdfModel, missing: list[str]) -> TfFinding:
             "/joint_states is published."
         )
     return TfFinding(kind="declared_not_published", frames=missing, text=text)
+
+
+_JOINTS_LISTED = 8
+
+
+def _joint_type_findings(urdf: UrdfModel, edges: dict[tuple[str, str], _Edge]) -> list[TfFinding]:
+    """`fixed_joint_on_tf` and `movable_joint_on_tf_static`: a frame on the stream its joint type excludes."""
+    pairs = [(e.parent, e.child, bool(e.static), bool(e.dynamic)) for e in edges.values()]
+    found = joint_type_mismatches(urdf, pairs)
+    out = []
+    for fixed_on_tf, kind, tail in (
+        (
+            True,
+            "fixed_joint_on_tf",
+            "robot_state_publisher puts fixed joints on /tf_static, so another publisher "
+            "drives these frames on /tf.",
+        ),
+        (
+            False,
+            "movable_joint_on_tf_static",
+            "a joint that moves is published on /tf from /joint_states; a static transform "
+            "freezes it or stands in for it.",
+        ),
+    ):
+        group = [m for m in found if m.fixed_seen_on_tf is fixed_on_tf]
+        if group:
+            out.append(
+                TfFinding(
+                    kind=kind, frames=[m.joint.child for m in group], text=_joint_text(group, tail)
+                )
+            )
+    return out
+
+
+def _joint_text(group: list[JointMismatch], tail: str) -> str:
+    where = "only on /tf, not /tf_static" if group[0].fixed_seen_on_tf else "only on /tf_static"
+    shown = ", ".join(
+        f"{m.joint.parent}->{m.joint.child} ({m.joint.name or 'unnamed'}, {m.joint.type})"
+        for m in group[:_JOINTS_LISTED]
+    )
+    more = f" and {len(group) - _JOINTS_LISTED} more" if len(group) > _JOINTS_LISTED else ""
+    kind = "fixed" if group[0].fixed_seen_on_tf else "movable"
+    return f"URDF {kind} joint(s) seen {where}: {shown}{more}. {tail[0].upper()}{tail[1:]}"
 
 
 def _norm(name: str) -> str:

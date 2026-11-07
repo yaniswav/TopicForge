@@ -67,6 +67,7 @@ from topicforge.services.params_file import (
     with_param_diff,
 )
 from topicforge.services.sample_budget import apply_sample_budget
+from topicforge.services.urdf_file import read_urdf_file, validate_urdf_path
 
 DEFAULT_SAMPLE_COUNT = 5
 DEFAULT_LOOKBACK_SECONDS = 300
@@ -163,12 +164,14 @@ class Inspector:
         stale_after_s: float = DEFAULT_TF_STALE_AFTER_S,
         source_frame: str | None = None,
         target_frame: str | None = None,
+        urdf_path: str | None = None,
     ) -> TfReport:
         _validate_range("window_s", window_s, MIN_TF_WINDOW_S, MAX_TF_WINDOW_S)
         _validate_range("stale_after_s", stale_after_s, MIN_TF_STALE_AFTER_S, MAX_TF_STALE_AFTER_S)
         source, target = _validate_frame_pair(source_frame, target_frame)
+        file_path = None if urdf_path is None else validate_urdf_path(urdf_path)
         capture = self._adapter.capture_tf(float(window_s))
-        urdf, urdf_note = self._read_urdf()
+        urdf, urdf_note = self._read_urdf() if file_path is None else read_urdf_file(file_path)
         return build_tf_report(
             capture,
             float(stale_after_s),

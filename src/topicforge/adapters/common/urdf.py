@@ -10,18 +10,26 @@ whose text is safe to show a client.
 Matching. `robot_state_publisher` publishes one TF frame per link, named like the
 link; with a `frame_prefix` the frame is `<prefix>/<link>`. `link_has_frame` accepts
 both, and `frame_in_urdf` is the same rule read from the frame's side.
+
+Joint types. `robot_state_publisher` puts fixed joints on `/tf_static` and the others on
+`/tf`. `joint_type_mismatches` reports a fixed joint whose frame is only on `/tf`, and a
+movable one whose frame is only on `/tf_static`. It judges revolute, continuous and
+prismatic joints only (floating and planar ones are published by anything), needs the
+joint's own parent and child to match the edge, and stays silent when no fixed joint is on
+`/tf_static` at all (`use_tf_static` false, or a static stream that was not read).
 """
 
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 # Longest URDF read, in characters; the live adapter drops a larger message anyway.
 MAX_URDF_CHARS = 4_000_000
 
 FIXED_JOINT = "fixed"
+MOVABLE_JOINTS = frozenset({"revolute", "continuous", "prismatic"})
 
 
 class UrdfError(ValueError):
@@ -117,15 +125,62 @@ def frames_not_in_urdf(model: UrdfModel, frames: Collection[str]) -> list[str]:
     return sorted(f for f in frames if not frame_in_urdf(f, model.links))
 
 
+@dataclass(frozen=True)
+class JointMismatch:
+    """A joint whose published frame is on the stream its type does not use."""
+
+    joint: UrdfJoint
+    fixed_seen_on_tf: bool
+    """`True`: a fixed joint seen only on `/tf`; `False`: a movable one seen only on `/tf_static`."""
+
+
+def _same_frame(frame: str, link: str) -> bool:
+    name = _bare(frame)
+    return name == link or name.endswith("/" + link)
+
+
+def joint_type_mismatches(
+    model: UrdfModel, edges: Iterable[tuple[str, str, bool, bool]]
+) -> list[JointMismatch]:
+    """Joints whose transform is on the wrong stream; `edges` are `(parent, child, static, dynamic)`.
+
+    An edge belongs to a joint when its parent and child both match the joint's links (a
+    `frame_prefix` is ignored). A joint with no such edge is not judged: an unpublished
+    frame is `declared_frames_missing`, a frame on both streams is `static_and_dynamic`.
+    """
+    seen = list(edges)
+    fixed: list[JointMismatch] = []
+    movable: list[JointMismatch] = []
+    any_fixed_static = False
+    for joint in model.joints:
+        mine = [
+            (static, dynamic)
+            for parent, child, static, dynamic in seen
+            if _same_frame(child, joint.child) and _same_frame(parent, joint.parent)
+        ]
+        on_static = any(s for s, _ in mine)
+        on_dynamic = any(d for _, d in mine)
+        if joint.type == FIXED_JOINT:
+            any_fixed_static = any_fixed_static or on_static
+            if on_dynamic and not on_static:
+                fixed.append(JointMismatch(joint, True))
+        elif joint.type in MOVABLE_JOINTS and on_static and not on_dynamic:
+            movable.append(JointMismatch(joint, False))
+    return [*(fixed if any_fixed_static else []), *movable]
+
+
 __all__ = [
     "FIXED_JOINT",
     "MAX_URDF_CHARS",
+    "MOVABLE_JOINTS",
+    "JointMismatch",
     "UrdfError",
     "UrdfJoint",
     "UrdfModel",
     "declared_frames_missing",
     "frame_in_urdf",
     "frames_not_in_urdf",
+    "joint_type_mismatches",
     "link_has_frame",
     "parse_urdf",
 ]
