@@ -24,6 +24,7 @@ from typing import Literal
 
 from topicforge import budget
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.ros_names import ros_topic_of
 from topicforge.constants import (
     DEFAULT_DIAGNOSE_BUDGET_S,
     MAX_DIAGNOSE_BUDGET_S,
@@ -324,6 +325,12 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
     return out
 
 
+def _topic_label(dds_topic: str) -> str:
+    """A DDS topic with its ROS 2 name beside it: `rt/scan (ROS /scan)`; as is when there is none."""
+    ros, _ = ros_topic_of(dds_topic)
+    return f"{dds_topic} (ROS {ros})" if ros else dds_topic
+
+
 def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
     out: list[Finding] = []
     groups: dict[tuple[str, str, str, tuple[str, ...]], list[int]] = {}
@@ -359,7 +366,7 @@ def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
             "critical" if blocked else "warning",
             "dds",
             r.topic,
-            f"Writer {writer} {verb} {who} on {r.topic} ({policies}). {values}".strip(),
+            f"Writer {writer} {verb} {who} on {_topic_label(r.topic)} ({policies}). {values}".strip(),
             _ev(
                 "detect_qos_mismatches",
                 f"reports[{indexes[0]}].incompatible_policies",
@@ -383,7 +390,7 @@ def _qos_findings(scan: MismatchScan, ctx: _Ctx) -> list[Finding]:
             "critical",
             "dds",
             topic,
-            f"{len(pairs)} reader/writer pair(s) on {topic} never match ({reason}): "
+            f"{len(pairs)} reader/writer pair(s) on {_topic_label(topic)} never match ({reason}): "
             f"{first.detail}. No data flows between them.",
             _ev("detect_qos_mismatches", "not_matched[].reason", reason),
             fixes=list(fixes),

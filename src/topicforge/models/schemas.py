@@ -524,7 +524,7 @@ class MismatchReport(BaseModel):
 
     model_config = _CONFIG
 
-    topic: str = Field()
+    topic: str = Field(description="DDS name: `rt/scan` is the ROS topic `/scan`.")
     reader_guid: str | None = Field(
         default=None,
     )
@@ -576,7 +576,7 @@ class NotMatchedPair(BaseModel):
 
     model_config = _CONFIG
 
-    topic: str = Field()
+    topic: str = Field(description="DDS name: `rt/scan` is the ROS topic `/scan`.")
     reader_guid: str = Field()
     reader_participant_guid: str = Field()
     reader_participant_name: str | None = Field(

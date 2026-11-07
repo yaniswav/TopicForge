@@ -1404,3 +1404,11 @@ def test_a_loop_still_going_says_its_count_is_as_of_the_sweep() -> None:
     assert "The count is taken when this check runs; a later call shows more." in going
     over = _by(_restarting(7, 400, every_s=6).diagnose(), "dds", "critical")[0].text
     assert "a later call shows more" not in over
+
+
+def test_a_dds_topic_in_a_finding_carries_its_ros_name() -> None:
+    from topicforge.services.diagnose import _topic_label
+
+    assert _topic_label("rt/scan_edge") == "rt/scan_edge (ROS /scan_edge)"
+    assert _topic_label("ros_discovery_info") == "ros_discovery_info"
+    assert _topic_label("rq/fooRequest") == "rq/fooRequest"

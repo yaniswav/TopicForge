@@ -160,6 +160,7 @@
             "type": "array"
           },
           "topic": {
+            "description": "DDS name: `rt/scan` is the ROS topic `/scan`.",
             "type": "string"
           },
           "unchecked": {
@@ -256,6 +257,7 @@
             "type": "array"
           },
           "topic": {
+            "description": "DDS name: `rt/scan` is the ROS topic `/scan`.",
             "type": "string"
           },
           "writer_guid": {
