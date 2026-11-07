@@ -480,7 +480,10 @@ def _restart_trend(name: str, starts: Mapping[str, list[int]], now_ns: int) -> s
     gap = max(later - earlier for earlier, later in pairwise(stamps))
     ago = max(0, (now_ns - stamps[-1]) // _NS_PER_S)
     if ago * _NS_PER_S <= max(_STILL_RESTARTING_S * _NS_PER_S, 2 * gap):
-        return f" Still restarting: the last start was {ago} s ago."
+        return (
+            f" Still restarting: the last start was {ago} s ago."
+            " The count is taken when this check runs; a later call shows more."
+        )
     return f" It stopped restarting: the last start was {ago} s ago."
 
 
