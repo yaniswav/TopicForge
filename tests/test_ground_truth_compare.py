@@ -706,6 +706,10 @@ def _bag_results(gt: dict, out: dict[str, Any]) -> None:
         },
     )
     _log_results(out)
+    # The synthetic bag truth holds no /rosout line, so it expects no ERROR sample.
+    out["25_peek_bag_rosout_error"] = _call(
+        "peek_bag_samples", {}, {"samples": [], "note": "matched"}
+    )
 
 
 def _log(level: int, name: str, sec: int = 1) -> dict[str, Any]:
@@ -1056,6 +1060,37 @@ def test_bag_truth_is_read_from_the_messages(tmp_path: Path) -> None:
     assert fast_truth["rate_recorded_wall_hz"] == pytest.approx(10.0)
     assert fast_truth["count_over_bag_duration_hz"] == pytest.approx(10.5)
     assert truth["per_topic"]["/slow"]["rate_recorded_wall_hz"] is None
+
+
+def _rosout_peek_rows(tmp_path: Path, per_topic: dict, samples: list) -> list[dict]:
+    (tmp_path / "16_peek_rosout.json").write_text(
+        json.dumps(
+            {
+                "_call": {"args": {"topic": "/rosout"}},
+                "parsed": [{"samples": samples}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    rep = compare.Report()
+    gt = {"lidar": {"published_ranges": [1.0]}}
+    compare._check_bag_peeks(gt, {"per_topic": per_topic}, compare.Results(tmp_path), rep)
+    return rep.rows
+
+
+def test_a_bag_with_no_rosout_line_expects_zero_not_the_fallback(tmp_path: Path) -> None:
+    # Bag truth exists but the recorder stored no /rosout line: expect 0 messages.
+    rows = _rosout_peek_rows(tmp_path, {"/scan": {"first_ns": 1}}, [])
+    assert [r["verdict"] for r in rows] == ["PASS"]
+    assert rows[0]["truth"] == "0 messages"
+
+
+def test_rosout_error_truth_is_zero_with_bag_truth_and_none_without() -> None:
+    assert compare._bag_rosout_errors(None) is None
+    assert compare._bag_rosout_errors({}) is None
+    assert compare._bag_rosout_errors({"per_topic": {"/scan": {}}}) == 0
+    assert compare._bag_rosout_errors({"per_topic": {"/rosout": {"count": 4}}}) == 0
+    assert compare._bag_rosout_errors({"per_topic": {"/rosout": {"error_count": 2}}}) == 2
 
 
 # ---------------------------------------------------------------------- drive.py (no server)

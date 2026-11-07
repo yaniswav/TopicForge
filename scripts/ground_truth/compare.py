@@ -1407,6 +1407,17 @@ def check_bag(gt: dict, res: Results, rep: Report) -> None:
     _check_bag_peeks(gt, truth, res, rep)
 
 
+def _bag_rosout_errors(bag_truth: dict | None) -> int | None:
+    """ERROR lines the bag holds on /rosout, or None when there is no bag truth at all.
+
+    With bag truth, a /rosout entry missing from `per_topic` (the recorder stored no line) or
+    without an `error_count` counts as 0, so an empty bag is not judged against the fixed fallback.
+    """
+    if not bag_truth or "per_topic" not in bag_truth:
+        return None
+    return bag_truth["per_topic"].get("/rosout", {}).get("error_count", 0)
+
+
 def _check_bag_peeks(gt: dict, truth: dict, res: Results, rep: Report) -> None:
     first = {n: v["first_ns"] for n, v in truth["per_topic"].items()}
     expect = gt.get("stamps") or DEFAULT_STAMPS
@@ -1463,7 +1474,7 @@ def _check_bag_peeks(gt: dict, truth: dict, res: Results, rep: Report) -> None:
         elif topic == "/rosout":
             # The recorder may store few or no /rosout lines (late discovery on a loaded
             # runner): expect what the bag holds, read independently.
-            held = truth["per_topic"].get("/rosout", {}).get("count")
+            held = truth["per_topic"].get("/rosout", {}).get("count", 0)
             want_n = 3 if held is None else min(3, held)
             source = samples[0].get("stamp_source") if samples else None
             rep.add(
@@ -1919,7 +1930,7 @@ def _check_bag_logs(gt: dict, truth: dict, res: Results, rep: Report) -> None:
     else:
         samples, result, wall = loaded
         # Expect what the bag holds (read independently): the recorder may miss /rosout.
-        held = (gt.get("bag") or {}).get("per_topic", {}).get("/rosout", {}).get("error_count")
+        held = _bag_rosout_errors(gt.get("bag"))
         if held is None:
             want = f">= {truth['bag_min_errors']} msgs, all level 40"
             ok = len(samples) >= truth["bag_min_errors"]
