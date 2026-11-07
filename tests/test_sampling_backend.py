@@ -153,11 +153,20 @@ def test_unavailable_raises_the_reason_before_any_process(monkeypatch: pytest.Mo
     assert streams.echo_cmds == []
 
 
-def test_an_unusual_type_string_stays_on_the_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_unusual_type_string_stays_on_the_cli_under_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     streams = _Streams(monkeypatch, AssertionError("no helper"))
-    result = _adapter(monkeypatch, _RCLPY, _info("weird type")).sample_messages("/t", 1)
+    result = _adapter(monkeypatch, _AUTO, _info("weird type")).sample_messages("/t", 1)
     assert result.count == 1
     assert streams.helper_cmds == []
+
+
+def test_an_unusual_type_string_raises_under_rclpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    streams = _Streams(monkeypatch, AssertionError("no helper"))
+    with pytest.raises(AdapterError, match="weird type"):
+        _adapter(monkeypatch, _RCLPY, _info("weird type")).sample_messages("/t", 1)
+    assert streams.echo_cmds == []
 
 
 # ---- a helper that fails during a call ----

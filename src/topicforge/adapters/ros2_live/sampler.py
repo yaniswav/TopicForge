@@ -290,6 +290,8 @@ def _stream(
     A helper that delivered something, or ended as asked, is the answer even when empty. A
     fallback keeps the time left: a helper that failed at setup used little of it.
     """
+    if backend.kind == "rclpy" and not backend.fallback and not _HELPER_TYPE.match(message_type):
+        raise AdapterError(f"{HELPER_LABEL} cannot load the message type {message_type!r}")
     if backend.kind == "rclpy" and backend.python and _HELPER_TYPE.match(message_type):
         started = time.monotonic()
         cmd = helper_command(
