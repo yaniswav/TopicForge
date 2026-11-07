@@ -283,7 +283,7 @@ def test_diagnose_warns_on_a_joint_on_the_wrong_stream() -> None:
     found = _by(_run(_with_urdf(_calm(Scripted()), ROBOT, capture)), "tf", "warning")
     assert [f.subject for f in found] == ["laser"]
     fix = found[0].suggested_fixes[0]
-    assert fix.text == "ros2 topic info /tf --verbose" and fix.verify_with == "list_nodes"
+    assert fix.text == "ros2 topic info /tf --verbose" and fix.verify_with == "inspect_tf"
 
 
 def test_diagnose_stays_quiet_on_the_healthy_pair() -> None:

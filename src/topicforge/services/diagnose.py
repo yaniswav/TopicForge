@@ -741,7 +741,7 @@ def _tf_fix(kind: str, frames: list[str]) -> list[SuggestedFix]:
             f"ros2 topic info {stream} --verbose",
             f"the publishers of {stream}",
             "Lists the nodes publishing the stream the URDF joint type excludes. Observes only.",
-            "list_nodes",
+            "inspect_tf",
         )
     if kind != "stale" or len(frames) != 2 or not all(_SAFE_NAME.fullmatch(f) for f in frames):
         return []
