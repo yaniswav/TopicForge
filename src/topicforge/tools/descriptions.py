@@ -216,7 +216,7 @@ SAMPLE_MESSAGES_DESC = (
     "ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` "
     "on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages "
     "from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. "
-    "**Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics "
+    "**Live mode** streams `ros2 topic echo` or its helper with the publishers' QoS (latched topics "
     "work) and returns what arrived by the deadline: `count` is the actual number and "
     "`note` says `N of M messages` and why it is short (no publisher, silent, slow or "
     "too large to print in time; a latched topic usually holds one message, so use "

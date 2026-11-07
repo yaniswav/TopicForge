@@ -1,10 +1,11 @@
 """Live adapter: wrappers over the `ros2` CLI.
 
-The CLI is used instead of `rclpy` because `rclpy` is pinned to the distro,
-needs a sourced setup file and does not come from PyPI, while the CLI is
-available wherever ROS2 is installed and easy to stub in tests. An
-`rclpy` adapter can later sit behind the same protocol (see the
-`TODO(roadmap)` below).
+The CLI is used instead of an in-process `rclpy` because `rclpy` is pinned to
+the distro, needs a sourced setup file and does not come from PyPI, while the
+CLI is available wherever ROS2 is installed and easy to stub in tests. Only
+`sample_messages` may run elsewhere: a short-lived helper process under the
+distro's own interpreter (`helper_stream`). An `rclpy` adapter can later sit
+behind the same protocol.
 
 Failures surface as `AdapterError` with a message that is safe to show to
 an MCP client. The parsers are module-level functions so they can be tested
@@ -30,6 +31,7 @@ from topicforge.adapters.common.nodes import (
     lifecycle_node_names,
 )
 from topicforge.adapters.ros2_live import node_reader
+from topicforge.adapters.ros2_live.helper_stream import SamplingBackend
 from topicforge.adapters.ros2_live.node_parsers import (
     parse_node_list,
 )
@@ -92,6 +94,8 @@ class Ros2CliAdapter:
         max_message_chars: int = DEFAULT_MAX_SAMPLE_BYTES,
     ) -> None:
         self._exe = executable
+        # What `sample_messages` runs on: the CLI until the factory, which probes, says otherwise.
+        self.sampling = SamplingBackend()
         # Longest echo document (printed YAML) kept by `sample_messages`.
         self._max_message_chars = max_message_chars
         # Why no DDS backend serves next to this adapter; set by the factory.
@@ -103,6 +107,10 @@ class Ros2CliAdapter:
     @property
     def effective_mode(self) -> EffectiveMode:
         return "live"
+
+    def sampling_status(self) -> tuple[str, str | None]:
+        """`(backend of sample_messages, why it is not the helper)`, for `health_check`."""
+        return self.sampling.kind, self.sampling.note
 
     def is_available(self) -> bool:
         return shutil.which(self._exe) is not None
@@ -296,7 +304,7 @@ class Ros2CliAdapter:
         min_log_level: str | None = None,
         node: str | None = None,
     ) -> SampleResult:
-        """Stream `ros2 topic echo` and keep up to `count` messages within `timeout_s`.
+        """Stream `ros2 topic echo` or the helper; keep up to `count` messages within `timeout_s`.
 
         Filtered `/rosout` reads, the call budget and the short-result notes are described
         on `ros2_live.sampler.sample_messages`. A topic that does not exist raises, also
@@ -314,6 +322,7 @@ class Ros2CliAdapter:
             timeout_s=timeout_s,
             min_log_level=min_log_level,
             node=node,
+            backend=self.sampling,
         )
 
     def _resolve_exe(self) -> str:

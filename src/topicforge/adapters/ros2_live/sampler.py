@@ -1,12 +1,16 @@
-"""`sample_messages` for the live adapter: stream `ros2 topic echo` and decode it.
+"""`sample_messages` for the live adapter: stream the messages and decode them.
 
-The function is wired like `tf_capture`: the adapter hands in what it owns (the topic
-lookup, the `ros2` resolver, the mode label and the message size cap), so this module
-starts no process except through `stream_echo` and never imports the adapter.
+The stream is `ros2 topic echo` or the sampler helper (`helper_stream`), which prints the same
+text with the same flags; everything after the stream is shared. The function is wired like
+`tf_capture`: the adapter hands in what it owns (the topic lookup, the `ros2` resolver, the mode
+label, the message size cap and the sampling backend), so this module starts no process except
+through those two streams and never imports the adapter.
 """
 
 from __future__ import annotations
 
+import logging
+import re
 import time
 from collections.abc import Callable
 
@@ -21,6 +25,12 @@ from topicforge.adapters.common.log_filter import (
     require_log_topic,
 )
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
+from topicforge.adapters.ros2_live.helper_stream import (
+    HELPER_LABEL,
+    SamplingBackend,
+    helper_command,
+    stream_helper,
+)
 from topicforge.adapters.ros2_live.sample_extras import (
     WHOLE_ARRAY_STREAM_MAX_CHARS,
     decode_with_summary,
@@ -33,6 +43,11 @@ from topicforge.constants import (
     ROS2_CLI_TIMEOUT_S,
 )
 from topicforge.models import MessageSample, SampleResult, TopicInfo, TopicRate
+
+log = logging.getLogger(__name__)
+
+# What the helper can load; any other type string stays with the CLI.
+_HELPER_TYPE = re.compile(r"^[A-Za-z_]\w*/\w+/\w+$")
 
 # Wait for `sample_messages` on a topic with no announced publisher.
 _NO_PUBLISHER_WAIT_SEC = 3.0
@@ -63,8 +78,9 @@ def sample_messages(
     timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
     min_log_level: str | None = None,
     node: str | None = None,
+    backend: SamplingBackend | None = None,
 ) -> SampleResult:
-    """Stream `ros2 topic echo` and keep up to `count` messages within `timeout_s`.
+    """Stream `ros2 topic echo` or the helper and keep up to `count` messages within `timeout_s`.
 
     `topic_info(topic, timeout)` reads one topic (raising `AdapterError` when it does
     not exist), `resolve_exe()` gives the resolved `ros2` path (raising `AdapterError`
@@ -83,9 +99,12 @@ def sample_messages(
     runs once against a possibly cold daemon and can pick a profile that
     never matches a latched topic. A short result carries a `note` saying
     why. A topic that does not exist raises, also for `count` 0.
-    TODO(roadmap): rclpy-backed adapter: time-range windows and rmw
-    receive timestamps.
+    `backend` picks the stream (default the CLI): see `helper_stream.SamplingBackend`.
+    TODO(roadmap): time-range windows and rmw receive timestamps, on the helper's frames.
     """
+    backend = backend or SamplingBackend()
+    if backend.kind == "unavailable":
+        raise AdapterError(backend.note or "the rclpy sampler is not usable")
     started = time.monotonic()
     # Whatever the call waited for the lock is already gone from the budget.
     timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
@@ -104,9 +123,7 @@ def sample_messages(
     # A summary that reads an array (a scan's ranges) needs it whole: stream
     # uncut, summarize, then cut the returned payload as the CLI would have.
     whole = wants_whole_arrays(info.message_type, max_array_length, arrays_summary_only)
-    cmd = _echo_command(
-        resolve_exe(),
-        topic,
+    flags = _echo_flags(
         info,
         max_array_length=None if whole else max_array_length,
         arrays_summary_only=arrays_summary_only,
@@ -115,18 +132,22 @@ def sample_messages(
     if log_filter is not None:
         # Stream until the deadline, leaving the decode its share of the budget.
         remaining = max(remaining - _FILTER_DECODE_RESERVE_SEC, _MIN_ECHO_SEC)
-    run = stream_echo(
-        cmd,
+    run = _stream(
+        backend,
+        resolve_exe(),
+        topic,
+        info.message_type,
+        flags,
         count=count if log_filter is None else LOG_STREAM_CAP,
         deadline_s=remaining,
-        max_document_chars=(
+        max_chars=(
             max(max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS) if whole else max_message_chars
         ),
     )
     if not run.documents and run.exit_code not in (None, 0):
+        what = HELPER_LABEL if run.tool == HELPER_LABEL else f"`ros2 topic echo {topic}`"
         raise AdapterError(
-            f"`ros2 topic echo {topic}` failed (exit {run.exit_code}): "
-            f"{run.stderr_tail or 'no stderr'}"
+            f"{what} failed (exit {run.exit_code}): {run.stderr_tail or 'no stderr'}"
         )
 
     parse_until = started + budget + _PARSE_GRACE_SEC
@@ -238,25 +259,76 @@ def _sample_result(
     )
 
 
-def _echo_command(
-    exe: str,
-    topic: str,
+def _echo_flags(
     info: TopicInfo,
     *,
     max_array_length: int | None,
     arrays_summary_only: bool,
     deep_history: bool = False,
 ) -> list[str]:
+    """QoS, depth and array flags: `ros2 topic echo` and the helper take the same ones."""
     return [
-        exe,
-        "topic",
-        "echo",
-        "--no-lost-messages",
         *echo_qos_args(info),
         *_echo_depth_args(info, deep_history),
         *_echo_array_args(max_array_length, arrays_summary_only),
-        topic,
     ]
+
+
+def _stream(
+    backend: SamplingBackend,
+    exe: str,
+    topic: str,
+    message_type: str,
+    flags: list[str],
+    *,
+    count: int,
+    deadline_s: float,
+    max_chars: int,
+) -> EchoRun:
+    """One stream on the backend. With `fallback`, a helper that failed gives way to the CLI.
+
+    A helper that delivered something, or ended as asked, is the answer even when empty. A
+    fallback keeps the time left: a helper that failed at setup used little of it.
+    """
+    if backend.kind == "rclpy" and backend.python and _HELPER_TYPE.match(message_type):
+        started = time.monotonic()
+        cmd = helper_command(
+            backend.python,
+            topic,
+            message_type,
+            [
+                "--count",
+                str(count),
+                "--deadline",
+                f"{deadline_s:.3f}",
+                "--max-chars",
+                str(max_chars),
+                *flags,
+            ],
+        )
+        try:
+            run = stream_helper(cmd, count=count, deadline_s=deadline_s)
+        except AdapterError as exc:
+            if not backend.fallback:
+                raise
+            log.warning("%s; sampling %s with the `ros2` CLI", exc, topic)
+        else:
+            if run.exit_code is None or run.documents or not backend.fallback:
+                return run
+            log.warning(
+                "%s failed on %s (exit %s: %s); sampling it with the `ros2` CLI",
+                HELPER_LABEL,
+                topic,
+                run.exit_code,
+                run.stderr_tail,
+            )
+        deadline_s = max(deadline_s - (time.monotonic() - started), _MIN_ECHO_SEC)
+    return stream_echo(
+        [exe, "topic", "echo", "--no-lost-messages", *flags, topic],
+        count=count,
+        deadline_s=deadline_s,
+        max_document_chars=max_chars,
+    )
 
 
 def _rate(run: EchoRun, count: int, samples: list[MessageSample], skipped: int) -> TopicRate:
@@ -327,9 +399,7 @@ def _short_result_note(
         return None
     if run.exit_code is not None:
         tail = f": {run.stderr_tail}" if run.stderr_tail else ""
-        return (
-            f"{got} of {wanted} messages: the `ros2` CLI exited early (exit {run.exit_code}){tail}."
-        )
+        return f"{got} of {wanted} messages: {run.tool} exited early (exit {run.exit_code}){tail}."
     head = f"{got} of {wanted} messages within {budget_s:g} s"
     if got > 0:
         head += " (fewer than requested)"
@@ -361,7 +431,7 @@ def _empty_log_note(
     """
     if run.exit_code is not None:
         tail = f": {run.stderr_tail}" if run.stderr_tail else ""
-        return f"No log read: the `ros2` CLI exited early (exit {run.exit_code}){tail}."
+        return f"No log read: {run.tool} exited early (exit {run.exit_code}){tail}."
     if not has_publisher:
         return "No log read: no node publishes on this topic."
     return (

@@ -56,6 +56,7 @@ class HealthService:
         observer = _observer_status(self._adapter)
         rmw = resolve_rmw(ros_backend, os.environ)
         security = resolve_security(ros_backend, os.environ)
+        sampling, sampling_note = _sampling_status(self._adapter)
         return HealthReport(
             now_ns=time.time_ns(),
             observer_started_ns=observer.get("observer_started_ns"),
@@ -95,6 +96,8 @@ class HealthService:
             ros_backend=ros_backend,
             ros_tools_available=ros_backend != "none",
             sim_clock_published=_sim_clock_published(self._adapter),
+            sampling_backend=sampling,
+            sampling_backend_note=sampling_note,
         )
 
 
@@ -185,6 +188,20 @@ def _sim_clock_published(adapter: MiddlewareAdapter) -> bool | None:
     except Exception:
         return None
     return result if isinstance(result, bool) else None
+
+
+def _sampling_status(adapter: MiddlewareAdapter) -> tuple[Any, str | None]:
+    """`sample_messages` backend and note if the adapter has one (live ROS 2), else nothing.
+
+    Not part of the protocol, and a failure must not break `health_check`.
+    """
+    status = getattr(adapter, "sampling_status", None)
+    if not callable(status):
+        return None, None
+    try:
+        return status() or (None, None)
+    except Exception:
+        return None, None
 
 
 def _backends_from_adapter_name(name: str) -> tuple[RosBackendTag, DdsBackendTag]:
