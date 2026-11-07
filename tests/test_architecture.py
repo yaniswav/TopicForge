@@ -26,15 +26,33 @@ def _package_of(path: Path) -> list[str]:
     return parts if path.name == "__init__.py" else parts[:-1]
 
 
+def _dynamic_import_target(node: ast.Call) -> str | None:
+    """The literal module name of `importlib.import_module("x")`, `import_module("x")` or `__import__("x")`."""
+    func = node.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+    if name not in {"import_module", "__import__"} or not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    return None
+
+
 def _imported_modules(path: Path, source: str | None = None) -> list[tuple[int, str]]:
     """Every absolute module name imported anywhere in `path` (function-local too).
+
+    Calls to `importlib.import_module` and `__import__` with a literal string count too.
 
     `source` overrides the file content; `path` still drives relative resolution.
     """
     text = path.read_text(encoding="utf-8") if source is None else source
     found: list[tuple[int, str]] = []
     for node in ast.walk(ast.parse(text, str(path))):
-        if isinstance(node, ast.Import):
+        if isinstance(node, ast.Call):
+            target = _dynamic_import_target(node)
+            if target:
+                found.append((node.lineno, target))
+        elif isinstance(node, ast.Import):
             found.extend((node.lineno, alias.name) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             base = node.module or ""
@@ -80,6 +98,9 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
             "from topicforge import services",
             "def f():",
             "    from topicforge.services.d import e",
+            "    importlib.import_module('topicforge.services.f')",
+            "    __import__('topicforge.services.g')",
+            "    import_module(name)",
         ]
     )
     modules = {m for _, m in _imported_modules(sample, source) if _is_services(m)}
@@ -88,6 +109,8 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
         "topicforge.services",
         "topicforge.services.c",
         "topicforge.services.d",
+        "topicforge.services.f",
+        "topicforge.services.g",
     }
 
 
