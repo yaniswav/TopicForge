@@ -268,8 +268,9 @@ def _stale_findings(frames: list[TfFrame], stale_after_s: float) -> list[TfFindi
             frames=[f.parent or "", f.name],
             text=(
                 f"{f.parent} -> {f.name} was last published {f.age_s:g} s before the newest "
-                f"transform ({_limit_text(f, stale_after_s)}): its publisher stopped or is "
-                "blocked."
+                f"transform of this capture ({_limit_text(f, stale_after_s)}): its publisher "
+                "stopped or is blocked. The figure grows while the edge stays silent, so two "
+                "calls differ."
             ),
         )
         for f in frames

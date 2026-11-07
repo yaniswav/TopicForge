@@ -81,7 +81,7 @@
         "additionalProperties": false,
         "properties": {
           "age_s": {
-            "description": "Seconds its stamp trails the newest `/tf` stamp; `None` is normal for a static transform (see `kind`) or a root.",
+            "description": "Seconds its stamp trails the newest `/tf` stamp of this capture (grows between calls); `None`: static or root.",
             "type": [
               "number",
               "null"
