@@ -95,6 +95,7 @@ from topicforge.tools.descriptions import (
     TF_FRAME_PARAM_DESC,
     TOPIC_METRICS_DESC,
     TOPIC_PARAM_DESC,
+    URDF_PATH_PARAM_DESC,
 )
 from topicforge.tools.guard import guarded
 from topicforge.tools.schema_compact import compact_registered_tools
@@ -209,8 +210,9 @@ def _register_ros_tools(
         ] = DEFAULT_TF_STALE_AFTER_S,
         source_frame: Annotated[str | None, Field(description=TF_FRAME_PARAM_DESC)] = None,
         target_frame: Annotated[str | None, Field(description="See `source_frame`.")] = None,
+        urdf_path: Annotated[str | None, Field(description=URDF_PATH_PARAM_DESC)] = None,
     ) -> TfReport:
-        return inspector.inspect_tf(window_s, stale_after_s, source_frame, target_frame)
+        return inspector.inspect_tf(window_s, stale_after_s, source_frame, target_frame, urdf_path)
 
     @mcp.tool(
         annotations=read_only_annotations("Sample topic messages", open_world=True),

@@ -285,7 +285,7 @@ None.
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). A slow or intermittent publisher needs a longer `window_s` (`diagnose` uses 8 s). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
+ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latched) and `/tf` (listened to for `window_s`) and flag what breaks lookups. Returns a `TfReport`: `frames` (parent, `kind` static/dynamic/both, `age_s`, `stale`, `observed_frequency_hz` on wall time, `sim_frequency_hz` on stamps), `roots`, counts and `findings` `{kind, frames, text}`: `stale` (a frame trails the newest `/tf` stamp by more than `stale_after_s`), `two_parents`, `disconnected` (several roots), `static_and_dynamic`, `cycle`, `no_path`. Ages and rates use header stamps, so they hold on sim time (`real_time_factor` far from 1 means sim). A slow or intermittent publisher needs a longer `window_s` (`diagnose` uses 8 s). Give `source_frame` and `target_frame` for the `path` between them. It also reads `/robot_description` and flags URDF links with no frame (`declared_not_published`) and joints on the wrong stream (`fixed_joint_on_tf`, `movable_joint_on_tf_static`). **Empty `frames`** when nothing is published (read `note`). The listening is capped (3000 messages): `echo` can drop messages at high rates, so the tree is exact but frequencies are approximate (`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed 5 s capture of the demo robot with one stale frame. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
 
 ### Input parameters
 
@@ -295,6 +295,7 @@ ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latch
 | `stale_after_s` | `float` | no | `2.0` | >= 0.1, <= 3600.0 | A frame is stale past this many seconds of stamp time, default 2. |
 | `source_frame` | `str \| null` | no | `null` | - | Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get the chain between them in `path`. |
 | `target_frame` | `str \| null` | no | `null` | - | See `source_frame`. |
+| `urdf_path` | `str \| null` | no | `null` | - | Server path of a `.urdf` (no xacro, 1 MiB max) used instead of /robot_description. |
 
 ### Output (top-level fields)
 
@@ -605,7 +606,10 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
   Without that topic it reads the `robot_description` parameter of the node named
   `robot_state_publisher` (`urdf_note` then names that node and parameter);
   otherwise `urdf_source` is `none` and `urdf_note` says why. A link on a non-fixed
-  joint has a TF frame only while `/joint_states` is published.
+  joint has a TF frame only while `/joint_states` is published. `urdf_path` compares
+  with a local `.urdf` instead (no xacro; `urdf_source` stays `robot_description` and
+  `urdf_note` names the file). `fixed_joint_on_tf` and `movable_joint_on_tf_static`
+  report a joint whose frame is on the stream its type excludes.
 - `get_node_info(params_file=...)` reads a YAML file from the disk of the machine
   running TopicForge (`.yaml` or `.yml`, at most 1 MiB, read-only). The path is never
   sent to a node or to the `ros2` CLI, and nothing is written.

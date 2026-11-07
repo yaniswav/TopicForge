@@ -12,7 +12,7 @@ Planned as 0.10.0, not released yet.
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
-9.25). `tools/list` is 101,504 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.26). `tools/list` is 101,759 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
@@ -50,6 +50,20 @@ change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sectio
   `<action>/_action/status`: goals per status. The `diagnose-nav2` prompt and skill use it.
 - `diagnose` reports, as an `info` on check `tf`, a stamped sensor topic (up to three) whose
   `header.frame_id` is not in the TF tree. Runs last on leftover budget; silent when the budget or the TF capture does not allow it.
+
+- `inspect_tf(urdf_path=...)`: compares the TF frames with a local `.urdf` file (1 MiB at most,
+  read-only, never expanded: a `.xacro` path is refused) instead of `/robot_description`, and
+  skips that read. Unreadable files are a `urdf_note`. `urdf_source` stays `robot_description`
+  (a closed set does not grow between breaks).
+- `inspect_tf` findings `fixed_joint_on_tf` (a URDF fixed joint seen only on `/tf`) and
+  `movable_joint_on_tf_static` (a revolute, continuous or prismatic joint seen only on
+  `/tf_static`), with a low false-alarm design; `diagnose` turns them into `tf` warnings with a
+  read-only `ros2 topic info` fix (`docs/CONTRACT.md` section 9.26).
+- `graph_diff` hashes a canonical form of `/robot_description` (no comments, sorted attributes,
+  no layout whitespace): a changed robot model is a `topic` change on `/robot_description` (field
+  `sha256`); a hash unknown on a side, and why, is in `not_compared`. Its subscriber count is
+  counted as builtin noise. `fixed_joint_on_tf` is an `info` in `diagnose`, and neither joint
+  finding is raised on a cut capture.
 
 ### Fixed
 

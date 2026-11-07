@@ -2,19 +2,30 @@
 
 `graph_diff` takes one snapshot per call and compares it with an earlier one. A snapshot is
 plain data built through the adapter protocol only (`list_nodes`, `list_topics`,
-`list_endpoints`, `analyze_bag`), so the module is tested without ROS 2. Nothing is written
+`list_endpoints`, `analyze_bag`, and `sample_messages` / `peek_bag_samples` for one
+`/robot_description` message), so the module is tested without ROS 2. Nothing is written
 to disk: the ring lives in the server process and a restart empties it.
+
+The robot model. A snapshot holds `description_hash`, a short SHA-256 of the text of
+`/robot_description`, so a changed model shows in the diff. A live snapshot reads that latched
+topic once, only when the topic has a publisher, with the same bound as `inspect_tf` (6 s,
+3 s of the call budget kept back, skipped under 2 s). A bag is read for its first message of
+that topic. Any failure, or a bag without the topic, leaves the hash `None`: unknown, never a
+change.
 """
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
+from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
 from topicforge.adapters.common.spawned_pids import recent_spawns
+from topicforge.adapters.common.urdf import UrdfError, canonical_urdf
 
 RING_SIZE = 16
 """Snapshots held; the oldest is dropped past this."""
@@ -26,6 +37,11 @@ QosKind = Literal["writer_qos", "latched"]
 """What `GraphSnapshot.qos` holds: live writers' `reliability/durability`, or a bag's latching."""
 
 SnapshotSource = Literal["live", "bag"]
+
+DESCRIPTION_TOPIC = "/robot_description"
+_DESCRIPTION_READ_S = 6.0
+_DESCRIPTION_RESERVE_S = 3.0
+_DESCRIPTION_MIN_READ_S = 2.0
 
 
 @dataclass(frozen=True)
@@ -54,6 +70,10 @@ class GraphSnapshot:
     after_cli_call: bool = False
     real: bool = False
     """A bag read from a file (`analyze_bag` `reader` is not `fixture`); `False` for a graph."""
+    description_hash: str | None = None
+    """Short SHA-256 of the canonical `/robot_description`; `None` when unknown."""
+    description_why: str | None = None
+    """Why the hash is unknown although the robot publishes a description; `None` otherwise."""
 
 
 class SnapshotRing:
@@ -114,6 +134,7 @@ def build_live_snapshot(adapter: MiddlewareAdapter, now_ns: int) -> GraphSnapsho
         qos_kind="writer_qos" if qos is not None else None,
         qos_truncated=truncated,
         after_cli_call=after_cli,
+        **_live_description(adapter, topics),
     )
 
 
@@ -139,7 +160,54 @@ def build_bag_snapshot(adapter: MiddlewareAdapter, path: str, now_ns: int) -> Gr
         qos=latched,
         qos_kind="latched" if latched else None,
         real=analysis.reader != "fixture",
+        **_bag_description(adapter, path, topics),
     )
+
+
+def _text_hash(result: object) -> dict[str, str | None]:
+    """`description_hash` of the `data` of a `SampleResult`'s first sample, else a `why`.
+
+    The hash is of the canonical form of the XML (no comments, sorted attributes, no layout
+    whitespace), so only a change of the model changes it. Text that does not parse is not hashed.
+    """
+    samples = getattr(result, "samples", None)
+    text = samples[0].payload.get("data") if samples else None
+    if not isinstance(text, str) or not text.strip():
+        return {"description_why": "no message arrived"}
+    try:
+        canonical = canonical_urdf(text)
+    except UrdfError as exc:
+        return {"description_why": f"the text does not parse ({exc})"}
+    return {"description_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]}
+
+
+def _live_description(
+    adapter: MiddlewareAdapter, topics: dict[str, TopicState]
+) -> dict[str, str | None]:
+    state = topics.get(DESCRIPTION_TOPIC)
+    if state is None or state.publishers == 0:
+        return {}
+    wait = call_budget.clamp(_DESCRIPTION_READ_S, _DESCRIPTION_RESERVE_S)
+    if wait < _DESCRIPTION_MIN_READ_S:
+        return {"description_why": "no time was left in the call budget to read it"}
+    try:
+        result = adapter.sample_messages(
+            DESCRIPTION_TOPIC, 1, max_array_length=None, timeout_s=wait
+        )
+    except AdapterError as exc:
+        return {"description_why": f"the read failed ({exc})"}
+    return _text_hash(result)
+
+
+def _bag_description(
+    adapter: MiddlewareAdapter, path: str, topics: dict[str, TopicState]
+) -> dict[str, str | None]:
+    if DESCRIPTION_TOPIC not in topics:
+        return {}
+    try:
+        return _text_hash(adapter.peek_bag_samples(path, DESCRIPTION_TOPIC, 1))
+    except AdapterError as exc:
+        return {"description_why": f"the bag read failed ({exc})"}
 
 
 def _writer_qos(adapter: MiddlewareAdapter) -> tuple[dict[str, str] | None, bool]:

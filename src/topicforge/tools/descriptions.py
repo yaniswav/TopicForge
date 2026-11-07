@@ -24,6 +24,10 @@ NODE_TIMEOUT_PARAM_DESC = (
 
 PARAMS_FILE_PARAM_DESC = "Server path of a ROS 2 parameter `.yaml` (1 MiB max)."
 
+URDF_PATH_PARAM_DESC = (
+    "Server path of a `.urdf` (no xacro, 1 MiB max) used instead of /robot_description."
+)
+
 PARAM_DIFF_ONLY_PARAM_DESC = (
     "With `params_file`: return only `param_diff` and its note; interfaces and parameters "
     "are left out."
@@ -205,7 +209,8 @@ INSPECT_TF_DESC = (
     "publisher needs a longer `window_s` (`diagnose` uses 8 s). Give `source_frame` and "
     "`target_frame` for the `path` between them. It also reads `/robot_description` and "
     "flags URDF "
-    "links with no frame (`declared_not_published`). **Empty `frames`** when nothing is "
+    "links with no frame (`declared_not_published`) and joints on the wrong stream "
+    "(`fixed_joint_on_tf`, `movable_joint_on_tf_static`). **Empty `frames`** when nothing is "
     "published (read `note`). The listening is capped (3000 messages): `echo` can drop "
     "messages at high rates, so the tree is exact but frequencies are approximate "
     "(`truncated`). **Raises an MCP error** without a `ros2` CLI. **Mock mode**: a fixed "
