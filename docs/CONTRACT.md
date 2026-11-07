@@ -1433,3 +1433,32 @@ Additive only (1.9). `tools/list` goes from 99,971 to 100,535 bytes.
 - `qos_overrides` fix text: the YAML key is the real node name when known. Clients must not parse
   this text; it is meant for a human.
 
+
+### 9.24 Lot 0 follow-ups (0.10.0)
+
+Additive only (1.9). `tools/list` goes from 100,535 to 100,943 bytes.
+
+- `get_node_info` gains an optional input `param_diff_only` (bool, default false), valid only with
+  `params_file`; without it the call is an invalid input. The result keeps `param_diff`,
+  `param_diff_summary`, `param_diff_note` and the identity fields; the six interface lists are
+  empty, `parameters` is `null` (with no `parameters_status`, because it was left out, not
+  unreadable) and `note` says so.
+- `MessageSample.summary` gains a sixth shape, `summary_type` `goal_status`, for
+  `action_msgs/msg/GoalStatusArray` (`<action>/_action/status`): `goal_count`, one count per
+  status (`accepted`, `executing`, `canceling`, `succeeded`, `canceled`, `aborted`), `unknown`
+  (status 0 or outside 0..6) and `note`. `null` when `status_list` was cut. The advertised
+  `summary_type` enum gains `goal_status`.
+- `diagnose`, check `tf`, gains `info` findings (subject: the topic) when the `header.frame_id` of a
+  stamped sensor topic is not among the frames of the TF capture. Up to three published topics of
+  a stamped type (LaserScan, PointCloud2, Image, CompressedImage, Imu, Odometry, Range, NavSatFix,
+  MagneticField) are sampled once, only when the `topics` check ran and the capture saw frames,
+  and only while the later checks keep their budget floors; otherwise the step is silent and adds
+  no `checks_skipped` entry (like the second read of a silent node). Frames from `/tf_static` count
+  as present. Never above `info`.
+- Text only, not to be parsed: restart-loop findings that are still going add that the count is
+  taken when the DDS check runs; QoS findings write `rt/scan (ROS /scan)`; the stale-edge text of
+  `inspect_tf` says the figure is relative to the newest transform of that capture and grows
+  between calls. `MismatchReport.topic`, `NotMatchedPair.topic` and `TfFrame.age_s` gain a field
+  description saying the same.
+- The `ros2 topic echo /rosout` fix of a restart loop is offered only for a name that is a ROS
+  node and only when a `ros2` CLI serves; it is absent otherwise.

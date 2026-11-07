@@ -150,7 +150,7 @@ When on, each tool call emits one event with exactly six fields:
 | `session_id` | `"a1b2c3..."`   | Random UUID per process, never persisted                    |
 | `success`    | `true`          | Whether the handler returned or raised                      |
 
-Never sent: topic names, message types or payloads, bag paths or contents, hostnames, usernames, IP addresses, environment variables, error messages. The field set is fenced by `tests/test_telemetry.py::test_payload_contains_only_whitelisted_keys`; adding a field requires updating this section. The default transport is a structured log line; there is no HTTP endpoint yet. The implementation is in [`src/topicforge/telemetry/`](src/topicforge/telemetry/).
+Never sent: topic names, message types or payloads, bag paths or contents, hostnames, usernames, IP addresses, environment variables, error messages. The field set is fenced by `tests/test_telemetry.py::test_payload_contains_only_whitelisted_keys`; adding a field requires updating this section. The transport is a local log line only (the `topicforge.telemetry` logger): there is no HTTP endpoint, nothing is sent over the network, and none is planned. The implementation is in [`src/topicforge/telemetry/`](src/topicforge/telemetry/).
 
 ## Security model
 
