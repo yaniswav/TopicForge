@@ -406,3 +406,44 @@ def test_an_unknown_point_field_type_is_labelled() -> None:
     cloud = _cloud(fields=[{"name": "z", "offset": 0, "datatype": 42, "count": 1}])
     summary = summarize_message("sensor_msgs/msg/PointCloud2", cloud)
     assert summary is not None and summary.fields[0].datatype == "UNKNOWN"
+
+
+# ---- action_msgs/GoalStatusArray (0.10 lot 0) -----------------------------------------------
+
+STATUS = "action_msgs/msg/GoalStatusArray"
+
+
+def _goals(*statuses: object) -> dict:
+    return {
+        "status_list": [{"goal_info": {"goal_id": {"uuid": [1]}}, "status": s} for s in statuses]
+    }
+
+
+def test_goal_status_counts_the_goals_per_status() -> None:
+    summary = summarize_message(STATUS, _goals(2, 2, 4, 6, 1, 3, 5, 0))
+    assert summary is not None and summary.summary_type == "goal_status"
+    assert (summary.goal_count, summary.accepted, summary.executing, summary.canceling) == (
+        8,
+        1,
+        2,
+        1,
+    )
+    assert (summary.succeeded, summary.canceled, summary.aborted, summary.unknown) == (1, 1, 1, 1)
+    assert summary.note is None
+
+
+def test_goal_status_of_an_empty_list_is_zero_goals() -> None:
+    summary = summarize_message(STATUS, {"status_list": []})
+    assert summary is not None and summary.goal_count == 0 and summary.executing == 0
+
+
+def test_goal_status_counts_an_out_of_range_status_as_unknown_with_a_note() -> None:
+    summary = summarize_message(STATUS, _goals(9, "x", 2))
+    assert summary is not None and summary.unknown == 2 and summary.executing == 1
+    assert summary.note is not None and "not 0..6" in summary.note
+
+
+def test_goal_status_needs_the_whole_list() -> None:
+    assert needs_whole_arrays(STATUS)
+    assert summarize_message(STATUS, {"status_list": "<sequence>"}) is None
+    assert summarize_message(STATUS, _goals(2), cut_fields=["status_list"]) is None

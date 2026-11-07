@@ -106,8 +106,9 @@ BASELINE_PARAM_DESC = (
 BAG_SNAPSHOT_PARAM_DESC = "Snapshot this bag instead of the live graph."
 
 SUMMARY_RATE_NOTE = (
-    " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image` and `PointCloud2` samples "
-    "carry a `summary` of the whole message (other types: null); `rate` gives frequency, "
+    " **Summary and rate**: `LaserScan`, `Odometry`, `Imu`, `Image`, `PointCloud2` and "
+    "`GoalStatusArray` (goals per status) samples carry a `summary` of the whole message "
+    "(other types: null); `rate` gives frequency, "
     "interval spread and a `verdict` measured on %s. Use `count` >= 10 (50 above 20 Hz); a "
     "multi-publisher topic such as `/tf` reads `erratic` without being broken."
 )

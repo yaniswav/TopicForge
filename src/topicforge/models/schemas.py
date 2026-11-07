@@ -810,7 +810,7 @@ class TopicInfo(BaseModel):
     )
 
 
-# The five summary shapes are validated strictly by the server but advertised as one open
+# The six summary shapes are validated strictly by the server but advertised as one open
 # object keyed by `summary_type`: listing them in every tool's schema cost about 26 KB of
 # tools/list. The shapes are documented in docs/TOOLS.md ("Message summaries").
 _SUMMARY_ADVERTISED: dict[str, object] = {
@@ -820,7 +820,14 @@ _SUMMARY_ADVERTISED: dict[str, object] = {
             "properties": {
                 "summary_type": {
                     "type": "string",
-                    "enum": ["laser_scan", "odometry", "imu", "image", "point_cloud2"],
+                    "enum": [
+                        "laser_scan",
+                        "odometry",
+                        "imu",
+                        "image",
+                        "point_cloud2",
+                        "goal_status",
+                    ],
                 }
             },
             "required": ["summary_type"],

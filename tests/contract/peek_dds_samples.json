@@ -73,7 +73,8 @@
                   "odometry",
                   "imu",
                   "image",
-                  "point_cloud2"
+                  "point_cloud2",
+                  "goal_status"
                 ],
                 "type": "string"
               }

@@ -39,6 +39,7 @@ from topicforge.models.schemas import (
     TopicSummary,
 )
 from topicforge.models.summaries import (
+    GoalStatusSummary,
     ImageSummary,
     ImuSummary,
     LaserScanSummary,
@@ -58,6 +59,7 @@ __all__ = [
     "EndpointListing",
     "Evidence",
     "Finding",
+    "GoalStatusSummary",
     "GraphChange",
     "GraphDiff",
     "GraphSnapshotRef",
