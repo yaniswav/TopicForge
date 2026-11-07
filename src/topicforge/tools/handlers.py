@@ -16,15 +16,19 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.utilities.types import Image
+from mcp.types import CallToolResult, TextContent
 from pydantic import BeforeValidator, Field
 
 from topicforge.constants import (
     DEFAULT_DIAGNOSE_BUDGET_S,
+    DEFAULT_IMAGE_MAX_EDGE,
     DEFAULT_NODE_TIMEOUT_S,
     DEFAULT_SAMPLE_TIMEOUT_S,
     DEFAULT_TF_STALE_AFTER_S,
     DEFAULT_TF_WINDOW_S,
     MAX_DIAGNOSE_BUDGET_S,
+    MAX_IMAGE_MAX_EDGE,
     MAX_NODE_TIMEOUT_S,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
@@ -32,6 +36,7 @@ from topicforge.constants import (
     MAX_TF_STALE_AFTER_S,
     MAX_TF_WINDOW_S,
     MIN_DIAGNOSE_BUDGET_S,
+    MIN_IMAGE_MAX_EDGE,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
     MIN_SAMPLE_WINDOW_S,
@@ -70,10 +75,13 @@ from topicforge.tools.descriptions import (
     DIAGNOSE_DESC,
     DOMAIN_PARAM_DESC,
     END_S_PARAM_DESC,
+    GET_IMAGE_DESC,
     GET_NODE_INFO_DESC,
     GET_TOPIC_INFO_DESC,
     GRAPH_DIFF_DESC,
     HEALTH_CHECK_DESC,
+    IMAGE_MAX_EDGE_PARAM_DESC,
+    IMAGE_TOPIC_PARAM_DESC,
     INSPECT_TF_DESC,
     LIST_ENDPOINTS_DESC,
     LIST_NODES_DESC,
@@ -216,6 +224,36 @@ def _register_ros_tools(
         urdf_path: Annotated[str | None, Field(description=URDF_PATH_PARAM_DESC)] = None,
     ) -> TfReport:
         return inspector.inspect_tf(window_s, stale_after_s, source_frame, target_frame, urdf_path)
+
+    @mcp.tool(
+        annotations=read_only_annotations("Get image", open_world=True),
+        description=GET_IMAGE_DESC,
+    )
+    @guarded("ros")
+    @instrument(telemetry, "get_image")
+    def get_image(
+        topic: Annotated[str, Field(description=IMAGE_TOPIC_PARAM_DESC)],
+        max_edge: Annotated[
+            int,
+            Field(
+                description=IMAGE_MAX_EDGE_PARAM_DESC,
+                ge=MIN_IMAGE_MAX_EDGE,
+                le=MAX_IMAGE_MAX_EDGE,
+            ),
+        ] = DEFAULT_IMAGE_MAX_EDGE,
+    ) -> CallToolResult:
+        # The documented exception to "handlers return a Pydantic model": an image is a content
+        # block. `ImageInfo` goes out next to it, without a schema that every `tools/list` carries.
+        capture = inspector.get_image(topic, max_edge=max_edge)
+        info = capture.info
+        picture = Image(data=capture.data, format=info.mime_type.removeprefix("image/"))
+        return CallToolResult(
+            content=[
+                picture.to_image_content(),
+                TextContent(type="text", text=info.model_dump_json()),
+            ],
+            structured_content=info.model_dump(),
+        )
 
     @mcp.tool(
         annotations=read_only_annotations("Sample topic messages", open_world=True),

@@ -32,6 +32,7 @@ from topicforge.adapters.common.nodes import (
 )
 from topicforge.adapters.ros2_live import node_reader
 from topicforge.adapters.ros2_live.helper_stream import SamplingBackend
+from topicforge.adapters.ros2_live.image_capture import capture_image
 from topicforge.adapters.ros2_live.node_parsers import (
     parse_node_list,
 )
@@ -66,6 +67,7 @@ from topicforge.models import (
     TopicListItem,
     TopicMetrics,
 )
+from topicforge.models.image import CapturedImage
 
 log = logging.getLogger(__name__)
 
@@ -325,6 +327,20 @@ class Ros2CliAdapter:
             node=node,
             backend=self.sampling,
             window_s=window_s,
+        )
+
+    def get_image(
+        self, topic: str, *, max_edge: int, max_bytes: int, timeout_s: float
+    ) -> CapturedImage:
+        """One frame through the sampler helper: see `image_capture`."""
+        return capture_image(
+            topic,
+            topic_info=self._topic_info,
+            mode=self.effective_mode,
+            backend=self.sampling,
+            max_edge=max_edge,
+            max_bytes=max_bytes,
+            timeout_s=timeout_s,
         )
 
     def _resolve_exe(self) -> str:

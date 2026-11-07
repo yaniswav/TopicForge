@@ -102,6 +102,8 @@ class EchoRun:
     # Monotonic clock at the window's hello, for a span a wall clock step cannot change.
     hello_mono_ns: int = 0
     unkept_received_ns: list[int] = field(default_factory=list)
+    # Raw messages and their arrival: only a helper run with `--raw` has any.
+    cdr_frames: list[tuple[bytes, int]] = field(default_factory=list)
 
 
 def stream_echo(

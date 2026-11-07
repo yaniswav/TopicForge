@@ -15,6 +15,7 @@ from topicforge.adapters.common.ros_discovery import cli_ghost_note
 from topicforge.adapters.common.tf_tree import build_tf_report
 from topicforge.adapters.common.urdf import UrdfError, UrdfModel, parse_urdf
 from topicforge.constants import (
+    DEFAULT_IMAGE_MAX_EDGE,
     DEFAULT_MAX_ARRAY_LENGTH,
     DEFAULT_MAX_SAMPLE_BYTES,
     DEFAULT_NODE_TIMEOUT_S,
@@ -22,13 +23,16 @@ from topicforge.constants import (
     DEFAULT_TF_STALE_AFTER_S,
     DEFAULT_TF_WINDOW_S,
     MAX_ARRAY_LENGTH,
+    MAX_IMAGE_MAX_EDGE,
     MAX_NODE_TIMEOUT_S,
     MAX_PARTICIPANT_EVENTS,
+    MAX_SAMPLE_CALL_FACTOR,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
     MAX_SAMPLE_WINDOW_S,
     MAX_TF_STALE_AFTER_S,
     MAX_TF_WINDOW_S,
+    MIN_IMAGE_MAX_EDGE,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
     MIN_SAMPLE_WINDOW_S,
@@ -52,6 +56,7 @@ from topicforge.models import (
     TopicListing,
     TopicMetrics,
 )
+from topicforge.models.image import CapturedImage
 from topicforge.services.dds_views import (
     compact_endpoints,
     domain_note,
@@ -292,6 +297,27 @@ class Inspector:
             )
         return result.model_copy(
             update={"samples": samples, "count": len(samples), "note": " ".join(notes) or None}
+        )
+
+    def get_image(
+        self,
+        topic: str,
+        *,
+        max_edge: int = DEFAULT_IMAGE_MAX_EDGE,
+        timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
+    ) -> CapturedImage:
+        """One frame of an image topic, at most `MAX_SAMPLE_CALL_FACTOR` sample caps of bytes."""
+        _validate_topic_name(topic)
+        _validate_timeout_s(timeout_s)
+        if isinstance(max_edge, bool) or not MIN_IMAGE_MAX_EDGE <= max_edge <= MAX_IMAGE_MAX_EDGE:
+            raise AdapterError(
+                f"max_edge must be in {MIN_IMAGE_MAX_EDGE}..{MAX_IMAGE_MAX_EDGE}, got {max_edge}"
+            )
+        return self._adapter.get_image(
+            topic,
+            max_edge=max_edge,
+            max_bytes=self._max_sample_bytes * MAX_SAMPLE_CALL_FACTOR,
+            timeout_s=timeout_s,
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:

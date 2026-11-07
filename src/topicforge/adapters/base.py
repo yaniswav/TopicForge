@@ -24,6 +24,7 @@ from topicforge.models import (
     TopicListItem,
     TopicMetrics,
 )
+from topicforge.models.image import CapturedImage
 
 AdapterName = Literal[
     "mock",
@@ -98,6 +99,10 @@ class MiddlewareAdapter(Protocol):
         node: str | None = None,
         window_s: float | None = None,
     ) -> SampleResult: ...
+
+    def get_image(
+        self, topic: str, *, max_edge: int, max_bytes: int, timeout_s: float
+    ) -> CapturedImage: ...
 
     def analyze_bag(self, path: str) -> BagAnalysis: ...
 

@@ -31,7 +31,7 @@ Add it to your MCP client. For Claude Desktop, edit `claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. All seventeen tools appear under the hammer icon. Ask something like:
+Restart Claude Desktop. All eighteen tools appear under the hammer icon. Ask something like:
 
 > What topics are being published right now, and what message types do they carry?
 

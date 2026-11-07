@@ -34,6 +34,7 @@ from typing import IO, Literal, Protocol
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.ros_python import choose_ros_python
 from topicforge.adapters.common.sampler_frames import (
+    ENCODING_CDR,
     ENCODING_YAML,
     KIND_ARRIVAL,
     KIND_DROPPED,
@@ -235,7 +236,7 @@ def _collect(
     end = started + budget_s
     hello_end = started + min(hello_s, budget_s)
     greeted = False
-    while run.window or len(run.documents) < count:
+    while run.window or len(run.documents) + len(run.cdr_frames) < count:
         remaining = (end if greeted else hello_end) - time.monotonic()
         try:
             if remaining <= 0:
@@ -279,6 +280,8 @@ def _add_frame(run: EchoRun, frame: Frame) -> None:
     elif frame.kind == KIND_DROPPED:
         run.oversized += 1
         run.oversized_received_ns.append(frame.wall_ns or time.time_ns())
+    elif frame.kind == KIND_MESSAGE and frame.encoding == ENCODING_CDR:
+        run.cdr_frames.append((frame.body, frame.wall_ns or time.time_ns()))
     elif frame.kind == KIND_MESSAGE and frame.encoding == ENCODING_YAML:
         text = frame.body.decode("utf-8", errors="replace")
         run.documents.append(EchoDocument(text, frame.wall_ns or time.time_ns(), frame.index))

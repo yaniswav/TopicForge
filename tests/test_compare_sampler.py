@@ -148,7 +148,7 @@ def test_the_bench_runs_a_pass_per_backend_before_the_graph_changes() -> None:
     script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text(encoding="utf-8")
     cli = script.index("sampler_pass cli")
     rclpy = script.index(
-        'sampler_pass rclpy "$GT/calls_sampler_window.json" "$GT/calls_sampler_writers.json"'
+        'sampler_pass rclpy "$GT/calls_sampler_window.json" "$GT/calls_image.json" "$GT/calls_sampler_writers.json"'
     )
     graph_diff = script.index('"$GT/calls_graph_diff.json"')
     assert cli < rclpy < graph_diff
@@ -170,7 +170,7 @@ def _window(received: int, span: float, hz: float, returned: int = 5) -> dict[st
     data = _call(
         {
             "count": returned,
-            "rate": {"message_count": received, "window_s": span, "observed_frequency_hz": hz},
+            "rate": {"message_count": received, "window_s": span, "interval_median_s": 1 / hz},
         }
     )
     data["_call"]["args"] = {"topic": "/clock", "count": 5, "window_s": 5}
@@ -199,7 +199,7 @@ def test_a_window_with_the_publisher_rate_passes(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        _window(100, 5.0, 50.0),
+        _window(150, 5.0, 50.0),
         _window(247, 8.0, 50.0),
         _window(247, 5.0, 30.0),
         _window(247, 5.0, 50.0, 2),
@@ -224,3 +224,81 @@ def test_the_cli_pass_wants_the_refusal(tmp_path: Path) -> None:
 def test_the_cli_pass_fails_when_a_window_answers(tmp_path: Path) -> None:
     rows = _window_rows(tmp_path, _window(247, 5.0, 50.0), "cli")
     assert rows["/clock window_s refused on the CLI"]["verdict"] == "FAIL"
+
+
+_IMAGE_TRUTH = {
+    "image": {
+        "compressed": {
+            "sha256": "abc",
+            "byte_count": 10,
+            "size": [64, 48],
+            "frame_id": "camera_link",
+        },
+        "raw": {
+            "size": [640, 480],
+            "returned": [512, 384],
+            "encoding": "rgb8",
+            "frame_id": "camera_link",
+        },
+    }
+}
+
+
+def _image_rows(
+    tmp_path: Path, info: dict[str, Any], name: str = "63_image_compressed", expect: str = "rclpy"
+) -> dict[str, dict[str, Any]]:
+    folder = tmp_path / "results"
+    folder.mkdir()
+    data = _call(info)
+    data["parsed"] = [None, info]
+    (folder / f"{name}.json").write_text(json.dumps(data), encoding="utf-8")
+    truth = tmp_path / "truth.json"
+    truth.write_text(json.dumps(_IMAGE_TRUTH), encoding="utf-8")
+    compare.main(["--truth", str(truth), "--results", str(folder), "--expect-sampler", expect])
+    report = json.loads((folder / "comparison.json").read_text(encoding="utf-8"))
+    return {r["metric"]: r for r in report["rows"] if r["section"] == "sampler"}
+
+
+_COMPRESSED = {
+    "sha256": "abc",
+    "byte_count": 10,
+    "width": 64,
+    "height": 48,
+    "frame_id": "camera_link",
+}
+
+
+def test_the_published_png_byte_for_byte_passes(tmp_path: Path) -> None:
+    assert _image_rows(tmp_path, _COMPRESSED)["get_image compressed"]["verdict"] == "PASS"
+
+
+def test_other_bytes_fail(tmp_path: Path) -> None:
+    rows = _image_rows(tmp_path, {**_COMPRESSED, "sha256": "def"})
+    assert rows["get_image compressed"]["verdict"] == "FAIL"
+
+
+def test_the_raw_row_wants_the_sizes(tmp_path: Path) -> None:
+    info = {
+        "sha256": "x",
+        "width": 640,
+        "height": 480,
+        "returned_width": 512,
+        "returned_height": 384,
+        "encoding": "rgb8",
+        "frame_id": "camera_link",
+    }
+    assert _image_rows(tmp_path, info, "64_image_raw")["get_image raw"]["verdict"] == "PASS"
+
+
+def test_the_cli_pass_wants_the_image_refused(tmp_path: Path) -> None:
+    rows = _image_rows(tmp_path, _COMPRESSED, expect="cli")
+    assert rows["get_image compressed refused on the CLI"]["verdict"] == "FAIL"
+
+
+def test_the_bench_publishes_the_truths_png() -> None:
+    bench = _load("gt_bench_model", ROOT / "tests" / "integration" / "ros2" / "ground_truth.py")
+    png = bench.compressed_png()
+    assert png.startswith(b"\x89PNG")
+    truth = bench.image_truth()["compressed"]
+    assert truth["byte_count"] == len(png)
+    assert bench.BENCH_TOPICS[bench.COMPRESSED_TOPIC][0] == "sensor_msgs/msg/CompressedImage"

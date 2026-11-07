@@ -41,6 +41,11 @@ MAX_SAMPLE_TIMEOUT_S = 40.0
 MIN_SAMPLE_WINDOW_S = 0.5
 MAX_SAMPLE_WINDOW_S = 30.0
 
+# `get_image`: longest edge a raw `sensor_msgs/Image` is resized to.
+DEFAULT_IMAGE_MAX_EDGE = 512
+MIN_IMAGE_MAX_EDGE = 16
+MAX_IMAGE_MAX_EDGE = 2048
+
 # `get_node_info` wait for the node to answer its parameter read, in seconds. The graph
 # queries around it have their own 8 s limit: 8 + 8 + MAX stays under the 45 s a call
 # may take, lock wait included.

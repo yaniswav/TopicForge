@@ -35,6 +35,7 @@ from topicforge.models import (
     TopicListItem,
     TopicMetrics,
 )
+from topicforge.models.image import CapturedImage
 
 # Extensions the live `ros2 bag info` accepts; the mock rejects the same
 # paths so mock mode does not hide the error.
@@ -133,6 +134,13 @@ class MockAdapter:
             mode_effective="mock",
             rate=fixtures.mock_sample_rate(samples),
         )
+
+    def get_image(
+        self, topic: str, *, max_edge: int, max_bytes: int, timeout_s: float
+    ) -> CapturedImage:
+        # Fixed and small: `max_edge`, `max_bytes` and `timeout_s` do not apply.
+        info = self.get_topic_info(topic)
+        return fixtures.mock_image(topic, info.message_type)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
         if self.read_real_bags:

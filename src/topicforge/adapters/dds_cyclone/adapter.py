@@ -87,6 +87,7 @@ from topicforge.models import (
     TopicListItem,
     TopicMetrics,
 )
+from topicforge.models.image import CapturedImage
 
 # Aliases for the shared decoders in `adapters/common/cdr_decoder.py`.
 _decode_dynamic_sample = decode_dynamic_sample
@@ -383,6 +384,11 @@ class CycloneDdsAdapter:
         node: str | None = None,
         window_s: float | None = None,
     ) -> SampleResult:
+        raise AdapterError(DDS_ONLY_ERROR_MSG)
+
+    def get_image(
+        self, topic: str, *, max_edge: int, max_bytes: int, timeout_s: float
+    ) -> CapturedImage:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:

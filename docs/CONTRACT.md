@@ -1656,3 +1656,38 @@ field: what a window measures goes in the existing `rate` and `note`.
 - Mock: 10 Hz, deterministic, `message_count` = 10 x `window_s`.
 - Bags already have `start_s` and `end_s`.
 
+### 9.30 `get_image` (tool 18, 0.10.0)
+
+Additive (1.9). The slot reserved in section 9.21. Read-only annotations, open world, ROS lane.
+
+- Input: `topic` and `max_edge` (16..2048, default 512). The wait is the default 10 s of
+  `sample_messages`; there is no `timeout_s` yet, which keeps `tools/list` small and can be added.
+- Output: `content` is one `image` block (`image/jpeg` or `image/png`) and one `text` block holding
+  the same JSON as `structuredContent`: `topic`, `message_type`, `frame_id`, `stamp_ns`, `received_ns`,
+  `encoding`, `width`, `height`, `returned_width`, `returned_height`, `mime_type`, `byte_count`,
+  `sha256` (of the returned bytes), `mode_effective`.
+- **The one exception to section 1.1.** An image is a content block, not a schema, so the handler
+  builds a `CallToolResult` and this tool declares no `outputSchema`. `ImageInfo` is still a frozen
+  model on the server. The shape above is held by this section and `tests/test_get_image.py`.
+- `sensor_msgs/CompressedImage` passes through byte for byte. JPEG or PNG is told by the signature,
+  not by the free-text `format`, which is returned as `encoding`. Anything else is an error, which
+  includes `compressedDepth`, whose PNG comes after a header. `max_edge` does not apply. `width` and
+  `height` come from the PNG or JPEG header, and are null when it does not say.
+- `sensor_msgs/Image` needs the `[image]` extra (Pillow); without it the error names the extra.
+  `rgb8`, `bgr8` and `mono8` keep their pixels; `mono16` is scaled from its own minimum and maximum
+  to eight bits, so its gray levels are relative to that frame. Any other encoding is an error. The
+  result is a PNG, resized when the longest edge is over `max_edge`, so a frame that fits comes back
+  equal pixel for pixel.
+- Cap on the returned bytes: 4 x `TOPICFORGE_MAX_SAMPLE_BYTES` (4 MiB by default), else an error. A
+  message over 64 MiB is counted by the helper and never read. Image bytes count against the model's
+  context; the cost of a real image in a real client has not been measured.
+- It runs on the sampling helper only, reading raw CDR decoded here with `rosbags`, and has no CLI
+  path: on `TOPICFORGE_ROS_SAMPLER=cli`, or `auto` where the check failed, it raises naming
+  `TOPICFORGE_ROS_SAMPLER`. DDS-only raises. Mock returns one small deterministic PNG on an image
+  topic, whatever `max_edge` is. Recorded images are not served: `peek_bag_samples` reads their fields.
+- QoS follows the writers, as in `sample_messages`. Measured in WSL at 5 Hz with 6.2 MB frames, in
+  frames received in 6 s: reliable writer and reader 27 to 28 of about 30 on Humble Fast, Jazzy Fast
+  and Jazzy Cyclone; best-effort writer and reader 10, 6 and 20. Most best-effort frames of that
+  size drop on Fast DDS, yet the first one still came within about 2 s in 9 calls of 9. Across
+  a real network it may be worse: this was not measured.
+

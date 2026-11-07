@@ -61,7 +61,7 @@ _SECURE_LOOKUP_HINT = (
 )
 
 # Wait for `sample_messages` on a topic with no announced publisher.
-_NO_PUBLISHER_WAIT_SEC = 3.0
+NO_PUBLISHER_WAIT_SEC = 3.0
 # `sample_messages` returns within about `timeout_s` plus this: stopping the CLI
 # takes up to ~2 s, and decoding may run until 1 s past the deadline.
 _PARSE_GRACE_SEC = 1.0
@@ -70,7 +70,7 @@ _MIN_ECHO_SEC = 0.5
 _FILTER_DECODE_RESERVE_SEC = 0.5
 # Time `sample_messages` keeps back from the call budget for stopping the CLI
 # (about 2 s) and decoding (until 1 s past the deadline).
-_STOP_RESERVE_SEC = 3.0
+STOP_RESERVE_SEC = 3.0
 # Time a window's helper gets to start and subscribe; the window itself starts then.
 _WINDOW_START_SEC = 2.0
 
@@ -128,10 +128,10 @@ def sample_messages(
         timeout_s = max(timeout_s, window_s + _WINDOW_START_SEC + ROS2_CLI_TIMEOUT_S)
     started = time.monotonic()
     # Whatever the call waited for the lock is already gone from the budget.
-    timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
+    timeout_s = call_budget.clamp(timeout_s, STOP_RESERVE_SEC)
     if timeout_s <= 0:
         raise AdapterError("busy: no time left in this call's budget for sampling, retry")
-    info = _look_up(topic_info, topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
+    info = look_up_topic(topic_info, topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
     log_filter = LogFilter.of(min_log_level, node)
     if log_filter is not None:
         require_log_topic(topic, info.message_type)
@@ -139,7 +139,7 @@ def sample_messages(
         return _sample_result(mode, topic, [], None)
 
     has_publisher = info.publisher_count > 0
-    budget = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
+    budget = timeout_s if has_publisher else min(timeout_s, NO_PUBLISHER_WAIT_SEC)
     remaining = max(budget - (time.monotonic() - started), _MIN_ECHO_SEC)
     # A summary that reads an array (a scan's ranges) needs it whole: stream
     # uncut, summarize, then cut the returned payload as the CLI would have.
@@ -227,7 +227,7 @@ def sample_messages(
     return _sample_result(mode, topic, samples, note or None, _rate(run, count, samples, skipped))
 
 
-def _look_up(topic_info: TopicInfoFn, topic: str, timeout: float) -> TopicInfo:
+def look_up_topic(topic_info: TopicInfoFn, topic: str, timeout: float) -> TopicInfo:
     """The topic's info. On a secured graph a failed lookup may only be slow discovery: say so."""
     try:
         return topic_info(topic, timeout)

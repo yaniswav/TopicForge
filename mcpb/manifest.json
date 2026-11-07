@@ -52,6 +52,7 @@
     { "name": "list_topics", "description": "Discover the ROS 2 graph." },
     { "name": "get_topic_info", "description": "Structured info for one topic." },
     { "name": "sample_messages", "description": "Peek recent messages on a ROS 2 topic." },
+    { "name": "get_image", "description": "One live camera frame as image content." },
     { "name": "analyze_bag", "description": "Summarize a recorded bag." },
     { "name": "list_participants", "description": "DDS participants observed on a domain." },
     { "name": "detect_qos_mismatches", "description": "Incompatible QoS pairs between DDS readers and writers." },

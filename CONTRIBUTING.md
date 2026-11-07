@@ -25,7 +25,7 @@ TopicForge is a small project run by one maintainer, so the contribution loop is
 
 ## What contributions are harder to land
 
-- New MCP tools. The tool surface (seventeen tools, all read-only) is kept deliberately small, and the contract is additive-only. File an issue describing the use case first; the
+- New MCP tools. The tool surface (eighteen tools, all read-only) is kept deliberately small, and the contract is additive-only. File an issue describing the use case first; the
   maintainer will close, defer, or sponsor the work.
 - New backends. The `MiddlewareAdapter` protocol is
   designed to take new adapters, but each one comes with a long-term

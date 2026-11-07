@@ -29,7 +29,7 @@ from rclpy.action import ActionServer
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import Image, Imu, LaserScan
+from sensor_msgs.msg import CompressedImage, Image, Imu, LaserScan
 from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
@@ -49,6 +49,8 @@ class BenchRobot(Node):
         self._scan_pub = self.create_publisher(LaserScan, "/scan", qos)
         self._twist_pub = self.create_publisher(Twist, "/cmd_vel_out", qos)
         self._image_pub = self.create_publisher(Image, "/camera/image_raw", qos)
+        self._compressed_pub = self.create_publisher(CompressedImage, model.COMPRESSED_TOPIC, qos)
+        self._compressed_data = model.compressed_png()
         edge_qos = qos
         if profile is not None and profile.edge_best_effort:
             edge_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -238,6 +240,12 @@ class BenchRobot(Node):
     def _tick_image(self) -> None:
         if self._now() < CAMERA_DELAY_SEC:
             return
+        compressed = CompressedImage()
+        compressed.header.stamp = sim_time_msg(self._now())
+        compressed.header.frame_id = "camera_link"
+        compressed.format = "png"
+        compressed.data = self._compressed_data
+        self._compressed_pub.publish(compressed)
         msg = Image()
         msg.header.stamp = sim_time_msg(self._now())
         msg.header.frame_id = "camera_link"

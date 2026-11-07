@@ -2768,10 +2768,11 @@ def _check_sampler_writers(res: Results, rep: Report) -> None:
 
 
 WINDOW_CALLS = {"61_window_clock": "/clock", "62_window_scan": "/scan"}
-# The publisher's own timer rate against what a window saw: the helper starts after the hello, so
-# the first message comes a little late.
-WINDOW_RATE_TOLERANCE = 0.05
-WINDOW_RECEIVED_TOLERANCE = 0.15
+# The publisher's own timer against what a window saw. The median interval is the rate; the count
+# is looser, since matching takes time and a reliable reader can stall for a second just after it
+# (seen once on Jazzy Fast: /scan, 40 of 50, one gap of 1.18 s, under load).
+WINDOW_INTERVAL_TOLERANCE = 0.1
+WINDOW_RECEIVED_TOLERANCE = 0.3
 WINDOW_SPAN_TOLERANCE_S = 0.5
 
 
@@ -2800,20 +2801,20 @@ def _check_window_call(name: str, topic: str, gt: dict, data: dict, rep: Report,
     result = (objs(data) or [{}])[0]
     rate = result.get("rate") or {}
     received, span = rate.get("message_count") or 0, rate.get("window_s") or 0.0
-    observed = rate.get("observed_frequency_hz")
+    median = rate.get("interval_median_s")
     good = (
         result.get("count") == count
         and abs(span - window_s) <= WINDOW_SPAN_TOLERANCE_S
         and hz is not None
         and abs(received - hz * window_s) <= WINDOW_RECEIVED_TOLERANCE * hz * window_s
-        and observed is not None
-        and abs(observed - hz) <= WINDOW_RATE_TOLERANCE * hz
+        and median is not None
+        and abs(median * hz - 1.0) <= WINDOW_INTERVAL_TOLERANCE
     )
     rep.add(
         "sampler",
         metric,
         {"returned": count, "span_s": window_s, "received": None if hz is None else hz * window_s},
-        {"returned": result.get("count"), "span_s": span, "received": received, "hz": observed},
+        {"returned": result.get("count"), "span_s": span, "received": received, "median_s": median},
         "PASS" if good else "FAIL",
         f"publisher timer {hz} Hz",
         wall,
@@ -2827,6 +2828,52 @@ def _check_sampler_window(gt: dict, res: Results, rep: Report) -> None:
             _check_window_call(name, topic, gt, data, rep, res.times.get(name))
 
 
+IMAGE_CALLS = {"63_image_compressed": "compressed", "64_image_raw": "raw"}
+
+
+def _check_image_call(name: str, kind: str, gt: dict, data: dict, rep: Report, wall: Any) -> None:
+    """`get_image` against the published frame: the bytes of a PNG, the sizes of a raw frame."""
+    truth = (gt.get("image") or {}).get(kind) or {}
+    metric = f"get_image {kind}"
+    err = tool_err(data)
+    if gt.get("_expect_sampler") == "cli":
+        named = bool(err) and "TOPICFORGE_ROS_SAMPLER" in str(err)
+        want = "error naming TOPICFORGE_ROS_SAMPLER"
+        rep.add("sampler", f"{metric} refused on the CLI", want, err or "answered",
+                "PASS" if named else "FAIL", "", wall)  # fmt: skip
+        return
+    if err:
+        rep.add("sampler", metric, truth, err, "FAIL", "", wall)
+        return
+    info = next((o for o in objs(data) if isinstance(o, dict) and "sha256" in o), {})
+    size = [info.get("width"), info.get("height")]
+    returned = [info.get("returned_width"), info.get("returned_height")]
+    if kind == "compressed":
+        want = {k: truth.get(k) for k in ("sha256", "byte_count", "size", "frame_id")}
+        got = {
+            "sha256": info.get("sha256"),
+            "byte_count": info.get("byte_count"),
+            "size": size,
+            "frame_id": info.get("frame_id"),
+        }
+    else:
+        want = {k: truth.get(k) for k in ("size", "returned", "encoding", "frame_id")}
+        got = {
+            "size": size,
+            "returned": returned,
+            "encoding": info.get("encoding"),
+            "frame_id": info.get("frame_id"),
+        }
+    rep.add("sampler", metric, want, got, "PASS" if got == want else "FAIL", "", wall)
+
+
+def _check_sampler_image(gt: dict, res: Results, rep: Report) -> None:
+    for name, kind in IMAGE_CALLS.items():
+        data = res.load(name)
+        if data is not None:
+            _check_image_call(name, kind, gt, data, rep, res.times.get(name))
+
+
 @guard("sampler")
 def check_sampler(gt: dict, res: Results, rep: Report) -> None:
     """What `sample_messages` really ran on, so a silent fallback cannot pass for the helper."""
@@ -2835,6 +2882,7 @@ def check_sampler(gt: dict, res: Results, rep: Report) -> None:
         _check_sampler_backend(want, res, rep)
     _check_sampler_writers(res, rep)
     _check_sampler_window(gt, res, rep)
+    _check_sampler_image(gt, res, rep)
 
 
 SECTIONS = (

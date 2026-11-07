@@ -6,7 +6,8 @@ Started by path under the distro's interpreter by `helper_stream.py`, one proces
 `rosidl_runtime_py` only, never `topicforge`. The flags mirror `ros2 topic echo`, and each
 message is the text that command prints (`message_to_yaml`), so the server decodes it with the
 same code. With `--window` it stays subscribed for that long instead of stopping at `--count`,
-reports every arrival and sends an evenly spread subset (`WindowStride`). It only reads: the one topic subscription is the only entity it asks for, next to
+reports every arrival and sends an evenly spread subset (`WindowStride`). With `--raw` each
+message is sent as the CDR it arrived in, for an image. It only reads: the one topic subscription is the only entity it asks for, next to
 what `Node` itself creates (`SECURITY.md` lists them).
 
 Output on stdout is binary frames (see `adapters/common/sampler_frames.py`, which decodes them).
@@ -111,6 +112,7 @@ def parse_args(argv):
     p.add_argument("--full-length", action="store_true")
     p.add_argument("--no-arr", action="store_true")
     p.add_argument("--window", type=float, default=None, help="seconds subscribed, from the hello")
+    p.add_argument("--raw", action="store_true", help="send the CDR, untouched (for an image)")
     return p.parse_args(argv)
 
 
@@ -232,14 +234,20 @@ def run(args, out_fd, stop, nodes):
         meta = {"wall_ns": wall_ns, "encoding": "yaml", "index": index, "stride": stride.stride}
         write_all(out_fd, encode_frame(KIND_MESSAGE, meta, text.encode("utf-8")))
 
+    def on_raw_message(raw):
+        """The CDR as it came; `--max-chars` is in bytes here."""
+        if got[0] >= args.count:
+            return
+        wall_ns = time.time_ns()
+        if args.max_chars is not None and len(raw) > args.max_chars:
+            write_all(out_fd, encode_frame(KIND_DROPPED, {"wall_ns": wall_ns}))
+            return
+        write_all(out_fd, encode_frame(KIND_MESSAGE, {"wall_ns": wall_ns, "encoding": "cdr"}, raw))
+        got[0] += 1
+
     windowed = args.window is not None
-    node.create_subscription(
-        cls,
-        args.topic,
-        on_window_message if windowed else on_message,
-        reader_qos(args),
-        raw=windowed,
-    )
+    callback = on_window_message if windowed else on_raw_message if args.raw else on_message
+    node.create_subscription(cls, args.topic, callback, reader_qos(args), raw=windowed or args.raw)
     hello_mono_ns = time.monotonic_ns()
     hello = {"pid": os.getpid(), "type": args.type, "wall_ns": time.time_ns()}
     write_all(out_fd, encode_frame(KIND_HELLO, hello))

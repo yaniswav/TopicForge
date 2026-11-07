@@ -49,6 +49,11 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.4",
+    "pillow>=10",
+]
+# `get_image` on a raw sensor_msgs/Image: resizing and PNG. A CompressedImage needs nothing.
+image = [
+    "pillow>=10",
 ]
 # DDS extras. Only bindings that are actually published on PyPI and used by
 # a working adapter are declared here.
@@ -78,6 +83,7 @@ dds = [
 bags = []
 all = [
     "topicforge[dds]",
+    "topicforge[image]",
 ]
 
 [project.scripts]

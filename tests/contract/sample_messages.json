@@ -89,7 +89,7 @@
           }
         ],
         "default": null,
-        "description": "Listen this long (s; needs the helper, no log filters): `rate` covers all, `count` samples spread evenly."
+        "description": "Listen this long, on the helper: `rate` covers all, `count` samples spread evenly."
       }
     },
     "required": [

@@ -42,6 +42,8 @@ MVP_TOOLS = {
     # What changed in the graph, and the one-call sweep
     "graph_diff",
     "diagnose",
+    # One frame of a camera (slot 16)
+    "get_image",
 }
 
 
@@ -56,10 +58,10 @@ def test_build_app_succeeds() -> None:
     assert app is not None
 
 
-def test_tool_surface_is_locked_at_seventeen() -> None:
+def test_tool_surface_is_locked_at_eighteen() -> None:
     names = {t.name for t in asyncio.run(_mock_app().list_tools())}
     assert names == MVP_TOOLS
-    assert len(names) == 17
+    assert len(names) == 18
 
 
 def test_all_mvp_tools_registered() -> None:
@@ -126,7 +128,8 @@ _EXPECTED_OUTPUT_TITLES = {
 def test_tool_outputs_are_typed_pydantic_schemas() -> None:
     app = _mock_app()
     tools = {t.name: t for t in asyncio.run(app.list_tools())}
-    assert set(_EXPECTED_OUTPUT_TITLES) == MVP_TOOLS
+    # `get_image` returns a content block, with no output schema on purpose (CONTRACT 9.30).
+    assert set(_EXPECTED_OUTPUT_TITLES) == MVP_TOOLS - {"get_image"}
 
     for name, expected_title in _EXPECTED_OUTPUT_TITLES.items():
         schema = tools[name].output_schema
@@ -155,6 +158,8 @@ def test_tool_responses_expose_mode_effective_field() -> None:
     tools = {t.name: t for t in asyncio.run(app.list_tools())}
 
     for tool_name, tool in tools.items():
+        if tool_name == "get_image":  # no output schema, `mode_effective` in the JSON it returns
+            continue
         schema = tool.output_schema
         assert schema is not None, f"{tool_name}: outputSchema must be populated"
         properties = schema.get("properties") or {}

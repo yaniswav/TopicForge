@@ -24,8 +24,8 @@ def _tools() -> list[Tool]:
     return asyncio.run(app.list_tools())
 
 
-def test_tool_count_is_seventeen() -> None:
-    assert len(_tools()) == 17
+def test_tool_count_is_eighteen() -> None:
+    assert len(_tools()) == 18
 
 
 def test_every_tool_is_declared_read_only() -> None:

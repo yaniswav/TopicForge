@@ -1,0 +1,32 @@
+{
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true,
+    "readOnlyHint": true,
+    "title": "Get image"
+  },
+  "description": "One live frame as image content plus JSON metadata. CompressedImage passes through; raw needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop.",
+  "inputSchema": {
+    "properties": {
+      "max_edge": {
+        "default": 512,
+        "description": "Longest edge of a raw image.",
+        "maximum": 2048,
+        "minimum": 16,
+        "type": "integer"
+      },
+      "topic": {
+        "description": "A sensor_msgs/Image or CompressedImage topic.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "topic"
+    ],
+    "type": "object"
+  },
+  "name": "get_image",
+  "outputSchema": null,
+  "title": "Get image"
+}

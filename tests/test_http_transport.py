@@ -74,7 +74,7 @@ def test_lists_the_tools_over_http_and_binds_to_loopback_only(
             return [tool.name for tool in (await client.list_tools()).tools]
 
     names = asyncio.run(run())
-    assert len(names) == 17 and "health_check" in names
+    assert len(names) == 18 and "health_check" in names
 
 
 def _post(port: int, host_header: str, authorization: str | None = None) -> int:
@@ -153,7 +153,7 @@ def test_an_mcp_client_with_the_token_lists_the_tools(
         async with http, Client(streamable_http_client(url, http_client=http)) as client:
             return [tool.name for tool in (await client.list_tools()).tools]
 
-    assert len(asyncio.run(run())) == 17
+    assert len(asyncio.run(run())) == 18
 
 
 def test_a_token_still_keeps_dns_rebinding_protection_on_loopback(

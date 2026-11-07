@@ -359,4 +359,5 @@ def test_schemas_carry_no_generated_titles_but_keep_the_output_type_name(
 
     for tool in tools.values():
         assert titles(tool.input_schema) == [], tool.name
-        assert titles(tool.output_schema) == [tool.output_schema["title"]], tool.name
+        if tool.name != "get_image":  # declares no output schema on purpose (CONTRACT 9.30)
+            assert titles(tool.output_schema) == [tool.output_schema["title"]], tool.name

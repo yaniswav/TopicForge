@@ -6,7 +6,7 @@ endian), UTF-8 JSON metadata, then the body:
 
 - `h`, hello: the subscription exists. Metadata `pid`, `type`, `wall_ns`.
 - `m`, message: metadata `wall_ns` (wall clock at reception) and `encoding`, with the body in that
-  encoding. `yaml` is the text `ros2 topic echo` prints. `cdr` (raw bytes, for an image) and the
+  encoding. `yaml` is the text `ros2 topic echo` prints. `cdr` is the raw bytes, for an image. The
   optional `source_ns` and `received_ns` (middleware timestamps, for time windows) are decoded
   here but the helper does not send them yet. In a time window `index` numbers the message among
   all that arrived and `stride` says that, from now on, only indexes divisible by it are kept.
