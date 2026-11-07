@@ -88,9 +88,9 @@ sampler_pass() {
     tail -n 1 "$OUT/compare_$sampler.log"
     return $rc
 }
-sampler_pass cli
+sampler_pass cli "$GT/calls_sampler_window.json"
 CLI_RC=$?
-sampler_pass rclpy "$GT/calls_sampler_writers.json"
+sampler_pass rclpy "$GT/calls_sampler_window.json" "$GT/calls_sampler_writers.json"
 RCLPY_RC=$?
 # Let the last helper and the ghosts of both passes leave before the graph is read again.
 sleep 5

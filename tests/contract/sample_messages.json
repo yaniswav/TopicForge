@@ -76,6 +76,20 @@
       "topic": {
         "description": "Fully qualified ROS 2 topic name starting with `/`, e.g. `/cmd_vel`. Segments are letters, digits and underscores (not starting with a digit); anything else is rejected before reaching the `ros2` CLI.",
         "type": "string"
+      },
+      "window_s": {
+        "anyOf": [
+          {
+            "maximum": 30.0,
+            "minimum": 0.5,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Listen this long (s; needs the helper, no log filters): `rate` covers all, `count` samples spread evenly."
       }
     },
     "required": [

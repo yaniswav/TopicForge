@@ -66,6 +66,11 @@ SAMPLE_TIMEOUT_PARAM_DESC = (
     "it for a topic slower than 1 Hz."
 )
 
+SAMPLE_WINDOW_PARAM_DESC = (
+    "Listen this long (s; needs the helper, no log filters): `rate` covers all, `count` samples "
+    "spread evenly."
+)
+
 MAX_ARRAY_LENGTH_PARAM_DESC = (
     "Longest array, string or bytes value returned in full, 1..65536, default 128 (a "
     "541-beam `LaserScan` is cut to 128 ranges; its `summary` still covers all). Longer "

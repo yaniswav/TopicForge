@@ -269,6 +269,7 @@ def test_method_arguments_propagate_unchanged() -> None:
                 ("min_log_level", None),
                 ("node", None),
                 ("timeout_s", 10.0),
+                ("window_s", None),
             ),
         ),
     )

@@ -450,6 +450,9 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
 }
 
 
+_MOCK_WINDOW_PERIOD_NS = 100_000_000
+
+
 def mock_samples_for(
     topic: str,
     count: int,
@@ -491,6 +494,39 @@ def mock_sample_rate(samples: list[MessageSample]) -> TopicRate | None:
         basis="received_ns",
         stamps_ns=[s.timestamp_ns for s in samples] if stamped else None,
         stamped=[(s.received_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.received_ns],
+    )
+
+
+def mock_window_result(topic: str, samples: list[MessageSample], window_s: float) -> SampleResult:
+    """A time window on the mock: 10 Hz arrivals, with `samples` spread evenly over them."""
+    from topicforge.adapters.common.summaries import compute_rate
+
+    if not samples or samples[0].received_ns is None:
+        return SampleResult(topic=topic, count=0, samples=[], mode_effective="mock")
+    start = samples[0].received_ns
+    period = _MOCK_WINDOW_PERIOD_NS
+    received = max(int(window_s * 1e9 / period), 1)
+    arrivals = [start + i * period for i in range(received)]
+    last = max(len(samples) - 1, 1)
+    spread = [
+        sample.model_copy(update={"received_ns": arrivals[i * (received - 1) // last]})
+        for i, sample in enumerate(samples[:received])
+    ]
+    rate = compute_rate(
+        arrivals,
+        basis="received_ns",
+        window_start_ns=start,
+        window_end_ns=start + int(window_s * 1e9),
+        stopped_on_deadline=True,
+    )
+    return SampleResult(
+        topic=topic,
+        count=len(spread),
+        samples=spread,
+        mode_effective="mock",
+        rate=rate,
+        note=f"{received} messages received over {window_s:.2f} s, {len(spread)} returned, "
+        "spread evenly.",
     )
 
 

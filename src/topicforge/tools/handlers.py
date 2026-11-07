@@ -28,11 +28,13 @@ from topicforge.constants import (
     MAX_NODE_TIMEOUT_S,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MAX_SAMPLE_WINDOW_S,
     MAX_TF_STALE_AFTER_S,
     MAX_TF_WINDOW_S,
     MIN_DIAGNOSE_BUDGET_S,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
+    MIN_SAMPLE_WINDOW_S,
     MIN_TF_STALE_AFTER_S,
     MIN_TF_WINDOW_S,
 )
@@ -91,6 +93,7 @@ from topicforge.tools.descriptions import (
     SAMPLE_COUNT_PARAM_DESC,
     SAMPLE_MESSAGES_DESC,
     SAMPLE_TIMEOUT_PARAM_DESC,
+    SAMPLE_WINDOW_PARAM_DESC,
     START_S_PARAM_DESC,
     TF_FRAME_PARAM_DESC,
     TOPIC_METRICS_DESC,
@@ -244,6 +247,14 @@ def _register_ros_tools(
         ] = DEFAULT_SAMPLE_TIMEOUT_S,
         min_log_level: _LogLevel = None,
         node: Annotated[str | None, Field(description=LOG_NODE_PARAM_DESC)] = None,
+        window_s: Annotated[
+            float | None,
+            Field(
+                description=SAMPLE_WINDOW_PARAM_DESC,
+                ge=MIN_SAMPLE_WINDOW_S,
+                le=MAX_SAMPLE_WINDOW_S,
+            ),
+        ] = None,
     ) -> SampleResult:
         return inspector.sample_messages(
             topic,
@@ -253,6 +264,7 @@ def _register_ros_tools(
             timeout_s=timeout_s,
             min_log_level=min_log_level,
             node=node,
+            window_s=window_s,
         )
 
     @mcp.tool(

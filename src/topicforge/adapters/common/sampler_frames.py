@@ -4,12 +4,14 @@ The helper cannot import this package, so it carries its own encoder; a test kee
 together. A frame is a 12-byte header (`TF`, version, kind, metadata length, body length, big
 endian), UTF-8 JSON metadata, then the body:
 
-- `h`, hello: the subscription exists. Metadata `pid`, `type`.
+- `h`, hello: the subscription exists. Metadata `pid`, `type`, `wall_ns`.
 - `m`, message: metadata `wall_ns` (wall clock at reception) and `encoding`, with the body in that
   encoding. `yaml` is the text `ros2 topic echo` prints. `cdr` (raw bytes, for an image) and the
   optional `source_ns` and `received_ns` (middleware timestamps, for time windows) are decoded
-  here but the helper does not send them yet.
+  here but the helper does not send them yet. In a time window `index` numbers the message among
+  all that arrived and `stride` says that, from now on, only indexes divisible by it are kept.
 - `d`, dropped: a message over the helper's `--max-chars`, counted and not sent. Metadata `wall_ns`.
+- `a`, arrival: a message of a time window that the stride does not select: only `wall_ns`.
 
 Unknown metadata keys are kept, so a newer helper field does not break a reader.
 """
@@ -26,11 +28,12 @@ VERSION = 1
 KIND_HELLO = "h"
 KIND_MESSAGE = "m"
 KIND_DROPPED = "d"
+KIND_ARRIVAL = "a"
 ENCODING_YAML = "yaml"
 ENCODING_CDR = "cdr"
 
 _HEADER = struct.Struct(">2sBBII")
-_KINDS = frozenset({KIND_HELLO, KIND_MESSAGE, KIND_DROPPED})
+_KINDS = frozenset({KIND_HELLO, KIND_MESSAGE, KIND_DROPPED, KIND_ARRIVAL})
 _MAX_META_BYTES = 64 * 1024
 # Far above the largest accepted `TOPICFORGE_MAX_SAMPLE_BYTES`: a length past it is corruption.
 MAX_BODY_BYTES = 1024 * 1024 * 1024
@@ -53,6 +56,18 @@ class Frame:
         """Wall clock at reception, 0 when the frame has none."""
         value = self.meta.get("wall_ns")
         return value if isinstance(value, int) else 0
+
+    @property
+    def index(self) -> int:
+        """Position of a window's message among all that arrived, 0 when the frame has none."""
+        value = self.meta.get("index")
+        return value if isinstance(value, int) else 0
+
+    @property
+    def stride(self) -> int:
+        """Stride of a window from this frame on, 1 when the frame has none."""
+        value = self.meta.get("stride")
+        return value if isinstance(value, int) and value > 0 else 1
 
     @property
     def encoding(self) -> str | None:
@@ -126,6 +141,7 @@ def read_frame(stream: IO[bytes]) -> Frame | None:
 __all__ = [
     "ENCODING_CDR",
     "ENCODING_YAML",
+    "KIND_ARRIVAL",
     "KIND_DROPPED",
     "KIND_HELLO",
     "KIND_MESSAGE",

@@ -103,6 +103,7 @@ class MockAdapter:
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
         min_log_level: str | None = None,
         node: str | None = None,
+        window_s: float | None = None,
     ) -> SampleResult:
         # Mock samples never wait, so `timeout_s` does not apply.
         if count < 0:
@@ -123,6 +124,8 @@ class MockAdapter:
             max_array_length=max_array_length,
             arrays_summary_only=arrays_summary_only,
         )
+        if window_s is not None:
+            return fixtures.mock_window_result(topic, samples, window_s)
         return SampleResult(
             topic=topic,
             count=len(samples),

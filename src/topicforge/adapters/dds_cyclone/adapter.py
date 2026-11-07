@@ -381,6 +381,7 @@ class CycloneDdsAdapter:
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
         min_log_level: str | None = None,
         node: str | None = None,
+        window_s: float | None = None,
     ) -> SampleResult:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 

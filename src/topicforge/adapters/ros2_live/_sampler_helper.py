@@ -5,7 +5,8 @@ Started by path under the distro's interpreter by `helper_stream.py`, one proces
 `sample_messages` call. It must stay importable there: standard library, `rclpy` and
 `rosidl_runtime_py` only, never `topicforge`. The flags mirror `ros2 topic echo`, and each
 message is the text that command prints (`message_to_yaml`), so the server decodes it with the
-same code. It only reads: the one topic subscription is the only entity it asks for, next to
+same code. With `--window` it stays subscribed for that long instead of stopping at `--count`,
+reports every arrival and sends an evenly spread subset (`WindowStride`). It only reads: the one topic subscription is the only entity it asks for, next to
 what `Node` itself creates (`SECURITY.md` lists them).
 
 Output on stdout is binary frames (see `adapters/common/sampler_frames.py`, which decodes them).
@@ -14,7 +15,7 @@ stderr. Stdin is a pipe the parent holds open: EOF ends the run, so a dead paren
 this process. A clean exit tells the graph at once; a killed reader stays matched on the writers
 for a while, which is why the parent closes stdin first and kills only as a last resort.
 
-Exit codes: 0 got `--count`, 3 deadline, 4 stdin EOF or closed stdout, 5 setup error (one line
+Exit codes: 0 got `--count`, 3 deadline or end of the window, 4 stdin EOF or closed stdout, 5 setup error (one line
 on stderr).
 """
 
@@ -43,12 +44,41 @@ _VERSION = 1
 KIND_HELLO = ord("h")
 KIND_MESSAGE = ord("m")
 KIND_DROPPED = ord("d")
+KIND_ARRIVAL = ord("a")
 
 
 def encode_frame(kind, meta, body=b""):
     """One frame: fixed header, JSON metadata, body."""
     head = json.dumps(meta, separators=(",", ":")).encode("utf-8")
     return _FRAME_HEADER.pack(_MAGIC, _VERSION, kind, len(head), len(body)) + head + body
+
+
+class WindowStride:
+    """Which messages of a time window to send: every `stride`-th, doubling as they accumulate.
+
+    At most `2 * count` sent messages are ever worth keeping, so the parent holds a bounded
+    number and they stay evenly spread however many arrive. Each sent frame carries the stride,
+    and the parent drops what the new stride no longer selects.
+    """
+
+    def __init__(self, count):
+        self.limit = max(2 * count, 4)
+        self.stride = 1
+        self.seen = 0
+        self.held = 0
+
+    def next_index(self):
+        """Number this message; it is sent when the result divides by `stride`."""
+        index = self.seen
+        self.seen += 1
+        return index
+
+    def sent(self):
+        """One more message kept by the parent: at the limit, half of them stop counting."""
+        self.held += 1
+        if self.held >= self.limit:
+            self.stride *= 2
+            self.held = self.limit // 2
 
 
 class OutputClosed(Exception):
@@ -80,6 +110,7 @@ def parse_args(argv):
     p.add_argument("--truncate-length", type=int, default=128)
     p.add_argument("--full-length", action="store_true")
     p.add_argument("--no-arr", action="store_true")
+    p.add_argument("--window", type=float, default=None, help="seconds subscribed, from the hello")
     return p.parse_args(argv)
 
 
@@ -156,6 +187,7 @@ def reader_qos(args):
 def run(args, out_fd, stop, nodes):
     """Subscribe and forward messages; returns the exit code."""
     import rclpy
+    from rclpy.serialization import deserialize_message
     from rosidl_runtime_py import message_to_yaml
     from rosidl_runtime_py.utilities import get_message
 
@@ -178,9 +210,42 @@ def run(args, out_fd, stop, nodes):
         write_all(out_fd, encode_frame(KIND_MESSAGE, meta, text.encode("utf-8")))
         got[0] += 1
 
-    node.create_subscription(cls, args.topic, on_message, reader_qos(args))
-    write_all(out_fd, encode_frame(KIND_HELLO, {"pid": os.getpid(), "type": args.type}))
-    while got[0] < args.count and not stop["why"]:
+    stride = WindowStride(args.count)
+
+    def on_window_message(raw):
+        """Raw, so a message that is only counted costs no deserialization.
+
+        The times run on the monotonic clock from the hello: a step of the wall clock during the
+        window would read as a gap in the rate.
+        """
+        wall_ns = hello["wall_ns"] + time.monotonic_ns() - hello_mono_ns
+        index = stride.next_index()
+        if index % stride.stride:
+            write_all(out_fd, encode_frame(KIND_ARRIVAL, {"wall_ns": wall_ns}))
+            return
+        msg = deserialize_message(raw, cls)
+        text = message_to_yaml(msg, truncate_length=truncate, no_arr=args.no_arr)
+        if args.max_chars is not None and len(text) > args.max_chars:
+            write_all(out_fd, encode_frame(KIND_DROPPED, {"wall_ns": wall_ns}))
+            return
+        stride.sent()
+        meta = {"wall_ns": wall_ns, "encoding": "yaml", "index": index, "stride": stride.stride}
+        write_all(out_fd, encode_frame(KIND_MESSAGE, meta, text.encode("utf-8")))
+
+    windowed = args.window is not None
+    node.create_subscription(
+        cls,
+        args.topic,
+        on_window_message if windowed else on_message,
+        reader_qos(args),
+        raw=windowed,
+    )
+    hello_mono_ns = time.monotonic_ns()
+    hello = {"pid": os.getpid(), "type": args.type, "wall_ns": time.time_ns()}
+    write_all(out_fd, encode_frame(KIND_HELLO, hello))
+    if windowed:
+        deadline_at = min(deadline_at, time.monotonic() + args.window)
+    while (windowed or got[0] < args.count) and not stop["why"]:
         left = deadline_at - time.monotonic()
         if left <= 0:
             return EXIT_DEADLINE

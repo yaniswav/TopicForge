@@ -147,7 +147,9 @@ def test_skipping_graph_diff_drops_its_rows_only(tmp_path: Path) -> None:
 def test_the_bench_runs_a_pass_per_backend_before_the_graph_changes() -> None:
     script = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text(encoding="utf-8")
     cli = script.index("sampler_pass cli")
-    rclpy = script.index('sampler_pass rclpy "$GT/calls_sampler_writers.json"')
+    rclpy = script.index(
+        'sampler_pass rclpy "$GT/calls_sampler_window.json" "$GT/calls_sampler_writers.json"'
+    )
     graph_diff = script.index('"$GT/calls_graph_diff.json"')
     assert cli < rclpy < graph_diff
     assert "--skip-section graph_diff" in script
@@ -159,3 +161,66 @@ def test_the_workflow_triggers_on_the_helper_paths() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ros2-live.yml").read_text(encoding="utf-8")
     for path in ("adapters/ros2_live/**", "common/sampler_frames.py", "common/ros_python.py"):
         assert workflow.count(path) == 2, path
+
+
+_WINDOW_TRUTH = {"rates": {"per_topic": {"/clock": {"rate_wall_hz": 50.0}}}}
+
+
+def _window(received: int, span: float, hz: float, returned: int = 5) -> dict[str, Any]:
+    data = _call(
+        {
+            "count": returned,
+            "rate": {"message_count": received, "window_s": span, "observed_frequency_hz": hz},
+        }
+    )
+    data["_call"]["args"] = {"topic": "/clock", "count": 5, "window_s": 5}
+    return data
+
+
+def _window_rows(
+    tmp_path: Path, data: dict[str, Any], expect: str | None = "rclpy"
+) -> dict[str, dict[str, Any]]:
+    folder = tmp_path / "results"
+    folder.mkdir()
+    (folder / "61_window_clock.json").write_text(json.dumps(data), encoding="utf-8")
+    truth = tmp_path / "truth.json"
+    truth.write_text(json.dumps(_WINDOW_TRUTH), encoding="utf-8")
+    args = ["--expect-sampler", expect] if expect else []
+    compare.main(["--truth", str(truth), "--results", str(folder), *args])
+    report = json.loads((folder / "comparison.json").read_text(encoding="utf-8"))
+    return {r["metric"]: r for r in report["rows"] if r["section"] == "sampler"}
+
+
+def test_a_window_with_the_publisher_rate_passes(tmp_path: Path) -> None:
+    rows = _window_rows(tmp_path, _window(247, 5.0, 50.0))
+    assert rows["/clock window_s"]["verdict"] == "PASS"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        _window(100, 5.0, 50.0),
+        _window(247, 8.0, 50.0),
+        _window(247, 5.0, 30.0),
+        _window(247, 5.0, 50.0, 2),
+    ],
+)
+def test_a_window_that_disagrees_with_the_publisher_fails(
+    tmp_path: Path, bad: dict[str, Any]
+) -> None:
+    assert _window_rows(tmp_path, bad)["/clock window_s"]["verdict"] == "FAIL"
+
+
+def test_the_cli_pass_wants_the_refusal(tmp_path: Path) -> None:
+    refused = {
+        "isError": True,
+        "content": ["`window_s` needs the sampling helper: TOPICFORGE_ROS_SAMPLER=cli"],
+        "_call": {"tool": "t", "args": {"topic": "/clock", "count": 5, "window_s": 5}},
+    }
+    rows = _window_rows(tmp_path, refused, "cli")
+    assert rows["/clock window_s refused on the CLI"]["verdict"] == "PASS"
+
+
+def test_the_cli_pass_fails_when_a_window_answers(tmp_path: Path) -> None:
+    rows = _window_rows(tmp_path, _window(247, 5.0, 50.0), "cli")
+    assert rows["/clock window_s refused on the CLI"]["verdict"] == "FAIL"

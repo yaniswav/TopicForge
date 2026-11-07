@@ -1627,3 +1627,32 @@ Additive (1.9).
   The server closes its stdin and waits 1.2 s; the tree kill is the last resort, because a killed
   reader stays matched on its writers and slows the next start on that topic.
 
+### 9.29 Time windows in `sample_messages` (0.10.0)
+
+Additive (1.9). New optional input `window_s` (0.5..30 s, default null: no change). No new output
+field: what a window measures goes in the existing `rate` and `note`.
+
+- The helper stays subscribed for `window_s` from the moment it subscribed, whatever `count` is.
+  `count` caps the samples returned, spread evenly over what arrived (first and last included).
+- `rate.message_count` is every message received in the window, not the samples returned.
+  `rate.window_s` is the true span, from the subscription to the end of the read: it can be below
+  `window_s` when the call budget ran out, or when no publisher is announced (3 s wait). `note`
+  says `N messages received over S s, M returned, spread evenly.`
+- The rate is on the time of reception in the helper, which is the wall clock at the subscription
+  plus the monotonic clock since then, so a step of the wall clock during the window is not read as
+  a gap. These are reception times in `rclpy`'s callback, not middleware timestamps.
+  `sim_frequency_hz` counts what arrived between the first and last samples returned.
+- Memory is bounded. The helper sends a message only when its position divides by a stride, which
+  doubles when `2 * max(count, 2)` are held, and deserializes only those. Every other arrival is one
+  small frame. So the server holds at most about `2 * count` message texts, each under the size cap,
+  plus one integer per arrival. A reader that cannot keep up loses messages, as any subscriber does:
+  `message_count` is what was received, not what was published.
+- `timeout_s` does not cut a window: the call is lengthened to `window_s` plus the helper's start-up
+  (2 s) plus the topic lookup, inside the 45 s budget.
+- On the CLI backend (`TOPICFORGE_ROS_SAMPLER=cli`, or `auto` where the check failed) `window_s` is
+  an error naming `TOPICFORGE_ROS_SAMPLER`. Under `auto` a helper that fails during the window is an
+  error too: there is no fallback, since the CLI cannot do it. With `min_log_level` or `node` it is
+  an error. On a DDS-only setup `sample_messages` raises as before.
+- Mock: 10 Hz, deterministic, `message_count` = 10 x `window_s`.
+- Bags already have `start_s` and `end_s`.
+

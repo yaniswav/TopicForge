@@ -26,10 +26,12 @@ from topicforge.constants import (
     MAX_PARTICIPANT_EVENTS,
     MAX_SAMPLE_COUNT,
     MAX_SAMPLE_TIMEOUT_S,
+    MAX_SAMPLE_WINDOW_S,
     MAX_TF_STALE_AFTER_S,
     MAX_TF_WINDOW_S,
     MIN_NODE_TIMEOUT_S,
     MIN_SAMPLE_TIMEOUT_S,
+    MIN_SAMPLE_WINDOW_S,
     MIN_TF_STALE_AFTER_S,
     MIN_TF_WINDOW_S,
     TRUNCATED_FIELDS_KEY,
@@ -255,6 +257,7 @@ class Inspector:
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
         min_log_level: str | None = None,
         node: str | None = None,
+        window_s: float | None = None,
     ) -> SampleResult:
         _validate_topic_name(topic)
         n = DEFAULT_SAMPLE_COUNT if count is None else count
@@ -262,7 +265,8 @@ class Inspector:
             raise AdapterError("count must be >= 0")
         _validate_max_array_length(max_array_length)
         _validate_timeout_s(timeout_s)
-        LogFilter.of(min_log_level, node)  # raises on a bad level or node before any I/O
+        log_filter = LogFilter.of(min_log_level, node)  # raises on a bad value before any I/O
+        _validate_sample_window(window_s, log_filter is not None)
         capped = min(n, MAX_SAMPLE_COUNT)
         result = self._adapter.sample_messages(
             topic,
@@ -272,6 +276,7 @@ class Inspector:
             timeout_s=timeout_s,
             min_log_level=min_log_level,
             node=node,
+            window_s=window_s,
         )
         samples, notes = apply_sample_budget(result.samples, self._max_sample_bytes)
         if n > capped:
@@ -462,6 +467,19 @@ class Inspector:
             return result
         note = " ".join([n for n in [result.note, *notes] if n])
         return result.model_copy(update={"samples": samples, "count": len(samples), "note": note})
+
+
+def _validate_sample_window(value: float | None, filtered: bool) -> None:
+    if value is None:
+        return
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise AdapterError(f"window_s must be a number, got {type(value).__name__}")
+    if not MIN_SAMPLE_WINDOW_S <= value <= MAX_SAMPLE_WINDOW_S:
+        raise AdapterError(
+            f"window_s must be in {MIN_SAMPLE_WINDOW_S:g}..{MAX_SAMPLE_WINDOW_S:g}, got {value}"
+        )
+    if filtered:
+        raise AdapterError("window_s does not combine with `min_log_level` or `node`")
 
 
 def _validate_timeout_s(value: float) -> None:

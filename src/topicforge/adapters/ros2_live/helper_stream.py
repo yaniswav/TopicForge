@@ -35,6 +35,7 @@ from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.ros_python import choose_ros_python
 from topicforge.adapters.common.sampler_frames import (
     ENCODING_YAML,
+    KIND_ARRIVAL,
     KIND_DROPPED,
     KIND_HELLO,
     KIND_MESSAGE,
@@ -142,9 +143,14 @@ def stream_helper(
     count: int,
     deadline_s: float,
     hello_s: float | None = None,
+    window: bool = False,
     popen: PopenFactory = subprocess.Popen,
 ) -> EchoRun:
     """Run `cmd` and return up to `count` messages within `deadline_s` seconds.
+
+    With `window` the helper runs `--window` and `count` does not stop the read: the run ends
+    when the helper does, holds a bounded evenly spread subset (see `WindowStride` in the helper)
+    and the arrival of every message, and its span starts when the helper subscribed.
 
     A helper that has not said it subscribed within `hello_s` (default the whole budget) is
     stalled, not a silent topic: `exit_code` is `EXIT_STALLED` and `stderr_tail` says so.
@@ -176,10 +182,12 @@ def stream_helper(
     for thread in threads:
         thread.start()
 
-    run = EchoRun(started_ns=time.time_ns(), tool=HELPER_LABEL)
+    run = EchoRun(started_ns=time.time_ns(), tool=HELPER_LABEL, window=window)
     try:
         _collect(run, proc, frames, count, deadline_s, deadline_s if hello_s is None else hello_s)
         run.ended_ns = time.time_ns()
+        if run.hello_mono_ns:
+            run.ended_ns = run.started_ns + time.monotonic_ns() - run.hello_mono_ns
     finally:
         stop_helper(proc, job)
         for thread in threads:
@@ -227,7 +235,7 @@ def _collect(
     end = started + budget_s
     hello_end = started + min(hello_s, budget_s)
     greeted = False
-    while len(run.documents) < count:
+    while run.window or len(run.documents) < count:
         remaining = (end if greeted else hello_end) - time.monotonic()
         try:
             if remaining <= 0:
@@ -263,12 +271,31 @@ def _mark_stalled(run: EchoRun, waited_s: float) -> None:
 
 def _add_frame(run: EchoRun, frame: Frame) -> None:
     """Turn one frame into what the echo stream collects."""
-    if frame.kind == KIND_DROPPED:
+    if frame.kind == KIND_HELLO and run.window and frame.wall_ns:
+        run.started_ns = frame.wall_ns
+        run.hello_mono_ns = time.monotonic_ns()
+    elif frame.kind == KIND_ARRIVAL:
+        run.unkept_received_ns.append(frame.wall_ns or time.time_ns())
+    elif frame.kind == KIND_DROPPED:
         run.oversized += 1
         run.oversized_received_ns.append(frame.wall_ns or time.time_ns())
     elif frame.kind == KIND_MESSAGE and frame.encoding == ENCODING_YAML:
         text = frame.body.decode("utf-8", errors="replace")
-        run.documents.append(EchoDocument(text, frame.wall_ns or time.time_ns()))
+        run.documents.append(EchoDocument(text, frame.wall_ns or time.time_ns(), frame.index))
+        if frame.stride != run.stride:
+            run.stride = frame.stride
+            _keep_stride(run)
+
+
+def _keep_stride(run: EchoRun) -> None:
+    """Drop the documents the window's stride no longer selects; their arrivals still count."""
+    kept: list[EchoDocument] = []
+    for doc in run.documents:
+        if doc.index % run.stride:
+            run.unkept_received_ns.append(doc.received_ns)
+        else:
+            kept.append(doc)
+    run.documents = kept
 
 
 def _pump_frames(stream: IO[bytes] | None, out: queue.Queue[Frame | FrameError | None]) -> None:

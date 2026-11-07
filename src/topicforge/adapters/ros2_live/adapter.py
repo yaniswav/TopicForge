@@ -303,6 +303,7 @@ class Ros2CliAdapter:
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
         min_log_level: str | None = None,
         node: str | None = None,
+        window_s: float | None = None,
     ) -> SampleResult:
         """Stream `ros2 topic echo` or the helper; keep up to `count` messages within `timeout_s`.
 
@@ -323,6 +324,7 @@ class Ros2CliAdapter:
             min_log_level=min_log_level,
             node=node,
             backend=self.sampling,
+            window_s=window_s,
         )
 
     def _resolve_exe(self) -> str:

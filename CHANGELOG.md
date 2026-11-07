@@ -23,6 +23,10 @@ change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sectio
   and `TOPICFORGE_ROS_PYTHON` names the interpreter. `auto` falls back to the CLI and says so in
   `note`, `rclpy` fails instead. New `health_check.sampling_backend` and `sampling_backend_note`; `ros_backend` stays
   `ros2_cli`. Everything else stays on the CLI (`docs/CONTRACT.md` section 9.27).
+- `sample_messages` takes an optional `window_s` (0.5..30 s) on that helper: it stays subscribed for
+  the whole window, `rate` covers everything received (`rate.message_count`, `rate.window_s`), and
+  `count` caps the samples returned, spread evenly over what arrived. Memory stays bounded on
+  high-rate topics. The CLI backend refuses it (`docs/CONTRACT.md` section 9.29).
 - `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in
   `auto` or `live` when the server fell back to the mock adapter, with a DDS-only backend, and
   for `analyze_bag` when `ros2 bag info` fails. `TOPICFORGE_MODE=mock` keeps fixtures. New

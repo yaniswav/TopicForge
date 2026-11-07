@@ -553,6 +553,7 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples`
 | `timeout_s` | `float` | no | `10.0` | >= 1.0, <= 40.0 | Seconds to wait, 1..40, default 10, covering topic lookup and CLI start-up. The call returns within `timeout_s` plus a few seconds, with what arrived and a `note`. Raise it for a topic slower than 1 Hz. |
 | `min_log_level` | `"debug" \| "info" \| "warn" \| "error" \| "fatal" \| null` | no | `null` | - | `/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level (debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error. |
 | `node` | `str \| null` | no | `null` | - | `/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` (also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error. |
+| `window_s` | `float \| null` | no | `null` | >= 0.5, <= 30.0 | Listen this long (s; needs the helper, no log filters): `rate` covers all, `count` samples spread evenly. |
 
 ### Output (top-level fields)
 

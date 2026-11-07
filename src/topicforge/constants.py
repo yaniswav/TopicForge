@@ -36,6 +36,11 @@ DEFAULT_SAMPLE_TIMEOUT_S = 10.0
 MIN_SAMPLE_TIMEOUT_S = 1.0
 MAX_SAMPLE_TIMEOUT_S = 40.0
 
+# `sample_messages` time window, in seconds. The maximum plus the helper's start-up (2 s), the
+# topic lookup (8 s) and stopping and decoding (3 s) stays under the 45 s budget of a call.
+MIN_SAMPLE_WINDOW_S = 0.5
+MAX_SAMPLE_WINDOW_S = 30.0
+
 # `get_node_info` wait for the node to answer its parameter read, in seconds. The graph
 # queries around it have their own 8 s limit: 8 + 8 + MAX stays under the 45 s a call
 # may take, lock wait included.

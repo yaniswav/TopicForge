@@ -31,6 +31,7 @@ has one), declared (the URDF links against the TF frames in the `17_inspect_tf` 
 has one), diagnose (`50_diagnose` and `51_diagnose_node` of `calls_diagnose.json`: the exact
 set of critical and warning findings the bench seeds, no false alarm, nothing skipped; only the
 bench truth has one), sampler (with `--expect-sampler`, `health_check.sampling_backend`; with the
+`61_window_*` calls of `calls_sampler_window.json`, `window_s` against the publisher's rate; with the
 `60_sampler_endpoints` call of `calls_sampler_writers.json`, the exact writers of a sampler helper's
 participant). `--skip-section` leaves a section out: a pass that does not change the graph has no
 `graph_diff` calls. Reads output contract 2 (0.7:
@@ -2766,6 +2767,66 @@ def _check_sampler_writers(res: Results, rep: Report) -> None:
     )
 
 
+WINDOW_CALLS = {"61_window_clock": "/clock", "62_window_scan": "/scan"}
+# The publisher's own timer rate against what a window saw: the helper starts after the hello, so
+# the first message comes a little late.
+WINDOW_RATE_TOLERANCE = 0.05
+WINDOW_RECEIVED_TOLERANCE = 0.15
+WINDOW_SPAN_TOLERANCE_S = 0.5
+
+
+def _check_window_call(name: str, topic: str, gt: dict, data: dict, rep: Report, wall: Any) -> None:
+    """One `window_s` read on a topic with a known rate: received count, span and frequency."""
+    metric = f"{topic} window_s"
+    args = (data.get("_call") or {}).get("args") or {}
+    window_s, count = args.get("window_s"), args.get("count")
+    err = tool_err(data)
+    if gt.get("_expect_sampler") == "cli":
+        named = bool(err) and "TOPICFORGE_ROS_SAMPLER" in str(err)
+        rep.add(
+            "sampler",
+            f"{metric} refused on the CLI",
+            "error naming TOPICFORGE_ROS_SAMPLER",
+            err or "answered",
+            "PASS" if named else "FAIL",
+            "",
+            wall,
+        )
+        return
+    if err:
+        rep.add("sampler", metric, "answered", err, "FAIL", "", wall)
+        return
+    hz = ((gt.get("rates") or {}).get("per_topic") or {}).get(topic, {}).get("rate_wall_hz")
+    result = (objs(data) or [{}])[0]
+    rate = result.get("rate") or {}
+    received, span = rate.get("message_count") or 0, rate.get("window_s") or 0.0
+    observed = rate.get("observed_frequency_hz")
+    good = (
+        result.get("count") == count
+        and abs(span - window_s) <= WINDOW_SPAN_TOLERANCE_S
+        and hz is not None
+        and abs(received - hz * window_s) <= WINDOW_RECEIVED_TOLERANCE * hz * window_s
+        and observed is not None
+        and abs(observed - hz) <= WINDOW_RATE_TOLERANCE * hz
+    )
+    rep.add(
+        "sampler",
+        metric,
+        {"returned": count, "span_s": window_s, "received": None if hz is None else hz * window_s},
+        {"returned": result.get("count"), "span_s": span, "received": received, "hz": observed},
+        "PASS" if good else "FAIL",
+        f"publisher timer {hz} Hz",
+        wall,
+    )
+
+
+def _check_sampler_window(gt: dict, res: Results, rep: Report) -> None:
+    for name, topic in WINDOW_CALLS.items():
+        data = res.load(name)
+        if data is not None:
+            _check_window_call(name, topic, gt, data, rep, res.times.get(name))
+
+
 @guard("sampler")
 def check_sampler(gt: dict, res: Results, rep: Report) -> None:
     """What `sample_messages` really ran on, so a silent fallback cannot pass for the helper."""
@@ -2773,6 +2834,7 @@ def check_sampler(gt: dict, res: Results, rep: Report) -> None:
     if want:
         _check_sampler_backend(want, res, rep)
     _check_sampler_writers(res, rep)
+    _check_sampler_window(gt, res, rep)
 
 
 SECTIONS = (
