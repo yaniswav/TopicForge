@@ -56,11 +56,12 @@ Claude calls: `analyze_bag(path="/tmp/demo.mcap")` -> returns a
 ```
 
 `anomalies` is a list of plain strings. The two above are canned in the
-fixture. On a real bag they come from a bounded scan: clock jumps on
-`/clock`, silent gaps on `/tf` edges, recording-time gaps on steady
-topics, each naming the topic, the offset in seconds from the start of
-the bag and the size. An empty list means "clean" only when `note` does
-not say the scan was cut or skipped. `reader` says whether `ros2 bag
+fixture. On a real bag they come from a bounded scan and state what was
+observed, not why: `/clock` steps, silences of steady topics and `/tf`
+edges, backward header stamps, each naming the topic, the offset in
+seconds from the start of the bag and the size. An empty list means
+none found by these checks, not clean; `note` says if the scan was cut
+or skipped. `reader` says whether `ros2 bag
 info`, `rosbags` or a fixture produced the summary.
 
 You:
@@ -120,9 +121,9 @@ Neither bag tool needs the `ros2` CLI:
   raises an error carrying the reinstall command.
 
 This also holds with a DDS backend and no `ros2`. Only an explicit
-`TOPICFORGE_MODE=mock` serves fixtures for every path. In `auto` mode
-without `ros2`, a path that exists is read for real and a path that
-does not exist gets the fixture with a `note` that says so.
+`TOPICFORGE_MODE=mock` serves fixtures for every path. In `auto` or
+`live` mode without `ros2`, the file is read for real and a path that
+does not exist is an error, never fixture data.
 
 ## Formats
 

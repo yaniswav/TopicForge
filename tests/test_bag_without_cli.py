@@ -120,13 +120,15 @@ def test_explicit_mock_keeps_fixtures_even_for_a_real_bag(bag: Path) -> None:
     assert adapter.peek_bag_samples(str(bag), "/cmd_vel", 2).mode_effective == "mock"
 
 
-def test_a_fallback_mock_answers_a_missing_path_with_a_labelled_fixture(tmp_path: Path) -> None:
-    adapter = factory.build_adapter(_settings("auto"))
-    analysis = adapter.analyze_bag(str(tmp_path / "gone.mcap"))
-    assert analysis.reader == "fixture"
-    assert analysis.note is not None and "not your bag" in analysis.note
-    peek = adapter.peek_bag_samples(str(tmp_path / "gone.mcap"), "/cmd_vel", 1)
-    assert peek.note is not None and "not your bag" in peek.note
+@pytest.mark.parametrize("mode", ["auto", "live"])
+def test_a_fallback_mock_raises_for_a_missing_path_instead_of_a_fixture(
+    tmp_path: Path, mode: str
+) -> None:
+    adapter = factory.build_adapter(_settings(mode))
+    with pytest.raises(AdapterError, match="does not exist"):
+        adapter.analyze_bag(str(tmp_path / "gone.mcap"))
+    with pytest.raises(AdapterError, match="does not exist"):
+        adapter.peek_bag_samples(str(tmp_path / "gone.mcap"), "/cmd_vel", 1)
 
 
 def test_the_cli_failing_falls_back_to_rosbags(bag: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -191,3 +193,76 @@ def test_omnisim_rosbags_matches_the_cli_figures() -> None:
     }
     assert mine.storage_format == cli.storage_format == "sqlite3"
     assert mine.anomalies == [] and mine.note is None
+
+
+# ---- compression ----------------------------------------------------------------------
+
+
+def test_a_file_compressed_bag_is_not_unpacked_by_the_cli_path_scan(tmp_path: Path) -> None:
+    bag = write_bag(tmp_path / "bag", _series(), storage="sqlite3", compression="file")
+    scan = bag_read.scan_bag(bag)
+    assert scan.spans is None and scan.anomalies == []
+    assert scan.note is not None and "file compression" in scan.note and "not checked" in scan.note
+
+
+def test_a_big_file_compressed_bag_is_refused_without_unpacking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from topicforge.adapters.common import bag_container
+
+    bag = write_bag(tmp_path / "bag", _series(), storage="sqlite3", compression="file")
+    monkeypatch.setattr(bag_container, "FILE_COMPRESSED_MAX_BYTES", 1)
+    with pytest.raises(AdapterError, match="file compression"):
+        bag_read.analyze_bag_file(str(bag))
+    with pytest.raises(AdapterError, match="file compression"):
+        bag_read.peek_bag_samples(str(bag), "/scan", 1)
+    assert not list(tmp_path.glob("**/*.db3"))  # nothing was unpacked next to it
+
+
+def test_a_small_file_compressed_bag_is_read_by_the_rosbags_only_path(tmp_path: Path) -> None:
+    bag = write_bag(tmp_path / "bag", _series(), storage="sqlite3", compression="file")
+    assert bag_read.analyze_bag_file(str(bag)).message_count == 58
+
+
+def test_a_message_compressed_bag_is_scanned_normally(tmp_path: Path) -> None:
+    bag = write_bag(tmp_path / "bag", _series(), storage="mcap", compression="message")
+    scan = bag_read.scan_bag(bag)
+    assert scan.spans is not None and scan.note is None
+
+
+# ---- explicit mock wins over the DDS backend, a missing path fails -----------------------
+
+
+def test_explicit_mock_keeps_fixtures_whatever_the_dds_backend(bag: Path) -> None:
+    settings = Settings(
+        mode="mock",
+        log_level="INFO",
+        ros2_executable=_NO_ROS2,
+        telemetry_enabled=False,
+        dds_backend="cyclone",
+    )
+    adapter = factory.build_adapter(settings)
+    assert isinstance(adapter, MockAdapter) and adapter.read_real_bags is False
+    assert adapter.analyze_bag(str(bag)).reader == "fixture"
+
+
+# ---- graph_diff on a fallback adapter ----------------------------------------------------
+
+
+def test_graph_diff_refuses_a_real_bag_against_the_fixture_graph(bag: Path) -> None:
+    from topicforge.services.inspector import Inspector
+
+    inspector = Inspector(factory.build_adapter(_settings("auto")))
+    with pytest.raises(AdapterError, match="fixture graph"):
+        inspector.graph_diff("previous", str(bag))
+    with pytest.raises(AdapterError, match="fixture graph"):
+        inspector.graph_diff(str(bag))
+
+
+def test_graph_diff_of_two_real_bags_is_live(tmp_path: Path) -> None:
+    from topicforge.services.inspector import Inspector
+
+    one = write_bag(tmp_path / "one", _series())
+    two = write_bag(tmp_path / "two", _series()[:1])
+    diff = Inspector(factory.build_adapter(_settings("auto"))).graph_diff(str(one), str(two))
+    assert diff.mode_effective == "live" and diff.removed_count == 1

@@ -958,7 +958,7 @@ class BagAnalysis(BaseModel):
     )
     anomalies: list[str] = Field(
         default_factory=list,
-        description="Clock jumps, TF gaps and message losses found in the bag; see `note` for what was checked.",
+        description="Observed clock steps, silences, backward stamps. Empty: none found by these checks, not clean (`note`).",
     )
     start_ns: int | None = Field(
         default=None,

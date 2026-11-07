@@ -61,3 +61,44 @@ def _describe_directory(path: Path) -> tuple[str, str | None]:
         if any(path.glob(f"*{suffix}")) or any(path.glob(f"*{suffix}.zstd")):
             return fmt
     return "unknown", None
+
+
+_COMPRESSION_MODE = re.compile(r"^\s*compression_mode:\s*[\"']?([A-Za-z]*)[\"']?\s*$", re.M)
+# `rosbags` unpacks a file-compressed bag into a temporary directory when it opens it, before
+# any time budget can apply. Past this compressed size it is refused rather than unpacked.
+FILE_COMPRESSED_MAX_BYTES = 64 * 1024 * 1024
+
+
+def is_file_compressed(path: Path) -> bool:
+    """True for a rosbag2 directory whose `metadata.yaml` says `compression_mode: FILE`.
+
+    Message compression (`MESSAGE`) is not file compression: its cost is paid message by
+    message while reading. Reads only `metadata.yaml`; `False` when it is absent or unreadable.
+    """
+    meta = (path if path.is_dir() else path.parent) / "metadata.yaml"
+    try:
+        found = _COMPRESSION_MODE.search(meta.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+    return bool(found and found.group(1).upper() == "FILE")
+
+
+def compressed_size_bytes(path: Path) -> int:
+    """Size on disk of a bag file, or of the files under a bag directory."""
+    if path.is_file():
+        return path.stat().st_size
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def refuse_big_file_compressed(path: Path) -> None:
+    """Raise `AdapterError` for a file-compressed bag over `FILE_COMPRESSED_MAX_BYTES`."""
+    if not is_file_compressed(path):
+        return
+    size = compressed_size_bytes(path)
+    if size > FILE_COMPRESSED_MAX_BYTES:
+        raise AdapterError(
+            f"{path.name!r} uses file compression (`compression_mode: FILE`), {size // 2**20} MiB "
+            f"compressed: reading it would unpack it to a temporary directory, which is refused "
+            f"above {FILE_COMPRESSED_MAX_BYTES // 2**20} MiB. Decompress it first "
+            "(`ros2 bag reindex` after `zstd -d`, or `ros2 bag convert`), or use `ros2 bag info`."
+        )

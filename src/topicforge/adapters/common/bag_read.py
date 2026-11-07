@@ -25,7 +25,11 @@ from typing import Any
 
 from topicforge import budget
 from topicforge.adapters.base import AdapterError
-from topicforge.adapters.common.bag_container import describe_container
+from topicforge.adapters.common.bag_container import (
+    describe_container,
+    is_file_compressed,
+    refuse_big_file_compressed,
+)
 from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
 from topicforge.adapters.common.bag_scan import BAG_SCAN_MAX_SECONDS, BagScan, scan_reader
 from topicforge.adapters.common.bag_stats import (
@@ -260,6 +264,12 @@ def scan_bag(path: Path) -> BagScan:
             return BagScan(None)
         if not is_rosbags_available():
             return BagScan(known, [], _UNCHECKED_NOTE.format(why="`rosbags` is not installed"))
+        if is_file_compressed(path):
+            why = (
+                "the bag uses file compression, which `rosbags` would unpack to a temporary "
+                "directory before any time limit applies, so it was not read"
+            )
+            return BagScan(known, [], _UNCHECKED_NOTE.format(why=why))
         reader, _ = _open_reader(path)
         with reader:
             return scan_reader(
@@ -295,6 +305,7 @@ def _open_reader(resolved: Path) -> tuple[Any, str]:
     """An `AnyReader` over `resolved` with a default typestore, and that typestore's description."""
     from rosbags.highlevel import AnyReader  # type: ignore[import-not-found]
 
+    refuse_big_file_compressed(resolved)  # `AnyReader` would unpack it before any budget runs
     typestore, description = _typestore_for(resolved)
     return AnyReader([resolved], default_typestore=typestore), description
 

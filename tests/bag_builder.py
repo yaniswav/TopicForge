@@ -16,7 +16,8 @@ NS = 1_000_000_000
 BASE = 1_700_000_000 * NS
 
 _TYPES = {
-    "stamped": "geometry_msgs/msg/PointStamped",
+    "stamped": "sensor_msgs/msg/Range",
+    "event": "geometry_msgs/msg/PointStamped",
     "clock": "rosgraph_msgs/msg/Clock",
     "tf": "tf2_msgs/msg/TFMessage",
     "string": "std_msgs/msg/String",
@@ -38,6 +39,10 @@ class Series:
     )
     payload_bytes: int = 0
     latched: bool = False
+    # `frame_id` of the stamped header, cycled per message (a topic merged from several publishers).
+    frames: Sequence[str] = ()
+    # QoS profiles recorded for the topic: one per publisher in a real bag.
+    publishers: int = 1
 
 
 def periodic(
@@ -52,7 +57,13 @@ def without(times: Sequence[int], start_ns: int, end_ns: int) -> list[int]:
     return [t for t in times if not start_ns <= t < end_ns]
 
 
-def write_bag(directory: Path, series: Sequence[Series], *, storage: str = "mcap") -> Path:
+def write_bag(
+    directory: Path,
+    series: Sequence[Series],
+    *,
+    storage: str = "mcap",
+    compression: str | None = None,
+) -> Path:
     """Write `series` into a rosbag2 bag at `directory` and return it; `storage` is `mcap` or `sqlite3`."""
     from rosbags.rosbag2 import StoragePlugin, Writer
     from rosbags.typesys import Stores, get_typestore
@@ -60,11 +71,20 @@ def write_bag(directory: Path, series: Sequence[Series], *, storage: str = "mcap
     store = get_typestore(Stores.ROS2_HUMBLE)
     plugin = StoragePlugin.MCAP if storage == "mcap" else StoragePlugin.SQLITE3
     events: list[tuple[int, Any, bytes]] = []
-    with Writer(directory, version=Writer.VERSION_LATEST, storage_plugin=plugin) as writer:
+    bag_writer = Writer(directory, version=Writer.VERSION_LATEST, storage_plugin=plugin)
+    if compression is not None:  # `file` or `message`, zstd
+        from rosbags.rosbag2.enums import CompressionFormat, CompressionMode
+
+        mode = CompressionMode.FILE if compression == "file" else CompressionMode.MESSAGE
+        bag_writer.set_compression(mode, CompressionFormat.ZSTD)
+    with bag_writer as writer:
         for s in series:
             msgtype = _TYPES[s.kind]
             conn = writer.add_connection(
-                s.topic, msgtype, typestore=store, offered_qos_profiles=_qos(s.latched)
+                s.topic,
+                msgtype,
+                typestore=store,
+                offered_qos_profiles=_qos(s.latched, s.publishers),
             )
             for i, t in enumerate(s.times):
                 events.append((t, conn, store.serialize_cdr(_message(store, s, i, t), msgtype)))
@@ -73,9 +93,9 @@ def write_bag(directory: Path, series: Sequence[Series], *, storage: str = "mcap
     return directory
 
 
-def _qos(latched: bool) -> list[Any]:
-    """A transient_local profile for a latched topic, else none."""
-    if not latched:
+def _qos(latched: bool, publishers: int = 1) -> list[Any]:
+    """One profile per publisher (transient_local for a latched topic); none for a plain topic."""
+    if not latched and publishers <= 1:
         return []
     from rosbags.interfaces import (
         Qos,
@@ -87,18 +107,20 @@ def _qos(latched: bool) -> list[Any]:
     )
 
     zero = QosTime(0, 0)
+    durability = QosDurability.TRANSIENT_LOCAL if latched else QosDurability.VOLATILE
     return [
         Qos(
             QosHistory.KEEP_LAST,
             1,
             QosReliability.RELIABLE,
-            QosDurability.TRANSIENT_LOCAL,
+            durability,
             zero,
             zero,
             QosLiveliness.AUTOMATIC,
             zero,
             False,
         )
+        for _ in range(max(publishers, 1))
     ]
 
 
@@ -113,7 +135,17 @@ def _header(store: Any, ns: int, frame: str = "base_link") -> Any:
 def _message(store: Any, s: Series, i: int, t: int) -> Any:
     types = store.types
     stamp = s.stamps[i] if s.stamps is not None else t
+    frame = s.frames[i % len(s.frames)] if s.frames else "base_link"
     if s.kind == "stamped":
+        return types["sensor_msgs/msg/Range"](
+            header=_header(store, stamp, frame),
+            radiation_type=0,
+            field_of_view=0.1,
+            min_range=0.0,
+            max_range=10.0,
+            range=1.0,
+        )
+    if s.kind == "event":
         point = types["geometry_msgs/msg/Point"](x=float(i), y=0.0, z=0.0)
         return types["geometry_msgs/msg/PointStamped"](header=_header(store, stamp), point=point)
     if s.kind == "clock":
