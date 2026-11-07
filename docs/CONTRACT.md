@@ -1535,3 +1535,39 @@ Additive except where stated (1.9). `tools/list` goes from 101,117 to 101,504 by
     within each `frame_id`, by more than max(0.5 s, 5 x its period); zero stamps are skipped. A
     topic whose connection records more than one publisher is not judged.
 - The mock fixture's two canned anomaly strings are unchanged.
+
+### 9.26 URDF through fields (0.10.0)
+
+Additive (1.9), no new tool, no xacro. `tools/list` goes from 101,504 to 101,759 bytes.
+
+- `inspect_tf` gains an optional input `urdf_path`: a server path to a `.urdf` file (a regular
+  file of at most 1 MiB, read-only, never passed to the `ros2` CLI). It is compared with the TF
+  frames instead of `/robot_description`, which is then not read. A path that is empty, has a null
+  byte, ends in `.xacro` (xacro is never expanded or run: expand it and pass the `.urdf`) or has
+  another extension raises an error before any I/O. Every other problem (missing file, not UTF-8,
+  too large, DOCTYPE or ENTITY, no link, `xacro:` elements or `${` left in the text) is a
+  `urdf_note` with `urdf_source` `none`; the TF tree is still the result. `urdf_source` stays
+  `robot_description` when the file was compared (closed set, 1.9, as for the 0.8.1 parameter
+  source) and `urdf_note` says the URDF came from the `urdf_path` file.
+- Two new `TfFinding.kind` values (an open set, 1.9): `fixed_joint_on_tf` (a URDF `fixed` joint
+  whose edge is seen on `/tf` and not on `/tf_static`) and `movable_joint_on_tf_static` (a
+  `revolute`, `continuous` or `prismatic` joint whose edge is seen on `/tf_static` and not on
+  `/tf`). One finding per kind; `frames` lists the child frames, and the text names each joint, its
+  type and its parent, up to eight. Low false-alarm rules: an edge belongs to a joint only when its
+  parent and child both match the joint's links (a `frame_prefix` is ignored); a frame seen on both
+  streams is `static_and_dynamic`, not a type mismatch; `floating`, `planar` and unknown joint types
+  are never judged; a joint with no edge is `declared_not_published`; and `fixed_joint_on_tf` is
+  silent when no fixed joint of the URDF is on `/tf_static` at all (`use_tf_static` false, or a
+  static stream that was not read). A partial URDF judges only its own joints. A movable joint
+  is not reported for being quiet on `/tf`, only for a static transform in its place.
+- `diagnose`, check `tf`, turns both kinds into `warning` findings (subject: the child frames) with
+  one read-only `suggested_fixes` entry, `ros2 topic info /tf --verbose` or `... /tf_static
+  --verbose`. `diagnose` has no `urdf_path`: it uses `/robot_description`.
+- `graph_diff` snapshots hold a short SHA-256 of the text of `/robot_description`. A live snapshot
+  reads that latched topic once, only when the topic has a publisher, with the bound of
+  `inspect_tf` (at most 6 s, 3 s of the call budget kept back, skipped under 2 s); a bag snapshot
+  reads the first message of that topic when the bag records it. A different hash is a `topic`
+  change named `/robot_description`, `field` `sha256`, `before` and `after` the 12-character
+  hashes. A hash unknown on exactly one side (not read, or a bag without the topic) is never a
+  change: `not_compared` gets a `robot_description` entry. Unknown on both sides says nothing.
+  No schema field is added (`GraphChangeKind` is a closed set, so the change reuses `topic`).
