@@ -57,3 +57,30 @@ def with_param_diff(info: NodeInfo, params_file: str) -> NodeInfo:
     return info.model_copy(
         update={"param_diff": diff, "param_diff_summary": summary, "param_diff_note": diff_note}
     )
+
+
+_DIFF_ONLY_NOTE = (
+    "param_diff_only: interfaces and parameters are left out, only param_diff is returned."
+)
+
+
+def keep_param_diff_only(info: NodeInfo) -> NodeInfo:
+    """`info` with the interface lists emptied and `parameters` dropped; the comparison stays.
+
+    For callers that only want `param_diff` and its note. `parameters_status` and the diff
+    fields are kept, and `note` says what was left out, so a `None` `parameters` is not read
+    as an unreadable node.
+    """
+    return info.model_copy(
+        update={
+            "publishers": [],
+            "subscribers": [],
+            "service_servers": [],
+            "service_clients": [],
+            "action_servers": [],
+            "action_clients": [],
+            "parameters": None,
+            "parameters_note": None,
+            "note": " ".join(n for n in (info.note, _DIFF_ONLY_NOTE) if n),
+        }
+    )

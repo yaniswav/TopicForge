@@ -474,6 +474,26 @@ def test_mock_param_diff_names_the_changed_and_the_missing_parameter(tmp_path: P
     assert info.parameters is not None  # the rest of the result is untouched
 
 
+def test_param_diff_only_keeps_the_comparison_and_empties_the_long_lists(tmp_path: Path) -> None:
+    full = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=_params_file(tmp_path)
+    )
+    info = Inspector(MockAdapter()).get_node_info(
+        "/lidar_driver", params_file=_params_file(tmp_path), param_diff_only=True
+    )
+    assert full.publishers and full.parameters
+    assert info.param_diff == full.param_diff and info.param_diff_summary == full.param_diff_summary
+    assert info.publishers == info.subscribers == info.service_servers == []
+    assert info.service_clients == info.action_servers == info.action_clients == []
+    assert info.parameters is None and "param_diff_only" in (info.note or "")
+    assert info.full_name == "/lidar_driver"
+
+
+def test_param_diff_only_without_params_file_is_refused() -> None:
+    with pytest.raises(AdapterError, match="param_diff_only needs params_file"):
+        Inspector(MockAdapter()).get_node_info("/lidar_driver", param_diff_only=True)
+
+
 def test_without_params_file_the_three_fields_stay_null() -> None:
     info = Inspector(MockAdapter()).get_node_info("/lidar_driver")
     assert (info.param_diff, info.param_diff_summary, info.param_diff_note) == (None, None, None)

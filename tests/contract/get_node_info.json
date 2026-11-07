@@ -13,6 +13,11 @@
         "description": "Fully qualified node name as `list_nodes` gives it, e.g. `/robot1/lidar_driver` (a missing leading `/` is added).",
         "type": "string"
       },
+      "param_diff_only": {
+        "default": false,
+        "description": "With `params_file`: return only `param_diff` and its note; interfaces and parameters are left out.",
+        "type": "boolean"
+      },
       "params_file": {
         "anyOf": [
           {

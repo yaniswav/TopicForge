@@ -24,6 +24,11 @@ NODE_TIMEOUT_PARAM_DESC = (
 
 PARAMS_FILE_PARAM_DESC = "Server path of a ROS 2 parameter `.yaml` (1 MiB max)."
 
+PARAM_DIFF_ONLY_PARAM_DESC = (
+    "With `params_file`: return only `param_diff` and its note; interfaces and parameters "
+    "are left out."
+)
+
 TF_FRAME_PARAM_DESC = (
     "Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get "
     "the chain between them in `path`."

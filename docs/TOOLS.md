@@ -139,6 +139,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `node` | `str` | yes | - | - | Fully qualified node name as `list_nodes` gives it, e.g. `/robot1/lidar_driver` (a missing leading `/` is added). |
 | `timeout_s` | `float` | no | `8.0` | >= 1.0, <= 20.0 | Seconds to wait for the parameter read, 1..20, default 8. A node that does not answer is reported in `parameters_note`, not as an error. |
 | `params_file` | `str \| null` | no | `null` | - | Server path of a ROS 2 parameter `.yaml` (1 MiB max). |
+| `param_diff_only` | `bool` | no | `false` | - | With `params_file`: return only `param_diff` and its note; interfaces and parameters are left out. |
 
 ### Output (top-level fields)
 
