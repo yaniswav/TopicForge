@@ -7,7 +7,8 @@ builtin readers and fills the caches of `common/discovery_tracker.py`; tool
 handlers read those caches, so lifecycle does not depend on tool calls. Every
 binding call goes through one process-wide lock, because the Python binding
 is not thread-safe. User-topic payloads are not decoded (`topic_metrics` has
-data only for builtin topics). ROS2 graph methods raise
+data only for builtin topics) unless `TOPICFORGE_DDS_DECODE=on`, where a bounded
+read on a separate participant serves them (`user_read.py`). ROS2 graph methods raise
 `AdapterError(DDS_ONLY_ERROR_MSG)`; `CompositeAdapter` pairs it with
 `Ros2CliAdapter`. Bag methods read the file with `rosbags`, which needs no ROS 2.
 """
@@ -18,7 +19,6 @@ import atexit
 import logging
 import threading
 import time
-from itertools import islice
 from typing import Any
 
 # ImportError here propagates to the factory, which falls back to mock.
@@ -30,8 +30,8 @@ from cyclonedds.builtin import (
 )
 from cyclonedds.core import InstanceState, Policy, Qos, ReadCondition, SampleState, ViewState
 from cyclonedds.domain import DomainParticipant
-from cyclonedds.util import duration
 
+from topicforge import budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import (
     DDS_ONLY_ERROR_MSG,
@@ -44,20 +44,13 @@ from topicforge.adapters.common import (
     bag_read,
     builtin_payload,
     declared_hz_from_endpoints,
-    decode_dynamic_sample,
-    decode_field_value,
-    dynamic_type_name,
     endpoint_infos_from_samples,
-    extract_publish_ns_from_payload,
-    extract_seq_from_payload,
     format_participant_key,
-    iter_field_names,
     listing_from_samples,
     metrics_status,
     participant_names,
     resolve_user_topic,
     scan_endpoints,
-    take_bounded,
     user_topic_result,
     validate_domain_id,
     with_endpoint_counts,
@@ -65,12 +58,29 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common import (
     cyclone_extract_topic_name as _extract_topic_name,
 )
-from topicforge.adapters.common.dds_helpers import format_guid
+from topicforge.adapters.common.dds_helpers import BUILTIN_DCPS_TOPICS, format_guid
 from topicforge.adapters.common.dds_introspection import cyclone_extract_guid, cyclone_extract_pid
 from topicforge.adapters.common.lifecycle import with_event_node_names
 from topicforge.adapters.common.log_filter import LogFilter
+from topicforge.adapters.common.ros_decode import (
+    METRICS_MAX_SAMPLES,
+    METRICS_READ_S,
+    PEEK_READ_S,
+    DecodePlan,
+    DecodeRefused,
+    ReadOutcome,
+    cap_decoded,
+    fitting_reads,
+    message_samples,
+    plan_decode,
+    rate_metrics,
+    read_note,
+    writer_facts,
+)
 from topicforge.adapters.common.ros_discovery import with_node_names
+from topicforge.adapters.common.topic_filter import resolve_topic_filter
 from topicforge.adapters.dds_cyclone.ros_info import make_ros_info_reader, take_raw
+from topicforge.adapters.dds_cyclone.user_read import read_user_topic
 from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
 from topicforge.models import (
     BagAnalysis,
@@ -88,21 +98,10 @@ from topicforge.models import (
     TopicMetrics,
 )
 
-# Aliases for the shared decoders in `adapters/common/cdr_decoder.py`.
-_decode_dynamic_sample = decode_dynamic_sample
-_iter_field_names = iter_field_names
-_decode_field_value = decode_field_value
-_dynamic_type_name = dynamic_type_name
-_extract_seq_from_payload = extract_seq_from_payload
-_extract_publish_ns_from_payload = extract_publish_ns_from_payload
-
 log = logging.getLogger(__name__)
 
-# `read_iter(timeout=...)` (used only by the unreachable dynamic-decode code)
-# resets its timeout on every sample, so bound it with `take_bounded`.
-_DISCOVERY_TIMEOUT_SEC = 2.0
-_SAMPLE_TIMEOUT_SEC = 1.0
 _MAX_PARTICIPANTS = 256
+_READ_RESERVE_S = 2.0
 _MAX_ENDPOINTS = 1024
 
 # Builtin topics `peek_dds_samples` serves with structured payloads.
@@ -111,129 +110,6 @@ _BUILTIN_DCPS_TOPICS: dict[str, Any] = {
     "DCPSSubscription": BuiltinTopicDcpsSubscription,
     "DCPSPublication": BuiltinTopicDcpsPublication,
 }
-
-
-def _try_dynamic_decode_cyclone(dp: Any, topic: str, count: int) -> list[MessageSample] | None:
-    """Dynamic XTypes decode of a user topic: disabled, always returns `None`.
-
-    `_decode_dynamic_unvalidated` has never run against a real bus and, per
-    the cyclonedds 11.0.1 binding source, cannot work as written:
-
-      1. `cyclonedds.dynamic.get_types_for_typeid(participant, type_id,
-         timeout)` takes three arguments, and needs Cyclone built with
-         `ENABLE_TYPE_DISCOVERY`; the code passes one.
-      2. It returns `(type, nested_types)`; the code passes the whole tuple
-         to `Topic(dp, name, data_type)`, which wants an IDL type.
-      3. `list(reader.read_iter(...))[:count]` never returns on a topic
-         publishing faster than the timeout; use `take_bounded`.
-
-    Re-enable only behind a flag, after a run on a real bus
-    (`scripts/integration/`).
-    """
-    return None
-
-
-def _decode_dynamic_unvalidated(  # pragma: no cover: unreachable, never validated
-    dp: Any, topic: str, count: int
-) -> list[MessageSample] | None:
-    """Unwired dynamic decode pipeline, kept as the starting point for a rewrite.
-
-    Discovers a type id via DCPSPublication, resolves the TypeObject, reads
-    up to `count` samples with a typed reader and decodes them. Do not call
-    it before the defects listed in `_try_dynamic_decode_cyclone` are fixed.
-    """
-    try:
-        from cyclonedds import dynamic as cyclone_dynamic  # type: ignore[import-not-found]
-    except ImportError:
-        return None
-
-    type_resolver = _find_dynamic_resolver(cyclone_dynamic)
-    if type_resolver is None:
-        return None
-
-    type_id = _discover_type_id_for_topic(dp, topic)
-    if type_id is None:
-        return None
-
-    try:
-        type_object = type_resolver(type_id)  # defects 1 (arity) and 2 (tuple)
-    except Exception:
-        log.debug("dynamic type resolution failed for topic %r", topic, exc_info=True)
-        return None
-    if type_object is None:
-        return None
-
-    samples_raw = _collect_dynamic_samples(dp, topic, type_object, count)
-    if samples_raw is None:
-        return None
-
-    samples: list[MessageSample] = []
-    for raw in samples_raw:
-        payload = _decode_dynamic_sample(raw)
-        samples.append(
-            MessageSample(
-                topic=topic,
-                message_type=_dynamic_type_name(type_object),
-                timestamp_ns=0,
-                stamp_source="none",
-                payload=payload,
-            )
-        )
-    return samples
-
-
-def _find_dynamic_resolver(cyclone_dynamic: Any) -> Any | None:  # pragma: no cover
-    """First callable type resolver on `cyclonedds.dynamic`.
-
-    The entry point was renamed across binding versions, so known names are
-    probed in order.
-    """
-    for attr in ("get_types_for_typeid", "get_type_for_endpoint", "get_type"):
-        candidate = getattr(cyclone_dynamic, attr, None)
-        if callable(candidate):
-            return candidate
-    return None
-
-
-def _discover_type_id_for_topic(dp: Any, topic: str) -> Any | None:  # pragma: no cover
-    """Type identifier of the first DCPSPublication sample for `topic`, else `None`.
-
-    Reads at most `_MAX_ENDPOINTS` samples.
-    """
-    try:
-        reader = BuiltinDataReader(dp, BuiltinTopicDcpsPublication)
-        samples = islice(
-            reader.read_iter(timeout=duration(seconds=_DISCOVERY_TIMEOUT_SEC)), _MAX_ENDPOINTS
-        )
-        for sample in samples:
-            if _extract_topic_name(sample) != topic:
-                continue
-            for attr in ("type_id", "type_identifier", "type_info"):
-                tid = getattr(sample, attr, None)
-                if tid is not None:
-                    return tid
-    except Exception:  # pragma: no cover: defensive
-        log.debug("type-id discovery probe failed for topic %r", topic, exc_info=True)
-    return None
-
-
-def _collect_dynamic_samples(  # pragma: no cover: unreachable, never validated
-    dp: Any, topic: str, type_object: Any, count: int
-) -> list[Any] | None:
-    """Read at most `count` samples with a typed reader; `None` if it cannot be built.
-
-    `count` is the hard bound: `_SAMPLE_TIMEOUT_SEC` is only a per-sample wait.
-    """
-    try:
-        from cyclonedds.sub import DataReader as DynamicDataReader  # type: ignore[import-not-found]
-        from cyclonedds.topic import Topic as DynamicTopic  # type: ignore[import-not-found]
-
-        dynamic_topic = DynamicTopic(dp, topic, type_object)
-        reader = DynamicDataReader(dp, dynamic_topic)
-        return take_bounded(reader.read_iter(timeout=duration(seconds=_SAMPLE_TIMEOUT_SEC)), count)
-    except Exception:
-        log.debug("typed reader construction failed for topic %r", topic, exc_info=True)
-        return None
 
 
 # The cyclonedds binding is not thread-safe when converting QoS: two threads
@@ -247,9 +123,10 @@ class CycloneDdsAdapter:
 
     name: AdapterName = "cyclone"
 
-    def __init__(self, domain_id: int = 0) -> None:
+    def __init__(self, domain_id: int = 0, *, decode: bool = False) -> None:
         validate_domain_id(domain_id)
         self._domain_id = domain_id
+        self._decode = decode
         # Fed by the tracker thread started below.
         self._caches = DiscoveryCaches()
         self._lifecycle = self._caches.lifecycle
@@ -410,6 +287,11 @@ class CycloneDdsAdapter:
         )
 
     @property
+    def dds_decode_enabled(self) -> bool:
+        """Whether user-topic payloads are decoded (`TOPICFORGE_DDS_DECODE=on`)."""
+        return self._decode
+
+    @property
     def observed_domain_id(self) -> int:
         """The DDS domain joined at construction (the only one observed)."""
         return self._domain_id
@@ -494,8 +376,9 @@ class CycloneDdsAdapter:
     def peek_dds_samples(self, topic: str, count: int) -> SampleResult:
         """Peek samples on a builtin DCPS topic or a user topic.
 
-        A user topic announced on the bus yields no samples and a `note`
-        (decoding is disabled) and records nothing for `topic_metrics`.
+        A user topic announced on the bus yields no samples and a `note`, or
+        decoded samples with `TOPICFORGE_DDS_DECODE=on`, and records nothing for
+        `topic_metrics`.
         Raises `AdapterError` when no endpoint claims the topic.
         """
         if count < 0:
@@ -548,38 +431,80 @@ class CycloneDdsAdapter:
         return self._caches.subscriptions
 
     def _peek_user_topic(self, topic: str, count: int) -> SampleResult:
-        """User-topic peek: `AdapterError` if the topic is not on the bus, else an empty result.
+        """User-topic peek: `AdapterError` if the topic is not on the bus, else see below.
 
-        `_try_dynamic_decode_cyclone` returns `None`, so the decoded branch
-        is unreachable and the result carries a note that decoding is
-        disabled. Nothing is recorded into `MetricsBuffer`.
+        Without `TOPICFORGE_DDS_DECODE=on`, an empty result with a note. Nothing is ever
+        recorded into `MetricsBuffer`: the buffer is the builtin topics' peek cadence.
         """
         resolved, resolution_note = resolve_user_topic(
             topic, self._discovered_topic_names(), self._domain_id
         )
+        if not self._decode:
+            return user_topic_result(topic, "live", resolution_note)
+        try:
+            plan = self._plan_decode(resolved)
+            return self._peek_decoded(topic, plan, count, resolution_note)
+        except DecodeRefused as exc:
+            return user_topic_result(topic, "live", resolution_note, refused=str(exc))
 
-        decoded = _try_dynamic_decode_cyclone(self._dp, resolved, count)
-        if decoded is not None:
-            # Unreachable while dynamic decode is disabled.
-            now_ns = time.time_ns()
-            for sample in decoded:
-                self._metrics.record(
-                    topic=resolved,
-                    receive_ns=now_ns,
-                    sequence_number=_extract_seq_from_payload(sample.payload),
-                    publish_ns=_extract_publish_ns_from_payload(sample.payload),
-                    domain_id=self._domain_id,
-                )
+    def _peek_decoded(
+        self, topic: str, plan: DecodePlan, count: int, resolution_note: str | None
+    ) -> SampleResult:
+        """Read and decode up to `count` samples; `count` 0 creates no reader."""
+        if count == 0:
             return SampleResult(
-                topic=topic,
-                count=len(decoded),
-                samples=decoded,
-                mode_effective="live",
-                note=resolution_note,
+                topic=topic, count=0, samples=[], mode_effective="live", note=resolution_note
             )
+        outcome = self._read(plan, count, PEEK_READ_S)
+        reads, oversize_note = fitting_reads(outcome)
+        kept, cap_note = cap_decoded(message_samples(topic, plan, reads))
+        notes = (
+            f"{resolution_note}." if resolution_note else None,
+            read_note(outcome, count),
+            oversize_note,
+            cap_note,
+            plan.store_note,
+        )
+        return SampleResult(
+            topic=topic,
+            count=len(kept),
+            samples=kept,
+            mode_effective="live",
+            note=" ".join(n for n in notes if n) or None,
+        )
 
-        # Nothing was received, so nothing is recorded into the metrics buffer.
-        return user_topic_result(topic, "live", resolution_note)
+    def _plan_decode(self, dds_topic: str) -> DecodePlan:
+        """Clear a discovered topic for decoding from its live writers, or `DecodeRefused`."""
+        writers = [
+            writer_facts(s)
+            for s in self._caches.publications.values()
+            if _extract_topic_name(s) == dds_topic
+        ]
+        return plan_decode(dds_topic, writers)
+
+    def _read(
+        self, plan: DecodePlan, max_samples: int, seconds: float, *, for_rate: bool = False
+    ) -> ReadOutcome:
+        """The bounded read, inside the guard's budget; any failure becomes a refusal."""
+        left = budget.clamp(seconds, reserve_s=_READ_RESERVE_S)
+        if left <= 0:
+            raise DecodeRefused("the call's time budget is spent")
+        try:
+            return read_user_topic(
+                self._domain_id,
+                plan,
+                max_samples=max_samples,
+                budget_s=left,
+                lock=_BINDING_LOCK,
+                own=self._caches.own_participants.add,
+                keep_payload=not for_rate,
+                volatile=for_rate,
+            )
+        except DecodeRefused:
+            raise
+        except Exception as exc:  # binding-side errors vary by version
+            log.warning("user-topic read failed on %s", plan.dds_topic, exc_info=True)
+            raise DecodeRefused(f"the read failed: {exc}") from exc
 
     def _discovered_topic_names(self) -> set[str | None]:
         """Topic names of every discovered reader and writer."""
@@ -607,9 +532,12 @@ class CycloneDdsAdapter:
 
         There is no per-sample callback in cyclonedds Python, so a topic not
         peeked recently has `samples_observed=0`, and user topics stay empty.
+        With `TOPICFORGE_DDS_DECODE=on` a user topic gets its own bounded read.
         """
         if window_s < 1 or window_s > 3600:
             raise AdapterError(f"window_s must be in 1..3600, got {window_s}")
+        if self._decode and topic not in BUILTIN_DCPS_TOPICS:
+            return self._rate_of_user_topic(topic, window_s)
         metrics = self._metrics.compute_metrics(
             topic=topic,
             window_s=window_s,
@@ -617,9 +545,36 @@ class CycloneDdsAdapter:
             declared_hz=self._declared_hz(topic),
             mode_effective="live",
         )
-        return metrics.model_copy(
-            update={"status": metrics_status(topic, metrics.samples_observed)}
-        )
+        update: dict[str, Any] = {"status": metrics_status(topic, metrics.samples_observed)}
+        if self._decode:
+            update["frequency_basis"] = "peek_cadence"
+        return metrics.model_copy(update=update)
+
+    def _rate_of_user_topic(self, topic: str, window_s: int) -> TopicMetrics:
+        """Publish rate from a bounded read; `unsupported_user_topic` and the reason if refused."""
+        resolved, _ = resolve_topic_filter(topic, self._discovered_topic_names())
+        declared = self._declared_hz(topic if resolved is None else resolved)
+        try:
+            if resolved is None:
+                raise DecodeRefused("no endpoint is discovered on this topic")
+            outcome = self._read(
+                self._plan_decode(resolved),
+                METRICS_MAX_SAMPLES,
+                min(float(window_s), METRICS_READ_S),
+                for_rate=True,
+            )
+        except DecodeRefused as exc:
+            return TopicMetrics(
+                topic=topic,
+                window_s=window_s,
+                window_actual_s=0.0,
+                samples_observed=0,
+                declared_frequency_hz=declared,
+                status="unsupported_user_topic",
+                mode_effective="live",
+                note=f"Not read: {exc}.",
+            )
+        return rate_metrics(topic, window_s, outcome, declared_hz=declared)
 
     def _declared_hz(self, topic: str) -> float | None:
         """Rate implied by the shortest writer Deadline announced on `topic`, else `None`."""

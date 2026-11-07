@@ -13,6 +13,8 @@ on:
     branches: [main]
     paths:
       - "src/topicforge/adapters/ros2_live/**"
+      - "src/topicforge/adapters/dds_cyclone/**"
+      - "src/topicforge/adapters/common/ros_decode.py"
       - "src/topicforge/adapters/common/bag_read.py"
       - "src/topicforge/adapters/common/bag_stats.py"
       - "src/topicforge/adapters/common/summaries/**"
@@ -30,6 +32,8 @@ on:
     branches: [main]
     paths:
       - "src/topicforge/adapters/ros2_live/**"
+      - "src/topicforge/adapters/dds_cyclone/**"
+      - "src/topicforge/adapters/common/ros_decode.py"
       - "src/topicforge/adapters/common/bag_read.py"
       - "src/topicforge/adapters/common/bag_stats.py"
       - "src/topicforge/adapters/common/summaries/**"
@@ -121,3 +125,31 @@ jobs:
         run: >
           python tests/integration/ros2/run_bench.py
           --distro ${{ matrix.distro }} --rmw ${{ matrix.rmw }} --sros2
+
+  decode:
+    # A writer under each RMW, read with TOPICFORGE_DDS_DECODE=on and compared with
+    # `ros2 topic echo`; no ghost reader, no reader participant in any listing, diagnose
+    # unchanged (docs/CONTRACT.md section 9.27).
+    name: decode ${{ matrix.distro }} / ${{ matrix.rmw }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy]
+        rmw: [fastrtps, cyclonedds]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build image and run the decode cell
+        run: >
+          python tests/integration/ros2/run_bench.py
+          --distro ${{ matrix.distro }} --rmw ${{ matrix.rmw }} --decode

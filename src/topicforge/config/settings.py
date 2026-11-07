@@ -57,6 +57,7 @@ class Settings:
     telemetry_enabled: bool
     dds_backend: DdsBackend = "mock"
     dds_domain_id: int = 0
+    dds_decode: bool = False
     max_sample_bytes: int = DEFAULT_MAX_SAMPLE_BYTES
 
     @property
@@ -163,6 +164,10 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
             f"expected {_DDS_DOMAIN_MIN}..{_DDS_DOMAIN_MAX}"
         )
 
+    raw_dds_decode = src.get("TOPICFORGE_DDS_DECODE", "off").strip().lower()
+    if raw_dds_decode not in ("off", "on"):
+        raise ValueError(f"Invalid TOPICFORGE_DDS_DECODE={raw_dds_decode!r}; expected off or on")
+
     raw_max_bytes = src.get("TOPICFORGE_MAX_SAMPLE_BYTES", "").strip()
     max_sample_bytes = DEFAULT_MAX_SAMPLE_BYTES
     if raw_max_bytes:
@@ -185,5 +190,6 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
         telemetry_enabled=telemetry_enabled,
         dds_backend=raw_dds_backend,
         dds_domain_id=dds_domain,
+        dds_decode=raw_dds_decode == "on",
         max_sample_bytes=max_sample_bytes,
     )

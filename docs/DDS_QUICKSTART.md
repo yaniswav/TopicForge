@@ -102,7 +102,7 @@ peek_dds_samples(topic="DCPSPublication", count=10)
 
 Each sample is the cached current discovery state, not a stream. The payload carries `vendor`, `guid`, `topic_name` and, for endpoints, `role`, `participant_guid`, `participant_name`, `type_id`, `qos`, `announced_ns` and `is_observer`. The sample `timestamp_ns` is the announcement time.
 
-User topics are not decoded. For a user topic the tool returns count 0 and a `note`:
+By default user topics are not decoded (`TOPICFORGE_DDS_DECODE=on` decodes ROS 2 topics: README "Configuration reference"). For a user topic the tool returns count 0 and a `note`:
 
 ```json
 {
@@ -114,7 +114,7 @@ User topics are not decoded. For a user topic the tool returns count 0 and a `no
 }
 ```
 
-An empty result says nothing about traffic. The earlier decode path never worked on a live backend and is disabled until it can be validated against a real bus. The `"full"` and `"partial"` decode statuses stay in the schema and the mock emits examples of them, but no live adapter produces them.
+An empty result says nothing about traffic. The earlier decode path never worked on a live backend and is replaced by the flag; XTypes decoding stays disabled until it can be validated against a real bus. The `"full"` and `"partial"` decode statuses stay in the schema and the mock emits examples of them, but no live adapter produces them.
 
 `topic_metrics` only has data for the builtin topics. For a user topic it returns `status="unsupported_user_topic"`, and its null fields are not a measurement. For a builtin topic, `observed_frequency_hz` is how often you called `peek_dds_samples` (one call yields `null`), `sequence_numbers_available` is `false` and the latency percentiles are `null`, because builtin samples carry no publish timestamp. `declared_frequency_hz` is `1 / deadline` for the shortest Deadline a writer announced, when there is one. Use it to watch discovery-layer churn, not to check a publish rate.
 

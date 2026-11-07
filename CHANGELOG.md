@@ -12,10 +12,18 @@ Planned as 0.10.0, not released yet.
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
-9.26). `tools/list` is 101,759 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.27). `tools/list` is 101,759 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
+- `TOPICFORGE_DDS_DECODE=on` (default `off`) decodes ROS 2 user topics on the Cyclone backend:
+  `peek_dds_samples` returns decoded samples and `topic_metrics` a real publish rate
+  (`frequency_basis`), from a bounded read on a short-lived participant TopicForge never reports
+  as a robot event. Fail-closed: the writer's type hash when it sends one, plain CDR only, the
+  bytes read back; heavy types, custom types and writers of different types get a note
+  and no sample. New `health_check.dds_decode`. Each read adds a visible subscriber, and a lazy
+  publisher may wake (`docs/CONTRACT.md` section 9.27). With the flag off every existing field is
+  unchanged.
 - `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in
   `auto` or `live` when the server fell back to the mock adapter, with a DDS-only backend, and
   for `analyze_bag` when `ros2 bag info` fails. `TOPICFORGE_MODE=mock` keeps fixtures. New

@@ -442,11 +442,9 @@ class TopicMetrics(BaseModel):
     )
     status: Literal["ok", "no_samples_yet", "unsupported_user_topic"] = Field(
         default="ok",
-        description=(
-            "`ok`; `no_samples_yet` (empty buffer); `unsupported_user_topic` (payload "
-            "not decoded: null fields are not measurements)."
-        ),
+        description=("`ok`; `no_samples_yet`; `unsupported_user_topic` (payload not decoded)."),
     )
+    frequency_basis: Literal["peek_cadence", "source_timestamps"] | None = None
     sequence_gaps_count: int = Field(
         default=0,
         ge=0,
@@ -1054,6 +1052,7 @@ class HealthReport(BaseModel):
         default=None,
         description=("Why `dds_backend` is `none` while ROS 2 serves; else `null`."),
     )
+    dds_decode: bool = Field(default=False, description="User payloads decoded.")
     dds_domain_id: int | None = Field(
         default=None,
         ge=0,

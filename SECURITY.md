@@ -61,7 +61,9 @@ count", log text). The ros2 adapter only runs `ros2 topic list`,
 `action send_goal` or `bag record`. The
 Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
-the DDS adapters or in `adapters/common`.
+the DDS adapters or in `adapters/common`. With `TOPICFORGE_DDS_DECODE=on`
+each decoded read also creates one short-lived participant with one reader,
+and no writer (`adapters/dds_cyclone/user_read.py`).
 
 **The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no other service call, no parameter set, no lifecycle transition, no action goal.
 
@@ -89,15 +91,23 @@ three above. Adding an eighteenth tool without annotations fails the suite.
   `topicforge`) announces itself through standard SPDP/SEDP discovery, so
   other participants see it, and it creates builtin discovery readers
   (DCPSParticipant, DCPSPublication, DCPSSubscription). It never creates a
-  writer, and it creates no reader on user topics: the typed user-topic
-  reader code is disabled and unreachable (payload decoding is off).
+  writer. By default it creates no reader on user topics.
+- With `TOPICFORGE_DDS_DECODE=on` (off by default), `peek_dds_samples` and
+  `topic_metrics` on a ROS 2 topic create a reader on it for the bounded
+  read, on a separate participant named `topicforge_reader`. **Decoding adds
+  a visible subscriber, and a publisher that only works when someone listens
+  may wake.** A Fast DDS writer can count that reader for up to about 10 s
+  after the read (measured, the participant's lease); a Cyclone writer for
+  about 1 s. Measured on a real bus by an independent observer: these
+  participants announce no writer; like any DDS participant they have the
+  builtin discovery endpoints the protocol requires.
 - The ros2 CLI path starts `ros2` processes, which can start the ros2
   daemon if it is not already running. `sample_messages` runs
   `ros2 topic echo`, which creates a temporary subscription (a reader) on
   the topic, visible to the graph for the duration of the sample.
 
 **Environment read.** Only `TOPICFORGE_*` variables (mode, log level,
-`TOPICFORGE_ROS2_BIN`, DDS backend and domain, telemetry) and `ROS_DISTRO`
+`TOPICFORGE_ROS2_BIN`, DDS backend, domain and decoding, telemetry) and `ROS_DISTRO`
 for reporting. The `ros2` child processes inherit the environment
 (`ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` and the like), as any ROS 2 tool
 would. Telemetry is off by default and a verified no-op when off

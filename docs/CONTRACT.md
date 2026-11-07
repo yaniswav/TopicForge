@@ -1583,3 +1583,61 @@ Additive (1.9), no new tool, no xacro. `tools/list` goes from 101,504 to 101,759
   never listed: the read leaves an echo reader behind for a moment. Its publisher count is still a
   change.
   No schema field is added (`GraphChangeKind` is a closed set, so the change reuses `topic`).
+
+### 9.27 Decoding ROS 2 user topics behind a flag (0.10.0)
+
+Additive (1.9), no new tool. `TOPICFORGE_DDS_DECODE=off|on`, default `off`; any other value aborts
+startup. With the flag off every existing field and note is unchanged and no user-topic reader
+exists; `TopicMetrics.frequency_basis` is `null` and `HealthReport.dds_decode` is `false`.
+`dds_decode` is also `false` with the flag on when the Cyclone backend is not serving.
+
+With the flag on, on the Cyclone backend:
+
+- `peek_dds_samples` on a user topic returns decoded samples, in the shape of `peek_bag_samples`:
+  `message_type` `pkg/msg/Name`, `payload` with `_decode_status`, `timestamp_ns` from the header
+  or, without one, the writer's source timestamp (`stamp_source` `dds_source`), `received_ns` the
+  polling slice that took the sample. At most 5 s, the writer's discovery included, and inside the
+  45 s guard; `count` 0 creates no reader. Arrays over 4096 elements are cut and named in
+  `_truncated_fields`; a serialized sample over 1 MiB is not decoded; decoded samples stop at
+  256 KiB of JSON per call. `note` gives `N of M samples`, and tells a silent topic from a writer
+  that never matched or an incompatible QoS.
+- `topic_metrics` on a user topic reads for `min(window_s, 10)` s, at most 1000 samples, and answers
+  from that read alone, not from the buffer. `frequency_basis` is `source_timestamps`:
+  `observed_frequency_hz` is `(N - 1) / span` of the writers' source timestamps, merged across
+  writers, a lower bound if the best-effort reader lost samples. Timestamps spanning longer than
+  the read lasted give no rate and a note (a wall clock jumped: 10 Hz read as 5 Hz on WSL without
+  this check). No latency and no sequence numbers: the fields stay `null`, `0` and `false`.
+  `status` is `ok` or `no_samples_yet`, or `unsupported_user_topic` with the reason in `note` when
+  refused or when no endpoint is discovered. A builtin topic keeps its buffer, with
+  `frequency_basis` `peek_cadence`.
+
+Decoding is refused, with the reason in `note` and the empty result of the flag off, for: a name
+without the `rt/` prefix; no discovered writer; writers disagreeing on the type or the type hash;
+a type name that is not `pkg::msg::dds_::Name_`; a type not in the `rosbags` store (custom types);
+a hash no store's definition has; heavy types (`Image`, `CompressedImage`, `PointCloud`,
+`PointCloud2`, `DisparityImage`, `OccupancyGrid`, `OccupancyGridUpdate`), for which
+`sample_messages` remains. A reader is created only after this check, so a wrong or absent type
+never reaches the graph.
+
+Which definitions: the writer's USER_DATA `typehash=RIHS01_...` (Iron and later) selects the store
+with that hash. Without a hash (Humble) the store is `ROS_DISTRO`'s, else Humble, and `note` says
+it is assumed. Each sample must then be plain CDR (`00 00` or `00 01`), decode with `rosbags`, and
+re-serialize to the received bytes, give or take padding (Fast DDS leaves it uninitialized); otherwise its payload is
+`_decode_status` `raw` with `_decode_note`, never a value. A type with the same name and wire
+layout but another meaning cannot be detected on Humble.
+
+The reader: one short-lived participant per read, EntityName `topicforge_reader`, one reader, no
+writer, deleted at the end of the read, through public `take()` only. Best effort and volatile,
+which matches reliable and best-effort writers; reliable and transient local only when every
+writer is, so a latched sample arrives. A rate read is always volatile: history would count as a
+burst. These participants, from this server or another, never reach `list_participants`,
+`participant_events`, `list_endpoints`, `restarts_by_name`, `detect_qos_mismatches` or `diagnose`,
+which never reads user topics itself.
+
+Measured with `tests/integration/ros2/decode_check.py` on WSL, Jazzy Fast, Jazzy Cyclone and Humble
+Fast: 15 of 15 `String`, `LaserScan` and `Odometry` samples equal to `ros2 topic echo`, field by
+field; 10.0 Hz for a 10 Hz writer; a silent topic in 5.0 s. Limits: the reader is visible while
+it reads and a lazy publisher may wake (not tested); a Fast DDS writer still counts it for about
+10.5-11 s after the read, a Cyclone writer for about 1 s, then 0, so `ros2 topic info` and
+`list_topics` may count it in that time; SROS2, multi-host and Windows are not tested; Humble
+Cyclone runs only in the bench's `decode` job.
