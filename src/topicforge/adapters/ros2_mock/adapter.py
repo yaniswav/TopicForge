@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common import bag_read
 from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
 from topicforge.adapters.common.lifecycle import with_event_node_names
 from topicforge.adapters.common.log_filter import (
@@ -38,6 +39,10 @@ from topicforge.models import (
 # Extensions the live `ros2 bag info` accepts; the mock rejects the same
 # paths so mock mode does not hide the error.
 _BAG_EXTENSIONS: frozenset[str] = frozenset({".mcap", ".db3", ".bag"})
+_FIXTURE_BAG_NOTE = (
+    "Fixture data, not your bag: no bag exists at this path on the machine running TopicForge "
+    "(no `ros2` here, so a bag that exists is read with `rosbags`)."
+)
 
 
 class MockAdapter:
@@ -45,6 +50,10 @@ class MockAdapter:
     # Set by the factory when a DDS backend was requested but the server fell back to
     # these fixtures, so `health_check` can say why. `None` for a deliberate mock.
     dds_inactive_reason: str | None = None
+    # Set by the factory when this adapter is a fallback (`TOPICFORGE_MODE` is not `mock`):
+    # a bag path that exists is then read with `rosbags` instead of answered from fixtures.
+    # An explicit `mock` mode keeps fixtures for every path.
+    read_real_bags: bool = False
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -127,9 +136,18 @@ class MockAdapter:
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
+        if self._reads_real_bag(path):
+            return bag_read.analyze_bag_file(path)
         _reject_non_bag_path(path)
         # The fixture is frozen; produce a copy with the caller's path.
-        return fixtures.MOCK_BAG_ANALYSIS.model_copy(update={"path": path})
+        update: dict[str, object] = {"path": path}
+        if self.read_real_bags:
+            update["note"] = _FIXTURE_BAG_NOTE
+        return fixtures.MOCK_BAG_ANALYSIS.model_copy(update=update)
+
+    def _reads_real_bag(self, path: str) -> bool:
+        """True for a fallback adapter (not explicit mock) and a path that exists here."""
+        return self.read_real_bags and Path(path).exists()
 
     def peek_bag_samples(
         self,
@@ -145,6 +163,15 @@ class MockAdapter:
         """Deterministic mock sample peek for a recorded bag."""
         if count < 0:
             raise AdapterError("count must be >= 0")
+        if self._reads_real_bag(path):
+            return bag_read.peek_bag_samples(
+                path,
+                topic,
+                count,
+                start_s=start_s,
+                end_s=end_s,
+                log_filter=LogFilter.of(min_log_level, node),
+            )
         _reject_non_bag_path(path)
         validate_range(start_s, end_s)
         log_filter = LogFilter.of(min_log_level, node)
@@ -172,6 +199,8 @@ class MockAdapter:
         )
         if range_text:
             notes.append(range_text)
+        if self.read_real_bags:
+            notes.append(_FIXTURE_BAG_NOTE)
         return SampleResult(
             topic=topic,
             count=len(samples),

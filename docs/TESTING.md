@@ -85,7 +85,7 @@ Record and analyze a bag.
 ros2 bag record /chatter --output ~/demo_run --max-bag-duration 30
 ```
 
-Then ask "Analyze the bag at /home/<you>/demo_run." `analyze_bag` returns duration, message count and per-topic stats; anomalies are mock-only. To read actual messages, ask for samples, which calls `peek_bag_samples`. A fourth scenario, DDS discovery and QoS diagnosis against a real bus, is in [`examples/dds/README.md`](../examples/dds/README.md).
+Then ask "Analyze the bag at /home/<you>/demo_run." `analyze_bag` returns duration, message count and per-topic stats; `anomalies` lists clock jumps, TF gaps and message losses found by a bounded scan. To read actual messages, ask for samples, which calls `peek_bag_samples`. A fourth scenario, DDS discovery and QoS diagnosis against a real bus, is in [`examples/dds/README.md`](../examples/dds/README.md).
 
 ## Connect an MCP client
 

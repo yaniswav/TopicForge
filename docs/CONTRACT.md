@@ -1471,3 +1471,53 @@ Additive only (1.9). `tools/list` goes from 100,535 to 101,117 bytes.
   description saying the same.
 - The `ros2 topic echo /rosout` fix of a restart loop is offered only for a name that is a ROS
   node and only when a `ros2` CLI serves; it is absent otherwise.
+
+### 9.25 Bags without the CLI, and bag anomalies (0.10.0)
+
+Additive only (1.9). `tools/list` goes from 101,117 to 101,422 bytes.
+
+- `BagAnalysis.reader` (`ros2_cli`, `rosbags` or `fixture`, optional): what produced the summary.
+  `ros2_cli` is `ros2 bag info` (counts and duration are its own, `rosbags` adds start time,
+  per-topic times and anomalies); `rosbags` is a read of the file alone; `fixture` is the mock.
+  `peek_bag_samples` has no such field: its `mode_effective` is `live` for a real read and `mock`
+  for fixtures.
+- `analyze_bag` and `peek_bag_samples` no longer need `ros2`. An existing bag path is read with
+  `rosbags` when `TOPICFORGE_MODE` is `auto` or `live` and the server fell back to the mock
+  adapter (no `ros2` on PATH), when the backend is DDS-only, and, for `analyze_bag`, when
+  `ros2 bag info` fails (the `note` then names the CLI error; if `rosbags` fails too, both
+  reasons are in the error). An explicit `TOPICFORGE_MODE=mock` keeps fixtures for every path,
+  unchanged. In the fallback, a path that does not exist still gets the fixture, now with a
+  `note` ("Fixture data, not your bag") and `reader` `fixture`. A read of a real bag has
+  `mode_effective` `live`.
+- `storage_format` is the storage the CLI prints (`sqlite3`, `mcap`) on every path, and
+  `bag_format` (`mcap`, `db3`, `bag`, `unknown`) is set on the CLI path too, both read from the
+  file and from `metadata.yaml` for a directory. The `rosbags` path used to put `db3` in
+  `storage_format`.
+- A directory without `metadata.yaml` and a bare `.zstd` file give an `AdapterError` that says
+  what to pass instead.
+- One bounded pass reads the messages (time budget 8 s, and the call budget). It keeps record
+  times, decodes `/clock` and `/tf` in full, and decodes the header stamp of at most 1,000
+  evenly spread messages per other topic. A pass that runs past its budget has seen only the
+  start of the bag: counts stay exact, per-topic rates become count / bag duration
+  (`bag_duration`; `.db3` keeps its exact spans) and `note` says how much was covered and that
+  the rest is not ruled out. The 200 MiB size gate is gone: a large bag is scanned until the
+  budget, not skipped. When the bag cannot be opened with `rosbags`, `anomalies` is empty and
+  `note` says they were not checked.
+- `anomalies` is filled from that pass, as plain strings that name the topic or edge, the offset
+  (`t=` seconds from the first message) and the sizes. Empty means clean only when `note` says
+  nothing about the scan. At most 3 per topic or edge and 12 in all, then one line counting the
+  rest. Four kinds, each relative to the series' own rhythm:
+  - `/clock jumped backward` (any step under -1 ms), `/clock jumped forward` (a step above
+    max(1 s, 20 x the usual step) that is also far above the sim-to-record ratio);
+  - `/tf <parent>-><child>: no TF update` on `/tf` (not `/tf_static`): a gap above
+    max(10 x the edge's median period, 0.5 s), for an edge with 20 messages or more whose 90th
+    percentile interval is within 2 x its median;
+  - `<topic>: no messages` for a steady topic (more than 30 intervals, 90th percentile within
+    2 x the median): a gap above max(5 x its median period, 0.2 s). Latched topics, `/clock`,
+    `/tf`, `/tf_static`, `/rosout`, `/parameter_events` and rosbag2 internals are not judged. When
+    at least 3 steady topics and half of them are silent over the same span, one line says
+    `N steady topics silent together` (a recorder stall or a paused simulation) and the
+    per-topic lines are dropped;
+  - `<topic>: header stamp went backward` for a steady topic, on the sampled stamps, by more
+    than max(0.5 s, 5 x its period); zero stamps are skipped.
+- The mock fixture's two canned anomaly strings are unchanged.

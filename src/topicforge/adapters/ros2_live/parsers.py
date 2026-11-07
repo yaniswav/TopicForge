@@ -299,4 +299,5 @@ def parse_bag_info(
         topics=topics,
         anomalies=[],
         mode_effective=mode_effective,
+        reader="ros2_cli",
     )

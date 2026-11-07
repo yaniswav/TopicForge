@@ -74,8 +74,8 @@ sample_messages options:
 
 Bags:
 
-- `analyze_bag` (`.mcap`, `.db3`, `rosbag2_*` directory): duration, message count, per-topic stats. `frequency_basis` says how the rate was computed (`topic_span` or `bag_duration`); a `latched` topic can have a null rate. Anomaly detection exists in mock mode only.
-- `peek_bag_samples` (also reads ROS 1 `.bag`) for decoded messages, with a `_decode_status` per sample. It needs the `rosbags` library; if missing, tell the user.
+- `analyze_bag` (`.mcap`, `.db3`, `rosbag2_*` directory): duration, message count, per-topic stats. `frequency_basis` says how the rate was computed (`topic_span` or `bag_duration`); a `latched` topic can have a null rate. `anomalies` (clock jumps, TF gaps, message losses) is empty only if `note` does not say the scan was cut or skipped; `reader` says whether `ros2 bag info`, `rosbags` or a fixture produced it.
+- `peek_bag_samples` (also reads ROS 1 `.bag`) for decoded messages, with a `_decode_status` per sample. It needs the `rosbags` library; if missing, tell the user. Neither bag tool needs `ros2`.
 
 Answering: report what the tools returned, name the tool and field, and separate observed facts from guesses. If a topic is silent or a call timed out, say that is all you know.
 """

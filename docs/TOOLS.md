@@ -33,13 +33,13 @@ fails when this file is out of date. The rules behind the shapes are in
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=false`, `readOnlyHint=true`
 
-Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs `ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like path, and only mock detects anomalies. **Raises an MCP error** for a malformed or missing path (live), unparseable output, or without a `ros2` CLI. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
+Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, message count, per-topic stats and `mode_effective`. Per topic `frequency_hz` is `(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with `first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When the bag cannot be read locally or the bounded scan (8 s) is cut, the rate falls back to count / bag duration (`bag_duration`) and `note` says why. `anomalies` lists clock jumps, TF gaps and message losses with topic, time offset and size; an empty list means clean only if `note` does not say the scan was cut or skipped. **Live mode** runs `ros2 bag info`, or `rosbags` without `ros2` or when it fails (`reader` says which); **mock mode** returns fixtures for any bag-like path. **Raises an MCP error** for a missing path, a directory without `metadata.yaml` or an unreadable bag. **Duration**: ROS lock, one call at a time, ends within 45 s; `busy` if held.
 
 ### Input parameters
 
 | Name | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `path` | `str` | yes | - | min length 1 | Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked live; mock accepts any well-formed path. |
+| `path` | `str` | yes | - | min length 1 | Bag path: a `.mcap`, `.db3` or ROS 1 `.bag` file or a `rosbag2_*` directory (with its `metadata.yaml`). Existence and format are checked live; mock accepts any well-formed path. |
 
 ### Output (top-level fields)
 
@@ -50,11 +50,12 @@ Summarize a ROS 2 bag at `path` as a `BagAnalysis`: storage format, duration, me
 | `duration_s` | `float` | yes | Bag duration in seconds. |
 | `message_count` | `int` | yes | Total number of messages across all recorded topics. |
 | `topics` | `list[BagTopicStats]` | yes | Per-topic statistics for every topic present in the bag. |
-| `anomalies` | `list[str]` | no | Notes on gaps or clock jumps; mock mode only. |
+| `anomalies` | `list[str]` | no | Clock jumps, TF gaps and message losses found in the bag; see `note` for what was checked. |
 | `start_ns` | `integer \| null` | no | Record ns of the bag's first message (rosbag2 `starting_time`), the zero of `start_s`/`end_s`; `null` if unreadable. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | Why the result is less detailed than usual (e.g. rates over the whole bag duration); else `None`. |
-| `bag_format` | `"mcap" \| "db3" \| "bag" \| "unknown" \| null` | no | Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 bag info` text. |
+| `bag_format` | `"mcap" \| "db3" \| "bag" \| "unknown" \| null` | no | Detected container: `mcap`, `db3`, `bag` or `unknown`. |
+| `reader` | `"ros2_cli" \| "rosbags" \| "fixture" \| null` | no | What produced this summary: `ros2 bag info`, the `rosbags` library or a mock fixture. |
 
 ## `detect_qos_mismatches`
 
@@ -485,7 +486,7 @@ Peek up to `count` samples from a recorded bag file as a `SampleResult`: offline
 
 | Name | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `path` | `str` | yes | - | min length 1 | Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked live; mock accepts any well-formed path. |
+| `path` | `str` | yes | - | min length 1 | Bag path: a `.mcap`, `.db3` or ROS 1 `.bag` file or a `rosbag2_*` directory (with its `metadata.yaml`). Existence and format are checked live; mock accepts any well-formed path. |
 | `topic` | `str` | yes | - | - | Fully qualified ROS 2 topic name starting with `/`, e.g. `/cmd_vel`. Segments are letters, digits and underscores (not starting with a digit); anything else is rejected before reaching the `ros2` CLI. |
 | `count` | `int` | no | `5` | >= 0 | Messages to return, default 5, at most 50 (`health_check.max_sample_count`): more is capped to 50, negative raises an error. The result's `count` may be lower. |
 | `start_s` | `float \| null` | no | `null` | >= 0 | Only messages recorded at or after this many seconds from the bag's first message (`analyze_bag.start_ns`), default from the start. |

@@ -50,13 +50,18 @@ Claude calls: `analyze_bag(path="/tmp/demo.mcap")` -> returns a
     "/tf: static transforms only; no dynamic updates during recording"
   ],
   "mode_effective": "mock",
-  "bag_format": "mcap"
+  "bag_format": "mcap",
+  "reader": "fixture"
 }
 ```
 
-`anomalies` is a list of plain strings. They are canned in the fixture:
-no live code path detects anomalies today, so a real bag always comes
-back with `"anomalies": []`.
+`anomalies` is a list of plain strings. The two above are canned in the
+fixture. On a real bag they come from a bounded scan: clock jumps on
+`/clock`, silent gaps on `/tf` edges, recording-time gaps on steady
+topics, each naming the topic, the offset in seconds from the start of
+the bag and the size. An empty list means "clean" only when `note` does
+not say the scan was cut or skipped. `reader` says whether `ros2 bag
+info`, `rosbags` or a fixture produced the summary.
 
 You:
 
@@ -102,22 +107,22 @@ source /opt/ros/humble/setup.bash
 TOPICFORGE_MODE=live python -m topicforge
 ```
 
-The two bag tools behave differently in live mode, and both need the
-`ros2` CLI on PATH (they are served by the ROS2 half):
+Neither bag tool needs the `ros2` CLI:
 
-- `analyze_bag` runs `ros2 bag info <path>` and parses its text output.
-  It never uses `rosbags`. `storage_format` comes from the CLI output;
-  `bag_format` stays `null`, `anomalies` is empty. The path
-  must exist.
+- `analyze_bag` runs `ros2 bag info <path>` when `ros2` is on PATH and
+  reads the file with `rosbags` for per-topic times and anomalies
+  (`reader: "ros2_cli"`). Without `ros2`, or when the CLI fails on the
+  bag, `rosbags` produces the whole summary (`reader: "rosbags"`).
+  `storage_format` and `bag_format` come from the file. The path must
+  exist.
 - `peek_bag_samples` reads the file with `rosbags` and decodes
-  messages (`rosbags` is a core dependency). There is no
-  fallback: without the library it raises an error carrying the
-  reinstall command.
+  messages (`rosbags` is a core dependency). Without the library it
+  raises an error carrying the reinstall command.
 
-With a DDS backend selected but no `ros2` on PATH, both tools raise the
-"DDS observability only" error. With neither, the server serves the
-mock fixtures: check that `health_check` says `mode="live"` before
-trusting what a bag tool returns.
+This also holds with a DDS backend and no `ros2`. Only an explicit
+`TOPICFORGE_MODE=mock` serves fixtures for every path. In `auto` mode
+without `ros2`, a path that exists is read for real and a path that
+does not exist gets the fixture with a `note` that says so.
 
 ## Formats
 

@@ -6,6 +6,7 @@ participants on the host, so assertions pin shape, not content.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import get_args
 
 import pytest
@@ -60,8 +61,20 @@ def test_ros2_surface_raises_dds_only_error() -> None:
         adapter.get_topic_info("/cmd_vel")
     with pytest.raises(AdapterError, match="DDS observability only"):
         adapter.sample_messages("/cmd_vel", 1)
-    with pytest.raises(AdapterError, match="DDS observability only"):
-        adapter.analyze_bag("/tmp/demo.mcap")
+
+
+def test_bag_tools_read_the_file_without_ros2(tmp_path: Path) -> None:
+    """A DDS-only adapter reads a bag with `rosbags`; a missing path is a plain error."""
+    pytest.importorskip("rosbags")
+    from tests.bag_builder import BASE, Series, periodic, write_bag
+
+    bag = write_bag(tmp_path / "bag", [Series("/a", "stamped", periodic(BASE, 0.1, 5))])
+    adapter = CycloneDdsAdapter(domain_id=0)
+    analysis = adapter.analyze_bag(str(bag))
+    assert (analysis.reader, analysis.message_count) == ("rosbags", 5)
+    assert adapter.peek_bag_samples(str(bag), "/a", 2).count == 2
+    with pytest.raises(AdapterError, match="does not exist"):
+        adapter.analyze_bag(str(tmp_path / "missing.mcap"))
 
 
 def test_list_participants_returns_list() -> None:

@@ -9,7 +9,7 @@ binding call goes through one process-wide lock, because the Python binding
 is not thread-safe. User-topic payloads are not decoded (`topic_metrics` has
 data only for builtin topics). ROS2 graph methods raise
 `AdapterError(DDS_ONLY_ERROR_MSG)`; `CompositeAdapter` pairs it with
-`Ros2CliAdapter`.
+`Ros2CliAdapter`. Bag methods read the file with `rosbags`, which needs no ROS 2.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ from topicforge.adapters.common import (
     MetricsBuffer,
     SampleCache,
     announced_ns_of,
+    bag_read,
     builtin_payload,
     declared_hz_from_endpoints,
     decode_dynamic_sample,
@@ -67,6 +68,7 @@ from topicforge.adapters.common import (
 from topicforge.adapters.common.dds_helpers import format_guid
 from topicforge.adapters.common.dds_introspection import cyclone_extract_guid, cyclone_extract_pid
 from topicforge.adapters.common.lifecycle import with_event_node_names
+from topicforge.adapters.common.log_filter import LogFilter
 from topicforge.adapters.common.ros_discovery import with_node_names
 from topicforge.adapters.dds_cyclone.ros_info import make_ros_info_reader, take_raw
 from topicforge.constants import DEFAULT_MAX_ARRAY_LENGTH, DEFAULT_SAMPLE_TIMEOUT_S
@@ -383,7 +385,8 @@ class CycloneDdsAdapter:
         raise AdapterError(DDS_ONLY_ERROR_MSG)
 
     def analyze_bag(self, path: str) -> BagAnalysis:
-        raise AdapterError(DDS_ONLY_ERROR_MSG)
+        """Read the bag with `rosbags`: it needs no ROS 2 install (`reader="rosbags"`)."""
+        return bag_read.analyze_bag_file(path)
 
     def peek_bag_samples(
         self,
@@ -396,7 +399,15 @@ class CycloneDdsAdapter:
         min_log_level: str | None = None,
         node: str | None = None,
     ) -> SampleResult:
-        raise AdapterError(DDS_ONLY_ERROR_MSG)
+        """Decode samples from the bag with `rosbags`; no ROS 2 install is needed."""
+        return bag_read.peek_bag_samples(
+            path,
+            topic,
+            count,
+            start_s=start_s,
+            end_s=end_s,
+            log_filter=LogFilter.of(min_log_level, node),
+        )
 
     @property
     def observed_domain_id(self) -> int:

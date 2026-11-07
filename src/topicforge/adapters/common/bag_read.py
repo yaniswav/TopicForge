@@ -25,7 +25,9 @@ from typing import Any
 
 from topicforge import budget
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.bag_container import describe_container
 from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
+from topicforge.adapters.common.bag_scan import BAG_SCAN_MAX_SECONDS, BagScan, scan_reader
 from topicforge.adapters.common.bag_stats import (
     TopicSpan,
     build_topic_stats,
@@ -62,19 +64,11 @@ _ROSBAGS_REQUIRED_MSG = (
     "through `ros2 bag info` when ROS 2 is installed; `peek_bag_samples` cannot."
 )
 _MAX_ARRAY_ELEMENTS = 4096
-# Per-topic times of a non-db3 bag need a pass over every message; past either
-# budget the scan is skipped and the caller keeps whole-bag rates.
-SPAN_SCAN_MAX_BYTES = 200 * 1024 * 1024
-SPAN_SCAN_MAX_SECONDS = 5.0
-_SCAN_CLOCK_CHECK_EVERY = 1024
+_UNCHECKED_NOTE = "Anomalies were not checked: {why}."
 # A filtered or ranged bag peek may decode far more messages than it returns; it stops
 # at this many seconds (or when the call budget runs out), checked every N messages.
 PEEK_SCAN_MAX_SECONDS = 20.0
 _PEEK_CLOCK_CHECK_EVERY = 64
-
-
-class _ScanBudgetExceeded(Exception):
-    """The message scan for per-topic spans ran past its time budget."""
 
 
 def detect_bag_format(path: str) -> str:
@@ -97,10 +91,13 @@ def is_rosbags_available() -> bool:
 
 
 def analyze_bag_file(path: str, *, mode_effective: str = "live") -> BagAnalysis:
-    """Read `path` with `rosbags` into a `BagAnalysis`.
+    """Read `path` with `rosbags` into a `BagAnalysis` (`reader="rosbags"`).
 
-    Raises `AdapterError` when `rosbags` is missing, the path does not
-    exist, or the bag cannot be opened.
+    Counts, per-topic rates and anomalies come from one bounded pass over the messages
+    (`bag_scan.py`); when it is cut, counts stay exact, rates are count / bag duration and
+    `note` says which part was checked. Raises `AdapterError` when `rosbags` is missing,
+    the path does not exist, it is a directory without `metadata.yaml` or a bare `.zstd`
+    file, or the bag cannot be opened.
     """
     if not is_rosbags_available():
         raise AdapterError(_ROSBAGS_REQUIRED_MSG)
@@ -109,7 +106,7 @@ def analyze_bag_file(path: str, *, mode_effective: str = "live") -> BagAnalysis:
     if not resolved.exists():
         raise AdapterError(f"bag path does not exist: {path!r}")
 
-    bag_format = detect_bag_format(path)
+    bag_format, storage_format = describe_container(resolved)
     try:
         reader_data = _read_with_rosbags(resolved)
     except AdapterError:
@@ -119,14 +116,16 @@ def analyze_bag_file(path: str, *, mode_effective: str = "live") -> BagAnalysis:
 
     return BagAnalysis(
         path=str(path),
-        storage_format=bag_format if bag_format != "unknown" else None,
+        storage_format=storage_format,
         duration_s=reader_data["duration_s"],
         message_count=reader_data["message_count"],
         topics=reader_data["topics"],
-        anomalies=[],
+        anomalies=reader_data["anomalies"],
         start_ns=reader_data["start_ns"],
         mode_effective=mode_effective,  # type: ignore[arg-type]
+        note=reader_data["note"],
         bag_format=bag_format,  # type: ignore[arg-type]
+        reader="rosbags",
     )
 
 
@@ -155,6 +154,7 @@ def peek_bag_samples(
     resolved = Path(path)
     if not resolved.exists():
         raise AdapterError(f"bag path does not exist: {path!r}")
+    describe_container(resolved)  # a clear error for a non-bag directory or a bare .zstd
 
     clamped = min(count, MAX_SAMPLE_COUNT)
     try:
@@ -234,50 +234,44 @@ def read_start_ns(path: Path) -> int | None:
 def read_topic_spans(path: Path) -> dict[str, TopicSpan] | None:
     """Per-topic spans of the bag at `path`, or `None` when it cannot be read here.
 
-    See `scan_topic_spans` for the budget on non-db3 bags. Never raises.
+    See `scan_bag` for the budget. Never raises.
     """
-    return scan_topic_spans(path)[0]
+    return scan_bag(path).spans
 
 
 def scan_topic_spans(path: Path) -> tuple[dict[str, TopicSpan] | None, str | None]:
-    """`(spans, note)` for the bag at `path`; `spans` is `None` when not readable here.
+    """`(spans, note)` of `scan_bag`; `spans` is `None` when not readable or the scan was cut."""
+    scan = scan_bag(path)
+    return scan.spans, scan.note
 
-    `.db3` bags need only the standard library. Other containers need
-    `rosbags` and a scan of their message timestamps, which is skipped when
-    the bag exceeds `SPAN_SCAN_MAX_BYTES` or the scan runs past
-    `SPAN_SCAN_MAX_SECONDS`; `note` then says why. Never raises.
+
+def scan_bag(path: Path) -> BagScan:
+    """Spans, anomalies and a note for the bag at `path`. Never raises.
+
+    `.db3` spans come from `sqlite3`; the rest from one pass over the messages through
+    `rosbags` (see `bag_scan.py`), cut at `BAG_SCAN_MAX_SECONDS`. A bag that cannot be
+    read gives no anomaly and a `note` that says they were not checked; a missing path
+    gives an empty scan with no note.
     """
+    known: dict[str, TopicSpan] | None = None
     try:
-        spans = read_db3_spans(path)
-        if spans is not None:
-            return spans, None
-        if not is_rosbags_available() or not path.exists():
-            return None, None
-        size = _bag_size_bytes(path)
-        if size > SPAN_SCAN_MAX_BYTES:
-            return None, (
-                f"Per-topic rates are count / bag duration: the bag is {size // (1024 * 1024)} MiB, "
-                f"over the {SPAN_SCAN_MAX_BYTES // (1024 * 1024)} MiB limit for reading "
-                "per-topic message times."
-            )
+        known = read_db3_spans(path)
+        if not path.exists():
+            return BagScan(None)
+        if not is_rosbags_available():
+            return BagScan(known, [], _UNCHECKED_NOTE.format(why="`rosbags` is not installed"))
         reader, _ = _open_reader(path)
         with reader:
-            return _spans_from_messages(reader, time_budget_s=SPAN_SCAN_MAX_SECONDS), None
-    except _ScanBudgetExceeded:
-        return None, (
-            "Per-topic rates are count / bag duration: reading per-topic message times "
-            f"took longer than {SPAN_SCAN_MAX_SECONDS:g} s and was stopped."
-        )
+            return scan_reader(
+                reader,
+                latched_of=_connection_latched,
+                known_spans=known,
+                time_budget_s=BAG_SCAN_MAX_SECONDS,
+            )
     except Exception as exc:
-        log.debug("could not read per-topic spans from %s: %s", path, exc)
-        return None, None
-
-
-def _bag_size_bytes(path: Path) -> int:
-    """Total size of the bag file, or of the files under a bag directory."""
-    if path.is_file():
-        return path.stat().st_size
-    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+        log.debug("could not scan %s: %s", path, exc)
+        why = f"`rosbags` could not read this bag ({type(exc).__name__}: {exc})"
+        return BagScan(known, [], _UNCHECKED_NOTE.format(why=why))
 
 
 def _typestore_for(resolved: Path) -> tuple[Any, str]:
@@ -331,49 +325,10 @@ def _connection_latched(connection: Any) -> bool | None:
     )
 
 
-def _spans_from_messages(
-    reader: Any, *, time_budget_s: float | None = None
-) -> dict[str, TopicSpan]:
-    """Per-topic spans from message timestamps, without deserializing (non-db3 bags).
-
-    Raises `_ScanBudgetExceeded` when `time_budget_s` runs out.
-    """
-    first: dict[str, int] = {}
-    last: dict[str, int] = {}
-    count: dict[str, int] = {}
-    deadline = None if time_budget_s is None else time.monotonic() + time_budget_s
-    for seen, (connection, timestamp, _raw) in enumerate(reader.messages(), start=1):
-        if (
-            deadline is not None
-            and seen % _SCAN_CLOCK_CHECK_EVERY == 0
-            and time.monotonic() > deadline
-        ):
-            raise _ScanBudgetExceeded
-        topic = connection.topic
-        ts = int(timestamp)
-        count[topic] = count.get(topic, 0) + 1
-        first[topic] = min(first.get(topic, ts), ts)
-        last[topic] = max(last.get(topic, ts), ts)
-    spans: dict[str, TopicSpan] = {}
-    for connection in reader.connections:
-        topic = connection.topic
-        if topic not in spans:
-            spans[topic] = TopicSpan(
-                name=topic,
-                message_type=connection.msgtype,
-                count=count.get(topic, 0),
-                first_ns=first.get(topic),
-                last_ns=last.get(topic),
-                latched=_connection_latched(connection),
-            )
-    return spans
-
-
 def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
-    """Open `resolved` with `rosbags` and compute per-topic stats.
+    """Open `resolved` with `rosbags` and compute per-topic stats and anomalies.
 
-    Returns a dict with `duration_s`, `message_count` and `topics`. `.db3` spans come
-    from `sqlite3`; other containers are scanned through `rosbags`.
+    Returns a dict with `duration_s`, `message_count`, `topics`, `anomalies` and `note`.
     """
     meta_start = _metadata_start_ns(resolved)
     reader, _ = _open_reader(resolved)
@@ -383,16 +338,53 @@ def _read_with_rosbags(resolved: Path) -> dict[str, Any]:
         duration_ns = 0
         if isinstance(start, int) and isinstance(end, int) and end >= start:
             duration_ns = end - start
+        duration_s = duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0
 
-        spans = read_db3_spans(resolved) or _spans_from_messages(reader)
-        topics: list[BagTopicStats] = [build_topic_stats(span) for span in spans.values()]
+        scan = scan_reader(
+            reader,
+            latched_of=_connection_latched,
+            known_spans=read_db3_spans(resolved),
+            time_budget_s=BAG_SCAN_MAX_SECONDS,
+        )
+        if scan.spans is not None:
+            topics = [build_topic_stats(span) for span in scan.spans.values()]
+        else:
+            topics = _topics_from_counts(reader, duration_s)
 
     return {
         "start_ns": meta_start if meta_start is not None else _reader_start_ns(start),
-        "duration_s": duration_ns / 1_000_000_000 if duration_ns > 0 else 0.0,
+        "duration_s": duration_s,
         "message_count": sum(t.message_count for t in topics),
         "topics": topics,
+        "anomalies": scan.anomalies,
+        "note": scan.note,
     }
+
+
+def _topics_from_counts(reader: Any, duration_s: float) -> list[BagTopicStats]:
+    """Topic stats from the connection counts, with count / bag duration rates (no scan)."""
+    counts: dict[str, TopicSpan] = {}
+    for connection in reader.connections:
+        topic = connection.topic
+        n = int(getattr(connection, "msgcount", 0) or 0)
+        previous = counts.get(topic)
+        counts[topic] = TopicSpan(
+            name=topic,
+            message_type=connection.msgtype,
+            count=n + (previous.count if previous else 0),
+            first_ns=None,
+            last_ns=None,
+            latched=_connection_latched(connection),
+        )
+    out: list[BagTopicStats] = []
+    for span in counts.values():
+        stats = build_topic_stats(span)
+        if duration_s > 0:
+            stats = stats.model_copy(
+                update={"frequency_hz": span.count / duration_s, "frequency_basis": "bag_duration"}
+            )
+        out.append(stats)
+    return out
 
 
 def _peek_out_of_time(hard_stop: float) -> bool:

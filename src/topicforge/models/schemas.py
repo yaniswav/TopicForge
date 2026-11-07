@@ -937,11 +937,7 @@ class BagTopicStats(BaseModel):
 
 
 class BagAnalysis(BaseModel):
-    """Structured summary of a ROS2 bag.
-
-    `bag_format` is populated only when the `rosbags`-backed reader runs; the
-    `ros2 bag info` path leaves it `None`.
-    """
+    """Structured summary of a ROS2 bag, from `ros2 bag info`, `rosbags` or a mock fixture."""
 
     model_config = _CONFIG
 
@@ -962,7 +958,7 @@ class BagAnalysis(BaseModel):
     )
     anomalies: list[str] = Field(
         default_factory=list,
-        description="Notes on gaps or clock jumps; mock mode only.",
+        description="Clock jumps, TF gaps and message losses found in the bag; see `note` for what was checked.",
     )
     start_ns: int | None = Field(
         default=None,
@@ -981,10 +977,11 @@ class BagAnalysis(BaseModel):
     )
     bag_format: Literal["mcap", "db3", "bag", "unknown"] | None = Field(
         default=None,
-        description=(
-            "Detected container: `mcap`, `db3`, `bag` or `unknown`; `None` for `ros2 "
-            "bag info` text."
-        ),
+        description=("Detected container: `mcap`, `db3`, `bag` or `unknown`."),
+    )
+    reader: Literal["ros2_cli", "rosbags", "fixture"] | None = Field(
+        default=None,
+        description="What produced this summary: `ros2 bag info`, the `rosbags` library or a mock fixture.",
     )
 
 

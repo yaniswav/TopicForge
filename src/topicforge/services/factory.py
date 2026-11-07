@@ -31,7 +31,7 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
     backend, ending at `MockAdapter`. `auto` is resolved in `Settings`.
     """
     if settings.effective_mode == "mock" and settings.effective_dds_backend == "mock":
-        return MockAdapter()
+        return _mock_adapter(settings)
 
     dds_adapter = _try_build_dds(settings)
     ros_adapter = _try_build_ros2_cli(
@@ -61,10 +61,21 @@ def build_adapter(settings: Settings) -> MiddlewareAdapter:
         settings.ros2_executable,
         settings.effective_dds_backend,
     )
-    fallback = MockAdapter()
+    fallback = _mock_adapter(settings)
     if settings.dds_backend != "mock":
         fallback.dds_inactive_reason = _dds_inactive_reason(settings)
     return fallback
+
+
+def _mock_adapter(settings: Settings) -> MockAdapter:
+    """The mock adapter. Only an explicit `TOPICFORGE_MODE=mock` keeps fixtures for every bag.
+
+    In any other mode this adapter is a fallback (`auto` found no `ros2`, or `live` could not
+    start it), so a bag that exists is read with `rosbags` rather than answered from fixtures.
+    """
+    adapter = MockAdapter()
+    adapter.read_real_bags = settings.mode != "mock"
+    return adapter
 
 
 def _try_build_ros2_cli(

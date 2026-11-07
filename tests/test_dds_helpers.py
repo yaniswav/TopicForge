@@ -165,7 +165,7 @@ def test_dds_only_error_msg_lists_affected_tools() -> None:
     """The message names every ROS2-side tool a DDS-only adapter cannot serve,
     so the LLM caller does not need to introspect the protocol to know what is
     blocked."""
-    for tool in ("list_topics", "get_topic_info", "sample_messages", "analyze_bag"):
+    for tool in ("list_topics", "get_topic_info", "sample_messages"):
         assert tool in DDS_ONLY_ERROR_MSG, f"missing tool name in error message: {tool!r}"
 
 

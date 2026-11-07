@@ -78,7 +78,6 @@ def test_ros2_surface_raises_dds_only_error_uniformly(dds_adapter: Any) -> None:
         ("list_topics", ()),
         ("get_topic_info", ("/cmd_vel",)),
         ("sample_messages", ("/cmd_vel", 1)),
-        ("analyze_bag", ("/tmp/demo.mcap",)),
     ]
     for method, args in methods_and_args:
         with pytest.raises(AdapterError, match="DDS observability only"):
