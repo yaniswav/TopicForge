@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import rclpy
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Odometry
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -70,6 +71,20 @@ def make_image(i: int) -> Image:
     return m
 
 
+def make_diag(i: int) -> DiagnosticArray:
+    m = DiagnosticArray()
+    _stamp(m, i)
+    m.status = [
+        DiagnosticStatus(
+            level=DiagnosticStatus.ERROR,
+            name="decode",
+            message=f"m{i}",
+            values=[KeyValue(key="k", value="v")],
+        )
+    ]
+    return m
+
+
 def main() -> None:
     status = Path(sys.argv[1])
     reliable = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10)
@@ -86,6 +101,7 @@ def main() -> None:
         (node.create_publisher(LaserScan, "/decode/scan", sensor), make_scan),
         (node.create_publisher(Odometry, "/decode/odom", reliable), make_odom),
         (node.create_publisher(Image, "/decode/image", reliable), make_image),
+        (node.create_publisher(DiagnosticArray, "/decode/diag", reliable), make_diag),
     ]
     silent = node.create_publisher(String, "/decode/silent", reliable)
     latched_pub = node.create_publisher(String, "/decode/latched", latched)

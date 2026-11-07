@@ -28,7 +28,7 @@ change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sectio
   (`frequency_basis`), from a bounded read on a short-lived participant TopicForge never reports
   as a robot event. Fail-closed: the writer's type hash when it sends one, plain CDR only, the
   bytes read back; heavy types, custom types and writers of different types get a note
-  and no sample. New `health_check.dds_decode`. Each read adds a visible subscriber, and a lazy
+  and no sample. Without a hash (Humble) each sample says its definitions are assumed. New `health_check.dds_decode`. Each read adds a visible subscriber, and a lazy
   publisher may wake (`docs/CONTRACT.md` section 9.28). With the flag off every existing field is
   unchanged.
 - `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in

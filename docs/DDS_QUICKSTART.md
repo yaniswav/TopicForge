@@ -19,7 +19,7 @@ TOPICFORGE_MODE=mock python -m topicforge
 - `peek_dds_samples(topic="/dds/well_matched", count=3)` returns three deterministic samples. The mock only knows `/dds/well_matched`, `/dds/qos_mismatch`, `/dds/topicforge/example` and `/dds/topicforge/opaque`, and raises "Unknown DDS topic" for anything else.
 - `topic_metrics(topic="/dds/heartbeat_10hz", window_s=60)` returns a pre-filled 10 Hz buffer (100 samples, no gaps, 50 ms latency). A live adapter behaves differently, see section 5 and [`examples/04-monitor-topic-frequency.md`](../examples/04-monitor-topic-frequency.md).
 
-The mock illustrates payload shapes that no live adapter produces today, such as the `"full"` decode status on `/dds/topicforge/example`.
+The mock illustrates payload shapes that no live adapter produces with `TOPICFORGE_DDS_DECODE` off, such as the `"full"` decode status on `/dds/topicforge/example`.
 
 ## 2. Live mode: choose a backend
 
@@ -114,7 +114,7 @@ By default user topics are not decoded (`TOPICFORGE_DDS_DECODE=on` decodes ROS 2
 }
 ```
 
-An empty result says nothing about traffic. The earlier decode path never worked on a live backend and is replaced by the flag; XTypes decoding stays disabled until it can be validated against a real bus. The `"full"` and `"partial"` decode statuses stay in the schema and the mock emits examples of them, but no live adapter produces them.
+An empty result says nothing about traffic. The earlier decode path never worked on a live backend and is replaced by the flag; XTypes decoding stays disabled until it can be validated against a real bus. The mock emits examples of the `"full"` and `"partial"` decode statuses; with the flag on, a live read gives `"full"` or `"raw"`, and with it off no live adapter produces them.
 
 `topic_metrics` only has data for the builtin topics. For a user topic it returns `status="unsupported_user_topic"`, and its null fields are not a measurement. For a builtin topic, `observed_frequency_hz` is how often you called `peek_dds_samples` (one call yields `null`), `sequence_numbers_available` is `false` and the latency percentiles are `null`, because builtin samples carry no publish timestamp. `declared_frequency_hz` is `1 / deadline` for the shortest Deadline a writer announced, when there is one. Use it to watch discovery-layer churn, not to check a publish rate.
 

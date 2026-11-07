@@ -45,7 +45,7 @@ _RATE_HISTORY = 256
 
 _BASE: dict[str, Any] = {
     "bool": bool,
-    "octet": idl_types.byte,
+    "byte": idl_types.byte,
     "int8": idl_types.int8,
     "uint8": idl_types.uint8,
     "int16": idl_types.int16,
@@ -114,16 +114,21 @@ def _reader_qos(latched: bool, depth: int) -> Qos:
     )
 
 
-def _drain(reader: Any, room: int, keep_payload: bool, sink: list[RawRead]) -> None:
-    """Move what the reader holds, up to `room` samples, into `sink`."""
+def _drain(reader: Any, room: int, keep_payload: bool, sink: list[RawRead]) -> bool:
+    """Move what the reader holds, up to `room` samples, into `sink`; whether one is oversize."""
     now_ns = time.time_ns()
+    arrival_ns = time.monotonic_ns()
+    oversize = False
     for sample in reader.take(N=room):
         info = getattr(sample, "sample_info", None)
         if not isinstance(sample, _Serialized) or info is None or not info.valid_data:
             continue
         size = len(sample.raw)
+        oversize = oversize or size > MAX_RAW_SAMPLE_BYTES
         fits = keep_payload and size <= MAX_RAW_SAMPLE_BYTES
-        sink.append(RawRead(sample.raw if fits else b"", info.source_timestamp, now_ns, size))
+        raw = sample.raw if fits else b""
+        sink.append(RawRead(raw, info.source_timestamp, now_ns, size, arrival_ns))
+    return oversize
 
 
 def read_user_topic(
@@ -138,6 +143,8 @@ def read_user_topic(
     volatile: bool = False,
 ) -> ReadOutcome:
     """At most `max_samples` samples within `budget_s`, then every entity is deleted.
+
+    The first sample over `MAX_RAW_SAMPLE_BYTES` ends the read: such a topic costs the writer.
 
     `own` receives the participant's guid while `lock` is held. `volatile` refuses a latched
     writer's history, which would read as a burst of old samples in a rate.
@@ -157,13 +164,12 @@ def read_user_topic(
             own(format_participant_key(participant.guid))
             topic = Topic(participant, plan.dds_topic, data_type, qos=qos)
             reader = DataReader(participant, topic, qos=qos)
-        while len(sink) < max_samples and time.monotonic() - started < budget_s:
-            with lock:
-                _drain(reader, max_samples - len(sink), keep_payload, sink)
+        oversize = False
+        while not oversize and len(sink) < max_samples and time.monotonic() - started < budget_s:
             time.sleep(_POLL_S)
+            with lock:
+                oversize = _drain(reader, max_samples - len(sink), keep_payload, sink)
         with lock:
-            room = max(max_samples - len(sink), 1)
-            _drain(reader, room, keep_payload, sink)
             matched = reader.get_subscription_matched_status().total_count
             incompatible = reader.get_requested_incompatible_qos_status().total_count
         return ReadOutcome(sink[:max_samples], matched, incompatible, time.monotonic() - started)

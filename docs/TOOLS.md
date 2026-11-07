@@ -572,7 +572,7 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples`
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent window as a `TopicMetrics`. **Read `status` first**: `unsupported_user_topic` means the payload is not decoded, so no metric exists: every null or 0 is not a measurement; `no_samples_yet` is nothing buffered or read. **Limits**: `frequency_basis` `source_timestamps` (decoding on) is a real publish rate from a bounded read of up to 10 s; otherwise the buffer fills only when `peek_dds_samples` runs, so `observed_frequency_hz` is how often it was called. `declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline announced in discovery (declared, not measured; null when none). Also `sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is outside 1..3600. Right after start the call waits up to 3 s for discovery. **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held.
+Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DDS topic over a recent window as a `TopicMetrics`. **Read `status` first**: `unsupported_user_topic` means the payload is not decoded, so no metric exists: every null or 0 is not a measurement; `no_samples_yet` is too little buffered or read. **Limits**: `frequency_basis` `reader_arrivals` (decoding on) is a real publish rate from a bounded read of up to 10 s; otherwise the buffer fills only when `peek_dds_samples` runs, so `observed_frequency_hz` is how often it was called. `declared_frequency_hz` is `1 / deadline` of the shortest writer Deadline announced in discovery (declared, not measured; null when none). Also `sequence_gaps_count`, `latency_ns_p50/p95/p99` and availability flags. **Read-only by architecture**. **Raises an MCP error** when no DDS module is active or `window_s` is outside 1..3600. Right after start the call waits up to 3 s for discovery. **Duration**: DDS lock, one call at a time, ends within 45 s; `busy` if held.
 
 ### Input parameters
 
@@ -589,11 +589,11 @@ Return temporal metrics (frequency, sequence gaps, latency percentiles) for a DD
 | `topic` | `str` | yes | - |
 | `window_s` | `int` | yes | Requested window in seconds (echoed). |
 | `window_actual_s` | `float` | yes | Seconds actually covered; shorter than `window_s` after a recent start; `0.0` without samples. |
-| `samples_observed` | `int` | yes | Samples buffered in the window. `0` does NOT mean no publisher, only that no `peek_dds_samples` call captured one. |
-| `observed_frequency_hz` | `number \| null` | no | `samples_observed / window_actual_s`; `None` under 2 samples. |
+| `samples_observed` | `int` | yes | Samples buffered or read. `0` does NOT mean no publisher, only that no peek or read captured one. |
+| `observed_frequency_hz` | `number \| null` | no | See `frequency_basis`; `None` under 2 samples. |
 | `declared_frequency_hz` | `number \| null` | no | `1 / deadline` of the shortest announced writer Deadline: promised, not observed; `None` when none announced. |
 | `status` | `"ok" \| "no_samples_yet" \| "unsupported_user_topic"` | no | `ok`; `no_samples_yet`; `unsupported_user_topic` (payload not decoded). |
-| `frequency_basis` | `"peek_cadence" \| "source_timestamps" \| null` | no | - |
+| `frequency_basis` | `"peek_cadence" \| "reader_arrivals" \| null` | no | What the rate measures. |
 | `sequence_gaps_count` | `int` | no | Missing sequence numbers in the buffered samples; `0` also when none exist (see `sequence_numbers_available`). |
 | `sequence_numbers_available` | `bool` | no | True when a sequence number could be read from a sample. |
 | `latency_ns_p50` | `integer \| null` | no | Median publish-to-receive latency in ns; `None` unless `latency_available`. |

@@ -77,6 +77,7 @@ without some writers, even one that never publishes a message of its own, so
 | --- | --- | --- | --- |
 | The server's Cyclone participant (`topicforge`) | The server | Builtin discovery readers | None |
 | `ros2 topic echo` and other `ros2` commands | One call | The sampled topic (`echo`), `ros_discovery_info`, and on Jazzy the request of the type-description service | `rt/rosout`, `rt/parameter_events`, `ros_discovery_info`, and on Jazzy the reply of the type-description service |
+| Decoded read (`topicforge_reader`, `TOPICFORGE_DDS_DECODE=on`) | One read | The read topic, builtin discovery readers | None |
 | Sampler helper (`_topicforge_sampler_<pid>`) | One call | The sampled topic, `ros_discovery_info` | `rt/parameter_events`, with one event about its own parameters at start, and `ros_discovery_info` |
 
 The helper starts with `enable_rosout=False`, `start_parameter_services=False`

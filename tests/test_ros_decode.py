@@ -8,7 +8,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
+from rosbags.interfaces import Nodetype
 from rosbags.typesys import Stores, get_typestore
 
 from topicforge.adapters.common import DiscoveryCaches, apply_builtin_samples
@@ -21,6 +23,7 @@ from topicforge.adapters.common.ros_decode import (
     RawRead,
     ReadOutcome,
     WriterFacts,
+    alignment_gaps,
     build_idl_type,
     cap_decoded,
     dds_type_of,
@@ -181,10 +184,132 @@ def test_decode_gives_the_fields() -> None:
     assert payload["_decode_status"] == "full"
 
 
-@pytest.mark.parametrize("padding", [1, 2, 3])
-def test_trailing_padding_is_tolerated(padding: int) -> None:
-    raw = _cdr("std_msgs/msg/String", data="hello") + b"\0" * padding
+@pytest.mark.parametrize("padding", [0, 1, 2])
+def test_trailing_padding_to_the_next_boundary_is_tolerated(padding: int) -> None:
+    raw = _cdr("std_msgs/msg/String", data="hello") + bytes([0xAB]) * padding  # 10 bytes of body
     assert decode_cdr(_plan(), raw)["data"] == "hello"
+
+
+@pytest.mark.parametrize("extra", [1, 2, 3])
+def test_bytes_past_the_boundary_are_a_wrong_type(extra: int) -> None:
+    # Reproduced in review: a UInt32 with a dropped field after it showed `data` as `full`.
+    raw = _cdr("std_msgs/msg/UInt32", data=7) + bytes([9]) * extra
+    payload = decode_cdr(_plan("std_msgs/msg/UInt32"), raw)
+    assert payload["_decode_status"] == "raw"
+    assert "data" not in payload
+
+
+def test_fewer_bytes_than_the_definition_are_refused() -> None:
+    raw = _cdr("std_msgs/msg/String", data="hello")
+    assert decode_cdr(_plan(), raw[:-1])["_decode_status"] == "raw"
+
+
+def test_a_non_zero_byte_outside_the_gaps_is_refused() -> None:
+    # A non-zero byte where the string's terminator belongs: not padding.
+    raw = bytearray(_cdr("std_msgs/msg/String", data="hello"))
+    raw[-1] = 0x41
+    assert decode_cdr(_plan(), bytes(raw))["_decode_status"] == "raw"
+
+
+def _instance(store: Any, ros_type: str, length: int, depth: int = 0) -> Any:
+    """A message of `ros_type` with `length` elements in its sequences and varying strings."""
+
+    def value(desc: Any) -> Any:
+        kind, rest = desc
+        if kind == Nodetype.BASE:
+            return "s" * (depth % 4 + 1) if rest[0] == "string" else _PRIMITIVE[rest[0]]
+        if kind == Nodetype.NAME:
+            return _instance(store, rest, length, depth + 1)
+        inner, size = rest
+        count = size if kind == Nodetype.ARRAY else length
+        if inner[0] == Nodetype.BASE and inner[1][0] != "string":
+            dtype = _NUMPY[inner[1][0]]
+            return np.ones(count, dtype=dtype)
+        return [value(inner) for _ in range(count)]
+
+    fields = {name: value(desc) for name, desc in store.fielddefs[ros_type][1]}
+    return store.types[ros_type](**fields)
+
+
+_PRIMITIVE = {
+    "bool": True,
+    "byte": 1,
+    "char": 1,
+    "int8": 1,
+    "uint8": 1,
+    "int16": 1,
+    "uint16": 1,
+    "int32": 1,
+    "uint32": 1,
+    "float32": 1.0,
+    "int64": 1,
+    "uint64": 1,
+    "float64": 1.0,
+}
+_NUMPY = {"byte": "uint8", "char": "uint8", "bool": "bool"}
+_NUMPY = {name: _NUMPY.get(name, name) for name in _PRIMITIVE}
+
+
+@pytest.mark.parametrize("store_name", [Stores.ROS2_HUMBLE, Stores.ROS2_JAZZY])
+@pytest.mark.parametrize("length", [0, 1, 3])
+def test_gaps_walk_every_store_type_to_the_serialized_end(store_name: Stores, length: int) -> None:
+    store = get_typestore(store_name)
+    for ros_type in store.fielddefs:
+        if ros_type.startswith("rosbag2_"):
+            continue
+        message = _instance(store, ros_type, length)
+        size = len(store.serialize_cdr(message, ros_type)) - 4
+        assert alignment_gaps(store, ros_type, message)[1] == size, ros_type
+
+
+def test_gaps_are_the_real_alignment_holes() -> None:
+    types = JAZZY.types
+    field = types["sensor_msgs/msg/PointField"](name="x", offset=1, datatype=7, count=2)
+    # Body: 4 length + 2 "x\0" + 2 gap + 4 offset + 1 datatype + 3 gap + 4 count.
+    assert alignment_gaps(JAZZY, "sensor_msgs/msg/PointField", field) == ([(6, 8), (13, 16)], 20)
+
+
+def test_diagnostic_array_with_its_byte_field_decodes() -> None:
+    types = JAZZY.types
+    status = types["diagnostic_msgs/msg/DiagnosticStatus"](
+        level=2,
+        name="n",
+        message="m",
+        hardware_id="h",
+        values=[types["diagnostic_msgs/msg/KeyValue"](key="k", value="v")],
+    )
+    header = types["std_msgs/msg/Header"](
+        stamp=types["builtin_interfaces/msg/Time"](sec=1, nanosec=2), frame_id="f"
+    )
+    message = types["diagnostic_msgs/msg/DiagnosticArray"](header=header, status=[status])
+    raw = bytes(JAZZY.serialize_cdr(message, "diagnostic_msgs/msg/DiagnosticArray"))
+    payload = decode_cdr(_plan("diagnostic_msgs/msg/DiagnosticArray"), raw)
+    assert payload["_decode_status"] == "full"
+    assert payload["status"][0]["level"] == 2
+    assert payload["status"][0]["values"][0]["value"] == "v"
+
+
+def test_same_layout_without_a_hash_is_undetectable_and_says_so_on_the_sample() -> None:
+    # int32 7 read as a float32, and a uint32 whose upper bytes fall in the gap after a uint8
+    # (reproduced in review): no check on the bytes can see these, only a hash can.
+    int32 = _cdr("std_msgs/msg/Int32", data=7)
+    plan = plan_decode("rt/x", [WriterFacts(dds_type_of("std_msgs/msg/Float32"))], distro="jazzy")
+    assert decode_cdr(plan, int32)["_decode_status"] == "full"
+    sample = message_samples("/x", plan, [_read(int32)])[0]
+    assert "int32 as a float32" in str(sample.payload["_decode_note"])
+    assert "assumed" in plan.store_note
+    field = JAZZY.types["sensor_msgs/msg/PointField"](name="x", offset=1, datatype=7, count=2)
+    raw = bytearray(JAZZY.serialize_cdr(field, "sensor_msgs/msg/PointField"))
+    raw[4 + 13 : 4 + 16] = b""  # the upper bytes of a uint32 `datatype`
+    widened = decode_cdr(_plan("sensor_msgs/msg/PointField"), bytes(raw))
+    assert (widened["_decode_status"], widened["datatype"]) == ("full", 7)
+
+
+def test_with_a_hash_a_sample_carries_no_doubt() -> None:
+    typehash = JAZZY.hash_rihs01("std_msgs/msg/String")
+    plan = plan_decode("rt/x", [WriterFacts(STRING, typehash)], distro="humble")
+    raw = _cdr("std_msgs/msg/String", data="x")
+    assert "_decode_note" not in message_samples("/x", plan, [_read(raw)])[0].payload
 
 
 def test_uninitialized_padding_is_tolerated() -> None:
@@ -242,8 +367,6 @@ def test_samples_have_the_bag_shape_with_stamps_and_non_finite_strings() -> None
     header = types["std_msgs/msg/Header"](
         stamp=types["builtin_interfaces/msg/Time"](sec=3, nanosec=4), frame_id="laser"
     )
-    import numpy as np
-
     scan = types["sensor_msgs/msg/LaserScan"](
         header=header,
         angle_min=0.0,
@@ -273,8 +396,6 @@ def test_headerless_sample_is_stamped_by_the_writer() -> None:
 
 
 def test_long_arrays_are_cut_and_named() -> None:
-    import numpy as np
-
     types = JAZZY.types
     msg = types["std_msgs/msg/Float64MultiArray"](
         layout=types["std_msgs/msg/MultiArrayLayout"](dim=[], data_offset=0),
@@ -311,14 +432,17 @@ def test_read_notes_tell_silent_from_unmatched_from_incompatible() -> None:
     assert "incompatible" in str(read_note(ReadOutcome([], 0, 1, 5.0), 1))
 
 
-def _stamped(*stamps_s: float) -> list[RawRead]:
-    return [RawRead(b"", int(s * 1e9), 0, 0) for s in stamps_s]
+def _arrived(*seconds: float, source_s: float | None = None) -> list[RawRead]:
+    """Reads arriving at these monotonic seconds; their source stamps are not looked at."""
+    return [
+        RawRead(b"", int((source_s or 0) * 1e9), 0, 0, arrival_ns=int(s * 1e9)) for s in seconds
+    ]
 
 
-def test_rate_comes_from_the_writer_timestamps() -> None:
-    outcome = ReadOutcome(_stamped(10.0, 10.1, 10.2, 10.3), 1, 0, 2.0)
+def test_rate_comes_from_the_arrivals_at_the_reader() -> None:
+    outcome = ReadOutcome(_arrived(10.0, 10.1, 10.2, 10.3), 1, 0, 2.0)
     metrics = rate_metrics("/t", 60, outcome, declared_hz=None)
-    assert metrics.frequency_basis == "source_timestamps"
+    assert metrics.frequency_basis == "reader_arrivals"
     assert metrics.status == "ok"
     assert metrics.samples_observed == 4
     assert metrics.observed_frequency_hz == pytest.approx(10.0)
@@ -327,13 +451,21 @@ def test_rate_comes_from_the_writer_timestamps() -> None:
     assert metrics.sequence_numbers_available is False
 
 
-def test_a_clock_jump_gives_no_rate() -> None:
-    # Measured on WSL: 30 samples of a 10 Hz writer spanning 5.8 s in a 3 s read read as 5 Hz.
-    outcome = ReadOutcome(_stamped(10.0, 10.1, 13.1, 13.2), 1, 0, 1.0)
-    metrics = rate_metrics("/t", 60, outcome, declared_hz=None)
-    assert metrics.observed_frequency_hz is None
-    assert metrics.samples_observed == 4
-    assert "clock jumped" in str(metrics.note)
+@pytest.mark.parametrize(
+    "stamps_s",
+    [
+        (10.0, 10.1, 13.1, 13.2),  # the wall clock jumped forward (WSL: 10 Hz read as 5 Hz)
+        (10.0, 10.1, 7.2, 7.3),  # or back
+        (1e6, 1e6 + 0.1, 2e6, 2e6 + 0.1),  # two writers on hosts with different clocks
+    ],
+)
+def test_writer_clocks_do_not_change_the_rate(stamps_s: tuple[float, ...]) -> None:
+    reads = [
+        RawRead(b"", int(stamp * 1e9), 0, 0, arrival_ns=int((10 + i / 10) * 1e9))
+        for i, stamp in enumerate(stamps_s)
+    ]
+    metrics = rate_metrics("/t", 60, ReadOutcome(reads, 1, 0, 1.0), declared_hz=None)
+    assert metrics.observed_frequency_hz == pytest.approx(10.0)
 
 
 def test_silent_topic_has_no_rate_and_says_why() -> None:
@@ -344,10 +476,25 @@ def test_silent_topic_has_no_rate_and_says_why() -> None:
     assert "silent" in str(metrics.note)
 
 
-def test_one_sample_has_no_rate() -> None:
-    metrics = rate_metrics("/t", 60, ReadOutcome(_stamped(10.0), 1, 0, 5.0), declared_hz=None)
-    assert metrics.status == "ok"
-    assert metrics.observed_frequency_hz is None
+def test_too_few_samples_is_not_ok() -> None:
+    one = rate_metrics("/t", 60, ReadOutcome(_arrived(10.0), 1, 0, 5.0), declared_hz=None)
+    assert (one.status, one.observed_frequency_hz, one.samples_observed) == (
+        "no_samples_yet",
+        None,
+        1,
+    )
+    assert "1 of 2" in str(one.note)
+    together = rate_metrics(
+        "/t", 60, ReadOutcome(_arrived(10.0, 10.0), 1, 0, 5.0), declared_hz=None
+    )
+    assert (together.status, together.observed_frequency_hz) == ("no_samples_yet", None)
+    assert "together" in str(together.note)
+
+
+def test_an_oversize_sample_is_said_in_the_rate_note() -> None:
+    big = RawRead(b"", 0, 0, MAX_RAW_SAMPLE_BYTES + 1, arrival_ns=1)
+    metrics = rate_metrics("/t", 60, ReadOutcome([big], 1, 0, 0.1), declared_hz=None)
+    assert "not decoded" in str(metrics.note)
 
 
 def test_refused_peek_names_the_reason_and_keeps_the_default_note_otherwise() -> None:

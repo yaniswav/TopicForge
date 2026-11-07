@@ -190,14 +190,6 @@ async def _peek_rounds(call: Any) -> dict[str, list[dict[str, Any]]]:
     return out
 
 
-async def _rate(call: Any) -> dict[str, Any]:
-    """A rate read; once more if a wall-clock jump made the first unusable."""
-    first = await call("topic_metrics", {"topic": "/decode/scan", "window_s": 5})
-    if first.get("observed_frequency_hz") is not None:
-        return first
-    return await call("topic_metrics", {"topic": "/decode/scan", "window_s": 5})
-
-
 async def _flag_on(results: list[tuple[str, bool]], env: dict[str, str], status: Path) -> dict:
     from mcp import Client
 
@@ -212,12 +204,12 @@ async def _flag_on(results: list[tuple[str, bool]], env: dict[str, str], status:
         before = _findings(await call("diagnose", {"budget_s": 30}))
         peeks = await _peek_rounds(call)
 
-        rate = await _rate(call)
+        rate = await call("topic_metrics", {"topic": "/decode/scan", "window_s": 5})
         hz = rate.get("observed_frequency_hz")
         _check(
             results,
             "topic_metrics is the real publish rate",
-            rate.get("frequency_basis") == "source_timestamps"
+            rate.get("frequency_basis") == "reader_arrivals"
             and rate.get("status") == "ok"
             and hz is not None
             and abs(hz - RATE_HZ) <= 1.0,
@@ -245,6 +237,15 @@ async def _flag_on(results: list[tuple[str, bool]], env: dict[str, str], status:
         values = [s["payload"].get("data") for s in latched.get("samples", [])]
         _check(results, "a latched sample is delivered", values == ["decode latched 1"], values)
 
+        diag = await call("peek_dds_samples", {"topic": "/decode/diag", "count": 1})
+        levels = [
+            (s["payload"].get("_decode_status"), s["payload"]["status"][0]["level"])
+            for s in diag.get("samples", [])
+        ]
+        _check(
+            results, "a type with a byte field decodes", levels == [("full", 2)], diag.get("note")
+        )
+
         image = await call("peek_dds_samples", {"topic": "/decode/image", "count": 1})
         _check(
             results,
@@ -256,6 +257,7 @@ async def _flag_on(results: list[tuple[str, bool]], env: dict[str, str], status:
         wanted = {
             **dict.fromkeys(COMPARED, 1),
             "/decode/silent": 0,
+            "/decode/diag": 0,
             "/decode/latched": 0,
             "/decode/image": 0,
         }

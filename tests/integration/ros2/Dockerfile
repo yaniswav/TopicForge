@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${DISTRO}-bond \
         ros-${DISTRO}-sensor-msgs \
         ros-${DISTRO}-nav-msgs \
+        ros-${DISTRO}-diagnostic-msgs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/topicforge

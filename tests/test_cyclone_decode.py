@@ -21,9 +21,13 @@ from cyclonedds.idl import IdlStruct
 from cyclonedds.idl.annotations import final
 from cyclonedds.pub import DataWriter
 from cyclonedds.topic import Topic
+from rosbags.interfaces import Nodetype
+from rosbags.typesys import Stores, get_typestore
 
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.ros_decode import MAX_RAW_SAMPLE_BYTES, build_idl_type
 from topicforge.adapters.dds_cyclone import CycloneDdsAdapter
+from topicforge.adapters.dds_cyclone.user_read import _BASE, _BUILDERS, _drain, _Serialized
 
 DOMAIN = 97
 RATE_HZ = 20.0
@@ -97,7 +101,7 @@ def test_count_zero_creates_no_reader(adapter: CycloneDdsAdapter) -> None:
 
 def test_the_rate_is_the_writers(adapter: CycloneDdsAdapter) -> None:
     metrics = adapter.topic_metrics("/decode_test", 3, DOMAIN)
-    assert metrics.frequency_basis == "source_timestamps"
+    assert metrics.frequency_basis == "reader_arrivals"
     assert metrics.status == "ok"
     assert metrics.observed_frequency_hz == pytest.approx(RATE_HZ, rel=0.25)
 
@@ -156,3 +160,41 @@ def test_flag_off_creates_no_reader_and_answers_as_before(talker: Talker) -> Non
         assert off.topic_metrics("DCPSParticipant", 2, DOMAIN).frequency_basis is None
     finally:
         off.close()
+
+
+@pytest.mark.parametrize("store_name", [Stores.ROS2_HUMBLE, Stores.ROS2_JAZZY])
+def test_the_binding_has_every_base_type_the_stores_use(store_name: Stores) -> None:
+    store = get_typestore(store_name)
+
+    def bases(desc: Any) -> set[str]:
+        kind, rest = desc
+        if kind == Nodetype.BASE:
+            return {rest[0]}
+        return bases(rest[0]) if kind in (Nodetype.ARRAY, Nodetype.SEQUENCE) else set()
+
+    used = {
+        name for _, fields in store.fielddefs.values() for _, desc in fields for name in bases(desc)
+    }
+    assert used - {"string"} <= set(_BASE)
+
+
+@pytest.mark.parametrize(
+    "ros_type", ["diagnostic_msgs/msg/DiagnosticArray", "rcl_interfaces/msg/ParameterEvent"]
+)
+def test_types_with_a_byte_field_build(ros_type: str) -> None:
+    store = get_typestore(Stores.ROS2_JAZZY)
+    assert build_idl_type(store, ros_type, _BUILDERS, {}) is not None
+
+
+def test_an_oversize_sample_is_reported_and_its_bytes_dropped() -> None:
+    class Reader:
+        def take(self, N: int) -> list[Any]:
+            big = _Serialized(bytes(MAX_RAW_SAMPLE_BYTES + 1))
+            big.sample_info = type("Info", (), {"valid_data": True, "source_timestamp": 1})()
+            return [big]
+
+    sink: list[Any] = []
+    assert _drain(Reader(), 5, True, sink) is True
+    assert sink[0].raw == b""
+    assert sink[0].size == MAX_RAW_SAMPLE_BYTES + 1
+    assert sink[0].arrival_ns > 0

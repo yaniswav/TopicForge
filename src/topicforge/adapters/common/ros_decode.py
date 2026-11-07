@@ -12,12 +12,15 @@ back to raw bytes. Three guards, in order:
 1. the writer's `typehash=RIHS01_...` from USER_DATA (Iron and later) selects the `rosbags`
    store with that exact definition; a hash no store has is a refusal;
 2. the CDR encapsulation must be plain CDR (`00 00` or `00 01`);
-3. the message re-serialized from the decoded fields must be the bytes received, give or take
-   padding: this is what catches a wrong definition on Humble, which sends no hash,
-   and a cut or corrupt sample, which `rosbags` alone can read as a short value.
+3. the message re-serialized from the decoded fields must be the bytes received, except at the
+   type's own alignment gaps, which Fast DDS leaves uninitialized, and with at most the padding
+   to the next 4-byte boundary at the end. This catches a cut or corrupt sample, a type of
+   another size and, without a hash, most wrong definitions.
 
-A definition with the same name and the same wire layout but other meanings cannot be told
-apart on Humble: `DecodePlan.store_note` says the store is assumed.
+Without a hash (Humble) a definition of the same layout cannot be told from the real one: an
+int32 reads as a float32, and a wider field reads as a narrow one when its other bytes fall in
+a gap. `DecodePlan.store_note` says so, in the result's `note` and in each sample's
+`_decode_note`.
 """
 
 from __future__ import annotations
@@ -28,6 +31,8 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
+
+from rosbags.interfaces import Nodetype  # type: ignore[import-not-found]
 
 from topicforge.adapters.common.bag_read import _cap_arrays
 from topicforge.adapters.common.cdr_decoder import decode_dynamic_sample, stringify_non_finite
@@ -49,9 +54,18 @@ HEAVY_TYPES = frozenset(
         "stereo_msgs/msg/DisparityImage",
         "nav_msgs/msg/OccupancyGrid",
         "map_msgs/msg/OccupancyGridUpdate",
+        "nav_msgs/msg/GridCells",
+        "nav_msgs/msg/Path",
+        "shape_msgs/msg/Mesh",
+        "visualization_msgs/msg/ImageMarker",
+        "visualization_msgs/msg/InteractiveMarkerInit",
+        "visualization_msgs/msg/InteractiveMarkerUpdate",
+        "visualization_msgs/msg/Marker",
+        "visualization_msgs/msg/MarkerArray",
     }
 )
-"""Refused by default: a 6.2 MB `Image` showed gaps, 239-265 MB of RSS and +40% writer CPU."""
+"""Refused: a 6.2 MB `Image` showed gaps, 239-265 MB of RSS and +40% writer CPU. A type not listed
+is stopped at its first sample over `MAX_RAW_SAMPLE_BYTES`."""
 
 PEEK_READ_S = 5.0
 """Longest read of one `peek_dds_samples`, discovery of the writer included."""
@@ -63,17 +77,30 @@ METRICS_MAX_SAMPLES = 1000
 """A `topic_metrics` read stops at this many samples."""
 
 MAX_RAW_SAMPLE_BYTES = 1024 * 1024
-"""A larger serialized sample is counted, never decoded."""
+"""A larger serialized sample ends the read and is counted, never decoded."""
 
 MAX_DECODED_RESPONSE_BYTES = 256 * 1024
 """Decoded samples returned by one peek, as serialized JSON."""
 
 _MAX_ARRAY_READ = 4096
-_MAX_PADDING = 3
-_SPAN_MARGIN_S = 0.25
 _PLAIN_CDR = (b"\x00\x00", b"\x00\x01")
 _DDS_TYPE = re.compile(r"^(\w+)::(\w+)::dds_::(\w+)_$")
 _TYPEHASH = re.compile(rb"typehash=([^;]*)")
+_PRIMITIVE_SIZES = {
+    "bool": 1,
+    "byte": 1,
+    "char": 1,
+    "int8": 1,
+    "uint8": 1,
+    "int16": 2,
+    "uint16": 2,
+    "int32": 4,
+    "uint32": 4,
+    "float32": 4,
+    "int64": 8,
+    "uint64": 8,
+    "float64": 8,
+}
 _HASHED_STORES = ("ROS2_JAZZY", "ROS2_KILTED", "ROS2_LYRICAL", "ROS2_IRON")
 
 
@@ -106,12 +133,17 @@ class DecodePlan:
 
 @dataclass(frozen=True)
 class RawRead:
-    """One serialized sample: `raw` is empty when oversize or when only the rate is wanted."""
+    """One serialized sample: `raw` is empty when oversize or when only the rate is wanted.
+
+    `arrival_ns` is the reader's monotonic clock at the slice that took it, `received_ns` the
+    wall clock there, `source_ns` the writer's wall clock.
+    """
 
     raw: bytes
     source_ns: int
     received_ns: int
     size: int
+    arrival_ns: int = 0
 
 
 @dataclass(frozen=True)
@@ -215,7 +247,14 @@ def _store_without_hash(ros_type: str, distro: str | None) -> tuple[Any, str, st
     if ros_type not in store.fielddefs:
         raise DecodeRefused(f"{ros_type} is not in the rosbags type store (custom type)")
     label = _store_label(name)
-    return store, label, f"Definitions assumed from {label}: the writer sends no type hash."
+    return (
+        store,
+        label,
+        (
+            f"Definitions assumed from {label}: the writer sends no type hash, so another type of "
+            "the same layout reads as this one (an int32 as a float32)."
+        ),
+    )
 
 
 def plan_decode(
@@ -275,8 +314,6 @@ def build_idl_type(store: Any, ros_type: str, builders: IdlBuilders, cache: dict
 
 
 def _idl_field(store: Any, desc: Any, builders: IdlBuilders, cache: dict[Any, Any]) -> Any:
-    from rosbags.interfaces import Nodetype  # type: ignore[import-not-found]
-
     kind, rest = desc
     if kind == Nodetype.BASE:
         name, bound = rest
@@ -294,18 +331,60 @@ def _idl_field(store: Any, desc: Any, builders: IdlBuilders, cache: dict[Any, An
     return builders.sequence(element, size)
 
 
-def _same_message(raw: bytes, again: bytes) -> bool:
-    """Whether `again`, re-serialized from `raw`, says what `raw` says.
+def alignment_gaps(store: Any, ros_type: str, message: Any) -> tuple[list[tuple[int, int]], int]:
+    """CDR alignment gaps of `message` as `(start, end)` after the header, and where it ends."""
+    gaps: list[tuple[int, int]] = []
 
-    Equal length give or take the trailing padding, and equal bytes wherever `again` is not
-    zero. A zero is how `rosbags` writes padding, and Fast DDS leaves padding uninitialized
-    (measured: `LaserScan` and `Odometry`), so a strict comparison refuses good samples.
-    """
-    if abs(len(raw) - len(again)) > _MAX_PADDING:
+    def align(pos: int, size: int) -> int:
+        end = (pos + size - 1) & -size
+        if end > pos:
+            gaps.append((pos, end))
+        return end
+
+    def walk_many(desc: Any, values: Any, count: int, pos: int) -> int:
+        kind, rest = desc
+        if kind == Nodetype.BASE and rest[0] != "string":
+            size = _PRIMITIVE_SIZES[rest[0]]
+            return align(pos, size) + count * size if count else pos
+        for value in values:
+            pos = walk(desc, value, pos)
+        return pos
+
+    def walk(desc: Any, value: Any, pos: int) -> int:
+        kind, rest = desc
+        if kind == Nodetype.BASE:
+            if rest[0] == "string":
+                return align(pos, 4) + 4 + len(value.encode("utf-8")) + 1
+            size = _PRIMITIVE_SIZES[rest[0]]
+            return align(pos, size) + size
+        if kind == Nodetype.NAME:
+            for name, field_desc in store.fielddefs[rest][1]:
+                pos = walk(field_desc, getattr(value, name), pos)
+            return pos
+        inner, _ = rest
+        if kind == Nodetype.ARRAY:
+            return walk_many(inner, value, len(value), pos)
+        return walk_many(inner, value, len(value), align(pos, 4) + 4)
+
+    end = walk((Nodetype.NAME, ros_type), message, 0)
+    return gaps, end
+
+
+def _same_message(plan: DecodePlan, message: Any, raw: bytes, again: bytes) -> bool:
+    """Whether `again`, re-serialized from `raw`, says what `raw` says (guard 3 above)."""
+    body, expected = raw[4:], again[4:]
+    size = len(expected)
+    if not size <= len(body) <= (size + 3) & -4:
         return False
-    if raw[4:] == again[4:]:
-        return True
-    return all(not a or a == r for a, r in zip(again[4:], raw[4:], strict=False))
+    gaps, end = alignment_gaps(plan.store, plan.ros_type, message)
+    if end != size:
+        return False
+    start = 0
+    for gap_start, gap_end in gaps:
+        if body[start:gap_start] != expected[start:gap_start]:
+            return False
+        start = gap_end
+    return body[start:size] == expected[start:size]
 
 
 def decode_cdr(plan: DecodePlan, raw: bytes, *, whole_arrays: bool = False) -> dict[str, Any]:
@@ -315,9 +394,10 @@ def decode_cdr(plan: DecodePlan, raw: bytes, *, whole_arrays: bool = False) -> d
     try:
         message = plan.store.deserialize_cdr(raw, plan.ros_type)
         again = plan.store.serialize_cdr(message, plan.ros_type, little_endian=raw[1] == 1)
+        same = _same_message(plan, message, raw, bytes(again))
     except Exception as exc:
         return annotate_raw(raw, note=f"does not decode as {plan.ros_type}: {exc}")
-    if not _same_message(raw, bytes(again)):
+    if not same:
         return annotate_raw(raw, note=f"{len(raw)} bytes do not read back as {plan.ros_type}")
     limit = None if whole_arrays else _MAX_ARRAY_READ
     return decode_dynamic_sample(message, max_array_elements=limit)
@@ -335,6 +415,8 @@ def message_samples(topic: str, plan: DecodePlan, reads: Iterable[RawRead]) -> l
             payload["_truncated_fields"] = sorted(cut)
         found = payload_stamp(decoded)
         full = decoded.get("_decode_status") == "full"
+        if full and plan.store_note:
+            payload["_decode_note"] = plan.store_note
         summary = summarize_message(plan.ros_type, decoded, set() if whole else cut)
         out.append(
             MessageSample(
@@ -396,33 +478,35 @@ def rate_metrics(
     *,
     declared_hz: float | None,
 ) -> TopicMetrics:
-    """`TopicMetrics` of one bounded read: the rate of the writers' source timestamps.
+    """`TopicMetrics` of one bounded read: the rate the samples arrived at this reader.
 
-    Merged across writers, and a lower bound where a best-effort reader lost samples. No
-    latency (the receive time is a polling slice) and no sequence numbers (DDS gives none).
-
-    Timestamps spanning longer than the read lasted (monotonic) cannot be intervals: a wall
-    clock jumped, as measured on WSL (10 Hz read as 5 Hz), or a sample is old. No rate then.
+    `take()` gives no reception time, so an arrival is the reader's own monotonic clock at the
+    polling slice that took the sample. It cannot jump, and needs no clock shared with a
+    writer on another host, unlike source timestamps: a 10 Hz writer read as 5 Hz on WSL when
+    the wall clock jumped. Merged across writers, and a lower bound where the best-effort
+    reader lost samples. No latency and no sequence numbers: DDS gives neither here.
     """
-    stamps = sorted(r.source_ns for r in outcome.samples)
-    span_s = (stamps[-1] - stamps[0]) / 1e9 if stamps else 0.0
-    usable = 0 < span_s <= outcome.elapsed_s + _SPAN_MARGIN_S
-    note = read_note(outcome, 2) or (
-        f"Bounded read of {outcome.elapsed_s:.1f} s; samples lost by a best-effort reader "
-        "lower the rate."
-        if usable
-        else f"No rate: timestamps span {span_s:.1f} s in a {outcome.elapsed_s:.1f} s read "
-        "(a clock jumped)."
-    )
+    arrivals = sorted(r.arrival_ns for r in outcome.samples)
+    count = len(arrivals)
+    span_s = (arrivals[-1] - arrivals[0]) / 1e9 if arrivals else 0.0
+    rated = count >= 2 and span_s > 0
+    if rated:
+        note = (
+            f"Bounded read of {outcome.elapsed_s:.1f} s; samples lost by a best-effort reader "
+            "lower the rate."
+        )
+    else:
+        note = read_note(outcome, 2) or f"No rate: {count} samples arrived together."
+    oversize = fitting_reads(outcome)[1]
     return TopicMetrics(
         topic=topic,
         window_s=window_s,
-        window_actual_s=span_s if usable else outcome.elapsed_s if stamps else 0.0,
-        samples_observed=len(stamps),
-        observed_frequency_hz=(len(stamps) - 1) / span_s if usable else None,
+        window_actual_s=span_s,
+        samples_observed=count,
+        observed_frequency_hz=(count - 1) / span_s if rated else None,
         declared_frequency_hz=declared_hz,
-        status="ok" if stamps else "no_samples_yet",
-        frequency_basis="source_timestamps",
+        status="ok" if rated else "no_samples_yet",
+        frequency_basis="reader_arrivals",
         mode_effective="live",
-        note=note,
+        note=f"{note} {oversize}" if oversize else note,
     )
