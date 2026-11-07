@@ -1412,3 +1412,76 @@ def test_a_dds_topic_in_a_finding_carries_its_ros_name() -> None:
     assert _topic_label("rt/scan_edge") == "rt/scan_edge (ROS /scan_edge)"
     assert _topic_label("ros_discovery_info") == "ros_discovery_info"
     assert _topic_label("rq/fooRequest") == "rq/fooRequest"
+
+
+# ---- the frame_id of a stamped topic against the TF tree (0.10 lot 0) -------------------------
+
+
+def _with_stamped(adapter: Scripted, frames: dict[str, str]) -> Scripted:
+    """`/scan`-like topics publishing the given frame_ids, next to the calm graph."""
+    from topicforge.models import MessageSample, SampleResult
+
+    adapter.over["list_topics"] = [
+        TopicListItem(
+            name=name,
+            message_type="sensor_msgs/msg/LaserScan",
+            publisher_count=1,
+            subscriber_count=1,
+        )
+        for name in frames
+    ]
+
+    def sample(topic: str, count: int, **kwargs: Any) -> Any:
+        if topic not in frames:
+            return _no_logs(topic, count)
+        one = MessageSample(
+            topic=topic,
+            message_type="sensor_msgs/msg/LaserScan",
+            timestamp_ns=0,
+            stamp_source="header",
+            payload={"header": {"frame_id": frames[topic]}},
+        )
+        return SampleResult(topic=topic, count=1, samples=[one], mode_effective="mock")
+
+    adapter.over["sample_messages"] = sample
+    return adapter
+
+
+def test_a_frame_id_absent_from_the_tf_tree_is_one_info() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "laser", "/scan_edge": "laser_edge"})
+    result = _run(adapter)
+    found = [f for f in _by(result, "tf") if f.subject == "/scan_edge"]
+    assert [f.severity for f in found] == ["info"]
+    assert "laser_edge" in found[0].text and found[0].suggested_fixes[0].kind == "cli"
+    assert "tf2_echo odom laser_edge" in found[0].suggested_fixes[0].text
+    assert not [f for f in _by(result, "tf") if f.subject == "/scan"]
+    assert result.critical_count == 0 and result.warning_count == 0
+
+
+def test_a_frame_published_on_tf_static_counts_as_present() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "/laser"})  # laser: static, leading /
+    assert not [f for f in _by(_run(adapter), "tf") if f.subject == "/scan"]
+
+
+def test_no_tf_frames_means_no_frame_id_finding() -> None:
+    from topicforge.models import TfCapture
+
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    adapter.over["capture_tf"] = lambda _w: TfCapture(static=[], dynamic=[], window_actual_s=5.0)
+    assert not [f for f in _by(_run(adapter), "tf") if f.subject == "/scan"]
+
+
+def test_a_budget_too_small_skips_the_frame_check_silently() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    adapter.cost["capture_tf"] = 8.0
+    result = _run(adapter, budget_s=12.0)
+    assert not [f for f in _by(result, "tf") if f.subject == "/scan"]
+    assert "sample_messages" in adapter.calls  # the log check still ran
+    assert [c for c in result.checks_skipped if c.check == "tf"] == []
+
+
+def test_at_most_three_stamped_topics_are_sampled() -> None:
+    names = {f"/s{i}": "nowhere" for i in range(6)}
+    adapter = _with_stamped(_calm(Scripted()), names)
+    result = _run(adapter)
+    assert len([f for f in _by(result, "tf") if f.subject in names]) == 3

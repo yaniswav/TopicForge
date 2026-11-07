@@ -43,6 +43,8 @@ from topicforge.models import (
     ParticipantInfo,
     SkippedCheck,
     SuggestedFix,
+    TfReport,
+    TopicListItem,
 )
 from topicforge.models.diagnose import CHECKS, EVIDENCE_VALUE_MAX, MAX_FINDINGS, SEVERITIES
 from topicforge.services.dds_views import join_notes
@@ -76,6 +78,21 @@ _RESERVE_S = 2.0  # kept back inside the call's own deadline
 _TF_WINDOW_S = 8.0
 _TF_STALE_AFTER_S = 2.0
 _TF_OVERHEAD_S = 2.0  # CLI start-up, URDF read and parsing around the capture
+_FRAME_TOPICS = 3  # stamped topics sampled for the frame_id check
+_FRAME_SAMPLE_S = 2.0  # wait for one message of a sampled topic
+_FRAME_COST_S = _FRAME_SAMPLE_S + 2.0  # plus the CLI start-up, what one sample needs to start
+# Stamped sensor types whose `header.frame_id` names a TF frame, most telling first.
+_STAMPED_TYPES: tuple[str, ...] = (
+    "sensor_msgs/msg/LaserScan",
+    "sensor_msgs/msg/PointCloud2",
+    "sensor_msgs/msg/Image",
+    "sensor_msgs/msg/CompressedImage",
+    "sensor_msgs/msg/Imu",
+    "nav_msgs/msg/Odometry",
+    "sensor_msgs/msg/Range",
+    "sensor_msgs/msg/NavSatFix",
+    "sensor_msgs/msg/MagneticField",
+)
 _LOG_TIMEOUT_S = 5.0
 _LOG_COUNT = 50
 _NODE_READ_S = 3.0
@@ -111,6 +128,7 @@ class _Ctx:
     plan: tuple[str, ...]
     report: HealthReport | None = None
     nodes: list[str] | None = None
+    topics: list[TopicListItem] | None = None  # set by the topics check, read by the TF check
     lifecycle: frozenset[str] = frozenset()
     wall_ns: Callable[[], int] = time.time_ns
     skipped: list[SkippedCheck] = field(default_factory=list)
@@ -242,6 +260,7 @@ def check_topics(ctx: _Ctx) -> list[Finding]:
     listening on `/cmd_vel`, RViz on `/goal_pose`), so it is never above info.
     """
     topics = [t for t in ctx.inspector.list_topics().topics if t.name not in BUILTIN_COUNT_TOPICS]
+    ctx.topics = topics
     out = []
     unknown = [t.name for t in topics if t.counts_unknown]
     if unknown:
@@ -616,6 +635,78 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
                 f"The budget cut the TF window to {window:g} s: a transform older than "
                 f"{window:g} s may be missed.",
                 _ev("inspect_tf", "window_s", window),
+            )
+        )
+    out += _frame_id_findings(ctx, report)
+    return out
+
+
+def _stamped_topics(topics: list[TopicListItem]) -> list[TopicListItem]:
+    """At most `_FRAME_TOPICS` published topics of a stamped sensor type, by type then name."""
+    rank = {t: i for i, t in enumerate(_STAMPED_TYPES)}
+    found = [
+        t
+        for t in topics
+        if t.message_type in rank and t.publisher_count > 0 and not t.counts_unknown
+    ]
+    found.sort(key=lambda t: (rank[t.message_type], t.name))
+    return found[:_FRAME_TOPICS]
+
+
+def _frame_id_findings(ctx: _Ctx, report: TfReport) -> list[Finding]:
+    """An info per sampled sensor topic whose `header.frame_id` is not a frame of the TF tree.
+
+    Optional and silent on purpose, like the second read of a silent node: it runs only when the
+    topics check listed the topics and the TF capture saw frames, it reads one message from at
+    most three stamped topics, and it stops without a trace once the budget the later checks
+    need would be touched. Never above `info`: a missing frame is a lead, and a dynamic frame
+    can simply be quiet during the capture.
+    """
+    if ctx.topics is None or not report.frames:
+        return []
+    known = {f.name for f in report.frames} | {f.parent for f in report.frames if f.parent}
+    known = {name.lstrip("/") for name in known}
+    later = sum(_FLOOR_S[c] for c in ctx.plan[ctx.plan.index("tf") + 1 :] if c in _FLOOR_S)
+    out: list[Finding] = []
+    for topic in _stamped_topics(ctx.topics):
+        if ctx.left() - later < _FRAME_COST_S:
+            break
+        try:
+            result = ctx.inspector.sample_messages(
+                topic.name,
+                1,
+                max_array_length=1,
+                arrays_summary_only=True,
+                timeout_s=_FRAME_SAMPLE_S,
+            )
+        except AdapterError:
+            continue
+        header = result.samples[0].payload.get("header") if result.samples else None
+        frame = header.get("frame_id") if isinstance(header, dict) else None
+        if not isinstance(frame, str) or not frame or frame.lstrip("/") in known:
+            continue
+        root = report.roots[0] if report.roots else None
+        safe = all(_SAFE_NAME.fullmatch(n) for n in (frame, root or ""))
+        out.append(
+            _finding(
+                "info",
+                "tf",
+                topic.name,
+                f"{topic.name} stamps its messages with frame {frame}, which is not among the "
+                f"{len(known)} frames seen on /tf and /tf_static in the capture: no transform "
+                "leads to it (or its publisher was quiet meanwhile).",
+                _ev("sample_messages", "samples[0].payload.header.frame_id", frame),
+                fixes=(
+                    _read_fix(
+                        f"ros2 run tf2_ros tf2_echo {root} {frame}",
+                        f"the publisher of {frame}",
+                        "Prints the transform once it exists; a frame nobody publishes "
+                        "never appears. Observes only.",
+                        "inspect_tf",
+                    )
+                    if root and safe
+                    else []
+                ),
             )
         )
     return out
