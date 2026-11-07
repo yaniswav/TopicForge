@@ -27,8 +27,10 @@ from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.ros_names import ros_topic_of
 from topicforge.constants import (
     DEFAULT_DIAGNOSE_BUDGET_S,
+    DEFAULT_MAX_ARRAY_LENGTH,
     MAX_DIAGNOSE_BUDGET_S,
     MIN_DIAGNOSE_BUDGET_S,
+    TRUNCATED_FIELDS_KEY,
 )
 from topicforge.models import (
     Diagnosis,
@@ -79,8 +81,8 @@ _TF_WINDOW_S = 8.0
 _TF_STALE_AFTER_S = 2.0
 _TF_OVERHEAD_S = 2.0  # CLI start-up, URDF read and parsing around the capture
 _FRAME_TOPICS = 3  # stamped topics sampled for the frame_id check
-_FRAME_SAMPLE_S = 2.0  # wait for one message of a sampled topic
-_FRAME_COST_S = _FRAME_SAMPLE_S + 2.0  # plus the CLI start-up, what one sample needs to start
+_FRAME_SAMPLE_S = 4.0  # whole call for one topic: the CLI start-up, the topic lookup and the echo
+_FRAME_MIN_S = 3.0  # budget left below which no further topic is sampled
 # Stamped sensor types whose `header.frame_id` names a TF frame, most telling first.
 _STAMPED_TYPES: tuple[str, ...] = (
     "sensor_msgs/msg/LaserScan",
@@ -129,6 +131,7 @@ class _Ctx:
     report: HealthReport | None = None
     nodes: list[str] | None = None
     topics: list[TopicListItem] | None = None  # set by the topics check, read by the TF check
+    tf_report: TfReport | None = None  # a complete TF capture, for the frame_id pass
     lifecycle: frozenset[str] = frozenset()
     wall_ns: Callable[[], int] = time.time_ns
     skipped: list[SkippedCheck] = field(default_factory=list)
@@ -508,7 +511,7 @@ def _restart_trend(name: str, starts: Mapping[str, list[int]], now_ns: int) -> s
     if ago * _NS_PER_S <= max(_STILL_RESTARTING_S * _NS_PER_S, 2 * gap):
         return (
             f" Still restarting: the last start was {ago} s ago."
-            " The count is taken when this check runs; a later call shows more."
+            " The count is taken when this check runs and may differ on a later call."
         )
     return f" It stopped restarting: the last start was {ago} s ago."
 
@@ -637,7 +640,8 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
                 _ev("inspect_tf", "window_s", window),
             )
         )
-    out += _frame_id_findings(ctx, report)
+    if report.frames and not report.truncated and window >= _TF_WINDOW_S:
+        ctx.tf_report = report  # only a full, uncut capture can tell a frame is absent
     return out
 
 
@@ -653,36 +657,40 @@ def _stamped_topics(topics: list[TopicListItem]) -> list[TopicListItem]:
     return found[:_FRAME_TOPICS]
 
 
-def _frame_id_findings(ctx: _Ctx, report: TfReport) -> list[Finding]:
+def _frame_id_findings(ctx: _Ctx) -> list[Finding]:
     """An info per sampled sensor topic whose `header.frame_id` is not a frame of the TF tree.
 
-    Optional and silent on purpose, like the second read of a silent node: it runs only when the
-    topics check listed the topics and the TF capture saw frames, it reads one message from at
-    most three stamped topics, and it stops without a trace once the budget the later checks
-    need would be touched. Never above `info`: a missing frame is a lead, and a dynamic frame
-    can simply be quiet during the capture.
+    Optional and silent on purpose. It runs after every other check, on the budget they left,
+    so it can never take any from them. It needs the topics check and a complete TF capture
+    (not cut by the budget, not truncated), reads one message from at most three stamped
+    topics, and stops without a trace when the budget is spent. Never above `info`: a missing
+    frame is a lead, and a dynamic frame can simply be quiet during the capture.
     """
-    if ctx.topics is None or not report.frames:
+    report = ctx.tf_report
+    if ctx.topics is None or report is None:
         return []
     known = {f.name for f in report.frames} | {f.parent for f in report.frames if f.parent}
     known = {name.lstrip("/") for name in known}
-    later = sum(_FLOOR_S[c] for c in ctx.plan[ctx.plan.index("tf") + 1 :] if c in _FLOOR_S)
     out: list[Finding] = []
     for topic in _stamped_topics(ctx.topics):
-        if ctx.left() - later < _FRAME_COST_S:
+        if ctx.left() < _FRAME_MIN_S:
             break
         try:
             result = ctx.inspector.sample_messages(
                 topic.name,
                 1,
-                max_array_length=1,
-                arrays_summary_only=True,
-                timeout_s=_FRAME_SAMPLE_S,
+                max_array_length=DEFAULT_MAX_ARRAY_LENGTH,  # the CLI default: no flag, strings whole
+                arrays_summary_only=True,  # `--no-arr` leaves strings alone
+                timeout_s=min(_FRAME_SAMPLE_S, ctx.left()),
             )
         except AdapterError:
             continue
-        header = result.samples[0].payload.get("header") if result.samples else None
+        payload = result.samples[0].payload if result.samples else {}
+        cut = payload.get(TRUNCATED_FIELDS_KEY)
+        header = payload.get("header")
         frame = header.get("frame_id") if isinstance(header, dict) else None
+        if isinstance(cut, list) and any(str(c).startswith("header.frame_id") for c in cut):
+            continue  # a cut string is not a frame name
         if not isinstance(frame, str) or not frame or frame.lstrip("/") in known:
             continue
         root = report.roots[0] if report.roots else None
@@ -1020,6 +1028,7 @@ class DiagnoseService:
                 if found is not None:
                     ran.append(name)
                     findings += found
+            findings += _frame_id_findings(ctx)  # last, on what the other checks left
         return _assemble(ctx, scope, budget_s, start, ran, findings)
 
     def _run_check(self, ctx: _Ctx, name: str) -> list[Finding] | None:

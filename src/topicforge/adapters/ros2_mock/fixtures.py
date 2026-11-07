@@ -339,7 +339,10 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             stamp_source="header",
             received_ns=_arrival(i),
             payload={
-                "header": {"stamp": _stamp(_BASE_TS_NS + i * _MOCK_PERIOD_NS), "frame_id": "imu"},
+                "header": {
+                    "stamp": _stamp(_BASE_TS_NS + i * _MOCK_PERIOD_NS),
+                    "frame_id": "imu_link",
+                },
                 "orientation": _quaternion(0.0),
                 "orientation_covariance": [0.0] * 9,
                 "angular_velocity": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -434,7 +437,7 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
             stamp_source="header",
             received_ns=_arrival(0),
             payload={
-                "header": {"stamp": _stamp(_BASE_TS_NS), "frame_id": "camera"},
+                "header": {"stamp": _stamp(_BASE_TS_NS), "frame_id": "camera_link"},
                 "width": 640,
                 "height": 480,
                 "encoding": "rgb8",

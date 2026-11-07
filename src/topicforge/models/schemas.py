@@ -819,6 +819,7 @@ _SUMMARY_ADVERTISED: dict[str, object] = {
             "type": "object",
             "properties": {
                 "summary_type": {
+                    "description": "Open set: ignore a value you do not know.",
                     "type": "string",
                     "enum": [
                         "laser_scan",

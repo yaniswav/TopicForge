@@ -12,7 +12,7 @@ Planned as 0.10.0, not released yet.
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
-9.24). `tools/list` is 100,943 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.24). `tools/list` is 101,117 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
@@ -37,7 +37,7 @@ change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sectio
 - `GoalStatusArray` summary (`summary_type` `goal_status`) on `sample_messages` of
   `<action>/_action/status`: goals per status. The `diagnose-nav2` prompt and skill use it.
 - `diagnose` reports, as an `info` on check `tf`, a stamped sensor topic (up to three) whose
-  `header.frame_id` is not in the TF tree. Silent when the budget or the TF capture does not allow it.
+  `header.frame_id` is not in the TF tree. Runs last on leftover budget; silent when the budget or the TF capture does not allow it.
 
 ### Fixed
 
@@ -60,7 +60,7 @@ change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sectio
 ### Changed
 
 - `diagnose` offers the `/rosout` command of a restart loop only for a ROS node with a `ros2` CLI.
-  A loop still going says its count is taken when the DDS check runs (a later call shows more).
+  A loop still going says its count is taken when the DDS check runs (it may differ on a later call).
 - QoS findings and the `topic` field descriptions of the QoS reports show the ROS name next to a
   DDS `rt/` name. The stale TF text and `age_s` say what the age is measured against.
 - README: the telemetry transport is a local log only, with no HTTP endpoint and none planned.

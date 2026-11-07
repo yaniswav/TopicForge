@@ -1081,7 +1081,8 @@ def _rosout_peek_rows(tmp_path: Path, per_topic: dict, samples: list) -> list[di
 def test_a_bag_with_no_rosout_line_expects_zero_not_the_fallback(tmp_path: Path) -> None:
     # Bag truth exists but the recorder stored no /rosout line: expect 0 messages.
     rows = _rosout_peek_rows(tmp_path, {"/scan": {"first_ns": 1}}, [])
-    assert [r["verdict"] for r in rows] == ["PASS"]
+    assert [r["verdict"] for r in rows] == ["WARN"]
+    assert "holds 0 /rosout messages" in rows[0]["note"]
     assert rows[0]["truth"] == "0 messages"
 
 

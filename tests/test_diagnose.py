@@ -20,6 +20,7 @@ from topicforge import budget
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.nodes import build_node_listing
 from topicforge.adapters.common.qos_scan import _typo_hint
+from topicforge.adapters.ros2_live.echo_parser import parse_echo_document
 from topicforge.adapters.ros2_mock import MockAdapter, fixtures, node_fixtures
 from topicforge.config import Settings
 from topicforge.models import (
@@ -68,6 +69,7 @@ class Scripted(MockAdapter):
         self.node_reads: list[tuple[str, float]] = []
         self.nodes_ok: dict[str, bool] = {}
         self.param_status: dict[str, str] = {}
+        self.sample_kwargs: list[dict[str, Any]] = []
 
     @property
     def effective_mode(self) -> Any:
@@ -81,6 +83,8 @@ class Scripted(MockAdapter):
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             calls.append(item)
+            if item == "sample_messages":
+                super(Scripted, self).__getattribute__("sample_kwargs").append(kwargs)
             clock = super(Scripted, self).__getattribute__("clock")
             clock.now += self.cost.get(item, 0.0)
             if item in self.fail:
@@ -1401,9 +1405,9 @@ def test_a_loop_still_going_says_its_count_is_as_of_the_sweep() -> None:
     # Eval shape: 7 lives when the check ran, 10 discoveries a sweep later (a restart every 6 s).
     going = _by(_restarting(7, 5, every_s=6).diagnose(), "dds", "critical")[0].text
     assert "appeared with 7 different participants" in going
-    assert "The count is taken when this check runs; a later call shows more." in going
+    assert "may differ on a later call" in going
     over = _by(_restarting(7, 400, every_s=6).diagnose(), "dds", "critical")[0].text
-    assert "a later call shows more" not in over
+    assert "may differ on a later call" not in over
 
 
 def test_a_dds_topic_in_a_finding_carries_its_ros_name() -> None:
@@ -1415,6 +1419,12 @@ def test_a_dds_topic_in_a_finding_carries_its_ros_name() -> None:
 
 
 # ---- the frame_id of a stamped topic against the TF tree (0.10 lot 0) -------------------------
+
+
+def _cli_string(value: str, truncate_length: int | None) -> str:
+    if truncate_length is None or truncate_length == 128 or len(value) <= truncate_length:
+        return value
+    return value[:truncate_length] + "..."
 
 
 def _with_stamped(adapter: Scripted, frames: dict[str, str]) -> Scripted:
@@ -1434,12 +1444,16 @@ def _with_stamped(adapter: Scripted, frames: dict[str, str]) -> Scripted:
     def sample(topic: str, count: int, **kwargs: Any) -> Any:
         if topic not in frames:
             return _no_logs(topic, count)
+        # What the live CLI does: `--truncate-length N` (any N but the default) cuts strings too.
+        cut = kwargs.get("max_array_length")
+        text = f"header:\n  frame_id: {_cli_string(frames[topic], cut)}\n"
+        echoed = parse_echo_document(text, truncate_length=None if cut == 128 else cut)
         one = MessageSample(
             topic=topic,
             message_type="sensor_msgs/msg/LaserScan",
             timestamp_ns=0,
             stamp_source="header",
-            payload={"header": {"frame_id": frames[topic]}},
+            payload=echoed.payload,
         )
         return SampleResult(topic=topic, count=1, samples=[one], mode_effective="mock")
 
@@ -1485,3 +1499,51 @@ def test_at_most_three_stamped_topics_are_sampled() -> None:
     adapter = _with_stamped(_calm(Scripted()), names)
     result = _run(adapter)
     assert len([f for f in _by(result, "tf") if f.subject in names]) == 3
+
+
+def test_a_healthy_frame_is_not_cut_by_the_sampling_flags() -> None:
+    # A truncate length of 1 would read `l...` for `laser`; the check must not use one.
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "laser"})
+    result = _run(adapter)
+    assert not [f for f in _by(result, "tf") if f.subject == "/scan"]
+    kwargs = [c for c in adapter.sample_kwargs if c.get("arrays_summary_only")]
+    assert kwargs and all(c.get("max_array_length") in (None, 128) for c in kwargs)
+
+
+def test_a_cut_frame_id_is_not_judged() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "a_long_frame_name"})
+    real = adapter.over["sample_messages"]
+
+    def cut(topic: str, count: int, **kwargs: Any) -> Any:
+        return real(topic, count, **{**kwargs, "max_array_length": 3})
+
+    adapter.over["sample_messages"] = cut
+    assert not [f for f in _by(_run(adapter), "tf") if f.subject == "/scan"]
+
+
+def test_the_frame_check_runs_last_and_never_takes_budget_from_a_check() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    adapter.cost["capture_tf"] = 8.0
+    adapter.cost["get_node_info"] = 0.0
+    result = _run(adapter, budget_s=14.0)
+    assert result.checks_skipped == []
+    assert "responsiveness" in result.checks_run and "logs" in result.checks_run
+
+
+def test_a_truncated_or_cut_tf_capture_gives_no_frame_id_finding() -> None:
+    adapter = _with_stamped(_calm(Scripted()), {"/scan": "nowhere"})
+    result = _run(adapter, budget_s=12.0)  # too little: the TF window is cut
+    tf = _by(result, "tf")
+    assert any("budget cut the TF window" in f.text for f in tf)
+    assert not [f for f in tf if f.subject == "/scan"]
+
+
+def test_the_mock_graph_has_no_frame_id_finding() -> None:
+    result = DiagnoseService(
+        Inspector(MockAdapter()), HealthService(_SETTINGS, MockAdapter())
+    ).diagnose()
+    assert not [
+        f
+        for f in result.findings
+        if f.check == "tf" and f.subject in ("/scan", "/imu/data", "/camera/image_raw", "/odom")
+    ]

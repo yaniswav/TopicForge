@@ -68,6 +68,7 @@
             "description": "Condensed reading of the whole message (see `summary_type`); `null` for other types and DDS peeks.",
             "properties": {
               "summary_type": {
+                "description": "Open set: ignore a value you do not know.",
                 "enum": [
                   "laser_scan",
                   "odometry",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 
 from topicforge.models import TopicListItem
@@ -27,14 +28,25 @@ def _package_of(path: Path) -> list[str]:
 
 
 def _dynamic_import_target(node: ast.Call) -> str | None:
-    """The literal module name of `importlib.import_module("x")`, `import_module("x")` or `__import__("x")`."""
+    """The literal module of `import_module("x")`, `import_module(name="x")` or `__import__("x")`.
+
+    A relative name (`import_module(".services", package="topicforge")`) resolves against a
+    literal `package`; anything not literal is not seen.
+    """
     func = node.func
     name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-    if name not in {"import_module", "__import__"} or not node.args:
+    if name not in {"import_module", "__import__"}:
         return None
-    first = node.args[0]
-    if isinstance(first, ast.Constant) and isinstance(first.value, str):
-        return first.value
+    keywords = {k.arg: k.value for k in node.keywords}
+    first = node.args[0] if node.args else keywords.get("name")
+    if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+        return None
+    module = first.value
+    if not module.startswith("."):
+        return module
+    second = node.args[1] if len(node.args) > 1 else keywords.get("package")
+    if isinstance(second, ast.Constant) and isinstance(second.value, str):
+        return importlib.util.resolve_name(module, second.value)
     return None
 
 
@@ -100,6 +112,9 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
             "    from topicforge.services.d import e",
             "    importlib.import_module('topicforge.services.f')",
             "    __import__('topicforge.services.g')",
+            "    import_module(name='topicforge.services.h')",
+            "    importlib.import_module('.services.i', package='topicforge')",
+            "    import_module('.services.j', 'topicforge')",
             "    import_module(name)",
         ]
     )
@@ -111,6 +126,9 @@ def test_import_scanner_sees_absolute_relative_and_local_imports() -> None:
         "topicforge.services.d",
         "topicforge.services.f",
         "topicforge.services.g",
+        "topicforge.services.h",
+        "topicforge.services.i",
+        "topicforge.services.j",
     }
 
 
