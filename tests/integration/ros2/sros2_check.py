@@ -102,11 +102,12 @@ def _check(results: list[tuple[str, bool, str]], name: str, ok: bool, detail: st
 def _check_helper_sample(results: list[tuple[str, bool, str]], keystore: Path) -> None:
     """Sample the secured topic through the helper, holding the node's own enclave."""
     env = {**_secure_env(keystore), "ROS_SECURITY_ENCLAVE_OVERRIDE": ENCLAVE}
-    calls = [
-        ("sleep", {"s": 3}),
-        ("sample_messages", {"topic": TOPIC, "count": 1, "timeout_s": 15}),
-    ]
-    sample = asyncio.run(_session(env, calls))[0]
+    # Secure discovery can outlast the first `ros2 topic info` on a loaded runner (seen twice
+    # on Humble with Fast DDS), and the tool says to retry: so does this check.
+    read = ("sample_messages", {"topic": TOPIC, "count": 1, "timeout_s": 15})
+    calls = [("sleep", {"s": 3}), read, ("sleep", {"s": 5}), read, ("sleep", {"s": 10}), read]
+    answers = asyncio.run(_session(env, calls))
+    sample = next((a for a in answers if a.get("samples")), answers[-1])
     samples = sample.get("samples") or []
     payload = samples[0].get("payload") if samples else None
     _check(

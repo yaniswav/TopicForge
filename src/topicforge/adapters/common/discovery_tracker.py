@@ -22,7 +22,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from topicforge.adapters.common.dds_helpers import canonicalize_vendor_id, format_guid
+from topicforge.adapters.common.dds_helpers import (
+    READER_PARTICIPANT_NAME,
+    canonicalize_vendor_id,
+    format_guid,
+)
 from topicforge.adapters.common.dds_introspection import (
     cyclone_extract_guid,
     cyclone_extract_hostname,
@@ -121,6 +125,28 @@ class SampleCache:
         return items if limit is None else items[:limit]
 
 
+class OwnParticipants:
+    """Thread-safe, bounded memory of the short-lived participants behind decoded reads.
+
+    The guid is what a dispose sample carries, so it must outlive the participant.
+    """
+
+    def __init__(self, max_items: int = MAX_DEPARTED_PARTICIPANTS) -> None:
+        self._lock = threading.Lock()
+        self._guids: OrderedDict[str, None] = OrderedDict()
+        self._max = max_items
+
+    def add(self, guid: str) -> None:
+        with self._lock:
+            self._guids[guid] = None
+            while len(self._guids) > self._max:
+                self._guids.popitem(last=False)
+
+    def __contains__(self, guid: str) -> bool:
+        with self._lock:
+            return guid in self._guids
+
+
 @dataclass(frozen=True)
 class DepartedRecord:
     """An endpoint sample whose participant left, with the departure facts."""
@@ -205,6 +231,7 @@ class DiscoveryCaches:
         default_factory=OrderedDict
     )
     ros_nodes: NodeNameCache = field(default_factory=NodeNameCache)
+    own_participants: OwnParticipants = field(default_factory=OwnParticipants)
 
     def snapshot(self, domain_id: int, now_ns: int | None = None) -> DiscoverySnapshot:
         """Everything handlers need, read under the pass lock."""
@@ -234,6 +261,12 @@ def _by_time(samples: list[Any], now_ns: int) -> list[Any]:
 
 def _apply_participant(caches: DiscoveryCaches, sample: Any, now_ns: int, domain_id: int) -> None:
     guid = format_guid(cyclone_extract_guid(sample))
+    if guid in caches.own_participants:
+        return
+    if _is_valid(sample) and cyclone_extract_participant_name(sample) == READER_PARTICIPANT_NAME:
+        # Another TopicForge server's read: its dispose carries only the guid.
+        caches.own_participants.add(guid)
+        return
     ts = announced_ns_of(sample)
     life = caches.lifecycle
     if _is_valid(sample):
@@ -286,8 +319,10 @@ def _apply_endpoint(
     caches: DiscoveryCaches, role: str, cache: SampleCache, sample: Any, now_ns: int
 ) -> None:
     guid = format_guid(cyclone_extract_guid(sample))
+    owner = format_participant_key(getattr(sample, "participant_key", None))
+    if owner in caches.own_participants:
+        return
     if _is_valid(sample) and _is_alive_instance(sample):
-        owner = format_participant_key(getattr(sample, "participant_key", None))
         left = caches.departed_participants.get(owner)
         if left is not None:
             # Its participant already left (same pass or earlier): the endpoint

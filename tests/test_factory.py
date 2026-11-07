@@ -21,6 +21,7 @@ participants when imported), so we stub them via monkeypatching.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import sys
 import types
@@ -139,9 +140,10 @@ class _StubDdsAdapter:
 class _FakeCyclone(_StubDdsAdapter):
     """Stands in for `CycloneDdsAdapter`: records the domain it was built for."""
 
-    def __init__(self, domain_id: int = 0) -> None:
+    def __init__(self, domain_id: int = 0, *, decode: bool = False) -> None:
         super().__init__()
         self.domain_id = domain_id
+        self.decode = decode
 
 
 def _install_fake_adapter_module(
@@ -358,7 +360,7 @@ def test_dds_constructor_raising_adapter_error_falls_back_to_mock(
 ) -> None:
     """E.g. an invalid CYCLONEDDS_URI makes the DomainParticipant fail."""
 
-    def boom(domain_id: int = 0) -> object:
+    def boom(domain_id: int = 0, *, decode: bool = False) -> object:
         raise AdapterError("invalid CYCLONEDDS_URI")
 
     _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", boom)
@@ -374,7 +376,7 @@ def test_dds_constructor_raising_adapter_error_falls_back_to_mock(
 def test_dds_constructor_raising_adapter_error_keeps_ros2_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def boom(domain_id: int = 0) -> object:
+    def boom(domain_id: int = 0, *, decode: bool = False) -> object:
         raise AdapterError("cannot join domain")
 
     _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", boom)
@@ -388,7 +390,7 @@ def test_dds_constructor_raising_adapter_error_keeps_ros2_cli(
 def test_dds_constructor_raising_unexpected_error_is_logged_with_cause(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def boom(domain_id: int = 0) -> object:
+    def boom(domain_id: int = 0, *, decode: bool = False) -> object:
         raise OSError("shared library not found")
 
     _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", boom)
@@ -441,3 +443,14 @@ def test_dds_binding_failing_to_load_falls_back_instead_of_crashing(
 
     assert isinstance(adapter, MockAdapter)
     assert any("OSError" in r.getMessage() for r in caplog.records)
+
+
+def test_the_decode_flag_reaches_the_cyclone_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_adapter_module(monkeypatch, _CYCLONE_MODULE, "CycloneDdsAdapter", _FakeCyclone)
+    settings = dataclasses.replace(_auto_settings(dds_backend="cyclone"), dds_decode=True)
+
+    adapter = factory.build_adapter(settings)
+
+    assert isinstance(adapter, _FakeCyclone)
+    assert adapter.decode is True
+    assert factory.build_adapter(_auto_settings(dds_backend="cyclone")).decode is False

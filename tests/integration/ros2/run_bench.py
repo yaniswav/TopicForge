@@ -7,7 +7,9 @@ bench's ground truth (scripts/ground_truth). `--out DIR` keeps COMPARISON.md, co
 and the raw results on the host (CI uploads that folder).
 
 Extra pytest arguments go after `--`, e.g. `-- -k scan`. `--sros2` runs the SROS2 cell
-(`sros2_check.py`: one secured node, TopicForge without an identity) instead of the bench.
+(`sros2_check.py`: one secured node, TopicForge without an identity) instead of the bench;
+`--decode` runs the decode cell (`decode_check.py`: samples read with `TOPICFORGE_DDS_DECODE=on`
+against `ros2 topic echo`).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ REPO = Path(__file__).resolve().parents[3]
 DOCKERFILE = "tests/integration/ros2/Dockerfile"
 ENTRYPOINT = "/opt/topicforge/tests/integration/ros2/entrypoint.sh"
 SROS2_CHECK = "/opt/topicforge/tests/integration/ros2/sros2_check.py"
+DECODE_CHECK = "/opt/topicforge/tests/integration/ros2/decode_check.py"
 RMW = {"fastrtps": "rmw_fastrtps_cpp", "cyclonedds": "rmw_cyclonedds_cpp"}
 
 
@@ -37,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-build", action="store_true", help="reuse an existing image")
     parser.add_argument("--out", type=Path, help="host folder for the ground-truth report")
     parser.add_argument("--sros2", action="store_true", help="run the SROS2 cell instead")
+    parser.add_argument("--decode", action="store_true", help="run the decode cell instead")
     parser.add_argument("pytest_args", nargs="*", help="extra pytest arguments (after --)")
     args = parser.parse_args(argv)
 
@@ -83,9 +87,9 @@ def main(argv: list[str] | None = None) -> int:
                         "bash",
                         "-c",
                         f"source /opt/ros/{args.distro}/setup.bash && "
-                        f"/opt/tfenv/bin/python {SROS2_CHECK}",
+                        f"/opt/tfenv/bin/python {DECODE_CHECK if args.decode else SROS2_CHECK}",
                     ]
-                    if args.sros2
+                    if args.sros2 or args.decode
                     else ["bash", ENTRYPOINT, *args.pytest_args]
                 ),
             ]
