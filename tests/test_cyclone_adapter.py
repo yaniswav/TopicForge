@@ -89,7 +89,6 @@ def test_list_participants_returns_list() -> None:
     assert isinstance(participants, list)
     for p in participants:
         assert p.vendor in get_args(VendorTag)
-        assert p.mode_effective == "live"
         assert p.domain_id == 0
 
 

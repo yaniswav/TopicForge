@@ -1536,7 +1536,55 @@ Additive except where stated (1.9). `tools/list` goes from 101,117 to 101,504 by
     topic whose connection records more than one publisher is not judged.
 - The mock fixture's two canned anomaly strings are unchanged.
 
-### 9.26 Sampling backend of `sample_messages` (0.10.0)
+### 9.26 URDF through fields (0.10.0)
+
+Additive (1.9), no new tool, no xacro. `tools/list` goes from 101,504 to 101,759 bytes.
+
+- `inspect_tf` gains an optional input `urdf_path`: a server path to a `.urdf` file (a regular
+  file of at most 1 MiB, read-only, never passed to the `ros2` CLI). It is compared with the TF
+  frames instead of `/robot_description`, which is then not read. A path that is empty, has a null
+  byte, ends in `.xacro` (xacro is never expanded or run: expand it and pass the `.urdf`) or has
+  another extension raises an error before any I/O. Every other problem (missing file, not UTF-8,
+  too large, DOCTYPE or ENTITY, no link, or xacro left in the parsed tree: an element or attribute
+  in a xacro namespace under any prefix, an undeclared prefix, or `${` / `$(` in a value; a comment
+  that mentions them does not count) is a
+  `urdf_note` with `urdf_source` `none`; the TF tree is still the result. `urdf_source` stays
+  `robot_description` when the file was compared (closed set, 1.9, as for the 0.8.1 parameter
+  source) and `urdf_note` says the URDF came from the `urdf_path` file.
+- Two new `TfFinding.kind` values (an open set, 1.9): `fixed_joint_on_tf` (a URDF `fixed` joint
+  whose edge is seen on `/tf` and not on `/tf_static`) and `movable_joint_on_tf_static` (a
+  `revolute`, `continuous` or `prismatic` joint whose edge is seen on `/tf_static` and not on
+  `/tf`). One finding per kind; `frames` lists the child frames, and the text names each joint, its
+  type and its parent, up to eight; `frames` holds the frame as published (with a `frame_prefix`
+  if any). Neither is judged on a cut capture (`capped`, dropped messages) or one with no `/tf`
+  sample. Low false-alarm rules: an edge belongs to a joint only when its
+  parent and child both match the joint's links (a `frame_prefix` is ignored); a frame seen on both
+  streams is `static_and_dynamic`, not a type mismatch; `floating`, `planar` and unknown joint types
+  are never judged; a joint with no edge is `declared_not_published`; and `fixed_joint_on_tf` is
+  silent when no fixed joint of the URDF is on `/tf_static` at all (`use_tf_static` false, or a
+  static stream that was not read). A partial URDF judges only its own joints. A movable joint
+  is not reported for being quiet on `/tf`, only for a static transform in its place.
+- `diagnose`, check `tf`, turns `movable_joint_on_tf_static` into a `warning` and
+  `fixed_joint_on_tf` into an `info` (lookups still work, and a driver or simulator may republish a
+  fixed joint on `/tf`, which must not fail a healthy robot). Subject: the child frames. Each has
+  one read-only `suggested_fixes` entry, `ros2 topic info /tf --verbose` or `... /tf_static
+  --verbose`. `diagnose` has no `urdf_path`: it uses `/robot_description`.
+- `graph_diff` snapshots hold a short SHA-256 of the text of `/robot_description`. A live snapshot
+  reads that latched topic once, only when the topic has a publisher, with the bound of
+  `inspect_tf` (at most 6 s, 3 s of the call budget kept back, skipped under 2 s); a bag snapshot
+  reads the first message of that topic when the bag records it. A different hash is a `topic`
+  change named `/robot_description`, `field` `sha256`, `before` and `after` the 12-character
+  hashes. The hash is of a canonical form of the parsed XML (no comments, attributes sorted,
+  layout whitespace dropped), so only a change of the model changes it; text that does not parse
+  is not hashed. A hash unknown on a side (not read, read failed, no time, does not parse, or a
+  bag without the topic) is never a change: `not_compared` gets a `robot_description` entry saying
+  whether one side or neither is known, and why. Nothing is said when neither side has a robot
+  description. The subscriber count of `/robot_description` is counted in `builtin_changes_count`,
+  never listed: the read leaves an echo reader behind for a moment. Its publisher count is still a
+  change.
+  No schema field is added (`GraphChangeKind` is a closed set, so the change reuses `topic`).
+
+### 9.27 Sampling backend of `sample_messages` (0.10.0)
 
 Additive (1.9). `tools/list` goes from 101,504 to 101,776 bytes.
 
@@ -1569,3 +1617,4 @@ Additive (1.9). `tools/list` goes from 101,504 to 101,776 bytes.
 - Stopping: the helper leaves on stdin EOF, at its own deadline and when it has `count` messages.
   The server closes its stdin and waits 1.2 s; the tree kill is the last resort, because a killed
   reader stays matched on its writers and slows the next start on that topic.
+

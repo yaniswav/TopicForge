@@ -567,6 +567,16 @@ def _restart_findings(
     return out
 
 
+_TF_WARNING_KINDS = (
+    "stale",
+    "two_parents",
+    "cycle",
+    "static_and_dynamic",
+    "fixed_joint_on_tf",
+    "movable_joint_on_tf_static",
+)
+
+
 def check_tf(ctx: _Ctx) -> list[Finding]:
     """Stale, doubled or cyclic transforms, several roots, URDF links without a frame."""
     ahead = _FLOOR_S["logs"] if "logs" in ctx.plan else 0.0
@@ -577,11 +587,11 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
     report = ctx.inspector.inspect_tf(window, _TF_STALE_AFTER_S)
     out: list[Finding] = []
     for f in report.findings:
-        if f.kind in ("stale", "two_parents", "cycle", "static_and_dynamic"):
+        if f.kind in _TF_WARNING_KINDS:
             subject = "->".join(f.frames) if f.kind == "stale" else ",".join(f.frames)
             out.append(
                 _finding(
-                    "warning",
+                    "info" if f.kind == "fixed_joint_on_tf" else "warning",
                     "tf",
                     subject,
                     f.text,
@@ -721,8 +731,19 @@ def _frame_id_findings(ctx: _Ctx) -> list[Finding]:
     return out
 
 
+_JOINT_STREAMS = {"fixed_joint_on_tf": "/tf", "movable_joint_on_tf_static": "/tf_static"}
+
+
 def _tf_fix(kind: str, frames: list[str]) -> list[SuggestedFix]:
-    """A read-only look at a stale edge (parent, child); none for the other kinds."""
+    """A read-only look at a stale edge (parent, child) or at who publishes a stream."""
+    if kind in _JOINT_STREAMS:
+        stream = _JOINT_STREAMS[kind]
+        return _read_fix(
+            f"ros2 topic info {stream} --verbose",
+            f"the publishers of {stream}",
+            "Lists the nodes publishing the stream the URDF joint type excludes. Observes only.",
+            "inspect_tf",
+        )
     if kind != "stale" or len(frames) != 2 or not all(_SAFE_NAME.fullmatch(f) for f in frames):
         return []
     return _read_fix(

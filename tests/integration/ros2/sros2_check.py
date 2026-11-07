@@ -15,7 +15,7 @@ samples the secured topic with the node's own identity through it: the helper re
 variables like any node, and the message must be the talker's. With no identity the topic is
 invisible, so nothing is sampled.
 
-These are the claims of docs/CONTRACT.md sections 9.16 and 9.26. Prints one line per check and
+These are the claims of docs/CONTRACT.md sections 9.16 and 9.27. Prints one line per check and
 exits 1 if any fails.
 """
 

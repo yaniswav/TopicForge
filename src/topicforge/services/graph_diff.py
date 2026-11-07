@@ -24,6 +24,7 @@ from topicforge.models.graph_diff import (
     GraphSnapshotRef,
 )
 from topicforge.services.graph_snapshot import (
+    DESCRIPTION_TOPIC,
     GraphSnapshot,
     SnapshotRing,
     build_bag_snapshot,
@@ -72,6 +73,7 @@ def diff_snapshots(baseline: GraphSnapshot, current: GraphSnapshot) -> DiffResul
     _diff_qos(baseline, current, result)
     _diff_rates(baseline, current, result)
     _diff_counts(baseline, current, result)
+    _diff_description(baseline, current, result)
     result.changes.sort(key=lambda c: (GRAPH_CHANGE_KINDS.index(c.kind), c.name, c.field or ""))
     return result
 
@@ -157,13 +159,40 @@ def _diff_counts(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> No
         ):
             if before is None or after is None or before == after:
                 continue
-            if name in BUILTIN_COUNT_TOPICS:
+            if name in BUILTIN_COUNT_TOPICS or (
+                name == DESCRIPTION_TOPIC and label == "subscriber_count"
+            ):  # our own latched read leaves an echo reader behind
                 out.builtin_changes_count += 1
                 continue
             text = f"Topic {name} {label} went from {before} to {after}."
             if label == "subscriber_count" and cur.after_cli_call:
                 text += _CLI_LINGER_NOTE
             out.changes.append(_changed("count", name, label, str(before), str(after), text))
+
+
+def _diff_description(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> None:
+    """A changed `/robot_description` text; unknown on one side is named, never a change."""
+    before, after = base.description_hash, cur.description_hash
+    whys = [
+        f"{side}: {s.description_why}"
+        for side, s in (("baseline", base), ("current", cur))
+        if s.description_why
+    ]
+    if before is None or after is None:
+        if before is None and after is None and not whys:
+            return  # no robot description on either side
+        out.not_compared["robot_description"] = (
+            "the robot model is not comparable: it is known on "
+            + ("one side only" if (before is None) != (after is None) else "neither side")
+            + (f" ({'; '.join(whys)})" if whys else " (a bag may not record it)")
+        )
+        return
+    if before != after:
+        text = (
+            f"The robot description on {DESCRIPTION_TOPIC} changed (sha256 {before} -> {after}): "
+            "the robot model is not the one of the baseline."
+        )
+        out.changes.append(_changed("topic", DESCRIPTION_TOPIC, "sha256", before, after, text))
 
 
 def _added(kind: str, name: str, text: str, after: str | None = None) -> GraphChange:
@@ -275,6 +304,7 @@ class GraphDiffService:
                 nodes=nodes,
                 qos=qos,
                 qos_kind=current.qos_kind,
+                description_hash=current.description_hash,
             )
         )
 
