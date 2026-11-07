@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath, PureWindowsPath
 
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
+from topicforge.adapters.common import bag_read
 from topicforge.adapters.common.bag_range import range_note, validate_range, window_ns
 from topicforge.adapters.common.lifecycle import with_event_node_names
 from topicforge.adapters.common.log_filter import (
@@ -45,6 +46,10 @@ class MockAdapter:
     # Set by the factory when a DDS backend was requested but the server fell back to
     # these fixtures, so `health_check` can say why. `None` for a deliberate mock.
     dds_inactive_reason: str | None = None
+    # Set by the factory when this adapter is a fallback (`TOPICFORGE_MODE` is not `mock`):
+    # every bag path is read with `rosbags` (a missing one is an error), never answered
+    # from fixtures. An explicit `mock` mode keeps fixtures for every path.
+    read_real_bags: bool = False
 
     @property
     def effective_mode(self) -> EffectiveMode:
@@ -127,6 +132,8 @@ class MockAdapter:
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:
+        if self.read_real_bags:
+            return bag_read.analyze_bag_file(path)
         _reject_non_bag_path(path)
         # The fixture is frozen; produce a copy with the caller's path.
         return fixtures.MOCK_BAG_ANALYSIS.model_copy(update={"path": path})
@@ -145,6 +152,15 @@ class MockAdapter:
         """Deterministic mock sample peek for a recorded bag."""
         if count < 0:
             raise AdapterError("count must be >= 0")
+        if self.read_real_bags:
+            return bag_read.peek_bag_samples(
+                path,
+                topic,
+                count,
+                start_s=start_s,
+                end_s=end_s,
+                log_filter=LogFilter.of(min_log_level, node),
+            )
         _reject_non_bag_path(path)
         validate_range(start_s, end_s)
         log_filter = LogFilter.of(min_log_level, node)

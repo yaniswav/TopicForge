@@ -18,8 +18,12 @@ Consequences:
 - `TOPICFORGE_ROS2_BIN` accepts an arbitrary path: if you point it
   at a malicious binary, TopicForge will execute it. Treat the
   variable the way you treat `PATH`.
-- `analyze_bag` opens whatever path the MCP client passes (no
-  workspace isolation, no symlink restriction). The threat model
+- `analyze_bag` and `peek_bag_samples` open whatever path the MCP
+  client passes (no workspace isolation, no symlink restriction). Since
+  0.10 this holds without `ros2` too: when the server falls back to the
+  mock adapter, or has a DDS-only backend, any existing path is read
+  with `rosbags`; only `TOPICFORGE_MODE=mock` never touches the file
+  system. A missing path is an error whose text echoes the path. The threat model
   assumes the client is your trusted agent acting on your behalf.
   The same holds for `get_node_info`'s `params_file` (a `.yaml` or
   `.yml` file on the server, at most 1 MiB, read with

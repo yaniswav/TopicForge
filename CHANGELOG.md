@@ -12,10 +12,22 @@ Planned as 0.10.0, not released yet.
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
-9.24). `tools/list` is 101,117 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.25). `tools/list` is 101,504 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
+- `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in
+  `auto` or `live` when the server fell back to the mock adapter, with a DDS-only backend, and
+  for `analyze_bag` when `ros2 bag info` fails. `TOPICFORGE_MODE=mock` keeps fixtures. New
+  `BagAnalysis.reader` (`ros2_cli`, `rosbags`, `fixture`); `storage_format` and `bag_format` are
+  read from the file on every path; a directory without `metadata.yaml` and a bare `.zstd` file
+  give a clear error (`docs/CONTRACT.md` section 9.25).
+- `analyze_bag` reports anomalies for real, as observations and not causes: `/clock` steps,
+  silences of steady sensor and state topics (including a topic that stops early) and of `/tf`
+  edges, several topics silent together as one line, and backward header stamps, with thresholds
+  relative to each topic's own rhythm. Empty means none found by these checks, not clean. The scan is bounded (8 s); a cut scan is said in `note`, and `anomalies` is empty with
+  a `note` when the bag could not be read. The 200 MiB size gate on per-topic times is replaced
+  by that time budget.
 - `diagnose(params_file=...)`, with `node`: compares the named node's live parameters with a
   parameter `.yaml` and folds the differences into one `responsiveness` warning. Values are left
   out, and secret-named parameters are not compared. An incomplete comparison gives an `info`. A

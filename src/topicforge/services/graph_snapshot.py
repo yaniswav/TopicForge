@@ -52,6 +52,8 @@ class GraphSnapshot:
     qos_kind: QosKind | None = None
     qos_truncated: bool = False
     after_cli_call: bool = False
+    real: bool = False
+    """A bag read from a file (`analyze_bag` `reader` is not `fixture`); `False` for a graph."""
 
 
 class SnapshotRing:
@@ -136,6 +138,7 @@ def build_bag_snapshot(adapter: MiddlewareAdapter, path: str, now_ns: int) -> Gr
         path=path,
         qos=latched,
         qos_kind="latched" if latched else None,
+        real=analysis.reader != "fixture",
     )
 
 

@@ -931,14 +931,13 @@ MOCK_BAG_ANALYSIS = BagAnalysis(
             kind="rosbag2_internal",
         ),
     ],
-    # TODO(roadmap): bag anomaly detection: replace these canned strings with
-    # output from a real anomaly detector (clock jumps, frame drops, TF gaps).
     anomalies=[
         "/scan: 3 frames dropped between t=10.1s and t=10.4s",
         "/tf: static transforms only; no dynamic updates during recording",
     ],
     mode_effective="mock",
     bag_format="mcap",
+    reader="fixture",
 )
 
 

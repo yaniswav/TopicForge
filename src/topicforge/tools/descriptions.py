@@ -94,9 +94,8 @@ ARRAYS_SUMMARY_PARAM_DESC = (
 )
 
 PATH_PARAM_DESC = (
-    "Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` "
-    "also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked "
-    "live; mock accepts any well-formed path."
+    "Bag path: a `.mcap`, `.db3` or ROS 1 `.bag` file or a `rosbag2_*` directory (with its "
+    "`metadata.yaml`). Existence and format are checked live; mock accepts any well-formed path."
 )
 
 BASELINE_PARAM_DESC = (
@@ -249,12 +248,15 @@ ANALYZE_BAG_DESC = (
     "`(n - 1) / (last - first message time)` (`frequency_basis` `topic_span`), with "
     "`first_timestamp_ns`, `last_timestamp_ns` and `latched`; a latched topic whose "
     "messages all fall within 1 s (e.g. `/tf_static`) has a null `frequency_hz`. When "
-    "the bag cannot be read locally or is a `.mcap` over 200 MiB, the rate falls back "
-    "to count / bag duration (`bag_duration`) and `note` says why. **Live mode** runs "
-    "`ros2 bag info` on `.mcap`, `.db3` or `rosbag2_*` directories (for ROS 1 `.bag` "
-    "use `peek_bag_samples`); **mock mode** returns fixture data for any bag-like "
-    "path, and only mock detects anomalies. **Raises an MCP error** for a malformed or "
-    "missing path (live), unparseable output, or without a `ros2` CLI." + ROS_LANE_NOTE
+    "the bag cannot be read locally or the bounded scan (8 s) is cut, the rate falls back "
+    "to count / bag duration (`bag_duration`) and `note` says why. `anomalies` lists observed "
+    "clock steps, silences of steady topics and TF edges, and backward header stamps "
+    "(topic, time offset, size, no cause); empty means none found by these checks, not "
+    "clean, and `note` says if the scan was cut or skipped. **Live mode** "
+    "runs `ros2 bag info`, or `rosbags` without `ros2` or when it fails (`reader` says "
+    "which); **mock mode** returns fixtures for any bag-like path. **Raises an MCP "
+    "error** for a missing path, a directory without `metadata.yaml` or an unreadable bag."
+    + ROS_LANE_NOTE
 )
 
 GRAPH_DIFF_DESC = (

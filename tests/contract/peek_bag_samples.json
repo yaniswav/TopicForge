@@ -60,7 +60,7 @@
         "description": "`/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` (also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error."
       },
       "path": {
-        "description": "Bag path: a `.mcap` or `.db3` file or a `rosbag2_*` directory (`peek_bag_samples` also reads ROS 1 `.bag`; `analyze_bag` does not). Existence and format are checked live; mock accepts any well-formed path.",
+        "description": "Bag path: a `.mcap`, `.db3` or ROS 1 `.bag` file or a `rosbag2_*` directory (with its `metadata.yaml`). Existence and format are checked live; mock accepts any well-formed path.",
         "minLength": 1,
         "type": "string"
       },

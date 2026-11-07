@@ -11,6 +11,7 @@ import pytest
 
 from topicforge.adapters.common import bag_read as bag_service
 from topicforge.adapters.common.bag_read import read_topic_spans, scan_topic_spans
+from topicforge.adapters.common.bag_scan import BagScan
 from topicforge.adapters.common.bag_stats import (
     TopicSpan,
     build_topic_stats,
@@ -235,24 +236,14 @@ def _fake_mcap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, messages: int) -
     return bag
 
 
-def test_a_large_non_db3_bag_is_not_scanned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    bag = _fake_mcap(tmp_path, monkeypatch, 10)
-    monkeypatch.setattr(bag_service, "SPAN_SCAN_MAX_BYTES", 8)
-    spans, note = scan_topic_spans(bag)
-    assert spans is None
-    assert note is not None and "bag duration" in note
-
-
 def test_a_slow_scan_stops_at_the_time_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bag = _fake_mcap(tmp_path, monkeypatch, 5000)
-    monkeypatch.setattr(bag_service, "SPAN_SCAN_MAX_SECONDS", -1.0)
+    monkeypatch.setattr(bag_service, "BAG_SCAN_MAX_SECONDS", -1.0)
     spans, note = scan_topic_spans(bag)
     assert spans is None
-    assert note is not None and "stopped" in note
+    assert note is not None and "stopped" in note and "count / bag duration" in note
 
 
 def test_a_small_fast_scan_returns_spans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -268,8 +259,8 @@ def test_analyze_bag_carries_the_scan_note(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(adapter, "_run", lambda *a, **k: info)
     monkeypatch.setattr(
         bag_service,
-        "scan_topic_spans",
-        lambda p: (None, "Per-topic rates are count / bag duration"),
+        "scan_bag",
+        lambda p: BagScan(None, [], "Per-topic rates are count / bag duration"),
     )
     analysis = adapter.analyze_bag(str(BAG_DIR))
     assert analysis.note == "Per-topic rates are count / bag duration"

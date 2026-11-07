@@ -36,7 +36,7 @@ If you want a DDS-only deployment, the message is expected: you use the six DDS 
 
 ## "rosbags"
 
-`peek_bag_samples` needs the `rosbags` library, a core dependency since 0.6.4 (older versions: `pip install topicforge[bags]`, which still works as an alias); if the import fails, `pip install --force-reinstall rosbags`, then retry. `analyze_bag` does not raise this error, since in live mode it parses `ros2 bag info` and never touches `rosbags`; the error text mentions an `analyze_bag` fallback that does not exist. `peek_bag_samples` is served only by the ROS2 CLI adapter and the mock. Without `ros2` and without a DDS backend you are on the mock and get fixture samples, not the content of your file: check `health_check` first.
+`peek_bag_samples` needs the `rosbags` library, a core dependency since 0.6.4 (older versions: `pip install topicforge[bags]`, which still works as an alias); if the import fails, `pip install --force-reinstall rosbags`, then retry. With `ros2` on PATH, `analyze_bag` parses `ros2 bag info` and does not raise this error: it only lacks per-topic times and anomalies, and `note` says anomalies were not checked. Without `ros2`, both bag tools read an existing file with `rosbags` (`reader` says which tool produced an `analyze_bag` result); only `TOPICFORGE_MODE=mock`, or a path that does not exist (`note` says so), gives fixtures.
 
 ## "CycloneDDS participant discovery failed"
 

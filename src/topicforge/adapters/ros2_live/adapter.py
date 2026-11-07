@@ -21,6 +21,7 @@ from pathlib import Path
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, AdapterName, EffectiveMode
 from topicforge.adapters.common import bag_read, bag_stats
+from topicforge.adapters.common.bag_container import describe_container
 from topicforge.adapters.common.log_filter import (
     LogFilter,
 )
@@ -323,23 +324,45 @@ class Ros2CliAdapter:
         return exe
 
     def analyze_bag(self, path: str) -> BagAnalysis:
+        """Summarize a bag with `ros2 bag info`, or with `rosbags` when the CLI cannot read it.
+
+        With the CLI, counts and duration are its own; `rosbags` adds start time, per-topic
+        times and anomalies (`reader="ros2_cli"`). When the CLI fails, the whole summary comes
+        from `rosbags` (`reader="rosbags"`) and `note` says so; both failing raises.
+        """
         bag_path = Path(path)
         if not bag_path.exists():
             raise AdapterError(f"Bag path does not exist: {path}")
+        bag_format, storage = describe_container(bag_path)  # clear error for a non-bag path
 
-        out = self._run([self._exe, "bag", "info", str(bag_path)])
+        try:
+            out = self._run([self._exe, "bag", "info", str(bag_path)])
+        except AdapterError as cli_error:
+            return self._analyze_bag_without_cli(bag_path, cli_error)
         analysis = parse_bag_info(
             out, fallback_path=str(bag_path), mode_effective=self.effective_mode
         )
-        # `ros2 bag info` has no per-topic times: add them when the bag is readable here.
-        analysis = analysis.model_copy(update={"start_ns": bag_read.read_start_ns(bag_path)})
-        spans, note = bag_read.scan_topic_spans(bag_path)
-        if spans:
-            topics = bag_stats.overlay_spans(analysis.topics, spans)
-            analysis = analysis.model_copy(update={"topics": topics})
-        if note:
-            analysis = analysis.model_copy(update={"note": note})
-        return analysis
+        scan = bag_read.scan_bag(bag_path)
+        topics = bag_stats.overlay_spans(analysis.topics, scan.spans) if scan.spans else None
+        return analysis.model_copy(
+            update={
+                "start_ns": bag_read.read_start_ns(bag_path),
+                "storage_format": analysis.storage_format or storage,
+                "bag_format": bag_format,
+                "anomalies": scan.anomalies,
+                "note": scan.note,
+                **({"topics": topics} if topics is not None else {}),
+            }
+        )
+
+    def _analyze_bag_without_cli(self, bag_path: Path, cli_error: AdapterError) -> BagAnalysis:
+        """`rosbags` summary after a failed `ros2 bag info`; raises both reasons if it fails too."""
+        try:
+            analysis = bag_read.analyze_bag_file(str(bag_path), mode_effective=self.effective_mode)
+        except AdapterError as exc:
+            raise AdapterError(f"{cli_error} The `rosbags` fallback failed too: {exc}") from exc
+        failed = f"`ros2 bag info` failed ({cli_error}); this summary was read with `rosbags`."
+        return analysis.model_copy(update={"note": " ".join(filter(None, [failed, analysis.note]))})
 
     def sim_clock_published(self) -> bool | None:
         """Whether `/clock` had a publisher at the last graph read; `None` when unknown.

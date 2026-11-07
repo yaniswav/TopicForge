@@ -212,11 +212,28 @@ class GraphDiffService:
         kind, value = parse_baseline(baseline)
         self._seed_once()
         base = self._resolve(kind, value)
-        current = self._ring.store(self._take(bag_path))
+        taken = self._take(bag_path)
+        self._refuse_real_bag_against_fixture_graph(base, taken)
+        current = self._ring.store(taken)
         if base is None:
             return self._envelope(current, None, DiffResult(), _first_note(current.id))
         result = diff_snapshots(base, current)
         return self._envelope(current, base, result, _notes(base, current))
+
+    def _refuse_real_bag_against_fixture_graph(
+        self, base: GraphSnapshot | None, current: GraphSnapshot
+    ) -> None:
+        """A bag read for real is never diffed against the mock adapter's fixture graph."""
+        if base is None or self._adapter.effective_mode != "mock":
+            return
+        pair = (base, current)
+        if {s.source for s in pair} == {"live", "bag"} and any(s.real for s in pair):
+            raise AdapterError(
+                "graph_diff would compare a bag read from a file with the fixture graph of the "
+                "mock adapter (no `ros2` here), so every difference would be meaningless. "
+                "Compare two bags (`baseline` a bag path, `bag_path` another), or run with "
+                "`TOPICFORGE_MODE=mock` for a demo on fixtures."
+            )
 
     def _resolve(self, kind: BaselineKind, value: str) -> GraphSnapshot | None:
         if kind == "previous":
@@ -281,9 +298,17 @@ class GraphDiffService:
             not_compared=result.not_compared,
             builtin_changes_count=result.builtin_changes_count,
             snapshot_ids=self._ring.ids(),
-            mode_effective=self._adapter.effective_mode,
+            mode_effective=_mode(self._adapter.effective_mode, current, base),
             note=note,
         )
+
+
+def _mode(adapter_mode: str, current: GraphSnapshot, base: GraphSnapshot | None) -> str:
+    """`live` when every snapshot compared is a bag read from a file, else the adapter's mode."""
+    snaps = [current] if base is None else [current, base]
+    if all(s.source == "bag" and s.real for s in snaps):
+        return "live"
+    return adapter_mode
 
 
 def _ref(snap: GraphSnapshot) -> GraphSnapshotRef:

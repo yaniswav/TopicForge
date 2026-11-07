@@ -63,7 +63,7 @@ class MiddlewareAdapter(Protocol):
     Covers ROS2 graph introspection and DDS observability under one
     contract. Every method is required, but a backend raises `AdapterError`
     on the half it does not serve: `Ros2CliAdapter` on the DDS methods,
-    `CycloneDdsAdapter` on `analyze_bag`.
+    `CycloneDdsAdapter` on the ROS2 graph methods (bags it reads with `rosbags`).
 
     Construction must be cheap and side-effect free; `is_available()`
     reports whether the adapter can serve requests now.
