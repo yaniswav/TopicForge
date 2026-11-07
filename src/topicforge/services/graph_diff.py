@@ -159,7 +159,9 @@ def _diff_counts(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> No
         ):
             if before is None or after is None or before == after:
                 continue
-            if name in BUILTIN_COUNT_TOPICS:
+            if name in BUILTIN_COUNT_TOPICS or (
+                name == DESCRIPTION_TOPIC and label == "subscriber_count"
+            ):  # our own latched read leaves an echo reader behind
                 out.builtin_changes_count += 1
                 continue
             text = f"Topic {name} {label} went from {before} to {after}."
@@ -171,12 +173,18 @@ def _diff_counts(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> No
 def _diff_description(base: GraphSnapshot, cur: GraphSnapshot, out: DiffResult) -> None:
     """A changed `/robot_description` text; unknown on one side is named, never a change."""
     before, after = base.description_hash, cur.description_hash
-    if before is None and after is None:
-        return
+    whys = [
+        f"{side}: {s.description_why}"
+        for side, s in (("baseline", base), ("current", cur))
+        if s.description_why
+    ]
     if before is None or after is None:
+        if before is None and after is None and not whys:
+            return  # no robot description on either side
         out.not_compared["robot_description"] = (
-            "the text of /robot_description is known on one side only (not read, or the bag "
-            "does not record it)"
+            "the robot model is not comparable: it is known on "
+            + ("one side only" if (before is None) != (after is None) else "neither side")
+            + (f" ({'; '.join(whys)})" if whys else " (a bag may not record it)")
         )
         return
     if before != after:

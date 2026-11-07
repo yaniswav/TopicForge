@@ -109,7 +109,7 @@ def build_tf_report(
     findings += path_findings
     declared = _declared(urdf, urdf_note, [f.name for f in frames])
     findings += declared.findings
-    if urdf is not None and frames:
+    if urdf is not None and frames and capture.dynamic and not truncated_capture(capture):
         findings += _joint_type_findings(urdf, edges)
 
     stamp_span_s, rtf = _clock_figures(edges, capture)
@@ -186,6 +186,11 @@ def _declared_finding(urdf: UrdfModel, missing: list[str]) -> TfFinding:
 _JOINTS_LISTED = 8
 
 
+def truncated_capture(capture: TfCapture) -> bool:
+    """True when messages were dropped or the cap ended the capture: a stream may be partial."""
+    return capture.capped or capture.dropped_count > 0
+
+
 def _joint_type_findings(urdf: UrdfModel, edges: dict[tuple[str, str], _Edge]) -> list[TfFinding]:
     """`fixed_joint_on_tf` and `movable_joint_on_tf_static`: a frame on the stream its joint type excludes."""
     pairs = [(e.parent, e.child, bool(e.static), bool(e.dynamic)) for e in edges.values()]
@@ -195,13 +200,13 @@ def _joint_type_findings(urdf: UrdfModel, edges: dict[tuple[str, str], _Edge]) -
         (
             True,
             "fixed_joint_on_tf",
-            "robot_state_publisher puts fixed joints on /tf_static, so another publisher "
+            "The fixed joints of robot_state_publisher go on /tf_static, so another publisher "
             "drives these frames on /tf.",
         ),
         (
             False,
             "movable_joint_on_tf_static",
-            "a joint that moves is published on /tf from /joint_states; a static transform "
+            "A joint that moves is published on /tf from /joint_states; a static transform "
             "freezes it or stands in for it.",
         ),
     ):
@@ -209,7 +214,7 @@ def _joint_type_findings(urdf: UrdfModel, edges: dict[tuple[str, str], _Edge]) -
         if group:
             out.append(
                 TfFinding(
-                    kind=kind, frames=[m.joint.child for m in group], text=_joint_text(group, tail)
+                    kind=kind, frames=[m.child_frame for m in group], text=_joint_text(group, tail)
                 )
             )
     return out
@@ -223,7 +228,7 @@ def _joint_text(group: list[JointMismatch], tail: str) -> str:
     )
     more = f" and {len(group) - _JOINTS_LISTED} more" if len(group) > _JOINTS_LISTED else ""
     kind = "fixed" if group[0].fixed_seen_on_tf else "movable"
-    return f"URDF {kind} joint(s) seen {where}: {shown}{more}. {tail[0].upper()}{tail[1:]}"
+    return f"URDF {kind} joint(s) seen {where}: {shown}{more}. {tail}"
 
 
 def _norm(name: str) -> str:

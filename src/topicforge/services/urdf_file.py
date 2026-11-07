@@ -14,7 +14,7 @@ from pathlib import Path
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.param_diff import MAX_PARAMS_FILE_BYTES
-from topicforge.adapters.common.urdf import UrdfError, UrdfModel, parse_urdf
+from topicforge.adapters.common.urdf import UrdfError, UrdfModel, parse_urdf, xacro_reason
 
 MAX_URDF_FILE_BYTES = MAX_PARAMS_FILE_BYTES
 
@@ -52,8 +52,8 @@ def read_urdf_file(path: str) -> tuple[UrdfModel | None, str]:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         return None, "urdf_path not compared: it is not UTF-8 text."
-    if "<xacro:" in text or "${" in text:
-        return None, "urdf_path not compared: it holds xacro elements, which are not expanded."
+    if (xacro := xacro_reason(text)) is not None:
+        return None, f"urdf_path not compared: {xacro}, and xacro is not expanded."
     try:
         return parse_urdf(text), "URDF read from the urdf_path file, not from /robot_description."
     except UrdfError as exc:

@@ -27,7 +27,9 @@ Consequences:
   assumes the client is your trusted agent acting on your behalf.
   The same holds for `get_node_info`'s `params_file` (a `.yaml` or
   `.yml` file on the server, at most 1 MiB, read with
-  `yaml.safe_load`, secret-looking values masked): over the HTTP
+  `yaml.safe_load`, secret-looking values masked) and for
+  `inspect_tf`'s `urdf_path` (a `.urdf` file on the server, at most
+  1 MiB, parsed without DOCTYPE or ENTITY, never run through xacro): over the HTTP
   transport, a client can learn whether such a file exists at a
   path it names, so expose that transport only to clients you trust.
 - All `ros2` CLI invocations use an argument list, never

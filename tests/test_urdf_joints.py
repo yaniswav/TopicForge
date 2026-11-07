@@ -144,7 +144,29 @@ def test_a_frame_prefix_is_ignored_when_matching_a_joint() -> None:
         static=[("r1/base_link", "r1/camera")],
         dynamic=[("r1/base_link", "r1/laser"), ("r1/base_link", "r1/arm")],
     )
-    assert _kinds(capture) == {"fixed_joint_on_tf": ["laser"]}
+    assert _kinds(capture) == {"fixed_joint_on_tf": ["r1/laser"]}  # the frame as published
+
+
+def test_a_cut_or_dynamic_free_capture_judges_no_joint() -> None:
+    base = _capture(
+        static=[("base_link", "camera")],
+        dynamic=[("odom", "base_link"), ("base_link", "laser")],
+    )
+    assert "fixed_joint_on_tf" in _kinds(base)
+    for cut in ({"capped": True}, {"dropped_count": 2}):
+        assert "fixed_joint_on_tf" not in _kinds(base.model_copy(update=cut))
+    no_dynamic = _capture(static=[("base_link", "camera"), ("base_link", "arm")], dynamic=[])
+    assert "movable_joint_on_tf_static" not in _kinds(no_dynamic)
+
+
+def test_the_finding_text_does_not_capitalize_an_identifier() -> None:
+    capture = _capture(
+        static=[("base_link", "camera")],
+        dynamic=[("odom", "base_link"), ("base_link", "laser")],
+    )
+    report = build_tf_report(capture, 2.0, None, None, urdf=parse_urdf(ROBOT))
+    assert "robot_state_publisher" in report.findings[-1].text
+    assert "Robot_state" not in report.findings[-1].text
 
 
 def test_an_edge_under_another_parent_is_not_the_joint() -> None:
@@ -242,11 +264,22 @@ def test_an_unreadable_urdf_file_is_a_note_not_an_error(tmp_path: Path) -> None:
         ('<!DOCTYPE robot [<!ENTITY a "b">]><robot><link name="a"/></robot>', "DOCTYPE"),
         ("<robot><joint/></robot>", "no <link>"),
         ("not xml", "well-formed"),
+        (
+            '<robot xmlns:x="http://www.ros.org/wiki/xacro"><x:macro name="m"/><link name="a"/></robot>',
+            "xacro",
+        ),
+        ('<robot name="x"><link name="a"/><u:thing/></robot>', "never declared"),
     ],
 )
 def test_a_urdf_file_that_cannot_be_read_says_why(tmp_path: Path, text: str, why: str) -> None:
     model, note = read_urdf_file(_file(tmp_path, "r.urdf", text))
     assert model is None and why in note
+
+
+def test_a_comment_mentioning_xacro_does_not_trip_the_check(tmp_path: Path) -> None:
+    text = ROBOT.replace("<link", "<!-- <xacro:macro> ${x} --><link", 1)
+    model, note = read_urdf_file(_file(tmp_path, "r.urdf", text))
+    assert model is not None and "urdf_path" in note
 
 
 def test_an_oversized_urdf_file_is_not_read(tmp_path: Path) -> None:
@@ -280,10 +313,21 @@ def test_diagnose_warns_on_a_joint_on_the_wrong_stream() -> None:
         static=[("base_link", "camera")],
         dynamic=[("odom", "base_link"), ("base_link", "laser"), ("base_link", "arm")],
     )
-    found = _by(_run(_with_urdf(_calm(Scripted()), ROBOT, capture)), "tf", "warning")
-    assert [f.subject for f in found] == ["laser"]
+    diagnosis = _run(_with_urdf(_calm(Scripted()), ROBOT, capture))
+    assert _by(diagnosis, "tf", "warning") == []  # a fixed joint on /tf: lookups still work
+    found = [f for f in _by(diagnosis, "tf", "info") if f.subject == "laser"]
     fix = found[0].suggested_fixes[0]
     assert fix.text == "ros2 topic info /tf --verbose" and fix.verify_with == "inspect_tf"
+
+
+def test_diagnose_warns_on_a_movable_joint_frozen_on_tf_static() -> None:
+    capture = _capture(
+        static=[("base_link", "camera"), ("base_link", "laser"), ("base_link", "arm")],
+        dynamic=[("odom", "base_link")],
+    )
+    found = _by(_run(_with_urdf(_calm(Scripted()), ROBOT, capture)), "tf", "warning")
+    assert [f.subject for f in found] == ["arm"]
+    assert found[0].suggested_fixes[0].text == "ros2 topic info /tf_static --verbose"
 
 
 def test_diagnose_stays_quiet_on_the_healthy_pair() -> None:

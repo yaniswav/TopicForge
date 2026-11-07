@@ -59,8 +59,11 @@ change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sectio
   `movable_joint_on_tf_static` (a revolute, continuous or prismatic joint seen only on
   `/tf_static`), with a low false-alarm design; `diagnose` turns them into `tf` warnings with a
   read-only `ros2 topic info` fix (`docs/CONTRACT.md` section 9.26).
-- `graph_diff` hashes the text of `/robot_description`: a changed robot model is a `topic`
-  change on `/robot_description` (field `sha256`); unknown on one side is in `not_compared`.
+- `graph_diff` hashes a canonical form of `/robot_description` (no comments, sorted attributes,
+  no layout whitespace): a changed robot model is a `topic` change on `/robot_description` (field
+  `sha256`); a hash unknown on a side, and why, is in `not_compared`. Its subscriber count is
+  counted as builtin noise. `fixed_joint_on_tf` is an `info` in `diagnose`, and neither joint
+  finding is raised on a cut capture.
 
 ### Fixed
 

@@ -25,6 +25,7 @@ from typing import Literal
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
 from topicforge.adapters.common.spawned_pids import recent_spawns
+from topicforge.adapters.common.urdf import UrdfError, canonical_urdf
 
 RING_SIZE = 16
 """Snapshots held; the oldest is dropped past this."""
@@ -70,7 +71,9 @@ class GraphSnapshot:
     real: bool = False
     """A bag read from a file (`analyze_bag` `reader` is not `fixture`); `False` for a graph."""
     description_hash: str | None = None
-    """Short SHA-256 of the `/robot_description` text; `None` when unknown."""
+    """Short SHA-256 of the canonical `/robot_description`; `None` when unknown."""
+    description_why: str | None = None
+    """Why the hash is unknown although the robot publishes a description; `None` otherwise."""
 
 
 class SnapshotRing:
@@ -131,7 +134,7 @@ def build_live_snapshot(adapter: MiddlewareAdapter, now_ns: int) -> GraphSnapsho
         qos_kind="writer_qos" if qos is not None else None,
         qos_truncated=truncated,
         after_cli_call=after_cli,
-        description_hash=_live_description_hash(adapter, topics),
+        **_live_description(adapter, topics),
     )
 
 
@@ -157,44 +160,54 @@ def build_bag_snapshot(adapter: MiddlewareAdapter, path: str, now_ns: int) -> Gr
         qos=latched,
         qos_kind="latched" if latched else None,
         real=analysis.reader != "fixture",
-        description_hash=_bag_description_hash(adapter, path, topics),
+        **_bag_description(adapter, path, topics),
     )
 
 
-def _text_hash(result: object) -> str | None:
-    """Short SHA-256 of the `data` of the first sample of a `SampleResult`, `None` without one."""
+def _text_hash(result: object) -> dict[str, str | None]:
+    """`description_hash` of the `data` of a `SampleResult`'s first sample, else a `why`.
+
+    The hash is of the canonical form of the XML (no comments, sorted attributes, no layout
+    whitespace), so only a change of the model changes it. Text that does not parse is not hashed.
+    """
     samples = getattr(result, "samples", None)
     text = samples[0].payload.get("data") if samples else None
     if not isinstance(text, str) or not text.strip():
-        return None
-    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:12]
+        return {"description_why": "no message arrived"}
+    try:
+        canonical = canonical_urdf(text)
+    except UrdfError as exc:
+        return {"description_why": f"the text does not parse ({exc})"}
+    return {"description_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]}
 
 
-def _live_description_hash(adapter: MiddlewareAdapter, topics: dict[str, TopicState]) -> str | None:
+def _live_description(
+    adapter: MiddlewareAdapter, topics: dict[str, TopicState]
+) -> dict[str, str | None]:
     state = topics.get(DESCRIPTION_TOPIC)
     if state is None or state.publishers == 0:
-        return None
+        return {}
     wait = call_budget.clamp(_DESCRIPTION_READ_S, _DESCRIPTION_RESERVE_S)
     if wait < _DESCRIPTION_MIN_READ_S:
-        return None
+        return {"description_why": "no time was left in the call budget to read it"}
     try:
         result = adapter.sample_messages(
             DESCRIPTION_TOPIC, 1, max_array_length=None, timeout_s=wait
         )
-    except AdapterError:
-        return None
+    except AdapterError as exc:
+        return {"description_why": f"the read failed ({exc})"}
     return _text_hash(result)
 
 
-def _bag_description_hash(
+def _bag_description(
     adapter: MiddlewareAdapter, path: str, topics: dict[str, TopicState]
-) -> str | None:
+) -> dict[str, str | None]:
     if DESCRIPTION_TOPIC not in topics:
-        return None
+        return {}
     try:
         return _text_hash(adapter.peek_bag_samples(path, DESCRIPTION_TOPIC, 1))
-    except AdapterError:
-        return None
+    except AdapterError as exc:
+        return {"description_why": f"the bag read failed ({exc})"}
 
 
 def _writer_qos(adapter: MiddlewareAdapter) -> tuple[dict[str, str] | None, bool]:

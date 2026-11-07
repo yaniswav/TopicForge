@@ -590,7 +590,7 @@ def check_tf(ctx: _Ctx) -> list[Finding]:
             subject = "->".join(f.frames) if f.kind == "stale" else ",".join(f.frames)
             out.append(
                 _finding(
-                    "warning",
+                    "info" if f.kind == "fixed_joint_on_tf" else "warning",
                     "tf",
                     subject,
                     f.text,

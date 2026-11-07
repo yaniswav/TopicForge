@@ -76,12 +76,60 @@ def test_the_same_robot_description_is_no_change_and_the_read_is_bounded() -> No
     assert adapter.reads == [(DESC, 6.0), (DESC, 6.0)]
 
 
-def test_whitespace_around_the_text_is_not_a_change() -> None:
-    adapter = ModelAdapter("<robot/>")
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "<robot name='a'><link name='base'/></robot>\n",
+        "<robot name='a'>\n  <!-- tuned -->\n  <link   name='base' />\n</robot>",
+        '<robot  name="a"><link name="base"/></robot>',
+    ],
+)
+def test_layout_comments_and_quotes_are_not_a_change(variant: str) -> None:
+    adapter = ModelAdapter()
     service = _service(adapter)
     service.diff("previous", None)
-    adapter.text = "<robot/>\n"
+    adapter.text = variant
     assert service.diff("previous", None).changes == []
+
+
+def test_attribute_order_is_not_a_change_but_a_value_is() -> None:
+    adapter = ModelAdapter("<robot><joint type='fixed' name='j'/></robot>")
+    service = _service(adapter)
+    service.diff("previous", None)
+    adapter.text = "<robot><joint name='j' type='fixed'/></robot>"
+    assert service.diff("previous", None).changes == []
+    adapter.text = "<robot><joint name='j' type='revolute'/></robot>"
+    assert len(service.diff("previous", None).changes) == 1
+
+
+def test_text_that_does_not_parse_is_not_hashed_and_is_named() -> None:
+    adapter = ModelAdapter("<robot")
+    service = _service(adapter)
+    service.diff("previous", None)
+    diff = service.diff("previous", None)
+    assert diff.changes == []
+    assert "neither side" in diff.not_compared["robot_description"]
+    assert "does not parse" in diff.not_compared["robot_description"]
+
+
+def test_a_read_that_failed_on_both_sides_is_visible() -> None:
+    adapter = ModelAdapter()
+    adapter.text = AdapterError("echo failed")  # type: ignore[assignment]
+    service = _service(adapter)
+    service.diff("previous", None)
+    note = service.diff("previous", None).not_compared["robot_description"]
+    assert "neither side" in note and "read failed" in note
+
+
+def test_our_own_echo_reader_is_not_a_subscriber_change() -> None:
+    adapter = ModelAdapter()
+    service = _service(adapter)
+    service.diff("previous", None)
+    adapter.topics[DESC] = (STRING, 1, 1)
+    diff = service.diff("previous", None)
+    assert diff.changes == [] and diff.builtin_changes_count == 1
+    adapter.topics[DESC] = (STRING, 2, 1)  # a second publisher is still a change
+    assert [c.field for c in service.diff("previous", None).changes] == ["publisher_count"]
 
 
 def test_no_publisher_means_no_read() -> None:
