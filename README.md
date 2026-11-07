@@ -82,7 +82,7 @@ Walkthroughs against the mock, each with the exact tool calls and payloads, are 
 | `live` | ROS2 sourced and on PATH, and/or a DDS backend   | `ros2` CLI, DDS participant |
 | `auto` | Detect what is available, else mock (default)    | Best available             |
 
-`live` and `auto` degrade instead of failing: if neither `ros2` nor a DDS backend comes up, the server serves the mock fixtures and `health_check` reports `mode: "mock"` next to `requested_mode`. Only `TOPICFORGE_MODE=mock` forces fixtures unconditionally. The live ROS2 adapter shells out to the `ros2` CLI, so `rclpy` does not need to be importable.
+`live` and `auto` degrade instead of failing: if neither `ros2` nor a DDS backend comes up, the server serves the mock fixtures and `health_check` reports `mode: "mock"` next to `requested_mode`. Only `TOPICFORGE_MODE=mock` forces fixtures unconditionally. The live ROS2 adapter shells out to the `ros2` CLI, so `rclpy` does not need to be importable by the server. `sample_messages` may use a short-lived sampling helper instead, under the distro's own Python: see `TOPICFORGE_ROS_SAMPLER` below.
 
 ## DDS backends
 
@@ -103,6 +103,8 @@ Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) need no backend of the
 | `TOPICFORGE_MODE`          | `auto`  | `mock`, `live` or `auto`                                                                          |
 | `TOPICFORGE_LOG_LEVEL`     | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                                                               |
 | `TOPICFORGE_ROS2_BIN`      | `ros2`  | Name or path of the ROS2 CLI binary                                                               |
+| `TOPICFORGE_ROS_SAMPLER`   | `auto`  | What `sample_messages` runs on: `cli` (`ros2 topic echo`), `rclpy` (the sampling helper, an error if it cannot run) or `auto` (the helper if a check at startup passes, else the CLI). `health_check.sampling_backend` says which, `sampling_backend_note` why not the helper |
+| `TOPICFORGE_ROS_PYTHON`    | unset   | Python that runs the sampling helper. Unset: the interpreter in the shebang of `ros2`, then `python3` |
 | `TOPICFORGE_TELEMETRY`     | `off`   | Opt-in anonymous telemetry; an unrecognized value aborts startup. See [Telemetry](#telemetry)     |
 | `TOPICFORGE_DDS_BACKEND`   | `mock`  | `mock` (no DDS backend), `cyclone`, `auto`; anything else is rejected                              |
 | `TOPICFORGE_DDS_DOMAIN_ID` | `0`     | DDS domain observed (0..232). Joined at startup; changing it needs a restart                      |

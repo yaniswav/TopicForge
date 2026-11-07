@@ -1535,3 +1535,37 @@ Additive except where stated (1.9). `tools/list` goes from 101,117 to 101,504 by
     within each `frame_id`, by more than max(0.5 s, 5 x its period); zero stamps are skipped. A
     topic whose connection records more than one publisher is not judged.
 - The mock fixture's two canned anomaly strings are unchanged.
+
+### 9.26 Sampling backend of `sample_messages` (0.10.0)
+
+Additive (1.9). `tools/list` goes from 101,504 to 101,776 bytes.
+
+- `health_check.sampling_backend` (optional): what `sample_messages` runs on. `cli` is
+  `ros2 topic echo`, `rclpy` is the sampling helper, `unavailable` is `TOPICFORGE_ROS_SAMPLER=rclpy`
+  with a helper that cannot run. `null` when no ROS 2 half serves (mock, DDS-only).
+  `health_check.sampling_backend_note` (optional) says why it is not the helper. `ros_backend`
+  stays `ros2_cli` on all three: every other tool still uses the CLI.
+- `TOPICFORGE_ROS_SAMPLER`: `auto` (default) runs the helper's check once at startup and uses the
+  CLI when it fails, with the reason in the note (for example the import error of `rclpy` under
+  another Python than the distro's). During a call, `auto` also retries on the CLI if the helper
+  failed before delivering anything; `sampling_backend` stays `rclpy` and the server log has the
+  reason. `rclpy` does not fall back: `sample_messages` raises the reason, so a silent fallback
+  cannot pass the bench. `cli` runs no check. The check imports `rclpy` and joins no domain; it
+  takes at most 5 s of startup, and only when `ros2` is on PATH.
+- Interpreter: `TOPICFORGE_ROS_PYTHON`, then the shebang of `ros2`, then `python3` (`python` where
+  there is none). An override that does not resolve is reported, not replaced.
+- The output does not depend on the backend: the helper prints what `ros2 topic echo` prints
+  (`message_to_yaml`), takes the same QoS, depth and array flags, and the same code decodes it,
+  so `payload`, `_truncated_fields`, `stamp_source`, `summary`, `rate` and the log filter are the
+  same. Two differences. `received_ns` is the wall clock when the helper received the message,
+  not when the CLI printed it, which is closer to the arrival. A short result that comes from a
+  helper exiting early says `the sampling helper exited early`, and its failure says `the sampling
+  helper failed`, where the CLI says `the `ros2` CLI` and `ros2 topic echo`.
+- The helper is one process per call, started by path, and only reads. Its node is
+  `/_topicforge_sampler_<pid>`: hidden from `list_nodes` and `graph_diff` by its underscore, and
+  its participant has `is_topicforge_cli` true at any age and on any host, since only TopicForge
+  uses this name, so it never counts as a restart or as a node that left. `SECURITY.md` lists its
+  entities.
+- Stopping: the helper leaves on stdin EOF, at its own deadline and when it has `count` messages.
+  The server closes its stdin and waits 1.2 s; the tree kill is the last resort, because a killed
+  reader stays matched on its writers and slows the next start on that topic.

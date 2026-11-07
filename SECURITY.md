@@ -49,17 +49,33 @@ Those land if a hosted MCP endpoint is ever built.
 
 ## Read-only guarantee: architecture, declaration, proof
 
-**Architecture.** There is no write path in the protocol or in any
-adapter. A search of `src/` for `create_publisher`, `call_service`,
-`set_parameters`, `DataWriter` and `Publisher(` finds nothing; the only
-`publish` matches are field names and comments (`publish_ns`, "publisher
-count", log text). The ros2 adapter only runs `ros2 topic list`,
+**Architecture.** There is no tool, adapter method or code path that
+publishes a message to a topic, calls a service other than the parameter read
+below, or sets a parameter. The ros2 adapter only runs `ros2 topic list`,
 `topic info`, `topic echo`, `service list`, `bag info`, `node list`,
 `node info` and `param dump`; it never runs `topic pub`, `service call`, `param set`,
-`action send_goal` or `bag record`. The
-Cyclone adapter creates one `DomainParticipant` plus builtin discovery
+`action send_goal` or `bag record`. `sample_messages` may instead start the
+sampler helper (`adapters/ros2_live/_sampler_helper.py`), which subscribes to
+one topic and asks for nothing else; `tests/test_sampler_frames.py` fails if
+that script mentions `.publish(`, `create_publisher`, `create_service` or
+`create_client`.
+The Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
 the DDS adapters or in `adapters/common`.
+
+**Entities, per process TopicForge starts.** A ROS 2 process cannot exist
+without some writers, even one that never publishes a message of its own, so
+"no writer" holds for the Cyclone participant only.
+
+| Process | Lives for | Readers | Writers |
+| --- | --- | --- | --- |
+| The server's Cyclone participant (`topicforge`) | The server | Builtin discovery readers | None |
+| `ros2 topic echo` and other `ros2` commands | One call | The sampled topic (`echo`) | `rt/rosout`, `rt/parameter_events`, `ros_discovery_info`, and on Jazzy the reply of the type-description service |
+| Sampler helper (`_topicforge_sampler_<pid>`) | One call | The sampled topic | `rt/parameter_events`, with one event about its own parameters at start, and `ros_discovery_info` |
+
+The helper starts with `enable_rosout=False`, `start_parameter_services=False`
+and, from Iron on, `start_type_description_service=False`. The bench checks its
+exact writer set on a live bus (`compare.py`, section `sampler`).
 
 **The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no other service call, no parameter set, no lifecycle transition, no action goal.
 
@@ -91,8 +107,9 @@ three above. Adding an eighteenth tool without annotations fails the suite.
   reader code is disabled and unreachable (payload decoding is off).
 - The ros2 CLI path starts `ros2` processes, which can start the ros2
   daemon if it is not already running. `sample_messages` runs
-  `ros2 topic echo`, which creates a temporary subscription (a reader) on
-  the topic, visible to the graph for the duration of the sample.
+  `ros2 topic echo` or the sampler helper, which creates a temporary
+  subscription (a reader) on the topic, visible to the graph for the
+  duration of the sample.
 
 **Environment read.** Only `TOPICFORGE_*` variables (mode, log level,
 `TOPICFORGE_ROS2_BIN`, DDS backend and domain, telemetry) and `ROS_DISTRO`
