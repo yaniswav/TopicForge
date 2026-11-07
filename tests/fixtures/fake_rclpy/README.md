@@ -6,5 +6,5 @@ Behavior comes from `FAKE_RCLPY_*` environment variables: `FAKE_RCLPY_MESSAGES` 
 arrive), `FAKE_RCLPY_INTERVAL` (seconds between them), `FAKE_RCLPY_TRACE` (a file that receives one
 line per call on the node, so a test can see a clean shutdown), `FAKE_RCLPY_FAIL` (`init` raises it),
 `FAKE_RCLPY_NATIVE_STDOUT` (written to fd 1, as a native library would),
-`FAKE_RCLPY_NATIVE_MISSING` (the native part fails to load), `FAKE_RCLPY_HANG_DESTROY` (seconds
-`destroy_node` blocks).
+`FAKE_RCLPY_NATIVE_MISSING` (the native part fails to load), `FAKE_RCLPY_HANG_INIT` and
+`FAKE_RCLPY_HANG_DESTROY` (seconds `init` and `destroy_node` block).

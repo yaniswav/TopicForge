@@ -19,7 +19,9 @@ import pytest
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.sampler_frames import KIND_HELLO, read_frame
 from topicforge.adapters.ros2_live import Ros2CliAdapter
+from topicforge.adapters.ros2_live.echo_stream import EchoDocument, EchoRun
 from topicforge.adapters.ros2_live.helper_stream import (
+    EXIT_STALLED,
     HELPER_LABEL,
     HELPER_PATH,
     SamplingBackend,
@@ -77,18 +79,18 @@ def test_the_document_is_the_text_message_to_yaml_returned(
 
 def test_a_silent_topic_honours_the_deadline_and_stops_clean(trace: Path) -> None:
     started = time.monotonic()
-    run = stream_helper(_cmd(deadline=0.6, count=2), count=2, deadline_s=0.6)
+    run = stream_helper(_cmd(deadline=2.0, count=2), count=2, deadline_s=2.0)
     elapsed = time.monotonic() - started
-    assert run.documents == [] and run.exit_code is None
-    assert 0.4 <= elapsed < 3.0, elapsed
+    assert run.documents == [] and run.exit_code is None, run.stderr_tail
+    assert 1.5 <= elapsed < 5.0, elapsed
     assert _lines(trace)[-2:] == ["destroy_node", "shutdown"]
 
 
 def test_the_parent_deadline_before_the_helper_stops_it_by_stdin_eof(trace: Path) -> None:
     started = time.monotonic()
-    run = stream_helper(_cmd(deadline=30.0), count=1, deadline_s=0.5)
-    assert time.monotonic() - started < 3.0
-    assert run.exit_code is None
+    run = stream_helper(_cmd(deadline=30.0), count=1, deadline_s=2.0)
+    assert time.monotonic() - started < 5.0
+    assert run.exit_code is None, run.stderr_tail
     assert _lines(trace)[-2:] == ["destroy_node", "shutdown"]
 
 
@@ -188,12 +190,12 @@ def test_a_large_frame_survives_the_pipe(trace: Path, monkeypatch: pytest.Monkey
     ],
 )
 def test_qos_flags_reach_the_subscription(trace: Path, flags: list[str], expected: str) -> None:
-    stream_helper(_cmd(*flags, deadline=0.3), count=1, deadline_s=0.3)
+    stream_helper(_cmd(*flags, deadline=1.0), count=1, deadline_s=1.0)
     assert f"subscription /t {expected}" in _lines(trace)
 
 
 def test_the_node_options_and_the_empty_argv(trace: Path) -> None:
-    stream_helper(_cmd(deadline=0.2), count=1, deadline_s=0.2)
+    stream_helper(_cmd(deadline=1.0), count=1, deadline_s=1.0)
     lines = _lines(trace)
     assert lines[0] == "init []"
     assert lines[1].startswith("node _topicforge_sampler_")
@@ -256,6 +258,15 @@ def test_the_probe_without_rclpy(no_ros2: None, monkeypatch: pytest.MonkeyPatch)
     assert "rclpy" in (backend.note or "")
 
 
+def test_a_failed_probe_says_it_runs_only_once(
+    trace: Path, no_ros2: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_RCLPY_NATIVE_MISSING", "1")
+    for requested in ("auto", "rclpy"):
+        note = choose_backend(requested, "ros2", sys.executable).note or ""
+        assert "Checked once at startup: restart the server" in note
+
+
 def test_cli_is_not_probed(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("no probe for cli")
@@ -301,3 +312,70 @@ def test_the_adapter_decodes_what_a_real_helper_process_sends(
     assert result.samples[0].payload["label"] == "caf\u00e9"
     assert result.rate is not None
     assert _lines(trace)[-2:] == ["destroy_node", "shutdown"]
+
+
+# ---- a helper that hangs before subscribing is not a silent topic ----
+
+
+def _live_adapter(monkeypatch: pytest.MonkeyPatch, *, fallback: bool) -> Ros2CliAdapter:
+    adapter = Ros2CliAdapter()
+    adapter.sampling = SamplingBackend("rclpy", python=sys.executable, fallback=fallback)
+    info = TopicInfo(
+        name="/t",
+        message_type=_TYPE,
+        publisher_count=1,
+        subscriber_count=0,
+        mode_effective="live",
+    )
+    monkeypatch.setattr(adapter, "_topic_info", lambda _topic, _timeout: info)
+    monkeypatch.setattr(adapter, "_resolve_exe", lambda: "ros2")
+    return adapter
+
+
+def test_a_hang_in_init_is_a_stall_within_the_bound(
+    trace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_RCLPY_HANG_INIT", "30")
+    started = time.monotonic()
+    run = stream_helper(_cmd(deadline=30.0), count=1, deadline_s=20.0, hello_s=1.0)
+    assert time.monotonic() - started < 5.0
+    assert run.exit_code == EXIT_STALLED
+    assert "stalled before subscribing" in run.stderr_tail
+
+
+def test_a_helper_past_its_own_deadline_without_hello_is_a_stall(
+    trace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_RCLPY_HANG_INIT", "30")
+    run = stream_helper(_cmd(deadline=0.1), count=1, deadline_s=20.0)
+    assert run.exit_code == EXIT_STALLED
+
+
+def test_rclpy_raises_the_stall_and_never_says_silent_topic(
+    trace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_RCLPY_HANG_INIT", "30")
+    adapter = _live_adapter(monkeypatch, fallback=False)
+    with pytest.raises(AdapterError, match="stalled before subscribing") as caught:
+        adapter.sample_messages("/t", 1, timeout_s=1.5)
+    assert "exit 71" not in str(caught.value)
+    assert "A publisher exists" not in str(caught.value)
+
+
+def test_auto_gives_the_cli_real_time_after_a_stall_and_says_so(
+    trace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_RCLPY_HANG_INIT", "30")
+    seen: dict[str, float] = {}
+
+    def echo(_cmd: list[str], **kwargs: float) -> EchoRun:
+        seen["deadline_s"] = kwargs["deadline_s"]
+        return EchoRun(documents=[EchoDocument("data: x\n", 5)], started_ns=1, ended_ns=9)
+
+    monkeypatch.setattr("topicforge.adapters.ros2_live.sampler.stream_echo", echo)
+    adapter = _live_adapter(monkeypatch, fallback=True)
+    result = adapter.sample_messages("/t", 1, timeout_s=9)
+    assert seen["deadline_s"] > 3.0
+    assert result.count == 1
+    assert (result.note or "").startswith("Sampled with the `ros2` CLI for this call:")
+    assert "stalled before subscribing" in (result.note or "")

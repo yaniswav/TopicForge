@@ -14,6 +14,7 @@ def trace(line):
 
 
 def init(args=None):
+    time.sleep(float(os.environ.get("FAKE_RCLPY_HANG_INIT", "0")))
     failure = os.environ.get("FAKE_RCLPY_FAIL")
     if failure:
         raise RuntimeError(failure)

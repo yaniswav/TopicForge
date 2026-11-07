@@ -10,6 +10,7 @@ through those two streams and never imports the adapter.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from collections.abc import Callable
@@ -28,6 +29,8 @@ from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
 from topicforge.adapters.ros2_live.helper_stream import (
     HELPER_LABEL,
     SamplingBackend,
+    failure_text,
+    hello_bound,
     helper_command,
     stream_helper,
 )
@@ -48,6 +51,14 @@ log = logging.getLogger(__name__)
 
 # What the helper can load; any other type string stays with the CLI.
 _HELPER_TYPE = re.compile(r"^[A-Za-z_]\w*/\w+/\w+$")
+
+# A `ros2` process needs about 0.9 s to start: under this, a fallback could only time out.
+_MIN_FALLBACK_SEC = 1.5
+_SECURE_LOOKUP_HINT = (
+    "ROS_SECURITY_ENABLE is true: secure discovery can outlast this lookup, and a `ros2` daemon "
+    "started without this identity does not see secured topics, so retry before concluding "
+    "that the topic does not exist."
+)
 
 # Wait for `sample_messages` on a topic with no announced publisher.
 _NO_PUBLISHER_WAIT_SEC = 3.0
@@ -110,7 +121,7 @@ def sample_messages(
     timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
     if timeout_s <= 0:
         raise AdapterError("busy: no time left in this call's budget for sampling, retry")
-    info = topic_info(topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
+    info = _look_up(topic_info, topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
     log_filter = LogFilter.of(min_log_level, node)
     if log_filter is not None:
         require_log_topic(topic, info.message_type)
@@ -145,15 +156,18 @@ def sample_messages(
         ),
     )
     if not run.documents and run.exit_code not in (None, 0):
-        what = HELPER_LABEL if run.tool == HELPER_LABEL else f"`ros2 topic echo {topic}`"
-        raise AdapterError(
-            f"{what} failed (exit {run.exit_code}): {run.stderr_tail or 'no stderr'}"
+        if run.tool == HELPER_LABEL:
+            raise AdapterError(failure_text(run))
+        failed = (
+            f"`ros2 topic echo {topic}` failed (exit {run.exit_code}): "
+            f"{run.stderr_tail or 'no stderr'}"
         )
+        raise AdapterError(" ".join(filter(None, [run.fallback_note, failed])))
 
     parse_until = started + budget + _PARSE_GRACE_SEC
     samples, skipped = _decode(run, topic, info, max_array_length, whole, parse_until)
     if log_filter is not None:
-        return _filtered_log_result(
+        result = _filtered_log_result(
             mode,
             topic,
             run,
@@ -165,9 +179,12 @@ def sample_messages(
             has_publisher,
             max_message_chars,
         )
+        note = " ".join(filter(None, [run.fallback_note, result.note]))
+        return result.model_copy(update={"note": note or None})
     note = " ".join(
         part
         for part in (
+            run.fallback_note,
             _short_result_note(
                 run,
                 len(samples) + skipped,
@@ -181,6 +198,16 @@ def sample_messages(
         if part
     )
     return _sample_result(mode, topic, samples, note or None, _rate(run, count, samples, skipped))
+
+
+def _look_up(topic_info: TopicInfoFn, topic: str, timeout: float) -> TopicInfo:
+    """The topic's info. On a secured graph a failed lookup may only be slow discovery: say so."""
+    try:
+        return topic_info(topic, timeout)
+    except AdapterError as exc:
+        if os.environ.get("ROS_SECURITY_ENABLE", "").strip() != "true":
+            raise
+        raise AdapterError(f"{exc} {_SECURE_LOOKUP_HINT}") from exc
 
 
 def _filtered_log_result(
@@ -288,12 +315,14 @@ def _stream(
     """One stream on the backend. With `fallback`, a helper that failed gives way to the CLI.
 
     A helper that delivered something, or ended as asked, is the answer even when empty. A
-    fallback keeps the time left: a helper that failed at setup used little of it.
+    fallback is said in the run's `fallback_note` and takes only the time left; with too little
+    left for the CLI to start, the helper's failure is the answer.
     """
     if backend.kind == "rclpy" and not backend.fallback and not _HELPER_TYPE.match(message_type):
         raise AdapterError(f"{HELPER_LABEL} cannot load the message type {message_type!r}")
     if backend.kind == "rclpy" and backend.python and _HELPER_TYPE.match(message_type):
         started = time.monotonic()
+        hello_s = hello_bound(deadline_s, can_fall_back=backend.fallback)
         cmd = helper_command(
             backend.python,
             topic,
@@ -309,22 +338,28 @@ def _stream(
             ],
         )
         try:
-            run = stream_helper(cmd, count=count, deadline_s=deadline_s)
+            run = stream_helper(cmd, count=count, deadline_s=deadline_s, hello_s=hello_s)
         except AdapterError as exc:
-            if not backend.fallback:
+            left = deadline_s - (time.monotonic() - started)
+            if not backend.fallback or left < _MIN_FALLBACK_SEC:
                 raise
-            log.warning("%s; sampling %s with the `ros2` CLI", exc, topic)
+            why = str(exc)
         else:
-            if run.exit_code is None or run.documents or not backend.fallback:
+            left = deadline_s - (time.monotonic() - started)
+            failed = run.exit_code is not None and not run.documents
+            if not failed or not backend.fallback or left < _MIN_FALLBACK_SEC:
                 return run
-            log.warning(
-                "%s failed on %s (exit %s: %s); sampling it with the `ros2` CLI",
-                HELPER_LABEL,
-                topic,
-                run.exit_code,
-                run.stderr_tail,
-            )
-        deadline_s = max(deadline_s - (time.monotonic() - started), _MIN_ECHO_SEC)
+            why = failure_text(run)
+        log.warning("%s; sampling %s with the `ros2` CLI", why, topic)
+        run = _echo_stream(exe, topic, flags, count, left, max_chars)
+        run.fallback_note = f"Sampled with the `ros2` CLI for this call: {why}."
+        return run
+    return _echo_stream(exe, topic, flags, count, deadline_s, max_chars)
+
+
+def _echo_stream(
+    exe: str, topic: str, flags: list[str], count: int, deadline_s: float, max_chars: int
+) -> EchoRun:
     return stream_echo(
         [exe, "topic", "echo", "--no-lost-messages", *flags, topic],
         count=count,

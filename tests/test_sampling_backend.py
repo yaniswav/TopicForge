@@ -24,6 +24,7 @@ from topicforge.adapters.ros2_live.helper_stream import (
     HELPER_LABEL,
     HELPER_PATH,
     SamplingBackend,
+    hello_bound,
 )
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
@@ -230,6 +231,105 @@ def test_the_fallback_keeps_the_time_left(monkeypatch: pytest.MonkeyPatch) -> No
     streams = _Streams(monkeypatch, EchoRun(exit_code=5, tool=HELPER_LABEL))
     _adapter(monkeypatch, _AUTO).sample_messages("/t", 1, timeout_s=4)
     assert 0.5 <= streams.echo_kwargs["deadline_s"] <= 4
+
+
+def test_the_fallback_is_said_in_the_note_with_the_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _Streams(monkeypatch, EchoRun(exit_code=5, stderr_tail="boom", tool=HELPER_LABEL))
+    result = _adapter(monkeypatch, _AUTO).sample_messages("/t", 1)
+    assert result.note == (
+        "Sampled with the `ros2` CLI for this call: the sampling helper failed (exit 5): boom."
+    )
+
+
+def test_the_fallback_is_said_on_a_filtered_log_read_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    _Streams(monkeypatch, EchoRun(exit_code=5, stderr_tail="boom", tool=HELPER_LABEL))
+    info = _info("rcl_interfaces/msg/Log")
+    result = _adapter(monkeypatch, _AUTO, info).sample_messages("/rosout", 1, min_log_level="error")
+    assert (result.note or "").startswith("Sampled with the `ros2` CLI for this call:")
+
+
+def test_a_cli_that_fails_after_the_fallback_says_both(monkeypatch: pytest.MonkeyPatch) -> None:
+    streams = _Streams(monkeypatch, EchoRun(exit_code=5, stderr_tail="boom", tool=HELPER_LABEL))
+
+    def failing_echo(cmd: list[str], **_kwargs: object) -> EchoRun:
+        streams.echo_cmds.append(cmd)
+        return EchoRun(exit_code=1, stderr_tail="no type")
+
+    monkeypatch.setattr(f"{_SAMPLER}.stream_echo", failing_echo)
+    with pytest.raises(AdapterError) as caught:
+        _adapter(monkeypatch, _AUTO).sample_messages("/t", 1)
+    assert "the sampling helper failed (exit 5): boom" in str(caught.value)
+    assert "`ros2 topic echo /t` failed (exit 1): no type" in str(caught.value)
+
+
+def test_with_too_little_time_left_the_helper_failure_is_the_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    streams = _Streams(monkeypatch, EchoRun(exit_code=5, stderr_tail="boom", tool=HELPER_LABEL))
+    monkeypatch.setattr(f"{_SAMPLER}._MIN_FALLBACK_SEC", 1000.0)
+    with pytest.raises(AdapterError, match="the sampling helper failed \\(exit 5\\): boom"):
+        _adapter(monkeypatch, _AUTO).sample_messages("/t", 1)
+    assert streams.echo_cmds == []
+
+
+def test_a_failed_start_with_too_little_time_left_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    streams = _Streams(monkeypatch, AdapterError("could not start the sampling helper"))
+    monkeypatch.setattr(f"{_SAMPLER}._MIN_FALLBACK_SEC", 1000.0)
+    with pytest.raises(AdapterError, match="could not start"):
+        _adapter(monkeypatch, _AUTO).sample_messages("/t", 1)
+    assert streams.echo_cmds == []
+
+
+@pytest.mark.parametrize(
+    ("deadline", "fallback", "expected"),
+    [
+        (10.0, False, 10.0),
+        (0.5, False, 0.5),
+        (9.0, True, 3.0),
+        (3.0, True, 1.0),
+        (0.5, True, 0.5),
+        (40.0, True, 5.0),
+    ],
+)
+def test_the_hello_bound(deadline: float, fallback: bool, expected: float) -> None:
+    assert hello_bound(deadline, can_fall_back=fallback) == pytest.approx(expected)
+
+
+# ---- a failed lookup on a secured graph ----
+
+
+@pytest.mark.parametrize("backend", [SamplingBackend(), _RCLPY])
+def test_a_failed_lookup_on_a_secured_graph_may_be_slow_discovery(
+    monkeypatch: pytest.MonkeyPatch, backend: SamplingBackend
+) -> None:
+    monkeypatch.setenv("ROS_SECURITY_ENABLE", "true")
+    adapter = _adapter(monkeypatch, backend)
+
+    def unknown(_topic: str, _timeout: float) -> TopicInfo:
+        raise AdapterError("Unknown topic '/t'")
+
+    monkeypatch.setattr(adapter, "_topic_info", unknown)
+    with pytest.raises(AdapterError) as caught:
+        adapter.sample_messages("/t", 1)
+    assert str(caught.value).startswith("Unknown topic '/t' ROS_SECURITY_ENABLE is true")
+    assert "secure discovery" in str(caught.value)
+
+
+def test_a_failed_lookup_without_security_stays_as_it_was(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ROS_SECURITY_ENABLE", raising=False)
+    adapter = _adapter(monkeypatch, _RCLPY)
+
+    def unknown(_topic: str, _timeout: float) -> TopicInfo:
+        raise AdapterError("Unknown topic '/t'")
+
+    monkeypatch.setattr(adapter, "_topic_info", unknown)
+    with pytest.raises(AdapterError) as caught:
+        adapter.sample_messages("/t", 1)
+    assert str(caught.value) == "Unknown topic '/t'"
 
 
 # ---- what the notes say on each stream ----
