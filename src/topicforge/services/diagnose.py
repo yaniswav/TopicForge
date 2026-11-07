@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Literal
@@ -293,7 +293,9 @@ def check_dds(ctx: _Ctx) -> list[Finding]:
     )
     lives = _lives(recent, events.restarts_by_name)
     starts = _discovery_times(parts.participants, events.events)
-    out += _restart_findings(lives, starts, ctx.wall_ns())
+    cli_up = ctx.report is None or ctx.report.ros_backend != "none"
+    ros_nodes = {n.lstrip("/") for n in recent} | {n.lstrip("/") for n in ctx.nodes or ()}
+    out += _restart_findings(lives, starts, ctx.wall_ns(), ros_nodes if cli_up else frozenset())
     left = [
         (p.node_names[0] if p.node_names else (p.name or p.guid[:8]))
         for p in parts.participants
@@ -483,8 +485,17 @@ def _restart_trend(name: str, starts: Mapping[str, list[int]], now_ns: int) -> s
 
 
 def _restart_findings(
-    lives: dict[str, int], starts: Mapping[str, list[int]], now_ns: int
+    lives: dict[str, int],
+    starts: Mapping[str, list[int]],
+    now_ns: int,
+    log_nodes: Collection[str] = (),
 ) -> list[Finding]:
+    """One finding per name carried by several participants.
+
+    The `/rosout` command is offered only for a name in `log_nodes`: a ROS node, with a `ros2`
+    CLI to run it. A bare DDS participant logs nothing there, and without the CLI the line
+    could not be run.
+    """
     out = []
     for name, count in sorted(lives.items()):
         if count < 2:
@@ -507,12 +518,16 @@ def _restart_findings(
                     f"participants of /{name} in the last {_EVENT_LOOKBACK_S} s",
                     count,
                 ),
-                fixes=_read_fix(
-                    "ros2 topic echo /rosout",
-                    f"/{name}",
-                    "Streams the logs of every node; read those whose `name` is this one. "
-                    "Observes only.",
-                    "participant_events",
+                fixes=(
+                    _read_fix(
+                        "ros2 topic echo /rosout",
+                        f"/{name}",
+                        "Streams the logs of every node; read those whose `name` is this one. "
+                        "Observes only.",
+                        "participant_events",
+                    )
+                    if name in log_nodes
+                    else []
                 ),
             )
         )

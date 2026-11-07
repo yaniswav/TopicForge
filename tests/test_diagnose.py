@@ -1360,3 +1360,38 @@ def test_a_parameter_name_unfit_for_a_command_gets_no_command() -> None:
 def test_a_clean_diff_with_a_caveat_is_not_read_as_a_match() -> None:
     found = _param_findings("/a", _with_param_diff([], "2 pattern(s) not evaluated"))
     assert [f.severity for f in found] == ["info"] and "pattern" in found[0].text
+
+
+# ---- the /rosout command needs a ROS node and a CLI (0.10 lot 0) ------------------------------
+
+
+def _loop_fixes(adapter: Scripted) -> list[str]:
+    found = _by(_run(adapter), "dds", "critical")
+    assert [f.subject for f in found] == ["/x"]
+    return [fix.text for f in found for fix in f.suggested_fixes]
+
+
+def test_a_restart_loop_of_a_ros_node_suggests_reading_rosout() -> None:
+    adapter = _calm(Scripted())
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    assert _loop_fixes(adapter) == ["ros2 topic echo /rosout"]
+
+
+def test_a_restart_loop_of_a_non_ros_participant_suggests_no_rosout_command() -> None:
+    adapter = _calm(Scripted())
+    bare = [_participant("x", f"g{i}").model_copy(update={"node_names": []}) for i in range(3)]
+    adapter.over["list_participants"] = bare
+    adapter.over["participant_events"] = [
+        _event(f"g{i}", time.time_ns() - i * _NS).model_copy(update={"name": "x"}) for i in range(3)
+    ]
+    assert _loop_fixes(adapter) == []
+
+
+def test_a_restart_loop_without_a_ros2_cli_suggests_no_rosout_command() -> None:
+    adapter = _calm(Scripted())
+    adapter.name = "cyclone"  # type: ignore[assignment]  # DDS only: no ros2 CLI
+    adapter.over["list_participants"] = [_participant("x", f"g{i}") for i in range(3)]
+    result = _run(adapter, scope="dds")
+    found = _by(result, "dds", "critical")
+    assert [f.subject for f in found] == ["/x"]
+    assert all(f.suggested_fixes == [] for f in found)
