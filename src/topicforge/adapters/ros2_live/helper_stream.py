@@ -151,7 +151,8 @@ def stream_helper(
 
     With `window` the helper runs `--window` and `count` does not stop the read: the run ends
     when the helper does, holds a bounded evenly spread subset (see `WindowStride` in the helper)
-    and the arrival of every message, and its span starts when the helper subscribed.
+    and the arrival of every message, and its span starts at the helper's last hello: when it
+    first saw a publisher, if it did.
 
     A helper that has not said it subscribed within `hello_s` (default the whole budget) is
     stalled, not a silent topic: `exit_code` is `EXIT_STALLED` and `stderr_tail` says so.

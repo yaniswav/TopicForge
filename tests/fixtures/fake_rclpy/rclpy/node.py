@@ -22,6 +22,9 @@ class Node:
                 lambda i=index: callback(serialization.serialize_index(i) if raw else cls(i))
             )
 
+    def count_publishers(self, topic):
+        return int(os.environ.get("FAKE_RCLPY_PUBLISHERS", "1"))
+
     def destroy_node(self):
         time.sleep(float(os.environ.get("FAKE_RCLPY_HANG_DESTROY", "0")))
         rclpy.trace("destroy_node")

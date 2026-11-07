@@ -36,7 +36,7 @@ DEFAULT_SAMPLE_TIMEOUT_S = 10.0
 MIN_SAMPLE_TIMEOUT_S = 1.0
 MAX_SAMPLE_TIMEOUT_S = 40.0
 
-# `sample_messages` time window, in seconds. The maximum plus the helper's start-up (2 s), the
+# `sample_messages` time window, in seconds. The maximum plus the helper's start-up (3 s), the
 # topic lookup (8 s) and stopping and decoding (3 s) stays under the 45 s budget of a call.
 MIN_SAMPLE_WINDOW_S = 0.5
 MAX_SAMPLE_WINDOW_S = 30.0

@@ -188,6 +188,26 @@ def test_a_window_longer_than_timeout_s_still_runs_whole(fake_rclpy: pytest.Monk
     assert result.rate.message_count == 3  # type: ignore[attr-defined]
 
 
+def test_without_a_match_the_helper_ends_at_its_deadline_not_the_window(
+    fake_rclpy: pytest.MonkeyPatch,
+) -> None:
+    fake_rclpy.setenv("FAKE_RCLPY_PUBLISHERS", "0")
+    cmd = helper_command(
+        sys.executable, "/t", _TYPE, ["--count", "1", "--window", "0.2", "--deadline", "1.2"]
+    )
+    started = time.monotonic()
+    run = stream_helper(cmd, count=1, deadline_s=4.0, window=True)
+    assert 1.0 <= time.monotonic() - started < 4.0
+    assert run.exit_code is None, run.stderr_tail
+
+
+def test_a_second_hello_moves_the_start_of_the_window() -> None:
+    run = EchoRun(window=True)
+    _add_frame(run, Frame(KIND_HELLO, {"wall_ns": 500}))
+    _add_frame(run, Frame(KIND_HELLO, {"wall_ns": 900}))
+    assert run.started_ns == 900
+
+
 def test_a_silent_window_says_so(fake_rclpy: pytest.MonkeyPatch) -> None:
     result = _sample(_HELPER, 3, 0.5)
     assert result.count == 0  # type: ignore[attr-defined]

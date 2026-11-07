@@ -1632,13 +1632,15 @@ Additive (1.9).
 Additive (1.9). New optional input `window_s` (0.5..30 s, default null: no change). No new output
 field: what a window measures goes in the existing `rate` and `note`.
 
-- The helper stays subscribed for `window_s` from the moment it subscribed, whatever `count` is.
-  `count` caps the samples returned, spread evenly over what arrived (first and last included).
+- The helper stays subscribed for `window_s` from the moment it sees a publisher on the graph,
+  whatever `count` is. That took up to about 1.5 s on Fast DDS, which would otherwise count as silence. `count`
+  caps the samples returned, spread evenly over what arrived (first and last included).
 - `rate.message_count` is every message received in the window, not the samples returned.
-  `rate.window_s` is the true span, from the subscription to the end of the read: it can be below
-  `window_s` when the call budget ran out, or when no publisher is announced (3 s wait). `note`
+  `rate.window_s` is the true span, from then to the end of the read: it can be below `window_s` when
+  the call budget ran out or the publisher came late, and with no publisher it runs from the
+  subscription to the deadline (no publisher announced: a 3 s wait). `note`
   says `N messages received over S s, M returned, spread evenly.`
-- The rate is on the time of reception in the helper, which is the wall clock at the subscription
+- The rate is on the time of reception in the helper, which is the wall clock at that moment
   plus the monotonic clock since then, so a step of the wall clock during the window is not read as
   a gap. These are reception times in `rclpy`'s callback, not middleware timestamps.
   `sim_frequency_hz` counts what arrived between the first and last samples returned.
@@ -1648,7 +1650,7 @@ field: what a window measures goes in the existing `rate` and `note`.
   plus one integer per arrival. A reader that cannot keep up loses messages, as any subscriber does:
   `message_count` is what was received, not what was published.
 - `timeout_s` does not cut a window: the call is lengthened to `window_s` plus the helper's start-up
-  (2 s) plus the topic lookup, inside the 45 s budget.
+  and discovery (3 s) plus the topic lookup, inside the 45 s budget.
 - On the CLI backend (`TOPICFORGE_ROS_SAMPLER=cli`, or `auto` where the check failed) `window_s` is
   an error naming `TOPICFORGE_ROS_SAMPLER`. Under `auto` a helper that fails during the window is an
   error too: there is no fallback, since the CLI cannot do it. With `min_log_level` or `node` it is

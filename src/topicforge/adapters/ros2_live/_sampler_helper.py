@@ -111,7 +111,7 @@ def parse_args(argv):
     p.add_argument("--truncate-length", type=int, default=128)
     p.add_argument("--full-length", action="store_true")
     p.add_argument("--no-arr", action="store_true")
-    p.add_argument("--window", type=float, default=None, help="seconds subscribed, from the hello")
+    p.add_argument("--window", type=float, default=None, help="seconds, from the first publisher")
     p.add_argument("--raw", action="store_true", help="send the CDR, untouched (for an image)")
     return p.parse_args(argv)
 
@@ -217,10 +217,10 @@ def run(args, out_fd, stop, nodes):
     def on_window_message(raw):
         """Raw, so a message that is only counted costs no deserialization.
 
-        The times run on the monotonic clock from the hello: a step of the wall clock during the
+        The times run on the monotonic clock from the start: a step of the wall clock during the
         window would read as a gap in the rate.
         """
-        wall_ns = hello["wall_ns"] + time.monotonic_ns() - hello_mono_ns
+        wall_ns = clock["wall_ns"] + time.monotonic_ns() - clock["mono_ns"]
         index = stride.next_index()
         if index % stride.stride:
             write_all(out_fd, encode_frame(KIND_ARRIVAL, {"wall_ns": wall_ns}))
@@ -248,12 +248,20 @@ def run(args, out_fd, stop, nodes):
     windowed = args.window is not None
     callback = on_window_message if windowed else on_raw_message if args.raw else on_message
     node.create_subscription(cls, args.topic, callback, reader_qos(args), raw=windowed or args.raw)
-    hello_mono_ns = time.monotonic_ns()
-    hello = {"pid": os.getpid(), "type": args.type, "wall_ns": time.time_ns()}
+    clock = {"wall_ns": time.time_ns(), "mono_ns": time.monotonic_ns()}
+    hello = {"pid": os.getpid(), "type": args.type, "wall_ns": clock["wall_ns"]}
     write_all(out_fd, encode_frame(KIND_HELLO, hello))
-    if windowed:
-        deadline_at = min(deadline_at, time.monotonic() + args.window)
+    window_open = False
     while (windowed or got[0] < args.count) and not stop["why"]:
+        if windowed and not window_open and node.count_publishers(args.topic) > 0:
+            # Discovery took about 1.5 s on Fast: a window on the clock from here measures the topic.
+            # A second hello moves the start for the parent. Without one, the deadline ends it.
+            # `Node.count_publishers`: Humble's `Subscription` has no `get_publisher_count`.
+            window_open = True
+            clock = {"wall_ns": time.time_ns(), "mono_ns": time.monotonic_ns()}
+            hello = {"pid": os.getpid(), "type": args.type, "wall_ns": clock["wall_ns"]}
+            write_all(out_fd, encode_frame(KIND_HELLO, hello))
+            deadline_at = min(deadline_at, time.monotonic() + args.window)
         left = deadline_at - time.monotonic()
         if left <= 0:
             return EXIT_DEADLINE

@@ -2768,11 +2768,10 @@ def _check_sampler_writers(res: Results, rep: Report) -> None:
 
 
 WINDOW_CALLS = {"61_window_clock": "/clock", "62_window_scan": "/scan"}
-# The publisher's own timer against what a window saw. The median interval is the rate; the count
-# is looser, since matching takes time and a reliable reader can stall for a second just after it
-# (seen once on Jazzy Fast: /scan, 40 of 50, one gap of 1.18 s, under load).
+# The publisher's own timer against what a window saw. The median interval is the rate, and the
+# window starts at the match, so the count is near the timer's.
 WINDOW_INTERVAL_TOLERANCE = 0.1
-WINDOW_RECEIVED_TOLERANCE = 0.3
+WINDOW_RECEIVED_TOLERANCE = 0.15
 WINDOW_SPAN_TOLERANCE_S = 0.5
 
 

@@ -71,8 +71,8 @@ _FILTER_DECODE_RESERVE_SEC = 0.5
 # Time `sample_messages` keeps back from the call budget for stopping the CLI
 # (about 2 s) and decoding (until 1 s past the deadline).
 STOP_RESERVE_SEC = 3.0
-# Time a window's helper gets to start and subscribe; the window itself starts then.
-_WINDOW_START_SEC = 2.0
+# Time a window's helper gets to start and see a publisher; the window itself starts then.
+_WINDOW_START_SEC = 3.0
 
 TopicInfoFn = Callable[[str, float], TopicInfo]
 ResolveExeFn = Callable[[], str]

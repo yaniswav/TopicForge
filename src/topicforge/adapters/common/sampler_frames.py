@@ -4,7 +4,8 @@ The helper cannot import this package, so it carries its own encoder; a test kee
 together. A frame is a 12-byte header (`TF`, version, kind, metadata length, body length, big
 endian), UTF-8 JSON metadata, then the body:
 
-- `h`, hello: the subscription exists. Metadata `pid`, `type`, `wall_ns`.
+- `h`, hello: the subscription exists. Metadata `pid`, `type`, `wall_ns`. In a time window a second
+  one says that a publisher is known, which is when the window starts.
 - `m`, message: metadata `wall_ns` (wall clock at reception) and `encoding`, with the body in that
   encoding. `yaml` is the text `ros2 topic echo` prints. `cdr` is the raw bytes, for an image. The
   optional `source_ns` and `received_ns` (middleware timestamps, for time windows) are decoded
