@@ -108,6 +108,11 @@ class CompositeAdapter:
             return None, "this backend cannot read node parameters"
         return read(timeout_s)
 
+    def sampling_status(self) -> tuple[str, str | None] | None:
+        """The ROS 2 half's `sample_messages` backend, `None` when it has none."""
+        status = getattr(self._ros, "sampling_status", None)
+        return status() if callable(status) else None
+
     def sim_clock_published(self) -> bool | None:
         """The ROS 2 half's `/clock` probe, `None` when it has none."""
         probe = getattr(self._ros, "sim_clock_published", None)

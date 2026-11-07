@@ -89,6 +89,10 @@ class EchoRun:
     # Wall clock when collection began and when it stopped (before the kill).
     started_ns: int = 0
     ended_ns: int = 0
+    # What produced the run, for the notes that explain an early exit.
+    tool: str = "the `ros2` CLI"
+    # Set when this run is the CLI standing in for a helper that failed: says so and why.
+    fallback_note: str | None = None
 
 
 def stream_echo(

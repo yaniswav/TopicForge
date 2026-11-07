@@ -10,7 +10,12 @@ drives TopicForge over MCP stdio twice:
 2. with the robot's security variables: `health_check` reports them
    (`ros_security_enabled`, `ros_security_strategy`, `ros_security_keystore_set`, the note).
 
-These are the claims of docs/CONTRACT.md section 9.16. Prints one line per check and
+Every session asks for the sampler helper (`TOPICFORGE_ROS_SAMPLER=rclpy`), and a last one
+samples the secured topic with the node's own identity through it: the helper reads the security
+variables like any node, and the message must be the talker's. With no identity the topic is
+invisible, so nothing is sampled.
+
+These are the claims of docs/CONTRACT.md sections 9.16 and 9.27. Prints one line per check and
 exits 1 if any fails.
 """
 
@@ -73,6 +78,7 @@ async def _session(env: dict[str, str], calls: list[tuple[str, dict[str, Any]]])
         "TOPICFORGE_MODE": "live",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
         "TOPICFORGE_LOG_LEVEL": "WARNING",
+        "TOPICFORGE_ROS_SAMPLER": "rclpy",
     }
     params = StdioServerParameters(command="/opt/tfenv/bin/topicforge", env=server_env)
     out = []
@@ -81,13 +87,34 @@ async def _session(env: dict[str, str], calls: list[tuple[str, dict[str, Any]]])
             if name == "sleep":
                 await asyncio.sleep(float(args["s"]))
                 continue
-            out.append((await client.call_tool(name, args)).structured_content or {})
+            result = await client.call_tool(name, args)
+            # An MCP error has no structured content: keep its text for the failure line.
+            text = " ".join(getattr(c, "text", "") for c in result.content)
+            out.append(result.structured_content or {"error": text})
     return out
 
 
 def _check(results: list[tuple[str, bool, str]], name: str, ok: bool, detail: str) -> None:
     results.append((name, ok, detail))
     print(f"{'PASS' if ok else 'FAIL'} {name}: {detail}", flush=True)
+
+
+def _check_helper_sample(results: list[tuple[str, bool, str]], keystore: Path) -> None:
+    """Sample the secured topic through the helper, holding the node's own enclave."""
+    env = {**_secure_env(keystore), "ROS_SECURITY_ENCLAVE_OVERRIDE": ENCLAVE}
+    calls = [
+        ("sleep", {"s": 3}),
+        ("sample_messages", {"topic": TOPIC, "count": 1, "timeout_s": 15}),
+    ]
+    sample = asyncio.run(_session(env, calls))[0]
+    samples = sample.get("samples") or []
+    payload = samples[0].get("payload") if samples else None
+    _check(
+        results,
+        "the helper samples the secured topic with its identity",
+        bool(payload) and payload.get("data") == "secret",
+        str(payload or sample),
+    )
 
 
 def main() -> int:
@@ -147,6 +174,13 @@ def main() -> int:
                 and plain.get("ros_security_note") is None,
                 str({k: plain.get(k) for k in plain if k.startswith("ros_security")}),
             )
+            _check(
+                results,
+                "the sampler helper is what serves sample_messages",
+                plain.get("sampling_backend") == "rclpy",
+                f"{plain.get('sampling_backend')}: {plain.get('sampling_backend_note')}",
+            )
+            _check_helper_sample(results, keystore)
         finally:
             talker.terminate()
             talker.wait(10)

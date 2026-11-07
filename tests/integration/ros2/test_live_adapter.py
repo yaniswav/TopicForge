@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
+import subprocess
+import sys
+import threading
 import time
 import warnings
 from pathlib import Path
@@ -16,6 +20,7 @@ import pytest
 
 from topicforge.adapters.base import AdapterError
 from topicforge.adapters.ros2_live import Ros2CliAdapter
+from topicforge.adapters.ros2_live.helper_stream import choose_backend
 
 pytestmark = [
     pytest.mark.integration,
@@ -607,3 +612,131 @@ def test_bag_start_ns_and_ranges_match_the_recorder(adapter: Ros2CliAdapter, bag
     # bag holds, read independently.
     assert errors.count == min(10, bag_error_lines(bag))
     assert {s.payload["level"] for s in errors.samples} <= {40}
+
+
+# ---- the sampler helper against the CLI, on the same graph ----
+
+_MATCHED_READERS = Path(__file__).with_name("matched_readers.py")
+_SYSTEM_PYTHON = shutil.which("python3") or sys.executable
+
+
+@pytest.fixture(scope="module")
+def helper_adapter() -> Ros2CliAdapter:
+    adapter = Ros2CliAdapter()
+    adapter.sampling = choose_backend("rclpy", "ros2", None)
+    assert adapter.sampling.kind == "rclpy", adapter.sampling.note
+    return adapter
+
+
+def _shape(sample: object) -> dict[str, object]:
+    """What may not differ between the backends, values that move with time left out."""
+    payload = sample.payload  # type: ignore[attr-defined]
+    summary = sample.summary  # type: ignore[attr-defined]
+    return {
+        "message_type": sample.message_type,  # type: ignore[attr-defined]
+        "stamp_source": sample.stamp_source,  # type: ignore[attr-defined]
+        "keys": sorted(payload),
+        "truncated": payload.get("_truncated_fields"),
+        "summary": sorted(summary.model_dump(exclude_none=True)) if summary else None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("topic", "options"),
+    [
+        ("/scan", {}),
+        ("/scan", {"max_array_length": 10}),
+        ("/scan", {"max_array_length": None}),
+        ("/scan", {"arrays_summary_only": True}),
+        ("/clock", {}),
+        ("/cmd_vel_out", {}),
+        ("/robot_description_lite", {}),
+        ("/camera/image_raw", {"arrays_summary_only": True}),
+    ],
+)
+def test_helper_gives_what_the_cli_gives(
+    adapter: Ros2CliAdapter,
+    helper_adapter: Ros2CliAdapter,
+    topic: str,
+    options: dict[str, object],
+) -> None:
+    cli = adapter.sample_messages(topic, 1, timeout_s=8, **options)  # type: ignore[arg-type]
+    helper = helper_adapter.sample_messages(topic, 1, timeout_s=8, **options)  # type: ignore[arg-type]
+    assert helper.count == cli.count == 1, (helper.note, cli.note)
+    assert _shape(helper.samples[0]) == _shape(cli.samples[0])
+    assert helper.note == cli.note
+    assert (helper.rate is None) == (cli.rate is None)
+
+
+def test_helper_rate_on_the_scan_matches_the_cli(
+    adapter: Ros2CliAdapter, helper_adapter: Ros2CliAdapter
+) -> None:
+    cli = adapter.sample_messages("/scan", 20, timeout_s=10, arrays_summary_only=True)
+    helper = helper_adapter.sample_messages("/scan", 20, timeout_s=10, arrays_summary_only=True)
+    assert cli.rate is not None and helper.rate is not None
+    assert cli.rate.observed_frequency_hz and helper.rate.observed_frequency_hz
+    assert abs(helper.rate.observed_frequency_hz / cli.rate.observed_frequency_hz - 1) < 0.25
+
+
+def test_helper_reads_the_log_buffer_like_the_cli(
+    adapter: Ros2CliAdapter, helper_adapter: Ros2CliAdapter
+) -> None:
+    cli = adapter.sample_messages("/rosout", 5, timeout_s=6, min_log_level="info")
+    helper = helper_adapter.sample_messages("/rosout", 5, timeout_s=6, min_log_level="info")
+    assert helper.count > 0 and cli.count > 0
+    assert {s.message_type for s in helper.samples} == {"rcl_interfaces/msg/Log"}
+
+
+def test_helper_on_a_silent_topic_honours_the_deadline(helper_adapter: Ros2CliAdapter) -> None:
+    started = time.monotonic()
+    result = helper_adapter.sample_messages("/parameter_events", 500, timeout_s=2)
+    assert time.monotonic() - started < 6
+    assert result.note
+
+
+def test_helper_leaves_no_process_behind(helper_adapter: Ros2CliAdapter) -> None:
+    helper_adapter.sample_messages("/scan", 1, timeout_s=8)
+    left = [
+        path
+        for path in Path("/proc").glob("[0-9]*/cmdline")
+        if b"_sampler_helper" in _read_or_empty(path)
+    ]
+    assert left == []
+
+
+def _read_or_empty(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return b""
+
+
+def test_a_clean_stop_leaves_no_ghost_reader_on_the_writer(
+    helper_adapter: Ros2CliAdapter,
+) -> None:
+    """A0: a clean exit leaves 0 matched readers; a kill leaves ghosts, and slows the next start."""
+    writer = subprocess.Popen(
+        [_SYSTEM_PYTHON, str(_MATCHED_READERS)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    seen: list[int] = []
+
+    def pump() -> None:
+        assert writer.stdout is not None
+        for line in writer.stdout:
+            seen.append(int(line))
+
+    threading.Thread(target=pump, daemon=True).start()
+    try:
+        time.sleep(3)
+        for _ in range(4):
+            result = helper_adapter.sample_messages("/sampler_ghost_check", 1, timeout_s=6)
+            assert result.count == 1, result.note
+        assert max(seen) >= 1, "the writer never saw the reader"
+        time.sleep(1.5)
+        assert seen[-1] == 0, seen[-20:]
+    finally:
+        writer.send_signal(signal.SIGINT)
+        writer.wait(5)

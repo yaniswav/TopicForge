@@ -1,0 +1,6 @@
+[
+  {"spawn": "tests/integration/ros2/sampler_hold.py"},
+  {"settle_s": 5},
+  {"name": "60_sampler_endpoints", "tool": "list_endpoints", "timeout": 60,
+   "args": {"include_internal": true, "fields": "compact"}}
+]

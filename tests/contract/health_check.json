@@ -187,6 +187,26 @@
         "description": "True when the ROS 2 tools can run (`ros_backend` is not `none`); on a DDS-only setup use `list_endpoints`.",
         "type": "boolean"
       },
+      "sampling_backend": {
+        "description": "`sample_messages` runs on: `cli`, `rclpy` helper, `unavailable`.",
+        "enum": [
+          "cli",
+          "rclpy",
+          "unavailable",
+          null
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sampling_backend_note": {
+        "description": "Why not `rclpy`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "server_version": {
         "description": "TopicForge version.",
         "type": "string"

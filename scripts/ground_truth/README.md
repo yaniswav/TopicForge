@@ -16,6 +16,7 @@ Files (standard library plus `mcp` and, for `--bag-truth`, `rosbags`, both Topic
 | `calls_nav_primitives.json` | The two Nav2 primitive calls of the bench only (`40_action_status`: one sample of the hidden, latched `/bench_fib/_action/status`; `41_bond`: `/bond` samples), run between `calls.json` and `calls_graph_diff.json` |
 | `calls_diagnose.json` | The two `diagnose` calls of the bench only (`50_diagnose`, `51_diagnose_node` with `node` `/bench_blocked`, both `budget_s` 40), run before `calls_graph_diff.json` so the graph is still the seeded one. The `diagnose` section requires the exact set of critical and warning findings the bench seeds: a missing one and a false alarm both fail the cell, except a `responsiveness` warning on an unseeded node (a 3 s parameter read a loaded runner can miss), which is WARN |
 | `calls_declared.json` | The declared-against-real call of the bench only: `get_node_info` of `/bench_robot` with `params_file` set to `tests/integration/ros2/bench_params.yaml` (the OmniSim kit does not run it; the URDF side rides on the `17_inspect_tf` call) |
+| `calls_sampler_writers.json` | The writers of a sampler helper, bench only and in the `rclpy` pass only: `{"spawn": ...}` holds a helper open on a silent topic (`tests/integration/ros2/sampler_hold.py`), then `60_sampler_endpoints` lists every endpoint with internal ones. It comes last in its pass |
 | `compare.py` | Reads `--truth ground_truth.json --results DIR`, writes `COMPARISON.md` and `comparison.json`, exit 1 on any FAIL |
 
 Verdicts: PASS, FAIL (mismatch), WARN (known finding, 0.6.x shape, machine-dependent deviation),
@@ -49,6 +50,15 @@ Machine-dependent rows (OmniSim kit runs on a shared host):
   optional in the output: its absence changes nothing.
 - `drive.py` runs the DDS calls (04-06) before `get_node_info` and settles 3 s before them and at the
   end, because a `ros2 node info` process stays a DDS participant for 0.3 to 2 s after it exits.
+
+## Sampling backends
+
+The bench drives TopicForge three times in one container: `TOPICFORGE_ROS_SAMPLER=cli`, then
+`rclpy`, both without `calls_graph_diff.json` (`compare.py --skip-section graph_diff`) so the graph
+stays the seeded one, then the default with it. `--expect-sampler` adds a `sampler` row on
+`health_check.sampling_backend`, so a silent fallback cannot pass, and `60_sampler_endpoints` adds a
+row on the exact writers of a helper's participant. `results_cli/` and `results_rclpy/` keep their
+own `COMPARISON.md`.
 
 ## Against the OmniSim kit (Windows + WSL)
 

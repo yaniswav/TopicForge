@@ -20,8 +20,11 @@ ResolvedMode = Literal["mock", "live"]
 DdsBackend = Literal["mock", "cyclone", "auto"]
 ResolvedDdsBackend = Literal["mock", "cyclone"]
 
+RosSampler = Literal["auto", "cli", "rclpy"]
+
 _VALID_MODES: tuple[Mode, ...] = ("mock", "live", "auto")
 _VALID_DDS_BACKENDS: tuple[DdsBackend, ...] = ("mock", "cyclone", "auto")
+_VALID_ROS_SAMPLERS: tuple[RosSampler, ...] = ("auto", "cli", "rclpy")
 # Identifiers that older releases accepted but that never served. They get a hint
 # so an existing deployment learns what to use instead.
 _RETIRED_DDS_BACKENDS: frozenset[str] = frozenset(
@@ -58,6 +61,9 @@ class Settings:
     dds_backend: DdsBackend = "mock"
     dds_domain_id: int = 0
     max_sample_bytes: int = DEFAULT_MAX_SAMPLE_BYTES
+    # What `sample_messages` runs on: `auto` resolves in `services/factory.py` (it needs a probe).
+    ros_sampler: RosSampler = "auto"
+    ros_python: str | None = None
 
     @property
     def effective_mode(self) -> ResolvedMode:
@@ -178,6 +184,12 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
                 f"expected {_MAX_SAMPLE_BYTES_MIN}..{_MAX_SAMPLE_BYTES_MAX}"
             )
 
+    raw_sampler = src.get("TOPICFORGE_ROS_SAMPLER", "auto").strip().lower()
+    if raw_sampler not in _VALID_ROS_SAMPLERS:
+        raise ValueError(
+            f"Invalid TOPICFORGE_ROS_SAMPLER={raw_sampler!r}; expected one of {_VALID_ROS_SAMPLERS}"
+        )
+
     return Settings(
         mode=raw_mode,
         log_level=raw_log,
@@ -186,4 +198,6 @@ def load_settings(env: dict[str, str] | os._Environ[str] | None = None) -> Setti
         dds_backend=raw_dds_backend,
         dds_domain_id=dds_domain,
         max_sample_bytes=max_sample_bytes,
+        ros_sampler=raw_sampler,
+        ros_python=src.get("TOPICFORGE_ROS_PYTHON", "").strip() or None,
     )

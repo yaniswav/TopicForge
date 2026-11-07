@@ -24,6 +24,7 @@ from typing import Literal
 
 from topicforge import budget
 from topicforge.adapters.base import AdapterError
+from topicforge.adapters.common.ros_discovery import is_own_node
 from topicforge.adapters.common.ros_names import ros_topic_of
 from topicforge.constants import (
     DEFAULT_DIAGNOSE_BUDGET_S,
@@ -806,7 +807,11 @@ def check_logs(ctx: _Ctx) -> list[Finding]:
 
 def _candidates(ctx: _Ctx) -> list[str]:
     """Nodes to read, named one first, then lifecycle nodes, then the rest by name."""
-    pool = [n for n in (ctx.nodes or []) if not n.rsplit("/", 1)[-1].startswith("_ros2cli")]
+    pool = [
+        n
+        for n in (ctx.nodes or [])
+        if not n.rsplit("/", 1)[-1].startswith("_ros2cli") and not is_own_node(n)
+    ]
     ordered = sorted(pool, key=lambda n: (n not in ctx.lifecycle, n))
     if ctx.node is None:
         return ordered

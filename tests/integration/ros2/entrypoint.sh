@@ -64,8 +64,38 @@ PYTEST_RC=$?
 
 # Ground truth: drive TopicForge over MCP stdio against the live graph, then compare
 # every answer with the truth the publisher wrote. Graph calls come before any sampling.
-echo "bench: ground truth (drive.py, compare.py)"
 GT=scripts/ground_truth
+
+# One pass per sampling backend, before the last pass changes the graph. TOPICFORGE_ROS_SAMPLER=rclpy
+# fails rather than falls back and compare.py checks `sampling_backend`, so a silent fallback
+# cannot pass. calls_sampler_writers.json holds a helper open: it comes last in its pass.
+sampler_pass() {
+    local sampler="$1"
+    shift
+    echo "bench: ground truth, TOPICFORGE_ROS_SAMPLER=$sampler"
+    rm -rf "$OUT/results_$sampler"
+    /opt/tfenv/bin/python "$GT/drive.py" --out "$OUT/results_$sampler" --bag "$BAG" \
+        --calls "$GT/calls.json" "$GT/calls_declared.json" "$GT/calls_nav_primitives.json" "$GT/calls_diagnose.json" "$@" \
+        --server-cmd /opt/tfenv/bin/topicforge --mode live --dds-backend cyclone \
+        --env TOPICFORGE_LOG_LEVEL=WARNING --env "TOPICFORGE_ROS_SAMPLER=$sampler" \
+        > "$OUT/drive_$sampler.log" 2>&1 || return 1
+    tail -n 3 "$OUT/drive_$sampler.log"
+    /opt/tfenv/bin/python "$GT/compare.py" --truth /bench/ground_truth.json \
+        --results "$OUT/results_$sampler" --bag-truth "$BAG" --strict-shape \
+        --expect-sampler "$sampler" --skip-section graph_diff \
+        --out "$OUT/results_$sampler/COMPARISON.md" > "$OUT/compare_$sampler.log" 2>&1
+    local rc=$?
+    tail -n 1 "$OUT/compare_$sampler.log"
+    return $rc
+}
+sampler_pass cli
+CLI_RC=$?
+sampler_pass rclpy "$GT/calls_sampler_writers.json"
+RCLPY_RC=$?
+# Let the last helper and the ghosts of both passes leave before the graph is read again.
+sleep 5
+
+echo "bench: ground truth (drive.py, compare.py)"
 rm -rf "$OUT/results"
 # calls_declared.json (get_node_info with params_file), calls_nav_primitives.json (the Nav2
 # primitives), calls_diagnose.json (two `diagnose` sweeps, run before the graph changes) and
@@ -78,10 +108,10 @@ rm -rf "$OUT/results"
 DRIVE_RC=$?
 tail -n 5 "$OUT/drive.log"
 /opt/tfenv/bin/python "$GT/compare.py" --truth /bench/ground_truth.json \
-    --results "$OUT/results" --bag-truth "$BAG" --strict-shape \
+    --results "$OUT/results" --bag-truth "$BAG" --strict-shape --expect-sampler rclpy \
     --out "$OUT/COMPARISON.md"
 COMPARE_RC=$?
 cp /bench/ground_truth.json /bench/publisher.log /bench/lifecycle.log /bench/record.log "$OUT/" 2>/dev/null
 cp "$BAG/metadata.yaml" "$OUT/bag_metadata.yaml" 2>/dev/null
-echo "bench: pytest rc=$PYTEST_RC drive rc=$DRIVE_RC compare rc=$COMPARE_RC"
-[ "$PYTEST_RC" -eq 0 ] && [ "$DRIVE_RC" -eq 0 ] && [ "$COMPARE_RC" -eq 0 ]
+echo "bench: pytest rc=$PYTEST_RC cli pass rc=$CLI_RC rclpy pass rc=$RCLPY_RC drive rc=$DRIVE_RC compare rc=$COMPARE_RC"
+[ "$PYTEST_RC" -eq 0 ] && [ "$CLI_RC" -eq 0 ] && [ "$RCLPY_RC" -eq 0 ] && [ "$DRIVE_RC" -eq 0 ] && [ "$COMPARE_RC" -eq 0 ]

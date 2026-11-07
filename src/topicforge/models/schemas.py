@@ -257,7 +257,7 @@ class ParticipantInfo(BaseModel):
     )
     is_topicforge_cli: bool = Field(
         default=False,
-        description="True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
+        description="True for a process TopicForge spawned (`ros2`, helper; lingers ~2 s); not the robot.",
     )
     endpoint_count: int | None = Field(
         default=None,
@@ -863,9 +863,7 @@ class MessageSample(BaseModel):
     )
     received_ns: int | None = Field(
         default=None,
-        description=(
-            "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only)."
-        ),
+        description=("Wall-clock ns when the message arrived (live `sample_messages` only)."),
     )
     payload: dict[str, object] = Field(
         default_factory=dict,
@@ -1167,6 +1165,11 @@ class HealthReport(BaseModel):
         default="none",
         description="ROS 2 backend: `ros2_cli`, `mock` or `none`.",
     )
+    sampling_backend: Literal["cli", "rclpy", "unavailable"] | None = Field(
+        default=None,
+        description="`sample_messages` runs on: `cli`, `rclpy` helper, `unavailable`.",
+    )
+    sampling_backend_note: str | None = Field(default=None, description="Why not `rclpy`.")
     note: str | None = Field(
         default=None,
         description=_NOTE_DESC,

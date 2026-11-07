@@ -40,7 +40,7 @@
             "type": "object"
           },
           "received_ns": {
-            "description": "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only).",
+            "description": "Wall-clock ns when the message arrived (live `sample_messages` only).",
             "type": [
               "integer",
               "null"

@@ -12,10 +12,17 @@ Planned as 0.10.0, not released yet.
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
-9.26). `tools/list` is 101,759 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.27). `tools/list` is 101,965 bytes (0.9.0: 99,634), under the 105,000 ceiling.
 
 ### Added
 
+- `sample_messages` can run on a sampling backend other than `ros2 topic echo`: a short-lived
+  helper process, one per call, under the distro's own Python, so a server on another Python
+  (`uvx --python 3.12` on Humble) still works. It prints the same text with the same QoS and array
+  flags, so the output is the same code path. `TOPICFORGE_ROS_SAMPLER=auto|cli|rclpy` selects it
+  and `TOPICFORGE_ROS_PYTHON` names the interpreter. `auto` falls back to the CLI and says so in
+  `note`, `rclpy` fails instead. New `health_check.sampling_backend` and `sampling_backend_note`; `ros_backend` stays
+  `ros2_cli`. Everything else stays on the CLI (`docs/CONTRACT.md` section 9.27).
 - `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in
   `auto` or `live` when the server fell back to the mock adapter, with a DDS-only backend, and
   for `analyze_bag` when `ros2 bag info` fails. `TOPICFORGE_MODE=mock` keeps fixtures. New

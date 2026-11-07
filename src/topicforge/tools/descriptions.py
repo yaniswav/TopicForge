@@ -221,14 +221,14 @@ SAMPLE_MESSAGES_DESC = (
     "ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples` "
     "on `DCPSPublication` / `DCPSSubscription`. Collect up to `count` live messages "
     "from a ROS 2 `topic`, waiting at most `timeout_s` seconds, as a `SampleResult`. "
-    "**Live mode** streams `ros2 topic echo` with the publishers' QoS (latched topics "
+    "**Live mode** streams `ros2 topic echo` or its helper with the publishers' QoS (latched topics "
     "work) and returns what arrived by the deadline: `count` is the actual number and "
     "`note` says `N of M messages` and why it is short (no publisher, silent, slow or "
     "too large to print in time; a latched topic usually holds one message, so use "
     "`count` 1). Each sample has `payload` (nested named values), `timestamp_ns` (the "
     "publisher's clock, sim time on a simulation, 0 for a headerless message such as "
-    "`std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock when the CLI "
-    "printed it). **Arrays**: arrays, strings and bytes are cut at 128 elements by "
+    "`std_msgs/String`; see `stamp_source`) and `received_ns` (wall clock at arrival)"
+    ". **Arrays**: arrays, strings and bytes are cut at 128 elements by "
     "default (a 541-beam `LaserScan` loses beams 128 and up); cut fields are listed "
     "in `payload._truncated_fields` and `note`. Raise `max_array_length` (up to "
     "65536, or null) or set `arrays_summary_only`. A message over the 1 MiB cap "
@@ -238,7 +238,7 @@ SAMPLE_MESSAGES_DESC = (
     "`min_log_level` / `node` (`/rosout` only) stream until `timeout_s` (at most "
     "2000 messages) and return the NEWEST `count` matches in stamp order; "
     "`peek_bag_samples` returns the FIRST matches."
-    + (SUMMARY_RATE_NOTE % "`received_ns` (when the CLI printed each message)")
+    + (SUMMARY_RATE_NOTE % "`received_ns` (when each message arrived)")
     + (
         " **Duration**: `ros2` CLI behind the ROS lock, one call at a time; returns within "
         "`timeout_s` (at most 40) plus about 3 s to stop the CLI and decode; ends within "

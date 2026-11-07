@@ -3,6 +3,7 @@
 
     python compare.py --truth ground_truth.json --results DIR [--out COMPARISON.md]
                       [--bag-truth BAG_DIR] [--strict-shape] [--label VERSION]
+                      [--expect-sampler cli|rclpy] [--skip-section graph_diff ...]
 
 Two producers write the truth, in the same schema subset: the OmniSim repro kit (external,
 manual, kept as confirmation) and the Docker bench publisher
@@ -29,7 +30,10 @@ has one), declared (the URDF links against the TF frames in the `17_inspect_tf` 
 `param_diff` in the `03p_node_info_params` answer of `calls_declared.json`; only the bench truth
 has one), diagnose (`50_diagnose` and `51_diagnose_node` of `calls_diagnose.json`: the exact
 set of critical and warning findings the bench seeds, no false alarm, nothing skipped; only the
-bench truth has one). Reads output contract 2 (0.7:
+bench truth has one), sampler (with `--expect-sampler`, `health_check.sampling_backend`; with the
+`60_sampler_endpoints` call of `calls_sampler_writers.json`, the exact writers of a sampler helper's
+participant). `--skip-section` leaves a section out: a pass that does not change the graph has no
+`graph_diff` calls. Reads output contract 2 (0.7:
 listing envelopes, publisher_qos, duration_s, dds_topic/ros_topic) and tolerates 0.6.x shapes.
 
 Tolerances (the constants below; each row names the one it used):
@@ -90,7 +94,12 @@ BAG_DURATION_TOL_S = 1e-6
 INFRA_TOPICS = ("/parameter_events", "/rosout")
 LOW_RTF = 0.5
 RATIO_TOL = 0.25
-CLI_NODE_PREFIXES = ("/_ros2cli_", "_ros2cli_")
+CLI_NODE_PREFIXES = (
+    "/_ros2cli_",
+    "_ros2cli_",
+    "/_topicforge_sampler_",
+    "_topicforge_sampler_",
+)
 SAMPLE_PREFIXES = ("09_", "10_", "11_", "12_", "20_sample_")
 # Expected stamp_source per topic when the truth carries no `stamps` map (the OmniSim kit).
 DEFAULT_STAMPS = {
@@ -1173,7 +1182,8 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
             and p.get("status", "active") == "active"
         ]
         # A `ros2 node info` process TopicForge spawned stays a participant for a few
-        # seconds: ignore it (flag `is_topicforge_cli`, or a `_ros2cli_<pid>` node name).
+        # seconds: ignore it (flag `is_topicforge_cli`, or a `_ros2cli_<pid>` or
+        # `_topicforge_sampler_<pid>` node name).
         cli = [p for p in mine if _is_cli_participant(p)]
         mine = [p for p in mine if p not in cli]
         if cli:
@@ -1184,7 +1194,7 @@ def check_dds(gt: dict, res: Results, rep: Report) -> None:
                 f"{len(cli)} ignored",
                 "INFO",
                 "spawned by get_node_info / topic calls: flag is_topicforge_cli or a "
-                "_ros2cli_ node name",
+                "_ros2cli_ or _topicforge_sampler_ node name",
                 wall,
             )
         rep.add(
@@ -2696,6 +2706,75 @@ def check_diagnose(gt: dict, res: Results, rep: Report) -> None:
     _check_dg_call(truth["node"], truth["budget_s"], res, rep)
 
 
+SAMPLER_WRITERS = ["ros_discovery_info", "rt/parameter_events"]
+SAMPLER_NODE = "/_topicforge_sampler_"
+
+
+def _check_sampler_backend(want: str, res: Results, rep: Report) -> None:
+    data = res.load("01_health_check")
+    wall = res.times.get("01_health_check")
+    if data is None or tool_err(data):
+        rep.add("sampler", "health_check sampling_backend", want, "no answer", "FAIL", "", wall)
+        return
+    health = (objs(data) or [{}])[0]
+    got = health.get("sampling_backend")
+    rep.add(
+        "sampler",
+        "health_check sampling_backend",
+        want,
+        got,
+        "PASS" if got == want else "FAIL",
+        health.get("sampling_backend_note") or "",
+        wall,
+    )
+
+
+def _check_sampler_writers(res: Results, rep: Report) -> None:
+    """The exact writers of a helper's participant: nothing but what `SECURITY.md` lists."""
+    name = "60_sampler_endpoints"
+    data = res.load(name)
+    if data is None:
+        return
+    metric, wall = "sampler helper writers", res.times.get(name)
+    err = tool_err(data)
+    if err:
+        rep.add("sampler", metric, SAMPLER_WRITERS, err, "FAIL", "", wall)
+        return
+    endpoints = listing(data, "endpoints")
+    guids = {
+        e.get("participant_guid")
+        for e in endpoints
+        if str(e.get("node_name") or "").startswith(SAMPLER_NODE)
+    }
+    if len(guids) != 1:
+        note = "the listing was truncated" if (objs(data) or [{}])[0].get("truncated") else ""
+        rep.add("sampler", metric, SAMPLER_WRITERS, f"{len(guids)} helper(s) seen", "FAIL", note)
+        return
+    got = sorted(
+        e.get("dds_topic")
+        for e in endpoints
+        if e.get("participant_guid") in guids and e.get("role") == "writer"
+    )
+    rep.add(
+        "sampler",
+        metric,
+        SAMPLER_WRITERS,
+        got,
+        "PASS" if got == SAMPLER_WRITERS else "FAIL",
+        "participant of the node /_topicforge_sampler_<pid>, internal endpoints included",
+        wall,
+    )
+
+
+@guard("sampler")
+def check_sampler(gt: dict, res: Results, rep: Report) -> None:
+    """What `sample_messages` really ran on, so a silent fallback cannot pass for the helper."""
+    want = gt.get("_expect_sampler")
+    if want:
+        _check_sampler_backend(want, res, rep)
+    _check_sampler_writers(res, rep)
+
+
 SECTIONS = (
     check_graph,
     check_scan,
@@ -2711,15 +2790,19 @@ SECTIONS = (
     check_visibility,
     check_declared,
     check_diagnose,
+    check_sampler,
     check_listing,
 )
 
 
-def compare(gt: dict[str, Any], results: Path) -> tuple[Report, Results]:
-    """Run every section and return the report."""
+def compare(
+    gt: dict[str, Any], results: Path, skip: tuple[str, ...] = ()
+) -> tuple[Report, Results]:
+    """Run every section, except the `skip` ones (`graph_diff` for `check_graph_diff`)."""
     res, rep = Results(results), Report()
     for section in SECTIONS:
-        section(gt, res, rep)
+        if section.__name__.removeprefix("check_") not in skip:
+            section(gt, res, rep)
     return rep, res
 
 
@@ -2777,8 +2860,21 @@ def main(argv: list[str] | None = None) -> int:
         "--bag-truth", default=None, help="bag directory: compute and add its truth (rosbags)"
     )
     ap.add_argument("--strict-shape", action="store_true", help="count SHAPE rows as failures (CI)")
+    ap.add_argument(
+        "--expect-sampler",
+        choices=["cli", "rclpy"],
+        default=None,
+        help="health_check.sampling_backend this run must report",
+    )
+    ap.add_argument(
+        "--skip-section",
+        action="append",
+        default=[],
+        help="section to leave out (a pass without its calls), e.g. graph_diff",
+    )
     args = ap.parse_args(argv)
     gt = json.loads(Path(args.truth).read_text(encoding="utf-8"))
+    gt["_expect_sampler"] = args.expect_sampler
     results = Path(args.results)
     if args.bag_truth:
         gt["bag"] = build_bag_truth(
@@ -2786,7 +2882,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     init = Results(results).load("_initialize") or {}
     version = args.label or init.get("topicforge_version") or "unknown version"
-    rep, res = compare(gt, results)
+    rep, res = compare(gt, results, tuple(args.skip_section))
     text, verdict = render(rep, res, gt, args.truth, results, version, args.strict_shape)
     out = Path(args.out) if args.out else results / "COMPARISON.md"
     out.write_text(text, encoding="utf-8")
