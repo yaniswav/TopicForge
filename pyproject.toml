@@ -118,6 +118,9 @@ omit = [
     # coverage gate reflects testable code rather than being dragged down
     # by lines no unit run can reach.
     "*/adapters/dds_cyclone/adapter.py",
+    # Runs in its own process under the distro's interpreter, so no unit run can measure it.
+    # tests/test_sampler_helper_process.py drives it as a process on stand-ins for rclpy.
+    "*/adapters/ros2_live/_sampler_helper.py",
 ]
 
 [tool.coverage.report]
