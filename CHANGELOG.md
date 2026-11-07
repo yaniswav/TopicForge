@@ -12,17 +12,24 @@ Planned as 0.10.0, not released yet.
 Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
 workflow that tests the built wheel before publishing, and internal refactors with no output
 change. Optional fields and optional inputs are added (`docs/CONTRACT.md` sections 9.22 to
-9.27). `tools/list` is 101,759 bytes (0.9.0: 99,634), under the 105,000 ceiling.
+9.28). `tools/list` stays under the 105,000 ceiling.
 
 ### Added
 
+- `sample_messages` can run on a sampling backend other than `ros2 topic echo`: a short-lived
+  helper process, one per call, under the distro's own Python, so a server on another Python
+  (`uvx --python 3.12` on Humble) still works. It prints the same text with the same QoS and array
+  flags, so the output is the same code path. `TOPICFORGE_ROS_SAMPLER=auto|cli|rclpy` selects it
+  and `TOPICFORGE_ROS_PYTHON` names the interpreter. `auto` falls back to the CLI and says so in
+  `note`, `rclpy` fails instead. New `health_check.sampling_backend` and `sampling_backend_note`; `ros_backend` stays
+  `ros2_cli`. Everything else stays on the CLI (`docs/CONTRACT.md` section 9.27).
 - `TOPICFORGE_DDS_DECODE=on` (default `off`) decodes ROS 2 user topics on the Cyclone backend:
   `peek_dds_samples` returns decoded samples and `topic_metrics` a real publish rate
   (`frequency_basis`), from a bounded read on a short-lived participant TopicForge never reports
   as a robot event. Fail-closed: the writer's type hash when it sends one, plain CDR only, the
   bytes read back; heavy types, custom types and writers of different types get a note
   and no sample. New `health_check.dds_decode`. Each read adds a visible subscriber, and a lazy
-  publisher may wake (`docs/CONTRACT.md` section 9.27). With the flag off every existing field is
+  publisher may wake (`docs/CONTRACT.md` section 9.28). With the flag off every existing field is
   unchanged.
 - `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in
   `auto` or `live` when the server fell back to the mock adapter, with a DDS-only backend, and

@@ -13,7 +13,7 @@ TopicForge over MCP stdio with `TOPICFORGE_DDS_DECODE=on`:
 - `diagnose` reports the same findings before and after the reads, and no restart;
 - with the flag off, the same calls answer as before the flag existed.
 
-These are the claims of docs/CONTRACT.md section 9.27. Prints one line per check and exits 1
+These are the claims of docs/CONTRACT.md section 9.28. Prints one line per check and exits 1
 if any fails.
 """
 

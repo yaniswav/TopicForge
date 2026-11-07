@@ -82,7 +82,7 @@ Walkthroughs against the mock, each with the exact tool calls and payloads, are 
 | `live` | ROS2 sourced and on PATH, and/or a DDS backend   | `ros2` CLI, DDS participant |
 | `auto` | Detect what is available, else mock (default)    | Best available             |
 
-`live` and `auto` degrade instead of failing: if neither `ros2` nor a DDS backend comes up, the server serves the mock fixtures and `health_check` reports `mode: "mock"` next to `requested_mode`. Only `TOPICFORGE_MODE=mock` forces fixtures unconditionally. The live ROS2 adapter shells out to the `ros2` CLI, so `rclpy` does not need to be importable.
+`live` and `auto` degrade instead of failing: if neither `ros2` nor a DDS backend comes up, the server serves the mock fixtures and `health_check` reports `mode: "mock"` next to `requested_mode`. Only `TOPICFORGE_MODE=mock` forces fixtures unconditionally. The live ROS2 adapter shells out to the `ros2` CLI, so `rclpy` does not need to be importable by the server. `sample_messages` may use a short-lived sampling helper instead, under the distro's own Python: see `TOPICFORGE_ROS_SAMPLER` below.
 
 ## DDS backends
 
@@ -103,13 +103,15 @@ Fast DDS participants (ROS 2 nodes on `rmw_fastrtps_cpp`) need no backend of the
 | `TOPICFORGE_MODE`          | `auto`  | `mock`, `live` or `auto`                                                                          |
 | `TOPICFORGE_LOG_LEVEL`     | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`                                                               |
 | `TOPICFORGE_ROS2_BIN`      | `ros2`  | Name or path of the ROS2 CLI binary                                                               |
+| `TOPICFORGE_ROS_SAMPLER`   | `auto`  | What `sample_messages` runs on: `cli` (`ros2 topic echo`), `rclpy` (the sampling helper, an error if it cannot run) or `auto` (the helper if a check at startup passes, else the CLI). `health_check.sampling_backend` says which, `sampling_backend_note` why not the helper |
+| `TOPICFORGE_ROS_PYTHON`    | unset   | Python that runs the sampling helper. Unset: the interpreter in the shebang of `ros2`, then `python3` |
 | `TOPICFORGE_TELEMETRY`     | `off`   | Opt-in anonymous telemetry; an unrecognized value aborts startup. See [Telemetry](#telemetry)     |
 | `TOPICFORGE_DDS_BACKEND`   | `mock`  | `mock` (no DDS backend), `cyclone`, `auto`; anything else is rejected                              |
 | `TOPICFORGE_DDS_DOMAIN_ID` | `0`     | DDS domain observed (0..232). Joined at startup; changing it needs a restart                      |
 | `TOPICFORGE_DDS_DECODE`    | `off`   | `off` or `on`: decode ROS 2 user-topic samples on the Cyclone backend. Adds a visible subscriber during each read, and a lazy publisher may wake. See below |
 | `TOPICFORGE_MAX_SAMPLE_BYTES` | `1048576` | Size cap for one sampled message (1 KiB..64 MiB); a call returns at most 4 times that. Over-cap messages are dropped with a note |
 
-`TOPICFORGE_DDS_DECODE=on` makes `peek_dds_samples` return decoded samples and `topic_metrics` a real publish rate for ROS 2 topics (`rt/` names, types in the `rosbags` store), from a bounded read of at most 5 s and 10 s. **Each read adds a subscriber that the robot can see, so a publisher that only works when someone listens may wake.** Heavy types (`Image`, `PointCloud2` and similar), custom types and writers of different types are refused with a note and today's empty result; so is any doubt about the definition. It is off by default until it has soaked; see [SECURITY.md](SECURITY.md) and `docs/CONTRACT.md` section 9.27.
+`TOPICFORGE_DDS_DECODE=on` makes `peek_dds_samples` return decoded samples and `topic_metrics` a real publish rate for ROS 2 topics (`rt/` names, types in the `rosbags` store), from a bounded read of at most 5 s and 10 s. **Each read adds a subscriber that the robot can see, so a publisher that only works when someone listens may wake.** Heavy types (`Image`, `PointCloud2` and similar), custom types and writers of different types are refused with a note and today's empty result; so is any doubt about the definition. It is off by default until it has soaked; see [SECURITY.md](SECURITY.md) and `docs/CONTRACT.md` section 9.28.
 
 Command-line options (not environment variables): `--transport stdio|streamable-http` (default `stdio`), `--port N` (default 8765) and `--host ADDR` (default `127.0.0.1`), the last two only with `streamable-http`. The HTTP transport binds `127.0.0.1` with DNS-rebinding protection; `TOPICFORGE_HTTP_TOKEN` (at least 32 characters) makes every request carry `Authorization: Bearer <token>` and is required for any other `--host` (plain HTTP, so prefer an SSH tunnel); see [docs/CLIENTS.md](docs/CLIENTS.md#local-http-transport).
 

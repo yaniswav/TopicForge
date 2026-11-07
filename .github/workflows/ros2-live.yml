@@ -22,6 +22,9 @@ on:
       - "src/topicforge/adapters/common/cdr_decoder.py"
       - "src/topicforge/adapters/common/nodes.py"
       - "src/topicforge/adapters/common/tf_tree.py"
+      - "src/topicforge/adapters/common/sampler_frames.py"
+      - "src/topicforge/adapters/common/ros_python.py"
+      - "src/topicforge/adapters/common/ros_discovery.py"
       - "src/topicforge/tools/handlers.py"
       - "src/topicforge/tools/descriptions.py"
       - "pyproject.toml"
@@ -41,6 +44,9 @@ on:
       - "src/topicforge/adapters/common/cdr_decoder.py"
       - "src/topicforge/adapters/common/nodes.py"
       - "src/topicforge/adapters/common/tf_tree.py"
+      - "src/topicforge/adapters/common/sampler_frames.py"
+      - "src/topicforge/adapters/common/ros_python.py"
+      - "src/topicforge/adapters/common/ros_discovery.py"
       - "src/topicforge/tools/handlers.py"
       - "src/topicforge/tools/descriptions.py"
       - "pyproject.toml"
@@ -55,7 +61,8 @@ jobs:
   ros2-live:
     name: ${{ matrix.distro }} / ${{ matrix.rmw }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Three drive.py passes: TOPICFORGE_ROS_SAMPLER cli, rclpy, then the default with graph_diff.
+    timeout-minutes: 50
 
     strategy:
       fail-fast: false
@@ -85,6 +92,15 @@ jobs:
             grep -v '| PASS |' bench-out/COMPARISON.md || true
             echo "## Ground truth ${{ matrix.distro }} / ${{ matrix.rmw }}" >> "$GITHUB_STEP_SUMMARY"
             tail -n 14 bench-out/COMPARISON.md >> "$GITHUB_STEP_SUMMARY"
+            for pass in cli rclpy; do
+              report="bench-out/results_$pass/COMPARISON.md"
+              if [ -f "$report" ]; then
+                echo "--- TOPICFORGE_ROS_SAMPLER=$pass"
+                grep -v '| PASS |' "$report" || true
+              else
+                echo "--- no COMPARISON.md for TOPICFORGE_ROS_SAMPLER=$pass"
+              fi
+            done
           else
             echo "no COMPARISON.md: the bench stopped before the comparison"
           fi
@@ -101,7 +117,9 @@ jobs:
   sros2:
     # One node with ROS_SECURITY_ENABLE=true and the Enforce strategy, TopicForge without an
     # identity: the participant stays visible with endpoint_count 0 and the endpointless note,
-    # and health_check reads the security variables (docs/CONTRACT.md section 9.16).
+    # and health_check reads the security variables (docs/CONTRACT.md section 9.16). The sessions
+    # run with TOPICFORGE_ROS_SAMPLER=rclpy, and the helper samples the secured topic with the
+    # robot's identity (section 9.27).
     name: sros2 ${{ matrix.distro }} / ${{ matrix.rmw }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -129,7 +147,7 @@ jobs:
   decode:
     # A writer under each RMW, read with TOPICFORGE_DDS_DECODE=on and compared with
     # `ros2 topic echo`; no ghost reader, no reader participant in any listing, diagnose
-    # unchanged (docs/CONTRACT.md section 9.27).
+    # unchanged (docs/CONTRACT.md section 9.28).
     name: decode ${{ matrix.distro }} / ${{ matrix.rmw }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20

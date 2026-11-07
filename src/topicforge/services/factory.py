@@ -17,6 +17,7 @@ from collections.abc import Callable
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
 from topicforge.adapters.composite import CompositeAdapter
 from topicforge.adapters.ros2_live import Ros2CliAdapter
+from topicforge.adapters.ros2_live.helper_stream import choose_backend
 from topicforge.adapters.ros2_mock import MockAdapter
 from topicforge.config import Settings
 from topicforge.config.settings import DDS_BACKEND_MODULES, module_is_importable
@@ -84,7 +85,9 @@ def _try_build_ros2_cli(
     """Return a usable `Ros2CliAdapter` or `None` when the CLI is missing.
 
     `dds_inactive_reason` is what the adapter tells a client who calls a DDS
-    tool while no DDS backend serves.
+    tool while no DDS backend serves. The sampling backend is probed here, once, after the
+    CLI is known to exist: `TOPICFORGE_ROS_SAMPLER=rclpy` must not fail silently (see
+    `helper_stream.choose_backend`).
     """
     cli_adapter = Ros2CliAdapter(
         executable=settings.ros2_executable,
@@ -93,6 +96,9 @@ def _try_build_ros2_cli(
     )
     if not cli_adapter.is_available():
         return None
+    sampling = choose_backend(settings.ros_sampler, settings.ros2_executable, settings.ros_python)
+    log.info("sample_messages backend: %s (%s)", sampling.kind, sampling.note or "probe passed")
+    cli_adapter.sampling = sampling
     return cli_adapter
 
 

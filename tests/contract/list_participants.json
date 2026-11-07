@@ -88,7 +88,7 @@
             "type": "boolean"
           },
           "is_topicforge_cli": {
-            "description": "True for a `ros2` CLI process TopicForge spawned (lingers ~2 s); not the robot.",
+            "description": "True for a process TopicForge spawned (`ros2`, helper; lingers ~2 s); not the robot.",
             "type": "boolean"
           },
           "last_seen_ns": {

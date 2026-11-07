@@ -47,6 +47,9 @@ _MAX_GIDS = 65536
 CLI_NODE_PREFIX = "_ros2cli_"
 """Node-name prefix of the `ros2` command line tool, followed by the process id."""
 
+SAMPLER_NODE_PREFIX = "_topicforge_sampler_"
+"""Node-name prefix of TopicForge's sampler helper, followed by the process id."""
+
 _HEADER_LEN = 4
 
 
@@ -340,12 +343,24 @@ CLI_CORRELATION_S = 5.0
 
 
 def cli_pid_of_node(full_name: str) -> int | None:
-    """Pid in a `/_ros2cli_<pid>` node name, `None` for any other name."""
+    """Pid in a `/_ros2cli_<pid>` or `/_topicforge_sampler_<pid>` node name, else `None`."""
     leaf = full_name.rsplit("/", 1)[-1]
-    if not leaf.startswith(CLI_NODE_PREFIX):
-        return None
-    digits = leaf[len(CLI_NODE_PREFIX) :]
-    return int(digits) if digits.isdigit() else None
+    for prefix in (CLI_NODE_PREFIX, SAMPLER_NODE_PREFIX):
+        if leaf.startswith(prefix):
+            digits = leaf[len(prefix) :]
+            return int(digits) if digits.isdigit() else None
+    return None
+
+
+def is_sampler_node(full_name: str) -> bool:
+    """True for the node of a sampler helper: only TopicForge uses this name, on any host."""
+    leaf = full_name.rsplit("/", 1)[-1]
+    return leaf.startswith(SAMPLER_NODE_PREFIX) and leaf[len(SAMPLER_NODE_PREFIX) :].isdigit()
+
+
+def is_own_node(full_name: str) -> bool:
+    """True for a node TopicForge's own processes create, never one of the robot's."""
+    return is_sampler_node(full_name) or cli_pid_of_node(full_name) is not None
 
 
 def fast_pid_bits(guid: str) -> int | None:
@@ -413,17 +428,21 @@ def flag_topicforge_cli(
     A participant is flagged when its `_ros2cli_<pid>` node name, or (hostname
     known and local) its Fast DDS GUID pid bits or a declared pid (`extra_pids`,
     guid -> pid, e.g. Cyclone's `__Pid` property) match a spawn younger than
-    `window_s`. A participant announcing another host is never flagged. Never excludes.
+    `window_s`. A participant announcing another host is never flagged, except a sampler
+    helper, whose node name only TopicForge uses: that one is flagged at any age and on any
+    host. Never excludes.
     """
     horizon = now_ns - int(window_s * 1e9)
     pids = {pid for pid, ns in spawns if ns >= horizon}
-    if not pids:
-        return list(participants)
     declared = extra_pids or {}
     host = local_host if local_host is not None else socket.gethostname()
     return [
         p.model_copy(update={"is_topicforge_cli": True})
-        if not p.is_observer and _matches_pid(p, pids, declared, host)
+        if not p.is_observer
+        and (
+            any(is_sampler_node(node) for node in p.node_names)
+            or (pids and _matches_pid(p, pids, declared, host))
+        )
         else p
         for p in participants
     ]
@@ -454,8 +473,8 @@ def cli_ghost_note(flagged: int, probable: int = 0) -> str | None:
     parts = []
     if flagged:
         parts.append(
-            f"{flagged} participant(s) with `is_topicforge_cli` true are the `ros2` CLI "
-            "processes TopicForge itself spawned (list_nodes, get_node_info, ...). "
+            f"{flagged} participant(s) with `is_topicforge_cli` true are the `ros2` CLI or "
+            "sampler processes TopicForge itself spawned (list_nodes, get_node_info, ...). "
             "They vanish within about 2 s; leave them out when counting the robot's participants."
         )
     if probable:
