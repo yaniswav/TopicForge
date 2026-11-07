@@ -1808,7 +1808,11 @@ def test_nav_primitives_calls_match_the_truth_and_stay_out_of_the_kit_run() -> N
     assert bench.BENCH_TOPICS[bench.BOND_TOPIC] == ("bond/msg/Status", False)
     assert bench.ACTION_STATUS_TOPIC not in bench.BENCH_TOPICS  # hidden: never in list_topics
     entry = (ROOT / "tests" / "integration" / "ros2" / "entrypoint.sh").read_text("utf-8")
-    calls_line = next(x for x in entry.splitlines() if x.strip().startswith("--calls"))
+    calls_line = next(
+        x
+        for x in entry.splitlines()
+        if x.strip().startswith("--calls") and "calls_graph_diff.json" in x
+    )
     assert calls_line.index("calls_nav_primitives.json") < calls_line.index("calls_graph_diff.json")
     dockerfile = (ROOT / "tests" / "integration" / "ros2" / "Dockerfile").read_text("utf-8")
     assert "ros-${DISTRO}-example-interfaces" in dockerfile and "ros-${DISTRO}-bond" in dockerfile
