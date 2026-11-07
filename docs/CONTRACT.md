@@ -1586,7 +1586,7 @@ Additive (1.9), no new tool, no xacro. `tools/list` goes from 101,504 to 101,759
 
 ### 9.27 Sampling backend of `sample_messages` (0.10.0)
 
-Additive (1.9). `tools/list` goes from 101,504 to 101,776 bytes.
+Additive (1.9).
 
 - `health_check.sampling_backend` (optional): what `sample_messages` runs on. `cli` is
   `ros2 topic echo`, `rclpy` is the sampling helper, `unavailable` is `TOPICFORGE_ROS_SAMPLER=rclpy`
@@ -1596,10 +1596,19 @@ Additive (1.9). `tools/list` goes from 101,504 to 101,776 bytes.
 - `TOPICFORGE_ROS_SAMPLER`: `auto` (default) runs the helper's check once at startup and uses the
   CLI when it fails, with the reason in the note (for example the import error of `rclpy` under
   another Python than the distro's). During a call, `auto` also retries on the CLI if the helper
-  failed before delivering anything; `sampling_backend` stays `rclpy` and the server log has the
-  reason. `rclpy` does not fall back: `sample_messages` raises the reason, so a silent fallback
-  cannot pass the bench. `cli` runs no check. The check imports `rclpy` and joins no domain; it
-  takes at most 5 s of startup, and only when `ros2` is on PATH.
+  failed before delivering anything, when at least 1.5 s of the budget is left (else the helper's
+  failure is the error): `sampling_backend` stays `rclpy` and the result's `note` starts with
+  `Sampled with the `ros2` CLI for this call:` and the reason. `rclpy` does not fall back:
+  `sample_messages` raises the reason, so a silent fallback cannot pass the bench. `cli` runs no
+  check. The check imports `rclpy` and joins no domain; it takes at most about 7 s of startup (a
+  5 s bound, then stopping it), and only when `ros2` is on PATH. It runs once: a cold import over
+  the bound means `cli` until a restart, and `sampling_backend_note` says so.
+- A helper that has not said it subscribed is stalled, not a silent topic. The bound is the whole
+  budget under `rclpy`; under `auto` a third of it, between 1 and 5 s, to keep time for the CLI.
+  The failure says `stalled before subscribing`, and never the notes about a silent topic.
+- With `ROS_SECURITY_ENABLE=true`, a failed topic lookup says that secure discovery can outlast it
+  and that a `ros2` daemon without this identity does not see secured topics: it may not mean the
+  topic is absent. This holds on both backends, because the lookup is `ros2 topic info` on both.
 - Interpreter: `TOPICFORGE_ROS_PYTHON`, then the shebang of `ros2`, then `python3` (`python` where
   there is none). An override that does not resolve is reported, not replaced.
 - The output does not depend on the backend: the helper prints what `ros2 topic echo` prints

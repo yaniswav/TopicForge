@@ -863,9 +863,7 @@ class MessageSample(BaseModel):
     )
     received_ns: int | None = Field(
         default=None,
-        description=(
-            "Wall-clock ns when the `ros2` CLI printed the message (live `sample_messages` only)."
-        ),
+        description=("Wall-clock ns when the message arrived (live `sample_messages` only)."),
     )
     payload: dict[str, object] = Field(
         default_factory=dict,

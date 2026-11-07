@@ -51,9 +51,11 @@ Those land if a hosted MCP endpoint is ever built.
 
 ## Read-only guarantee: architecture, declaration, proof
 
-**Architecture.** There is no tool, adapter method or code path that
-publishes a message to a topic, calls a service other than the parameter read
-below, or sets a parameter. The ros2 adapter only runs `ros2 topic list`,
+**Architecture.** No tool, adapter method or TopicForge code publishes a
+message to a topic, calls a service other than the parameter read below, or
+sets a parameter. What does go out is what ROS 2 itself does on creating a node
+in a process TopicForge starts: the table below lists those writers, and the
+helper's node sends one event about its own parameters at start. The ros2 adapter only runs `ros2 topic list`,
 `topic info`, `topic echo`, `service list`, `bag info`, `node list`,
 `node info` and `param dump`; it never runs `topic pub`, `service call`, `param set`,
 `action send_goal` or `bag record`. `sample_messages` may instead start the
@@ -72,8 +74,8 @@ without some writers, even one that never publishes a message of its own, so
 | Process | Lives for | Readers | Writers |
 | --- | --- | --- | --- |
 | The server's Cyclone participant (`topicforge`) | The server | Builtin discovery readers | None |
-| `ros2 topic echo` and other `ros2` commands | One call | The sampled topic (`echo`) | `rt/rosout`, `rt/parameter_events`, `ros_discovery_info`, and on Jazzy the reply of the type-description service |
-| Sampler helper (`_topicforge_sampler_<pid>`) | One call | The sampled topic | `rt/parameter_events`, with one event about its own parameters at start, and `ros_discovery_info` |
+| `ros2 topic echo` and other `ros2` commands | One call | The sampled topic (`echo`), `ros_discovery_info`, and on Jazzy the request of the type-description service | `rt/rosout`, `rt/parameter_events`, `ros_discovery_info`, and on Jazzy the reply of the type-description service |
+| Sampler helper (`_topicforge_sampler_<pid>`) | One call | The sampled topic, `ros_discovery_info` | `rt/parameter_events`, with one event about its own parameters at start, and `ros_discovery_info` |
 
 The helper starts with `enable_rosout=False`, `start_parameter_services=False`
 and, from Iron on, `start_type_description_service=False`. The bench checks its

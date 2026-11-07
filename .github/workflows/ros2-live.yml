@@ -115,7 +115,7 @@ jobs:
     # identity: the participant stays visible with endpoint_count 0 and the endpointless note,
     # and health_check reads the security variables (docs/CONTRACT.md section 9.16). The sessions
     # run with TOPICFORGE_ROS_SAMPLER=rclpy, and the helper samples the secured topic with the
-    # robot's identity (section 9.26).
+    # robot's identity (section 9.27).
     name: sros2 ${{ matrix.distro }} / ${{ matrix.rmw }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
