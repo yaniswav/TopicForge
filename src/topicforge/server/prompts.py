@@ -18,7 +18,7 @@ INSTRUCTIONS = (
     "tells a real bus (`mode` live) from fixtures (`mode` mock), and reports "
     f'`contract_version` (this server speaks {CONTRACT_VERSION}). For "is anything wrong", '
     "call `diagnose` first: one ranked sweep. Then use `list_topics` / "
-    "`get_topic_info` / `list_nodes` / `get_node_info` / `inspect_tf` / `sample_messages` for a ROS 2 graph, `list_participants` / "
+    "`get_topic_info` / `list_nodes` / `get_node_info` / `inspect_tf` / `sample_messages` / `get_image` for a ROS 2 graph, `list_participants` / "
     "`list_endpoints` / `detect_qos_mismatches` / `participant_events` for a DDS bus, and "
     "`analyze_bag` / `peek_bag_samples` for recordings. Every result carries "
     "`mode_effective` and a `note`: read the `note` before drawing a conclusion. The "

@@ -32,14 +32,16 @@ change. Optional fields and optional inputs are added, and one tool, `get_image`
   publisher may wake (`docs/CONTRACT.md` section 9.28). With the flag off every existing field is
   unchanged.
 - `sample_messages` takes an optional `window_s` (0.5..30 s) on that helper: it stays subscribed for
-  the whole window, `rate` covers everything received (`rate.message_count`, `rate.window_s`), and
-  `count` caps the samples returned, spread evenly over what arrived. Memory stays bounded on
+  the whole window, `rate` covers what the reader received (`rate.message_count`, `rate.window_s`,
+  a lower bound that the `note` states), and `count` caps the samples returned, spread evenly over
+  what arrived. `count` 0 with `window_s` is an error. Memory stays bounded on
   high-rate topics. The CLI backend refuses it (`docs/CONTRACT.md` section 9.29).
 - `get_image`, tool 18 in the slot reserved since 0.9.0: one live frame of a `sensor_msgs/Image` or
   `CompressedImage` topic as MCP image content, with a JSON text next to it (topic, stamp, frame_id,
-  encoding, sizes, SHA-256). A compressed frame passes through byte for byte. A raw frame in rgb8,
-  bgr8, mono8 or mono16 is resized to `max_edge` (default 512) through the new optional `[image]`
-  extra (Pillow). It runs on the sampling helper only and has no CLI path; it declares no output
+  encoding, sizes, SHA-256). A compressed frame passes through byte for byte, if its header gives a
+  plausible size. A raw frame in rgb8, bgr8, rgba8, bgra8, mono8, mono16 or 16UC1 is resized to
+  `max_edge` (default 512) through the new optional `[image]` extra (Pillow), which the plugin, the
+  bundle and the Gemini extension install. It runs on the sampling helper only and has no CLI path; it declares no output
   schema, the one exception to typed outputs (`docs/CONTRACT.md` section 9.30).
 - `analyze_bag` and `peek_bag_samples` read a real bag without the `ros2` CLI, with `rosbags`: in
   `auto` or `live` when the server fell back to the mock adapter, with a DDS-only backend, and

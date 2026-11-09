@@ -9,6 +9,9 @@ Every client below launches it as a child process with the same command:
 uvx --from "topicforge==0.9.0" topicforge
 ```
 
+To read raw `sensor_msgs/Image` topics with `get_image`, install Pillow too: replace the package
+with `topicforge[image]` at the same version in any configuration below. `CompressedImage` topics do not need it.
+
 and the same three environment variables:
 
 | Variable | Value | Meaning |

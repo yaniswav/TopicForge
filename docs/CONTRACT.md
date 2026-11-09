@@ -1716,16 +1716,20 @@ field: what a window measures goes in the existing `rate` and `note`.
   a gap. These are reception times in `rclpy`'s callback, not middleware timestamps.
   `sim_frequency_hz` counts what arrived between the first and last samples returned.
 - Memory is bounded. The helper sends a message only when its position divides by a stride, which
-  doubles when `2 * max(count, 2)` are held, and deserializes only those. Every other arrival is one
-  small frame. So the server holds at most about `2 * count` message texts, each under the size cap,
-  plus one integer per arrival. A reader that cannot keep up loses messages, as any subscriber does:
-  `message_count` is what was received, not what was published.
+  doubles when `2 * max(count, 2)` have been selected, oversized or not, and deserializes only those.
+  Every other arrival is one small frame. So the server holds at most about `2 * count` message
+  texts, each under the size cap, plus one integer per arrival, and a stream that mixes sizes can
+  return fewer than `count`. A reader that cannot keep up loses messages, as any subscriber does: its
+  depth is 5, and a burst during one decode can overflow it. `message_count` is what was received, a
+  lower bound of what was published, and `note` says so.
 - `timeout_s` does not cut a window: the call is lengthened to `window_s` plus the helper's start-up
   and discovery (3 s) plus the topic lookup, inside the 45 s budget.
 - On the CLI backend (`TOPICFORGE_ROS_SAMPLER=cli`, or `auto` where the check failed) `window_s` is
   an error naming `TOPICFORGE_ROS_SAMPLER`. Under `auto` a helper that fails during the window is an
   error too: there is no fallback, since the CLI cannot do it. With `min_log_level` or `node` it is
-  an error. On a DDS-only setup `sample_messages` raises as before.
+  an error, and so is `count` 0. On a DDS-only setup `sample_messages` raises as before.
+- With no announced publisher the short wait (3 s) starts after the lookup, and a helper that did not
+  start in time gives an empty result with a note, not an error.
 - Mock: 10 Hz, deterministic, `message_count` = 10 x `window_s`.
 - Bags already have `start_s` and `end_s`.
 
@@ -1733,27 +1737,33 @@ field: what a window measures goes in the existing `rate` and `note`.
 
 Additive (1.9). The slot reserved in section 9.21. Read-only annotations, open world, ROS lane.
 
-- Input: `topic` and `max_edge` (16..2048, default 512). The wait is the default 10 s of
-  `sample_messages`; there is no `timeout_s` yet, which keeps `tools/list` small and can be added.
+- Input: `topic` and `max_edge` (16..2048, default 512). The whole call waits at most the default
+  10 s of `sample_messages`, lookup included; there is no `timeout_s` yet, which keeps `tools/list`
+  small and can be added.
 - Output: `content` is one `image` block (`image/jpeg` or `image/png`) and one `text` block holding
   the same JSON as `structuredContent`: `topic`, `message_type`, `frame_id`, `stamp_ns`, `received_ns`,
   `encoding`, `width`, `height`, `returned_width`, `returned_height`, `mime_type`, `byte_count`,
-  `sha256` (of the returned bytes), `mode_effective`.
+  `sha256` (of the returned bytes), `mode_effective`. `frame_id` and `encoding` are publisher strings,
+  cut at 256 characters.
 - **The one exception to section 1.1.** An image is a content block, not a schema, so the handler
   builds a `CallToolResult` and this tool declares no `outputSchema`. `ImageInfo` is still a frozen
   model on the server. The shape above is held by this section and `tests/test_get_image.py`.
 - `sensor_msgs/CompressedImage` passes through byte for byte. JPEG or PNG is told by the signature,
   not by the free-text `format`, which is returned as `encoding`. Anything else is an error, which
   includes `compressedDepth`, whose PNG comes after a header. `max_edge` does not apply. `width` and
-  `height` come from the PNG or JPEG header, and are null when it does not say.
+  `height` come from the PNG or JPEG header. A header with no readable size, a zero size, more than
+  16384 pixels on an edge or more than 2^26 pixels is an error. Only the header is read: a frame cut
+  after it still passes.
 - `sensor_msgs/Image` needs the `[image]` extra (Pillow); without it the error names the extra.
-  `rgb8`, `bgr8` and `mono8` keep their pixels; `mono16` is scaled from its own minimum and maximum
-  to eight bits, so its gray levels are relative to that frame. Any other encoding is an error. The
+  `rgb8`, `bgr8`, `rgba8`, `bgra8` and `mono8` keep their pixels; `mono16` and `16UC1` are scaled
+  from their own minimum and maximum to eight bits, so the gray levels are relative to that frame.
+  Any other encoding is an error. The
   result is a PNG, resized when the longest edge is over `max_edge`, so a frame that fits comes back
   equal pixel for pixel.
 - Cap on the returned bytes: 4 x `TOPICFORGE_MAX_SAMPLE_BYTES` (4 MiB by default), else an error. A
   message over 64 MiB is counted by the helper and never read. Image bytes count against the model's
-  context; the cost of a real image in a real client has not been measured.
+  context; the cost of a real image in a real client has not been measured. The frame goes to the
+  model, and its content is data, not instructions (`SECURITY.md`).
 - It runs on the sampling helper only, reading raw CDR decoded here with `rosbags`, and has no CLI
   path: on `TOPICFORGE_ROS_SAMPLER=cli`, or `auto` where the check failed, it raises naming
   `TOPICFORGE_ROS_SAMPLER`. DDS-only raises. Mock returns one small deterministic PNG on an image
