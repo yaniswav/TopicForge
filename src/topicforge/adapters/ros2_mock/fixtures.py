@@ -7,9 +7,14 @@ tree. Tests assert on exact values, so changing one here means updating
 
 from __future__ import annotations
 
+import hashlib
 import math
+import struct
+import zlib
 
+from topicforge.adapters.base import AdapterError
 from topicforge.adapters.common.endpoints import build_endpoint_listing
+from topicforge.adapters.common.image_decode import IMAGE_TYPES
 from topicforge.adapters.common.metrics_buffer import MetricsBuffer
 from topicforge.adapters.common.qos_scan import scan_endpoints
 from topicforge.adapters.common.ros_names import ros_topic_of
@@ -30,6 +35,7 @@ from topicforge.models import (
     TopicMetrics,
     TopicRate,
 )
+from topicforge.models.image import CapturedImage, ImageInfo
 
 
 def _side(reliability: str, count: int, durability: str = "volatile") -> SideQos:
@@ -450,6 +456,9 @@ _MOCK_SAMPLES: dict[str, list[MessageSample]] = {
 }
 
 
+_MOCK_WINDOW_PERIOD_NS = 100_000_000
+
+
 def mock_samples_for(
     topic: str,
     count: int,
@@ -491,6 +500,82 @@ def mock_sample_rate(samples: list[MessageSample]) -> TopicRate | None:
         basis="received_ns",
         stamps_ns=[s.timestamp_ns for s in samples] if stamped else None,
         stamped=[(s.received_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.received_ns],
+    )
+
+
+def mock_image(topic: str, message_type: str) -> CapturedImage:
+    """A small gradient for an image topic, written with the standard library: no Pillow here."""
+    if message_type not in IMAGE_TYPES:
+        raise AdapterError(
+            f"{topic} is {message_type}: `get_image` reads sensor_msgs/Image and CompressedImage."
+        )
+    width, height = 16, 12
+    rows = b"".join(
+        b"\0" + bytes(v for x in range(width) for v in (x * 16, y * 20, 128)) for y in range(height)
+    )
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        crc = zlib.crc32(kind + body)
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+    return CapturedImage(
+        info=ImageInfo(
+            topic=topic,
+            message_type=message_type,
+            frame_id="camera_optical_frame",
+            stamp_ns=1_715_600_000_000_000_000,
+            received_ns=1_715_600_000_010_000_000,
+            encoding="rgb8",
+            width=width,
+            height=height,
+            returned_width=width,
+            returned_height=height,
+            mime_type="image/png",
+            byte_count=len(png),
+            sha256=hashlib.sha256(png).hexdigest(),
+            mode_effective="mock",
+        ),
+        data=png,
+    )
+
+
+def mock_window_result(topic: str, samples: list[MessageSample], window_s: float) -> SampleResult:
+    """A time window on the mock: 10 Hz arrivals, with `samples` spread evenly over them."""
+    from topicforge.adapters.common.summaries import compute_rate
+
+    if not samples or samples[0].received_ns is None:
+        return SampleResult(topic=topic, count=0, samples=[], mode_effective="mock")
+    start = samples[0].received_ns
+    period = _MOCK_WINDOW_PERIOD_NS
+    received = max(int(window_s * 1e9 / period), 1)
+    arrivals = [start + i * period for i in range(received)]
+    last = max(len(samples) - 1, 1)
+    spread = [
+        sample.model_copy(update={"received_ns": arrivals[i * (received - 1) // last]})
+        for i, sample in enumerate(samples[:received])
+    ]
+    rate = compute_rate(
+        arrivals,
+        basis="received_ns",
+        window_start_ns=start,
+        window_end_ns=start + int(window_s * 1e9),
+        stopped_on_deadline=True,
+    )
+    return SampleResult(
+        topic=topic,
+        count=len(spread),
+        samples=spread,
+        mode_effective="mock",
+        rate=rate,
+        note=f"{received} messages received over {window_s:.2f} s, {len(spread)} returned, "
+        "spread evenly.",
     )
 
 

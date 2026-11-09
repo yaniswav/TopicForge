@@ -66,6 +66,19 @@ SAMPLE_TIMEOUT_PARAM_DESC = (
     "it for a topic slower than 1 Hz."
 )
 
+IMAGE_TOPIC_PARAM_DESC = "A sensor_msgs/Image or CompressedImage topic."
+
+IMAGE_MAX_EDGE_PARAM_DESC = "Longest edge of a raw image."
+
+GET_IMAGE_DESC = (
+    "One live frame as image content plus JSON metadata. CompressedImage passes through; raw "
+    "needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop."
+)
+
+SAMPLE_WINDOW_PARAM_DESC = (
+    "Listen this long, on the helper: `rate` as seen, `count` samples spread evenly."
+)
+
 MAX_ARRAY_LENGTH_PARAM_DESC = (
     "Longest array, string or bytes value returned in full, 1..65536, default 128 (a "
     "541-beam `LaserScan` is cut to 128 ranges; its `summary` still covers all). Longer "

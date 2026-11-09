@@ -7,4 +7,6 @@ arrive), `FAKE_RCLPY_INTERVAL` (seconds between them), `FAKE_RCLPY_TRACE` (a fil
 line per call on the node, so a test can see a clean shutdown), `FAKE_RCLPY_FAIL` (`init` raises it),
 `FAKE_RCLPY_NATIVE_STDOUT` (written to fd 1, as a native library would),
 `FAKE_RCLPY_NATIVE_MISSING` (the native part fails to load), `FAKE_RCLPY_HANG_INIT` and
-`FAKE_RCLPY_HANG_DESTROY` (seconds `init` and `destroy_node` block).
+`FAKE_RCLPY_HANG_DESTROY` (seconds `init` and `destroy_node` block). A raw subscription gets the
+message's index as text (`rclpy/serialization.py`); `FAKE_RCLPY_PUBLISHERS` is what `Node.count_publishers`
+reports, default 1.

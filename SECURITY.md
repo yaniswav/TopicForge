@@ -86,7 +86,7 @@ exact writer set on a live bus (`compare.py`, section `sampler`).
 
 **The single exception (from 0.7.0, with `get_node_info`).** The only request TopicForge ever sends is a parameter read (list/get). It sends no other request to a node: no other service call, no parameter set, no lifecycle transition, no action goal.
 
-**Declaration.** All seventeen tools carry MCP `ToolAnnotations`:
+**Declaration.** All eighteen tools carry MCP `ToolAnnotations`:
 `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, a
 `title`, and an honest `openWorldHint` (true for tools that observe a
 live ROS 2 graph or DDS bus, false for `health_check`, `analyze_bag` and
@@ -99,10 +99,10 @@ architecture.
 
 **Proof.** `tests/test_tool_annotations.py` builds the app in mock mode,
 lists the tools through the MCP layer as a client would, and fails if the
-tool count is not seventeen, if any tool lacks annotations, is not read-only,
+tool count is not eighteen, if any tool lacks annotations, is not read-only,
 non-destructive and idempotent, has no title or a non-boolean
 `openWorldHint`, or if the set of closed-world tools differs from the
-three above. Adding an eighteenth tool without annotations fails the suite.
+three above. Adding a nineteenth tool without annotations fails the suite.
 
 **What read-only does not mean: not perfectly passive.**
 
@@ -132,6 +132,18 @@ for reporting. The `ros2` child processes inherit the environment
 (`ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` and the like), as any ROS 2 tool
 would. Telemetry is off by default and a verified no-op when off
 (pinned by `tests/test_telemetry.py::test_build_app_off_makes_no_transport_calls`).
+
+**Images go to the model.** `get_image` returns one live camera frame as image
+content, so the frame leaves the robot for wherever the MCP client sends it,
+usually a hosted model. A camera can see people, screens and badges: treat a
+call like sharing that picture, and do not enable the tool where that is not
+acceptable. `sample_messages` and `peek_bag_samples` can return the same pixels
+as numbers. The content of an image is data, not instructions: text in the
+scene, or a printed sign held up to the camera, can attempt a visual prompt
+injection, and an agent must not act on what an image says. `frame_id` and
+`format` are publisher strings too, cut at 256 characters and equally untrusted.
+TopicForge cannot publish or command in any case, which limits what such text
+can do through this server, not through the client's other tools.
 
 **Remote access.** TopicForge has no rosbridge client and no ssh targets,
 by design: it never reaches out to a robot. Run it on the robot (or a

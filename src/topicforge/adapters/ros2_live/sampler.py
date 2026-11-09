@@ -27,6 +27,7 @@ from topicforge.adapters.common.log_filter import (
 )
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
 from topicforge.adapters.ros2_live.helper_stream import (
+    EXIT_STALLED,
     HELPER_LABEL,
     SamplingBackend,
     failure_text,
@@ -61,16 +62,18 @@ _SECURE_LOOKUP_HINT = (
 )
 
 # Wait for `sample_messages` on a topic with no announced publisher.
-_NO_PUBLISHER_WAIT_SEC = 3.0
+NO_PUBLISHER_WAIT_SEC = 3.0
 # `sample_messages` returns within about `timeout_s` plus this: stopping the CLI
 # takes up to ~2 s, and decoding may run until 1 s past the deadline.
 _PARSE_GRACE_SEC = 1.0
-_MIN_ECHO_SEC = 0.5
+MIN_ECHO_SEC = 0.5
 # Share of a filtered `/rosout` read kept back from streaming, for decoding up to 2000 documents.
 _FILTER_DECODE_RESERVE_SEC = 0.5
 # Time `sample_messages` keeps back from the call budget for stopping the CLI
 # (about 2 s) and decoding (until 1 s past the deadline).
-_STOP_RESERVE_SEC = 3.0
+STOP_RESERVE_SEC = 3.0
+# Time a window's helper gets to start and see a publisher; the window itself starts then.
+_WINDOW_START_SEC = 3.0
 
 TopicInfoFn = Callable[[str, float], TopicInfo]
 ResolveExeFn = Callable[[], str]
@@ -90,6 +93,7 @@ def sample_messages(
     min_log_level: str | None = None,
     node: str | None = None,
     backend: SamplingBackend | None = None,
+    window_s: float | None = None,
 ) -> SampleResult:
     """Stream `ros2 topic echo` or the helper and keep up to `count` messages within `timeout_s`.
 
@@ -111,17 +115,24 @@ def sample_messages(
     never matches a latched topic. A short result carries a `note` saying
     why. A topic that does not exist raises, also for `count` 0.
     `backend` picks the stream (default the CLI): see `helper_stream.SamplingBackend`.
-    TODO(roadmap): time-range windows and rmw receive timestamps, on the helper's frames.
+
+    `window_s` keeps the subscription open for that long whatever `count` is: the helper reports
+    every arrival, so `rate` covers the whole window, and `count` caps the samples returned, spread
+    evenly over what arrived. The call is lengthened to fit. The helper only: the CLI raises.
+    TODO(roadmap): rmw receive timestamps, on the helper's frames.
     """
     backend = backend or SamplingBackend()
     if backend.kind == "unavailable":
         raise AdapterError(backend.note or "the rclpy sampler is not usable")
+    if window_s is not None:
+        _require_window_backend(backend)
+        timeout_s = max(timeout_s, window_s + _WINDOW_START_SEC + ROS2_CLI_TIMEOUT_S)
     started = time.monotonic()
     # Whatever the call waited for the lock is already gone from the budget.
-    timeout_s = call_budget.clamp(timeout_s, _STOP_RESERVE_SEC)
+    timeout_s = call_budget.clamp(timeout_s, STOP_RESERVE_SEC)
     if timeout_s <= 0:
         raise AdapterError("busy: no time left in this call's budget for sampling, retry")
-    info = _look_up(topic_info, topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
+    info = look_up_topic(topic_info, topic, min(ROS2_CLI_TIMEOUT_S, timeout_s))
     log_filter = LogFilter.of(min_log_level, node)
     if log_filter is not None:
         require_log_topic(topic, info.message_type)
@@ -129,8 +140,12 @@ def sample_messages(
         return _sample_result(mode, topic, [], None)
 
     has_publisher = info.publisher_count > 0
-    budget = timeout_s if has_publisher else min(timeout_s, _NO_PUBLISHER_WAIT_SEC)
-    remaining = max(budget - (time.monotonic() - started), _MIN_ECHO_SEC)
+    budget = timeout_s if has_publisher else min(timeout_s, NO_PUBLISHER_WAIT_SEC)
+    # A publisher's budget counts the lookup. The short wait for none starts after it, or a slow
+    # lookup would leave the helper no time to start and a silent topic would read as a stall.
+    now = time.monotonic()
+    budget_from = started if has_publisher else now
+    remaining = max(min(budget - (now - budget_from), timeout_s - (now - started)), MIN_ECHO_SEC)
     # A summary that reads an array (a scan's ranges) needs it whole: stream
     # uncut, summarize, then cut the returned payload as the CLI would have.
     whole = wants_whole_arrays(info.message_type, max_array_length, arrays_summary_only)
@@ -142,19 +157,32 @@ def sample_messages(
     )
     if log_filter is not None:
         # Stream until the deadline, leaving the decode its share of the budget.
-        remaining = max(remaining - _FILTER_DECODE_RESERVE_SEC, _MIN_ECHO_SEC)
-    run = _stream(
-        backend,
-        resolve_exe(),
-        topic,
-        info.message_type,
-        flags,
-        count=count if log_filter is None else LOG_STREAM_CAP,
-        deadline_s=remaining,
-        max_chars=(
-            max(max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS) if whole else max_message_chars
-        ),
-    )
+        remaining = max(remaining - _FILTER_DECODE_RESERVE_SEC, MIN_ECHO_SEC)
+    max_chars = max(max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS) if whole else max_message_chars
+    if window_s is not None:
+        run = _stream_window(
+            backend,
+            topic,
+            info.message_type,
+            flags,
+            count=count,
+            window_s=window_s,
+            deadline_s=min(remaining, window_s + _WINDOW_START_SEC),
+            max_chars=max_chars,
+        )
+    else:
+        run = _stream(
+            backend,
+            resolve_exe(),
+            topic,
+            info.message_type,
+            flags,
+            count=count if log_filter is None else LOG_STREAM_CAP,
+            deadline_s=remaining,
+            max_chars=max_chars,
+        )
+    if not has_publisher and not run.documents and run.exit_code == EXIT_STALLED:
+        run.exit_code = None  # nothing to read anyway: the note says there is no publisher
     if not run.documents and run.exit_code not in (None, 0):
         if run.tool == HELPER_LABEL:
             raise AdapterError(failure_text(run))
@@ -164,7 +192,11 @@ def sample_messages(
         )
         raise AdapterError(" ".join(filter(None, [run.fallback_note, failed])))
 
-    parse_until = started + budget + _PARSE_GRACE_SEC
+    if window_s is not None:
+        # The helper's shutdown comes after the window and is no part of its span.
+        run.ended_ns = min(run.ended_ns, run.started_ns + int(window_s * 1e9))
+        _keep_evenly(run, count)
+    parse_until = budget_from + budget + _PARSE_GRACE_SEC
     samples, skipped = _decode(run, topic, info, max_array_length, whole, parse_until)
     if log_filter is not None:
         result = _filtered_log_result(
@@ -185,7 +217,9 @@ def sample_messages(
         part
         for part in (
             run.fallback_note,
-            _short_result_note(
+            _window_note(run, len(samples), has_publisher)
+            if window_s is not None
+            else _short_result_note(
                 run,
                 len(samples) + skipped,
                 count,
@@ -200,7 +234,7 @@ def sample_messages(
     return _sample_result(mode, topic, samples, note or None, _rate(run, count, samples, skipped))
 
 
-def _look_up(topic_info: TopicInfoFn, topic: str, timeout: float) -> TopicInfo:
+def look_up_topic(topic_info: TopicInfoFn, topic: str, timeout: float) -> TopicInfo:
     """The topic's info. On a secured graph a failed lookup may only be slow discovery: say so."""
     try:
         return topic_info(topic, timeout)
@@ -357,6 +391,75 @@ def _stream(
     return _echo_stream(exe, topic, flags, count, deadline_s, max_chars)
 
 
+def _require_window_backend(backend: SamplingBackend) -> None:
+    """A window needs the helper: `ros2 topic echo` has no arrival frames and cannot be thinned."""
+    if backend.kind != "rclpy" or not backend.python:
+        raise AdapterError(
+            "`window_s` needs the sampling helper, and this server samples with the `ros2` CLI "
+            f"({backend.note or 'no helper'}). Check `TOPICFORGE_ROS_SAMPLER` and "
+            "`TOPICFORGE_ROS_PYTHON`, or leave `window_s` out."
+        )
+
+
+def _stream_window(
+    backend: SamplingBackend,
+    topic: str,
+    message_type: str,
+    flags: list[str],
+    *,
+    count: int,
+    window_s: float,
+    deadline_s: float,
+    max_chars: int,
+) -> EchoRun:
+    """A window on the helper. No fallback: the CLI cannot do it."""
+    if not backend.python or not _HELPER_TYPE.match(message_type):
+        raise AdapterError(f"{HELPER_LABEL} cannot load the message type {message_type!r}")
+    cmd = helper_command(
+        backend.python,
+        topic,
+        message_type,
+        [
+            "--count",
+            str(count),
+            "--window",
+            f"{window_s:.3f}",
+            "--deadline",
+            f"{deadline_s:.3f}",
+            "--max-chars",
+            str(max_chars),
+            *flags,
+        ],
+    )
+    return stream_helper(cmd, count=count, deadline_s=deadline_s, window=True)
+
+
+def _keep_evenly(run: EchoRun, count: int) -> None:
+    """Down to `count` documents of a window, first and last included; the rest still count."""
+    docs = run.documents
+    if len(docs) <= count:
+        return
+    picks = {round(i * (len(docs) - 1) / max(count - 1, 1)) for i in range(count)}
+    run.documents = [doc for i, doc in enumerate(docs) if i in picks]
+    run.unkept_received_ns += [doc.received_ns for i, doc in enumerate(docs) if i not in picks]
+
+
+def _window_note(run: EchoRun, returned: int, has_publisher: bool) -> str:
+    """What a window saw: `rate` has the details."""
+    received = len(run.documents) + len(run.oversized_received_ns) + len(run.unkept_received_ns)
+    span_s = max(0, run.ended_ns - run.started_ns) / 1e9
+    head = (
+        f"{received} messages received over {span_s:.2f} s, {returned} returned, spread evenly. "
+        "`rate` is a lower bound: this reader keeps 5, so a burst while it decodes can be missed."
+    )
+    if run.exit_code is not None:
+        tail = f": {run.stderr_tail}" if run.stderr_tail else ""
+        return f"{head} {run.tool} exited early (exit {run.exit_code}){tail}."
+    if not has_publisher:
+        return f"{head} No publisher is announced on this topic, so the window was cut short."
+    return head
+
+
 def _echo_stream(
     exe: str, topic: str, flags: list[str], count: int, deadline_s: float, max_chars: int
 ) -> EchoRun:
@@ -374,7 +477,15 @@ def _rate(run: EchoRun, count: int, samples: list[MessageSample], skipped: int) 
     complete = not run.oversized and not skipped
     stamps = [s.timestamp_ns for s in samples] if samples and stamped and complete else None
     clock = [(s.received_ns, s.timestamp_ns, s.stamp_source) for s in samples if s.received_ns]
-    return rate_of_run(run, count, stamps, clock)
+    if not run.window:
+        return rate_of_run(run, count, stamps, clock)
+    # A thinned window has a stride between its stamps: the sim rate counts what arrived between.
+    rate = rate_of_run(run, count, None, clock)
+    if not stamps or len(stamps) < 2 or stamps[-1] <= stamps[0]:
+        return rate
+    arrived = run.documents[-1].index - run.documents[0].index
+    sim_hz = round(arrived / ((stamps[-1] - stamps[0]) / 1e9), 6)
+    return rate.model_copy(update={"sim_frequency_hz": sim_hz})
 
 
 def _echo_array_args(max_array_length: int | None, arrays_summary_only: bool) -> list[str]:

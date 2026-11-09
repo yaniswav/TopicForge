@@ -5,7 +5,7 @@
   "mcpServers": {
     "topicforge": {
       "command": "uvx",
-      "args": ["--from", "topicforge==0.9.0", "topicforge"],
+      "args": ["--from", "topicforge[image]==0.9.0", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",

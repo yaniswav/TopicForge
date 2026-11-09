@@ -33,6 +33,7 @@ from topicforge.models import (
     TopicListItem,
     TopicMetrics,
 )
+from topicforge.models.image import CapturedImage
 
 
 class CompositeAdapter:
@@ -78,6 +79,7 @@ class CompositeAdapter:
         timeout_s: float = DEFAULT_SAMPLE_TIMEOUT_S,
         min_log_level: str | None = None,
         node: str | None = None,
+        window_s: float | None = None,
     ) -> SampleResult:
         return self._ros.sample_messages(
             topic,
@@ -87,6 +89,14 @@ class CompositeAdapter:
             timeout_s=timeout_s,
             min_log_level=min_log_level,
             node=node,
+            window_s=window_s,
+        )
+
+    def get_image(
+        self, topic: str, *, max_edge: int, max_bytes: int, timeout_s: float
+    ) -> CapturedImage:
+        return self._ros.get_image(
+            topic, max_edge=max_edge, max_bytes=max_bytes, timeout_s=timeout_s
         )
 
     def analyze_bag(self, path: str) -> BagAnalysis:

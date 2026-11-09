@@ -1,0 +1,6 @@
+[
+  {"name": "63_image_compressed", "tool": "get_image", "timeout": 60,
+   "args": {"topic": "/camera/image_raw/compressed"}},
+  {"name": "64_image_raw", "tool": "get_image", "timeout": 60,
+   "args": {"topic": "/camera/image_raw"}}
+]

@@ -62,7 +62,7 @@ def _call(app: Any, tool: str, args: dict[str, Any]) -> dict[str, Any]:
 
 def test_no_summary_model_is_listed_in_any_defs(wires: dict[str, dict[str, Any]]) -> None:
     for tool, wire in wires.items():
-        defs = wire["outputSchema"].get("$defs", {})
+        defs = wire.get("outputSchema", {}).get("$defs", {})  # `get_image` has none
         leaked = [k for k in defs if k in _MESSAGE_SUMMARY_MODELS]
         assert not leaked, f"{tool} lists {leaked}"
 
@@ -95,7 +95,7 @@ def _has_key(node: Any, key: str) -> bool:
 def test_output_schemas_carry_no_default_but_input_schemas_do(
     wires: dict[str, dict[str, Any]],
 ) -> None:
-    assert not any(_has_key(w["outputSchema"], "default") for w in wires.values())
+    assert not any(_has_key(w.get("outputSchema", {}), "default") for w in wires.values())
     assert any(_has_key(w["inputSchema"], "default") for w in wires.values())
 
 

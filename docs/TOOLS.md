@@ -5,13 +5,14 @@ served in mock mode. Do not edit by hand: `tests/test_contract_snapshots.py`
 fails when this file is out of date. The rules behind the shapes are in
 [CONTRACT.md](CONTRACT.md).
 
-17 tools, all read-only.
+18 tools, all read-only.
 
 | Tool | Title | World |
 | --- | --- | --- |
 | [`analyze_bag`](#analyze_bag) | Analyze bag | closed |
 | [`detect_qos_mismatches`](#detect_qos_mismatches) | Detect QoS mismatches | open |
 | [`diagnose`](#diagnose) | Diagnose the robot | open |
+| [`get_image`](#get_image) | Get image | open |
 | [`get_node_info`](#get_node_info) | Get node info | open |
 | [`get_topic_info`](#get_topic_info) | Get topic info | open |
 | [`graph_diff`](#graph_diff) | Diff the ROS 2 graph | open |
@@ -124,6 +125,25 @@ Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and ra
 | `verdict` | `str` | yes | One line; never an all-clear after a skipped check. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
+
+## `get_image`
+
+**Get image**
+
+Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
+
+One live frame as image content plus JSON metadata. CompressedImage passes through; raw needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop.
+
+### Input parameters
+
+| Name | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `topic` | `str` | yes | - | - | A sensor_msgs/Image or CompressedImage topic. |
+| `max_edge` | `int` | no | `512` | >= 16, <= 2048 | Longest edge of a raw image. |
+
+### Output (top-level fields)
+
+Not declared.
 
 ## `get_node_info`
 
@@ -554,6 +574,7 @@ ROS 2 graph only; on a DDS-only setup use `list_endpoints` or `peek_dds_samples`
 | `timeout_s` | `float` | no | `10.0` | >= 1.0, <= 40.0 | Seconds to wait, 1..40, default 10, covering topic lookup and CLI start-up. The call returns within `timeout_s` plus a few seconds, with what arrived and a `note`. Raise it for a topic slower than 1 Hz. |
 | `min_log_level` | `"debug" \| "info" \| "warn" \| "error" \| "fatal" \| null` | no | `null` | - | `/rosout` (`rcl_interfaces/msg/Log`) only: keep messages at or above this level (debug 10, info 20, warn 30, error 40, fatal 50). Other topics: error. |
 | `node` | `str \| null` | no | `null` | - | `/rosout` only: keep logs of this node and its child loggers, e.g. `/robot1/driver` (also `driver`, `robot1.driver`). Exact name, never a prefix. Other topics: error. |
+| `window_s` | `float \| null` | no | `null` | >= 0.5, <= 30.0 | Listen this long, on the helper: `rate` as seen, `count` samples spread evenly. |
 
 ### Output (top-level fields)
 

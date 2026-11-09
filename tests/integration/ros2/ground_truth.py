@@ -30,10 +30,12 @@ Everything is deterministic and exact by construction:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import struct
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +97,7 @@ BENCH_TOPICS = {
     "/scan": ("sensor_msgs/msg/LaserScan", False),
     "/cmd_vel_out": ("geometry_msgs/msg/Twist", False),
     "/camera/image_raw": ("sensor_msgs/msg/Image", False),
+    "/camera/image_raw/compressed": ("sensor_msgs/msg/CompressedImage", False),
     "/scan_edge": ("sensor_msgs/msg/LaserScan", False),
     "/robot_description_lite": ("std_msgs/msg/String", True),
     "/robot_description": ("std_msgs/msg/String", True),
@@ -106,6 +109,8 @@ BENCH_TOPICS = {
     "/bond": ("bond/msg/Status", False),
 }
 PUBLISHER_COUNTS = {"/pose_mixed": 2}
+COMPRESSED_TOPIC = "/camera/image_raw/compressed"
+COMPRESSED_SIZE = (64, 48)
 # Present on every graph; the number of endpoints depends on hidden CLI and daemon nodes.
 INFRA_TOPICS = {
     "/parameter_events": "rcl_interfaces/msg/ParameterEvent",
@@ -381,6 +386,49 @@ def diagnose_truth() -> dict[str, Any]:
     }
 
 
+def compressed_png() -> bytes:
+    """The bench's `CompressedImage`: a PNG of a known pattern, written with the standard library."""
+    width, height = COMPRESSED_SIZE
+    rows = b"".join(
+        b"\0" + bytes(v for x in range(width) for v in ((x * 3) % 256, (y * 5) % 256, 64))
+        for y in range(height)
+    )
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+
+
+def image_truth() -> dict[str, Any]:
+    """What `get_image` must return: the published PNG byte for byte, and the raw frame resized."""
+    png = compressed_png()
+    return {
+        "compressed": {
+            "topic": COMPRESSED_TOPIC,
+            "sha256": hashlib.sha256(png).hexdigest(),
+            "byte_count": len(png),
+            "size": list(COMPRESSED_SIZE),
+            "frame_id": "camera_link",
+        },
+        "raw": {
+            "topic": "/camera/image_raw",
+            "size": [640, 480],
+            "returned": [512, 384],
+            "encoding": "rgb8",
+            "frame_id": "camera_link",
+        },
+    }
+
+
 def clock_truth() -> dict[str, Any]:
     """What `TopicRate.clock_basis` and the stamp fields must say per topic (0.7.3)."""
     return {
@@ -579,6 +627,7 @@ def build_truth(distro: str, rmw: str) -> dict[str, Any]:
         },
         "tf": tf_truth(),
         "clock": clock_truth(),
+        "image": image_truth(),
         "logs": logs_truth(),
         "graph_diff": graph_diff_truth(),
         "nav_primitives": nav_primitives_truth(),

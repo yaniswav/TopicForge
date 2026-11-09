@@ -60,6 +60,7 @@ def test_options_are_forwarded_to_the_adapter() -> None:
         "timeout_s": DEFAULT_SAMPLE_TIMEOUT_S,
         "min_log_level": None,
         "node": None,
+        "window_s": None,
     }
 
 
@@ -72,6 +73,7 @@ def test_defaults_match_the_cli_default() -> None:
         "timeout_s": DEFAULT_SAMPLE_TIMEOUT_S,
         "min_log_level": None,
         "node": None,
+        "window_s": None,
     }
 
 

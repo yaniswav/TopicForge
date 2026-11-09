@@ -70,7 +70,8 @@ def rate_of_run(
     """
     from topicforge.adapters.common.summaries import compute_rate
 
-    arrivals = [d.received_ns for d in run.documents] + run.oversized_received_ns
+    arrivals = [d.received_ns for d in run.documents]
+    arrivals += run.oversized_received_ns + run.unkept_received_ns
     return compute_rate(
         arrivals,
         basis="received_ns",
@@ -78,5 +79,5 @@ def rate_of_run(
         stamped=stamped,
         window_start_ns=run.started_ns or None,
         window_end_ns=run.ended_ns or None,
-        stopped_on_deadline=len(run.documents) < count and run.exit_code is None,
+        stopped_on_deadline=(run.window or len(run.documents) < count) and run.exit_code is None,
     )

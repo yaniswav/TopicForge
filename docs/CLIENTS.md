@@ -9,6 +9,9 @@ Every client below launches it as a child process with the same command:
 uvx --from "topicforge==0.9.0" topicforge
 ```
 
+To read raw `sensor_msgs/Image` topics with `get_image`, install Pillow too: replace the package
+with `topicforge[image]` at the same version in any configuration below. `CompressedImage` topics do not need it.
+
 and the same three environment variables:
 
 | Variable | Value | Meaning |
@@ -269,7 +272,7 @@ extensions:
 Program tab > Install > Edit `mcp.json` (same notation as Cursor), then paste the
 common JSON shape. LM Studio's docs only show remote examples; local command
 servers follow the Cursor notation but are not documented explicitly. Small
-local models may struggle with seventeen tools.
+local models may struggle with eighteen tools.
 
 ## Amazon Q Developer / Kiro
 

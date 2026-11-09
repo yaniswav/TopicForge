@@ -164,6 +164,18 @@ def test_plugin_launches_without_an_extra() -> None:
     assert spec == f"topicforge=={topicforge.__version__}"
 
 
+@pytest.mark.parametrize("rel", ["plugin/.mcp.json", "plugin/mcp.json"])
+def test_plugin_launches_with_pillow_for_raw_images(rel: str) -> None:
+    args = _server_args(rel)
+    assert args[args.index("--with") + 1] == "pillow==12.3.0"
+    assert '"pillow==12.3.0"' in _text("plugin/pyproject.toml")
+
+
+def test_the_other_launchers_install_the_image_extra() -> None:
+    assert "topicforge[image]==" in _text("mcpb/pyproject.toml")
+    assert "topicforge[image]==" in _server_args("gemini-extension.json")[1]
+
+
 def test_agent_plugin_manifests_match_claude_plugin() -> None:
     """plugin/plugin.json and plugin/mcp.json (Agent Plugins) mirror the Claude files."""
     manifest = ROOT / "plugin" / "plugin.json"

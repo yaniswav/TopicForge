@@ -7,8 +7,8 @@ CLI adapter spawns processes. `guarded(lane)` therefore does three things.
 
 Lanes. A handler names the backend it uses and runs behind that lane's lock:
 
-- `"ros"`: calls that run the `ros2` CLI, nine tools (`list_topics`,
-  `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `sample_messages`,
+- `"ros"`: calls that run the `ros2` CLI, ten tools (`list_topics`,
+  `get_topic_info`, `list_nodes`, `get_node_info`, `inspect_tf`, `sample_messages`, `get_image`,
   `analyze_bag`, `graph_diff`, `diagnose`). `diagnose` holds the lock for up to its
   `budget_s` (40 s at most) and keeps its own deadline 2 s inside the guard's;
 - `"dds"`: calls that use the DDS binding, six tools (`list_participants`,

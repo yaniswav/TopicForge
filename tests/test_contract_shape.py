@@ -1,6 +1,6 @@
 """Every tool returns exactly one object (docs/CONTRACT.md section 1.1).
 
-Calls all seventeen tools in mock mode through the MCP layer and checks the wire shape: one
+Calls all eighteen tools in mock mode through the MCP layer and checks the wire shape: one
 `structured_content` object (never the `{"result": [...]}` wrapper of a bare list) and one
 text block carrying the same JSON.
 """
@@ -45,7 +45,8 @@ def _app() -> Any:
 
 def test_every_tool_is_called_here() -> None:
     names = {t.name for t in asyncio.run(_app().list_tools())}
-    assert names == set(_CALLS)
+    # `get_image` returns an image block as well: `tests/test_get_image.py` (CONTRACT 9.30).
+    assert names - {"get_image"} == set(_CALLS)
 
 
 @pytest.mark.parametrize("tool", sorted(_CALLS))

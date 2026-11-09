@@ -69,6 +69,8 @@ class EchoDocument:
 
     text: str
     received_ns: int
+    # Position among all the messages of a time window; 0 outside one.
+    index: int = 0
 
 
 @dataclass
@@ -93,6 +95,15 @@ class EchoRun:
     tool: str = "the `ros2` CLI"
     # Set when this run is the CLI standing in for a helper that failed: says so and why.
     fallback_note: str | None = None
+    # A time window: the run ended on the clock, whatever `count` was. Arrivals whose message was
+    # not kept are here so a rate still counts them; `stride` is the window's current one.
+    window: bool = False
+    stride: int = 1
+    # Monotonic clock at the window's hello, for a span a wall clock step cannot change.
+    hello_mono_ns: int = 0
+    unkept_received_ns: list[int] = field(default_factory=list)
+    # Raw messages and their arrival: only a helper run with `--raw` has any.
+    cdr_frames: list[tuple[bytes, int]] = field(default_factory=list)
 
 
 def stream_echo(

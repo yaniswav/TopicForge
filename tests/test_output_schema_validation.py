@@ -54,7 +54,8 @@ def schemas(app: Any) -> dict[str, dict[str, Any]]:
 
 
 def test_every_tool_is_covered(schemas: dict[str, dict[str, Any]]) -> None:
-    assert set(schemas) == set(_CALLS)
+    # `get_image` declares no output schema on purpose (CONTRACT 9.30).
+    assert set(schemas) - {"get_image"} == set(_CALLS)
 
 
 @pytest.mark.parametrize("tool", sorted(_CALLS))

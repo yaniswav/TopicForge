@@ -1,0 +1,6 @@
+[
+  {"name": "61_window_clock", "tool": "sample_messages", "timeout": 60,
+   "args": {"topic": "/clock", "count": 5, "window_s": 5}},
+  {"name": "62_window_scan", "tool": "sample_messages", "timeout": 60,
+   "args": {"topic": "/scan", "count": 5, "window_s": 5, "arrays_summary_only": true}}
+]
