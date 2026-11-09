@@ -49,6 +49,14 @@ no sample was received, so it must never feed the metrics buffer.
 """
 
 
+READER_PARTICIPANT_NAME = "topicforge_reader"
+"""EntityName of the short-lived participant behind a decoded read (`TOPICFORGE_DDS_DECODE`).
+
+The tracker leaves any participant so named out of every listing, also when it belongs to
+another TopicForge server on the bus.
+"""
+
+
 BUILTIN_DCPS_TOPICS = frozenset({"DCPSParticipant", "DCPSSubscription", "DCPSPublication"})
 """The builtin discovery topics: the only DDS topics whose samples are readable."""
 
@@ -64,13 +72,24 @@ def user_topic_result(
     topic: str,
     mode_effective: Literal["mock", "live"],
     resolution_note: str | None = None,
+    *,
+    refused: str | None = None,
 ) -> SampleResult:
     """Honest result of peeking a user topic: no samples, and a note saying why.
 
-    `resolution_note` says which discovered name the requested one matched.
+    `resolution_note` says which discovered name the requested one matched; `refused` is why
+    decoding, while on, was refused for this topic.
     """
-    note = USER_TOPIC_NOTE if resolution_note is None else f"{resolution_note}. {USER_TOPIC_NOTE}"
+    reason = USER_TOPIC_NOTE if refused is None else _refused_note(refused)
+    note = reason if resolution_note is None else f"{resolution_note}. {reason}"
     return SampleResult(topic=topic, count=0, samples=[], mode_effective=mode_effective, note=note)
+
+
+def _refused_note(reason: str) -> str:
+    return (
+        f"payload not decoded: {reason}. No samples are returned; this does not mean the topic "
+        "is silent. Use list_endpoints for the topic's presence, writers, readers and QoS"
+    )
 
 
 def resolve_user_topic(

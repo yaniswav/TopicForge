@@ -65,7 +65,9 @@ that script mentions `.publish(`, `create_publisher`, `create_service` or
 `create_client`.
 The Cyclone adapter creates one `DomainParticipant` plus builtin discovery
 readers (`BuiltinDataReader`); no `DataWriter` or `Publisher` exists in
-the DDS adapters or in `adapters/common`.
+the DDS adapters or in `adapters/common`. With `TOPICFORGE_DDS_DECODE=on`
+each decoded read also creates one short-lived participant with one reader,
+and no writer (`adapters/dds_cyclone/user_read.py`).
 
 **Entities, per process TopicForge starts.** A ROS 2 process cannot exist
 without some writers, even one that never publishes a message of its own, so
@@ -75,6 +77,7 @@ without some writers, even one that never publishes a message of its own, so
 | --- | --- | --- | --- |
 | The server's Cyclone participant (`topicforge`) | The server | Builtin discovery readers | None |
 | `ros2 topic echo` and other `ros2` commands | One call | The sampled topic (`echo`), `ros_discovery_info`, and on Jazzy the request of the type-description service | `rt/rosout`, `rt/parameter_events`, `ros_discovery_info`, and on Jazzy the reply of the type-description service |
+| Decoded read (`topicforge_reader`, `TOPICFORGE_DDS_DECODE=on`) | One read | The read topic, builtin discovery readers | None |
 | Sampler helper (`_topicforge_sampler_<pid>`) | One call | The sampled topic, `ros_discovery_info` | `rt/parameter_events`, with one event about its own parameters at start, and `ros_discovery_info` |
 
 The helper starts with `enable_rosout=False`, `start_parameter_services=False`
@@ -107,8 +110,16 @@ three above. Adding an eighteenth tool without annotations fails the suite.
   `topicforge`) announces itself through standard SPDP/SEDP discovery, so
   other participants see it, and it creates builtin discovery readers
   (DCPSParticipant, DCPSPublication, DCPSSubscription). It never creates a
-  writer, and it creates no reader on user topics: the typed user-topic
-  reader code is disabled and unreachable (payload decoding is off).
+  writer. By default it creates no reader on user topics.
+- With `TOPICFORGE_DDS_DECODE=on` (off by default), `peek_dds_samples` and
+  `topic_metrics` on a ROS 2 topic create a reader on it for the bounded
+  read, on a separate participant named `topicforge_reader`. **Decoding adds
+  a visible subscriber, and a publisher that only works when someone listens
+  may wake.** A Fast DDS writer can count that reader for up to about 10 s
+  after the read (measured, the participant's lease); a Cyclone writer for
+  about 1 s. Measured on a real bus by an independent observer: these
+  participants announce no writer; like any DDS participant they have the
+  builtin discovery endpoints the protocol requires.
 - The ros2 CLI path starts `ros2` processes, which can start the ros2
   daemon if it is not already running. `sample_messages` runs
   `ros2 topic echo` or the sampler helper, which creates a temporary
@@ -116,7 +127,7 @@ three above. Adding an eighteenth tool without annotations fails the suite.
   duration of the sample.
 
 **Environment read.** Only `TOPICFORGE_*` variables (mode, log level,
-`TOPICFORGE_ROS2_BIN`, DDS backend and domain, telemetry) and `ROS_DISTRO`
+`TOPICFORGE_ROS2_BIN`, DDS backend, domain and decoding, telemetry) and `ROS_DISTRO`
 for reporting. The `ros2` child processes inherit the environment
 (`ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` and the like), as any ROS 2 tool
 would. Telemetry is off by default and a verified no-op when off

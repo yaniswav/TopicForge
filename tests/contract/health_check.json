@@ -30,6 +30,10 @@
         ],
         "type": "string"
       },
+      "dds_decode": {
+        "description": "User payloads decoded.",
+        "type": "boolean"
+      },
       "dds_domain_id": {
         "description": "DDS domain id observed when the DDS module is active.",
         "maximum": 232,

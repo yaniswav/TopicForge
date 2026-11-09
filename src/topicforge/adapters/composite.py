@@ -135,6 +135,11 @@ class CompositeAdapter:
         """The DDS half's joined domain, `None` when it does not say."""
         return getattr(self._dds, "observed_domain_id", None)
 
+    @property
+    def dds_decode_enabled(self) -> bool:
+        """Whether the DDS half decodes user-topic payloads."""
+        return bool(getattr(self._dds, "dds_decode_enabled", False))
+
     def observer_status(self) -> dict[str, Any] | None:
         """The DDS half's observer/tracker status, `None` when it has none."""
         status = getattr(self._dds, "observer_status", None)

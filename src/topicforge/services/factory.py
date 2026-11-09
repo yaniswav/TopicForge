@@ -216,7 +216,8 @@ def _try_build_cyclone(settings: Settings) -> MiddlewareAdapter | None:
         return None
 
     return _instantiate(
-        "CycloneDdsAdapter", lambda: CycloneDdsAdapter(domain_id=settings.dds_domain_id)
+        "CycloneDdsAdapter",
+        lambda: CycloneDdsAdapter(domain_id=settings.dds_domain_id, decode=settings.dds_decode),
     )
 
 

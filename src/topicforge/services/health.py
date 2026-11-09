@@ -84,6 +84,7 @@ class HealthService:
                 if dds_backend in ("none", "mock")
                 else None
             ),
+            dds_decode=getattr(self._adapter, "dds_decode_enabled", False),
             dds_domain_id=self._settings.dds_domain_id,
             observed_domain_note=(
                 f"Only DDS domain {self._settings.dds_domain_id} (joined at startup) is "
