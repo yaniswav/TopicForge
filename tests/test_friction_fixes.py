@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 from mcp.types import Tool
@@ -318,6 +319,13 @@ def test_tool_listing_stays_small(tools: dict[str, Tool]) -> None:
         for t in tools.values()
     )
     assert total < 105_000, total
+
+
+def test_bundle_manifest_lists_every_served_tool(tools: dict[str, Tool]) -> None:
+    """`mcpb/manifest.json` is install metadata: it lists the tools by hand, and drifted once."""
+    path = Path(__file__).resolve().parents[1] / "mcpb" / "manifest.json"
+    listed = {t["name"] for t in json.loads(path.read_text(encoding="utf-8"))["tools"]}
+    assert listed == set(tools)
 
 
 def _long_descriptions(node: object, path: str = "") -> list[str]:

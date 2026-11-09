@@ -132,7 +132,7 @@ Answer "is anything wrong": sweep the ROS 2 graph and DDS bus in one call and ra
 
 Annotations: `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=true`, `readOnlyHint=true`
 
-One live frame as image content plus JSON metadata. CompressedImage passes through; raw needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop.
+One live frame as image content plus JSON metadata. CompressedImage passes through; raw needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop. Mock: a fixed gradient.
 
 ### Input parameters
 

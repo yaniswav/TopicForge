@@ -1436,7 +1436,7 @@ Additive only (1.9). `tools/list` goes from 99,971 to 100,535 bytes.
   this text; it is meant for a human.
 
 
-### 9.24 Lot 0 follow-ups (0.10.0)
+### 9.24 Evaluation and review follow-ups (0.10.0)
 
 Additive only (1.9). `tools/list` goes from 100,535 to 101,117 bytes.
 

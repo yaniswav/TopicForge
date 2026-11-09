@@ -7,12 +7,17 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
-Planned as 0.10.0, not released yet.
+## [0.10.0] - 2026-11-09
 
-Fixes to `diagnose` found after 0.9.0, the feedback of the 0.9.0 agent evaluation, a release
-workflow that tests the built wheel before publishing, and internal refactors with no output
-change. Optional fields and optional inputs are added, and one tool, `get_image`
-(`docs/CONTRACT.md` sections 9.22 to 9.30).
+The largest release so far. `get_image` is tool 18. `sample_messages` runs on a short-lived
+rclpy helper when one can start, with the `ros2` CLI as the fallback, and gains time windows.
+The bag tools read real files without the CLI and report anomalies. ROS 2 user topics can be
+decoded behind `TOPICFORGE_DDS_DECODE`, off by default. `diagnose` takes the feedback of the
+0.9.0 agent evaluation, URDF checks arrive as fields, and `publish.yml` tests the built wheel
+before publishing. One behaviour change: outside an explicit `TOPICFORGE_MODE=mock`, a missing
+bag path is an error instead of fixture data. The rest is additive, apart from the narrowed
+value declared in `docs/CONTRACT.md` section 9.22 (sections 9.22 to 9.30 cover this release). `tools/list` is 102,979 bytes (0.9.0: 99,634), under the 105,000
+ceiling.
 
 ### Added
 
@@ -125,7 +130,7 @@ change. Optional fields and optional inputs are added, and one tool, `get_image`
   `age_s` and `last_stamp_ns` descriptions say null and 0 are normal for a static transform.
 - `publish.yml` runs in stages: `build` (on a tag, also checks that `mcpb/manifest.json` and
   `server.json` carry the tag's version), then `smoke` (Ubuntu and Windows, Python 3.10 and 3.14:
-  installs the built wheel, checks its version against the tag, lists the 17 tools over stdio in
+  installs the built wheel, checks its version against the tag, lists the 18 tools over stdio in
   mock mode and calls `health_check`; one cell also installs the sdist), then `publish`, which
   uploads that exact `dist` artifact. The `.mcpb` is packed in its own job, so an npm failure no
   longer blocks PyPI. `publish` and the MCP Registry job (after it) are the only jobs with
@@ -2085,7 +2090,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/yaniswav/TopicForge/compare/v0.7.2...v0.8.0

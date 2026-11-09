@@ -127,8 +127,8 @@ three above. Adding a nineteenth tool without annotations fails the suite.
   duration of the sample.
 
 **Environment read.** Only `TOPICFORGE_*` variables (mode, log level,
-`TOPICFORGE_ROS2_BIN`, DDS backend, domain and decoding, telemetry) and `ROS_DISTRO`
-for reporting. The `ros2` child processes inherit the environment
+`TOPICFORGE_ROS2_BIN`, DDS backend, domain and decoding, telemetry), plus `ROS_DISTRO`,
+`RMW_IMPLEMENTATION` and `ROS_SECURITY_*` for reporting. The `ros2` child processes inherit the environment
 (`ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION` and the like), as any ROS 2 tool
 would. Telemetry is off by default and a verified no-op when off
 (pinned by `tests/test_telemetry.py::test_build_app_off_makes_no_transport_calls`).
