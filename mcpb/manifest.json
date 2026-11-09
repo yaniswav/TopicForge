@@ -63,6 +63,8 @@
     { "name": "list_endpoints", "description": "Normalized DDS writers and readers with QoS." },
     { "name": "list_nodes", "description": "ROS 2 nodes on the graph: names, namespaces, duplicates." },
     { "name": "get_node_info", "description": "One node's topics, services, actions and parameters." },
+    { "name": "graph_diff", "description": "What changed in the graph against a snapshot or a bag." },
+    { "name": "diagnose", "description": "One-call ranked health findings across all checks." },
     { "name": "inspect_tf", "description": "The TF tree: roots, stale, two-parent and disconnected frames, paths." }
   ],
   "compatibility": {

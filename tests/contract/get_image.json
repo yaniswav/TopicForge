@@ -6,7 +6,7 @@
     "readOnlyHint": true,
     "title": "Get image"
   },
-  "description": "One live frame as image content plus JSON metadata. CompressedImage passes through; raw needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop.",
+  "description": "One live frame as image content plus JSON metadata. CompressedImage passes through; raw needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop. Mock: a fixed gradient.",
   "inputSchema": {
     "properties": {
       "max_edge": {

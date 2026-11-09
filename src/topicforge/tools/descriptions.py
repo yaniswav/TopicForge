@@ -72,7 +72,8 @@ IMAGE_MAX_EDGE_PARAM_DESC = "Longest edge of a raw image."
 
 GET_IMAGE_DESC = (
     "One live frame as image content plus JSON metadata. CompressedImage passes through; raw "
-    "needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop."
+    "needs `topicforge[image]`. Needs the sampling helper. Big best-effort frames can drop. "
+    "Mock: a fixed gradient."
 )
 
 SAMPLE_WINDOW_PARAM_DESC = (
