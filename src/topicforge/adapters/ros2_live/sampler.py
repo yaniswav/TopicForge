@@ -27,6 +27,7 @@ from topicforge.adapters.common.log_filter import (
 )
 from topicforge.adapters.ros2_live.echo_stream import EchoRun, stream_echo
 from topicforge.adapters.ros2_live.helper_stream import (
+    EXIT_STALLED,
     HELPER_LABEL,
     SamplingBackend,
     failure_text,
@@ -65,7 +66,7 @@ NO_PUBLISHER_WAIT_SEC = 3.0
 # `sample_messages` returns within about `timeout_s` plus this: stopping the CLI
 # takes up to ~2 s, and decoding may run until 1 s past the deadline.
 _PARSE_GRACE_SEC = 1.0
-_MIN_ECHO_SEC = 0.5
+MIN_ECHO_SEC = 0.5
 # Share of a filtered `/rosout` read kept back from streaming, for decoding up to 2000 documents.
 _FILTER_DECODE_RESERVE_SEC = 0.5
 # Time `sample_messages` keeps back from the call budget for stopping the CLI
@@ -140,7 +141,11 @@ def sample_messages(
 
     has_publisher = info.publisher_count > 0
     budget = timeout_s if has_publisher else min(timeout_s, NO_PUBLISHER_WAIT_SEC)
-    remaining = max(budget - (time.monotonic() - started), _MIN_ECHO_SEC)
+    # A publisher's budget counts the lookup. The short wait for none starts after it, or a slow
+    # lookup would leave the helper no time to start and a silent topic would read as a stall.
+    now = time.monotonic()
+    budget_from = started if has_publisher else now
+    remaining = max(min(budget - (now - budget_from), timeout_s - (now - started)), MIN_ECHO_SEC)
     # A summary that reads an array (a scan's ranges) needs it whole: stream
     # uncut, summarize, then cut the returned payload as the CLI would have.
     whole = wants_whole_arrays(info.message_type, max_array_length, arrays_summary_only)
@@ -152,7 +157,7 @@ def sample_messages(
     )
     if log_filter is not None:
         # Stream until the deadline, leaving the decode its share of the budget.
-        remaining = max(remaining - _FILTER_DECODE_RESERVE_SEC, _MIN_ECHO_SEC)
+        remaining = max(remaining - _FILTER_DECODE_RESERVE_SEC, MIN_ECHO_SEC)
     max_chars = max(max_message_chars, WHOLE_ARRAY_STREAM_MAX_CHARS) if whole else max_message_chars
     if window_s is not None:
         run = _stream_window(
@@ -176,6 +181,8 @@ def sample_messages(
             deadline_s=remaining,
             max_chars=max_chars,
         )
+    if not has_publisher and not run.documents and run.exit_code == EXIT_STALLED:
+        run.exit_code = None  # nothing to read anyway: the note says there is no publisher
     if not run.documents and run.exit_code not in (None, 0):
         if run.tool == HELPER_LABEL:
             raise AdapterError(failure_text(run))
@@ -189,7 +196,7 @@ def sample_messages(
         # The helper's shutdown comes after the window and is no part of its span.
         run.ended_ns = min(run.ended_ns, run.started_ns + int(window_s * 1e9))
         _keep_evenly(run, count)
-    parse_until = started + budget + _PARSE_GRACE_SEC
+    parse_until = budget_from + budget + _PARSE_GRACE_SEC
     samples, skipped = _decode(run, topic, info, max_array_length, whole, parse_until)
     if log_filter is not None:
         result = _filtered_log_result(
@@ -441,7 +448,10 @@ def _window_note(run: EchoRun, returned: int, has_publisher: bool) -> str:
     """What a window saw: `rate` has the details."""
     received = len(run.documents) + len(run.oversized_received_ns) + len(run.unkept_received_ns)
     span_s = max(0, run.ended_ns - run.started_ns) / 1e9
-    head = f"{received} messages received over {span_s:.2f} s, {returned} returned, spread evenly."
+    head = (
+        f"{received} messages received over {span_s:.2f} s, {returned} returned, spread evenly. "
+        "`rate` is a lower bound: this reader keeps 5, so a burst while it decodes can be missed."
+    )
     if run.exit_code is not None:
         tail = f": {run.stderr_tail}" if run.stderr_tail else ""
         return f"{head} {run.tool} exited early (exit {run.exit_code}){tail}."

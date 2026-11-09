@@ -76,7 +76,7 @@ GET_IMAGE_DESC = (
 )
 
 SAMPLE_WINDOW_PARAM_DESC = (
-    "Listen this long, on the helper: `rate` covers all, `count` samples spread evenly."
+    "Listen this long, on the helper: `rate` as seen, `count` samples spread evenly."
 )
 
 MAX_ARRAY_LENGTH_PARAM_DESC = (

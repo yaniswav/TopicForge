@@ -89,7 +89,7 @@
           }
         ],
         "default": null,
-        "description": "Listen this long, on the helper: `rate` covers all, `count` samples spread evenly."
+        "description": "Listen this long, on the helper: `rate` as seen, `count` samples spread evenly."
       }
     },
     "required": [

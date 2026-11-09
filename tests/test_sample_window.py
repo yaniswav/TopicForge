@@ -20,8 +20,11 @@ from topicforge.adapters.common.sampler_frames import (
     encode_frame,
     read_frame,
 )
+from topicforge.adapters.ros2_live import sampler
 from topicforge.adapters.ros2_live.echo_stream import EchoDocument, EchoRun
 from topicforge.adapters.ros2_live.helper_stream import (
+    EXIT_STALLED,
+    HELPER_LABEL,
     HELPER_PATH,
     SamplingBackend,
     _add_frame,
@@ -208,6 +211,74 @@ def test_a_second_hello_moves_the_start_of_the_window() -> None:
     assert run.started_ns == 900
 
 
+def test_an_oversized_stream_still_thins(fake_rclpy: pytest.MonkeyPatch) -> None:
+    fake_rclpy.setenv("FAKE_RCLPY_MESSAGES", "300")
+    flags = ["--count", "2", "--window", "1.0", "--deadline", "4", "--max-chars", "0"]
+    cmd = helper_command(sys.executable, "/t", _TYPE, flags)
+    run = stream_helper(cmd, count=2, deadline_s=4.0, window=True)
+    assert run.exit_code is None, run.stderr_tail
+    assert run.documents == []
+    assert 0 < run.oversized < 40
+    assert run.oversized + len(run.unkept_received_ns) == 300
+
+
+def test_a_window_note_says_the_rate_is_a_lower_bound(fake_rclpy: pytest.MonkeyPatch) -> None:
+    fake_rclpy.setenv("FAKE_RCLPY_MESSAGES", "3")
+    assert "lower bound" in _sample(_HELPER, 3, 0.5).note  # type: ignore[attr-defined]
+
+
+def _no_publisher(topic: str, timeout: float) -> TopicInfo:
+    time.sleep(0.2)
+    return TopicInfo(
+        name=topic, message_type=_TYPE, publisher_count=0, subscriber_count=0, mode_effective="live"
+    )
+
+
+def test_the_wait_for_no_publisher_starts_after_the_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, float] = {}
+
+    def stream(cmd: list[str], *, count: int, deadline_s: float, window: bool) -> EchoRun:
+        seen["deadline_s"] = deadline_s
+        return EchoRun(tool=HELPER_LABEL, window=True)
+
+    monkeypatch.setattr(sampler, "stream_helper", stream)
+    monkeypatch.setattr(sampler, "NO_PUBLISHER_WAIT_SEC", 1.0)
+    sample_messages(
+        "/t",
+        3,
+        topic_info=_no_publisher,
+        resolve_exe=_no_exe,
+        mode="live",
+        max_message_chars=1000,
+        backend=_HELPER,
+        window_s=5.0,
+    )
+    assert seen["deadline_s"] == pytest.approx(1.0, abs=0.01)
+
+
+@pytest.mark.parametrize("window_s", [None, 1.0])
+def test_a_stall_with_no_publisher_is_an_empty_result(
+    monkeypatch: pytest.MonkeyPatch, window_s: float | None
+) -> None:
+    def stream(cmd: list[str], **kw: object) -> EchoRun:
+        return EchoRun(tool=HELPER_LABEL, exit_code=EXIT_STALLED, stderr_tail="stalled")
+
+    monkeypatch.setattr(sampler, "stream_helper", stream)
+    result = sample_messages(
+        "/t",
+        3,
+        topic_info=_no_publisher,
+        resolve_exe=lambda: "ros2",
+        mode="live",
+        max_message_chars=1000,
+        backend=_HELPER,
+        window_s=window_s,
+    )
+    assert result.count == 0 and "No publisher" in (result.note or "")
+
+
 def test_a_silent_window_says_so(fake_rclpy: pytest.MonkeyPatch) -> None:
     result = _sample(_HELPER, 3, 0.5)
     assert result.count == 0  # type: ignore[attr-defined]
@@ -243,6 +314,11 @@ def test_an_unavailable_helper_raises_its_reason() -> None:
 def test_the_service_refuses_a_bad_window(window_s: float) -> None:
     with pytest.raises(AdapterError, match="window_s"):
         Inspector(MockAdapter()).sample_messages("/scan", 3, window_s=window_s)
+
+
+def test_the_service_refuses_a_window_with_count_zero() -> None:
+    with pytest.raises(AdapterError, match="count"):
+        Inspector(MockAdapter()).sample_messages("/scan", 0, window_s=1.0)
 
 
 def test_the_service_refuses_a_window_with_a_log_filter() -> None:

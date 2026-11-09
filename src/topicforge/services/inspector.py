@@ -271,7 +271,7 @@ class Inspector:
         _validate_max_array_length(max_array_length)
         _validate_timeout_s(timeout_s)
         log_filter = LogFilter.of(min_log_level, node)  # raises on a bad value before any I/O
-        _validate_sample_window(window_s, log_filter is not None)
+        _validate_sample_window(window_s, log_filter is not None, n)
         capped = min(n, MAX_SAMPLE_COUNT)
         result = self._adapter.sample_messages(
             topic,
@@ -495,7 +495,7 @@ class Inspector:
         return result.model_copy(update={"samples": samples, "count": len(samples), "note": note})
 
 
-def _validate_sample_window(value: float | None, filtered: bool) -> None:
+def _validate_sample_window(value: float | None, filtered: bool, count: int) -> None:
     if value is None:
         return
     if not isinstance(value, (int, float)) or isinstance(value, bool):
@@ -506,6 +506,8 @@ def _validate_sample_window(value: float | None, filtered: bool) -> None:
         )
     if filtered:
         raise AdapterError("window_s does not combine with `min_log_level` or `node`")
+    if count == 0:
+        raise AdapterError("window_s needs `count` of at least 1: a count of 0 reads nothing")
 
 
 def _validate_timeout_s(value: float) -> None:

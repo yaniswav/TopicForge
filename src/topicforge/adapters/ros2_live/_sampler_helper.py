@@ -225,12 +225,15 @@ def run(args, out_fd, stop, nodes):
         if index % stride.stride:
             write_all(out_fd, encode_frame(KIND_ARRIVAL, {"wall_ns": wall_ns}))
             return
+        # Counted before the size check: an oversized stream must thin too, or every message is
+        # deserialized and the reader's depth overflows while it happens. A stream that mixes
+        # sizes can so return fewer samples than `count`.
+        stride.sent()
         msg = deserialize_message(raw, cls)
         text = message_to_yaml(msg, truncate_length=truncate, no_arr=args.no_arr)
         if args.max_chars is not None and len(text) > args.max_chars:
             write_all(out_fd, encode_frame(KIND_DROPPED, {"wall_ns": wall_ns}))
             return
-        stride.sent()
         meta = {"wall_ns": wall_ns, "encoding": "yaml", "index": index, "stride": stride.stride}
         write_all(out_fd, encode_frame(KIND_MESSAGE, meta, text.encode("utf-8")))
 
