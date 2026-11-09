@@ -1,11 +1,11 @@
 {
   "name": "topicforge",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Read-only ROS 2 and DDS inspection: list topics, sample messages, read bags, find QoS mismatches and see who is on the DDS bus. It cannot publish or command a robot.",
   "mcpServers": {
     "topicforge": {
       "command": "uvx",
-      "args": ["--from", "topicforge[image]==0.9.0", "topicforge"],
+      "args": ["--from", "topicforge[image]==0.10.0", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",

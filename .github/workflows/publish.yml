@@ -124,7 +124,7 @@ jobs:
           from mcp import ClientSession, StdioServerParameters
           from mcp.client.stdio import stdio_client
 
-          EXPECTED_TOOLS = 17
+          EXPECTED_TOOLS = 18
 
 
           async def main() -> None:

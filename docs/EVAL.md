@@ -450,3 +450,63 @@ The agents' feedback, in short:
 - A topic's `frame_id` absent from the TF tree goes unreported (`/scan_edge`, found by sampling).
 - `rt/` DDS topic names sit next to ROS names without explanation, and `get_node_info` is long
   when only `param_diff` matters.
+
+## 0.10.0 campaign (v5)
+
+**Status: run on 2026-11-09** (commit `da46aae`, ROS 2 Jazzy in WSL Ubuntu 24.04, same runner and
+scenarios as the v4 campaign, one blind Sonnet agent per run, eighteen tools). v5 repeats v4 on the
+full 0.10.0 content: the sampling helper is the default backend (`sampling_backend: rclpy`).
+
+### Results: `diagnose` alone
+
+| Scenario | Rank 1 (critical or warning) | Other critical or warning | Time |
+|---|---|---|---|
+| `healthy` | none | none | 19.3 s |
+| `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 26.3 s |
+| `tf_stale` | warning `tf` on `map->odom` | none | 18.6 s |
+| `qos_mismatch` | critical `dds` on `rt/scan_edge` | none | 20.4 s |
+| `restart_loop` | critical `dds` on `/path_planner` | warning `logs` on `/path_planner` | 22.4 s |
+| `declared_drift` | warning `tf` on `arm_link` | none | 19.0 s |
+| `graph_v1_v2` | none | none | 20.4 s |
+
+No check was skipped. Every scenario also has one `info` on `/scan_edge`, whose `frame_id`
+`edge_laser` is really absent from the TF tree of the bench (`graph_v1_v2` a second one, on
+`/scan_v2`). They are `info`, so the healthy robot stays at 0 critical and 0 warning.
+
+### Results: an agent with the eighteen tools, no prompt
+
+| Scenario | Grade | Tool calls (broker) | Sequence |
+|---|---|---|---|
+| `healthy` | correct, no false alarm (the `edge_laser` info reported as a low-severity item) | 4 | `diagnose`, `inspect_tf`, `list_nodes`, `detect_qos_mismatches` |
+| `blocked_executor` | correct | 3 | `list_nodes`, `get_node_info`, `diagnose` |
+| `tf_stale` | correct on `map -> odom`; publisher named only as probable | 4 | `inspect_tf`, `diagnose`, `get_topic_info`, `list_nodes` |
+| `qos_mismatch` | correct (Reliability, both nodes, both fixes) | 2 | `detect_qos_mismatches`, `get_topic_info` |
+| `restart_loop` | correct on the node; count given as 7 starts (truth 8 at first call, 10 at stop) | 2 | `diagnose`, `participant_events` |
+| `declared_drift` | correct (`max_range`, `extra_gain`, `arm_link`) | 2 | `get_node_info` with `param_diff_only`, `inspect_tf` |
+| `graph_v1_v2` | correct (the three changes, nothing else) | 1 | `graph_diff` |
+
+Seven correct diagnoses out of seven, and no false alarm, with the restart count still low. The
+median is 2 calls (v4: 3, 0.9.0: 6, 0.8.0: 12).
+
+Limits of this comparison:
+- It is one run per scenario, so a difference of a call or two is noise.
+- All seven agents were asked to answer in under 250 words, which may reduce the checks they make
+  (in v4 only six were).
+- The scenarios ran one after the other, so a server can see the previous scenario's departure
+  (`tf_stale` reported `/bench_blocked` leaving the bus).
+- No agent chose `get_image` or `window_s`, since no scenario asks for them. They were exercised by
+  hand on the bench robot: `get_image` on `/camera/image_raw` and `/camera/image_raw/compressed`,
+  `sample_messages(window_s=3)` on `/clock` (152 messages). `diagnose(params_file=...)` also ran by
+  hand: one warning naming `extra_gain` and `max_range`. No agent has used it yet.
+- `TOPICFORGE_DDS_DECODE` stayed off here; its real-bus evidence is the `decode` bench job.
+
+The agents' feedback, in short:
+- `diagnose` says "7 different participants", which the reader must turn into restarts, and the
+  count stays below the truth.
+- `participant_events` lists TopicForge's own `/_topicforge_sampler_*` and `/_ros2cli_*`
+  participants without marking them as internal.
+- Nothing maps a TF edge to the node that publishes it, and the TF age differs between `diagnose`
+  and `inspect_tf` (the finding text explains it).
+- `duplicate_count: 1` reads as one duplicate, `pairs_checked: 0` next to a clean result can read as
+  checked, and `inspect_tf` is verbose.
+- `graph_diff` gives no readable time for a snapshot.
