@@ -16,7 +16,7 @@ decoded behind `TOPICFORGE_DDS_DECODE`, off by default. `diagnose` takes the fee
 0.9.0 agent evaluation, URDF checks arrive as fields, and `publish.yml` tests the built wheel
 before publishing. One behaviour change: outside an explicit `TOPICFORGE_MODE=mock`, a missing
 bag path is an error instead of fixture data. The rest is additive, apart from the narrowed
-value declared in `docs/CONTRACT.md` section 9.22 (sections 9.22 to 9.30 cover this release). `tools/list` is 102,955 bytes (0.9.0: 99,634), under the 105,000
+value declared in `docs/CONTRACT.md` section 9.22 (sections 9.22 to 9.30 cover this release). `tools/list` is 102,979 bytes (0.9.0: 99,634), under the 105,000
 ceiling.
 
 ### Added
