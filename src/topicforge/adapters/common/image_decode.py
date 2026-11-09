@@ -1,11 +1,11 @@
 """Turn the raw CDR of one image message into the bytes `get_image` returns. Binding-free.
 
 `sensor_msgs/CompressedImage` passes through byte for byte: JPEG or PNG, told by its signature, not
-by the free-text `format`. `sensor_msgs/Image` goes through Pillow (the `[image]` extra): rgb8, bgr8,
-mono8, and mono16 scaled from its own minimum and maximum to eight bits, resized to `max_edge` and
-encoded as PNG, so an image that fits comes back equal, pixel for pixel. Decoding uses `rosbags`,
-which needs no ROS 2 install, with the store of `ROS_DISTRO`, else Humble; the two image types have
-not changed across distros.
+by the free-text `format`, and only with a plausible size in its header. `sensor_msgs/Image` goes
+through Pillow (the `[image]` extra): rgb8, bgr8, rgba8, bgra8, mono8, and mono16 or 16UC1 scaled
+from its own minimum and maximum to eight bits, resized to `max_edge` and encoded as PNG, so an image
+that fits comes back equal, pixel for pixel. Decoding uses `rosbags`, which needs no ROS 2 install,
+with the store of `ROS_DISTRO`, else Humble; the two image types have not changed across distros.
 """
 
 from __future__ import annotations
@@ -28,7 +28,12 @@ IMAGE_TYPES = frozenset({RAW_TYPE, COMPRESSED_TYPE})
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _JPEG_SIGNATURE = b"\xff\xd8\xff"
 # Bytes per pixel of what Pillow can take after the conversion below.
-_CHANNELS = {"rgb8": 3, "bgr8": 3, "mono8": 1, "mono16": 2}
+_CHANNELS = {"rgb8": 3, "bgr8": 3, "rgba8": 4, "bgra8": 4, "mono8": 1, "mono16": 2, "16UC1": 2}
+# The strings of a message are the publisher's: they must not outgrow the frame they describe.
+_MAX_TEXT_CHARS = 256
+# A header can claim anything in a few bytes; these are above any camera and below a bomb.
+_MAX_COMPRESSED_EDGE = 16384
+_MAX_COMPRESSED_PIXELS = 1 << 26
 _JPEG_FRAME_MARKERS = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
 _JPEG_NO_LENGTH = frozenset({0x01, *range(0xD0, 0xD8)})
 
@@ -70,7 +75,8 @@ def decode_image(
         msg = store.deserialize_cdr(cdr, message_type)
     except Exception as exc:
         raise AdapterError(
-            f"could not decode the {message_type} message of {topic}: {type(exc).__name__}: {exc}"
+            f"could not decode the {message_type} message of {topic}: "
+            f"{type(exc).__name__}: {_capped(str(exc))}"
         ) from exc
     pixels = _compressed(msg) if message_type == COMPRESSED_TYPE else _raw(msg, max_edge)
     if len(pixels.data) > max_bytes:
@@ -83,7 +89,7 @@ def decode_image(
     info = ImageInfo(
         topic=topic,
         message_type=message_type,
-        frame_id=msg.header.frame_id,
+        frame_id=_capped(msg.header.frame_id),
         stamp_ns=stamp.sec * 1_000_000_000 + stamp.nanosec,
         received_ns=received_ns,
         encoding=pixels.encoding,
@@ -99,25 +105,47 @@ def decode_image(
     return CapturedImage(info=info, data=pixels.data)
 
 
+def _capped(text: str) -> str:
+    """`text` at most `_MAX_TEXT_CHARS` long, ending in `...` when it was cut."""
+    return text if len(text) <= _MAX_TEXT_CHARS else f"{text[: _MAX_TEXT_CHARS - 3]}..."
+
+
 def _compressed(msg: Any) -> _Pixels:
     data = msg.data.tobytes()
+    text_format = _capped(msg.format)
     if data.startswith(_PNG_SIGNATURE):
         mime = "image/png"
     elif data.startswith(_JPEG_SIGNATURE):
         mime = "image/jpeg"
     else:
         raise AdapterError(
-            f"this CompressedImage (format {msg.format!r}) is neither JPEG nor PNG: only those two "
+            f"this CompressedImage (format {text_format!r}) is neither JPEG nor PNG: only those two "
             "are returned (`compressedDepth` carries a header before its PNG)."
         )
     width, height = compressed_size(data)
-    return _Pixels(data, mime, msg.format, width, height, width, height)
+    if width is None or height is None:
+        raise AdapterError(
+            f"this CompressedImage (format {text_format!r}) has an image signature but no readable "
+            "size in its header: the frame is cut or is not an image."
+        )
+    if not _plausible_size(width, height):
+        raise AdapterError(
+            f"this CompressedImage announces {width}x{height} pixels, outside 1.."
+            f"{_MAX_COMPRESSED_EDGE} on an edge or over {_MAX_COMPRESSED_PIXELS} pixels: "
+            "it is not returned."
+        )
+    return _Pixels(data, mime, text_format, width, height, width, height)
+
+
+def _plausible_size(width: int, height: int) -> bool:
+    edges_fit = 0 < width <= _MAX_COMPRESSED_EDGE and 0 < height <= _MAX_COMPRESSED_EDGE
+    return edges_fit and width * height <= _MAX_COMPRESSED_PIXELS
 
 
 def compressed_size(data: bytes) -> tuple[int | None, int | None]:
     """Width and height from a PNG or JPEG header, `(None, None)` when it cannot be told."""
     if data.startswith(_PNG_SIGNATURE):
-        if len(data) < 24:
+        if len(data) < 24 or data[12:16] != b"IHDR":
             return None, None
         width, height = struct.unpack(">II", data[16:24])
         return width, height
@@ -143,8 +171,8 @@ def _raw(msg: Any, max_edge: int) -> _Pixels:
     channels = _CHANNELS.get(encoding)
     if channels is None:
         raise AdapterError(
-            f"encoding {encoding!r} is not supported: rgb8, bgr8, mono8 and mono16 are; use a "
-            "`sample_messages` read of the fields for anything else."
+            f"encoding {_capped(encoding)!r} is not supported: rgb8, bgr8, rgba8, bgra8, mono8, "
+            "mono16 and 16UC1 are; use a `sample_messages` read of the fields for anything else."
         )
     row = width * channels
     data = msg.data
@@ -156,8 +184,9 @@ def _raw(msg: Any, max_edge: int) -> _Pixels:
         from PIL import Image as Pillow  # type: ignore[import-not-found]
     except ImportError as exc:
         raise AdapterError(
-            'a raw sensor_msgs/Image needs Pillow: pip install "topicforge[image]" '
-            "(a CompressedImage does not)."
+            "a raw sensor_msgs/Image needs Pillow, in the `image` extra: launch with "
+            '`uvx --from "topicforge[image]" topicforge` or `pip install "topicforge[image]"` '
+            "(a CompressedImage needs neither)."
         ) from exc
     picture = Pillow.fromarray(_pixel_array(data, height, step, row, encoding, msg.is_bigendian))
     longest = max(width, height)
@@ -182,6 +211,10 @@ def _pixel_array(
         return rows.reshape(height, row // 3, 3)
     if encoding == "bgr8":
         return rows.reshape(height, row // 3, 3)[:, :, ::-1]
+    if encoding == "rgba8":
+        return rows.reshape(height, row // 4, 4)
+    if encoding == "bgra8":
+        return rows.reshape(height, row // 4, 4)[:, :, [2, 1, 0, 3]]
     if encoding == "mono8":
         return rows
     wide = rows.tobytes()

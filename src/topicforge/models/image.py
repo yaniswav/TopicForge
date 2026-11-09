@@ -15,7 +15,7 @@ from topicforge.models.schemas import _CONFIG
 
 
 class ImageInfo(BaseModel):
-    """Metadata of one captured image. Sizes are `None` when a compressed header does not say."""
+    """Metadata of one captured image. `frame_id` and `encoding` are cut at 256 characters."""
 
     model_config = _CONFIG
 

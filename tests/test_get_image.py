@@ -9,6 +9,7 @@ import io
 import json
 import struct
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from topicforge.adapters.common.image_decode import (
     decode_image,
 )
 from topicforge.adapters.common.sampler_frames import ENCODING_CDR, KIND_MESSAGE, Frame
+from topicforge.adapters.ros2_live import image_capture
 from topicforge.adapters.ros2_live.echo_stream import EchoRun
 from topicforge.adapters.ros2_live.helper_stream import (
     SamplingBackend,
@@ -51,15 +53,15 @@ _JPEG = (
 )
 
 
-def _header() -> Any:
+def _header(frame_id: str = "cam") -> Any:
     types = _STORE.types
     stamp = types["builtin_interfaces/msg/Time"](sec=3, nanosec=4)
-    return types["std_msgs/msg/Header"](stamp=stamp, frame_id="cam")
+    return types["std_msgs/msg/Header"](stamp=stamp, frame_id=frame_id)
 
 
-def _compressed_cdr(data: bytes, fmt: str = "png") -> bytes:
+def _compressed_cdr(data: bytes, fmt: str = "png", frame_id: str = "cam") -> bytes:
     cls = _STORE.types[COMPRESSED_TYPE]
-    msg = cls(header=_header(), format=fmt, data=np.frombuffer(data, dtype=np.uint8))
+    msg = cls(header=_header(frame_id), format=fmt, data=np.frombuffer(data, dtype=np.uint8))
     return bytes(_STORE.serialize_cdr(msg, COMPRESSED_TYPE))
 
 
@@ -129,6 +131,51 @@ def test_a_cut_header_has_no_size(data: bytes) -> None:
     assert compressed_size(data) == (None, None)
 
 
+def _png_of(width: int, height: int) -> bytes:
+    return _PNG[:16] + struct.pack(">II", width, height) + b"rest"
+
+
+def test_long_publisher_strings_are_cut_in_the_metadata() -> None:
+    capture = _decode(COMPRESSED_TYPE, _compressed_cdr(_PNG, "f" * 100_000, "c" * 100_000))
+    assert len(capture.info.frame_id) == 256 and capture.info.frame_id.endswith("...")
+    assert len(capture.info.encoding) == 256
+    assert len(capture.info.model_dump_json()) < 2_000
+
+
+@pytest.mark.parametrize("kind", [COMPRESSED_TYPE, RAW_TYPE])
+def test_long_publisher_strings_are_cut_in_the_errors(kind: str) -> None:
+    long = "x" * 100_000
+    compressed = kind == COMPRESSED_TYPE
+    cdr = _compressed_cdr(b"\0" * 20, long) if compressed else _raw_cdr(1, 1, long, bytes(3), 3)
+    with pytest.raises(AdapterError) as caught:
+        _decode(kind, cdr)
+    assert len(str(caught.value)) < 700
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"\xff\xd8\xff" + b"garbage" * 3,
+        b"\x89PNG\r\n\x1a\n" + b"not an IHDR chunk at all",
+    ],
+)
+def test_a_signature_without_a_readable_size_is_refused(data: bytes) -> None:
+    with pytest.raises(AdapterError, match="no readable size"):
+        _decode(COMPRESSED_TYPE, _compressed_cdr(data))
+
+
+@pytest.mark.parametrize(
+    ("width", "height"), [(100_000, 100_000), (0, 5), (7, 0), (16385, 1), (16384, 16384)]
+)
+def test_an_implausible_size_is_refused(width: int, height: int) -> None:
+    with pytest.raises(AdapterError, match=f"{width}x{height}"):
+        _decode(COMPRESSED_TYPE, _compressed_cdr(_png_of(width, height)))
+
+
+def test_the_largest_plausible_size_passes() -> None:
+    assert _decode(COMPRESSED_TYPE, _compressed_cdr(_png_of(8192, 8192))).info.width == 8192
+
+
 def test_a_payload_that_is_not_an_image_message_is_an_adapter_error() -> None:
     with pytest.raises(AdapterError, match="could not decode"):
         _decode(RAW_TYPE, b"\0\1\0\0garbage")
@@ -176,6 +223,22 @@ def test_a_flat_mono16_frame_is_black() -> None:
     assert list(_pixels(capture.data)[0]) == [0, 0]
 
 
+def test_16uc1_scales_like_mono16() -> None:
+    pytest.importorskip("PIL")
+    data = np.array([1000, 3000], dtype="<u2").tobytes()
+    capture = _decode(RAW_TYPE, _raw_cdr(2, 1, "16UC1", data, 4))
+    assert list(_pixels(capture.data)[0]) == [0, 255]
+    assert capture.info.encoding == "16UC1"
+
+
+def test_rgba8_keeps_its_pixels_and_bgra8_is_reordered() -> None:
+    pytest.importorskip("PIL")
+    rgba = _decode(RAW_TYPE, _raw_cdr(1, 1, "rgba8", bytes([1, 2, 3, 4]), 4))
+    assert _pixels(rgba.data).tobytes() == bytes([1, 2, 3, 4])
+    bgra = _decode(RAW_TYPE, _raw_cdr(1, 1, "bgra8", bytes([1, 2, 3, 4]), 4))
+    assert _pixels(bgra.data).tobytes() == bytes([3, 2, 1, 4])
+
+
 def test_a_large_frame_is_resized_keeping_its_shape() -> None:
     pytest.importorskip("PIL")
     capture = _decode(RAW_TYPE, _raw_cdr(640, 480, "rgb8", bytes(640 * 480 * 3), 1920))
@@ -206,8 +269,9 @@ def test_inconsistent_sizes_are_refused(width: int, height: int, step: int, size
 
 def test_without_pillow_the_error_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "PIL", None)
-    with pytest.raises(AdapterError, match=r"topicforge\[image\]"):
+    with pytest.raises(AdapterError, match=r"topicforge\[image\]") as caught:
         _decode(RAW_TYPE, _raw_cdr(1, 1, "rgb8", bytes(3), 3))
+    assert "uvx --from" in str(caught.value) and "pip install" in str(caught.value)
 
 
 # ----- the helper -----
@@ -292,6 +356,38 @@ def test_a_non_image_topic_is_refused() -> None:
 def test_nothing_arriving_says_why(publishers: int, reliability: str, needle: str) -> None:
     qos = ["--qos-reliability", reliability]
     assert needle in _nothing_arrived("/c", publishers, 1.0, qos)
+
+
+@pytest.mark.parametrize("publishers", [1, 0])
+def test_the_lookup_comes_out_of_the_wait(monkeypatch: pytest.MonkeyPatch, publishers: int) -> None:
+    seen: dict[str, float] = {}
+
+    def stream(cmd: list[str], *, count: int, deadline_s: float) -> EchoRun:
+        seen["deadline_s"] = deadline_s
+        return EchoRun()
+
+    def slow_info(topic: str, timeout: float) -> TopicInfo:
+        time.sleep(0.2)
+        return TopicInfo(
+            name=topic,
+            message_type=COMPRESSED_TYPE,
+            publisher_count=publishers,
+            subscriber_count=0,
+            mode_effective="live",
+        )
+
+    monkeypatch.setattr(image_capture, "stream_helper", stream)
+    with pytest.raises(AdapterError, match="No image arrived"):
+        image_capture.capture_image(
+            "/c",
+            topic_info=slow_info,
+            mode="live",
+            backend=SamplingBackend("rclpy", python=sys.executable),
+            max_edge=512,
+            max_bytes=10**7,
+            timeout_s=1.0,
+        )
+    assert 0.5 <= seen["deadline_s"] <= 0.85
 
 
 def test_a_silent_topic_is_an_error_not_an_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:

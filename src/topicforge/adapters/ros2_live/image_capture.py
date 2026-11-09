@@ -6,6 +6,8 @@ helper exists to avoid. Wired like `sampler.sample_messages`: the adapter hands 
 
 from __future__ import annotations
 
+import time
+
 from topicforge import budget as call_budget
 from topicforge.adapters.base import AdapterError, EffectiveMode
 from topicforge.adapters.common.image_decode import IMAGE_TYPES, decode_image
@@ -16,6 +18,7 @@ from topicforge.adapters.ros2_live.helper_stream import (
     stream_helper,
 )
 from topicforge.adapters.ros2_live.sampler import (
+    MIN_ECHO_SEC,
     NO_PUBLISHER_WAIT_SEC,
     STOP_RESERVE_SEC,
     TopicInfoFn,
@@ -39,13 +42,14 @@ def capture_image(
     max_bytes: int,
     timeout_s: float,
 ) -> CapturedImage:
-    """One frame of `topic` within `timeout_s`, under the publishers' QoS."""
+    """One frame of `topic` within `timeout_s`, lookup included, under the publishers' QoS."""
     if backend.kind != "rclpy" or not backend.python:
         raise AdapterError(
             "`get_image` needs the sampling helper, and this server samples with the `ros2` CLI "
             f"({backend.note or 'no helper'}). Check `TOPICFORGE_ROS_SAMPLER` and "
             "`TOPICFORGE_ROS_PYTHON`."
         )
+    started = time.monotonic()
     timeout_s = call_budget.clamp(timeout_s, STOP_RESERVE_SEC)
     if timeout_s <= 0:
         raise AdapterError("busy: no time left in this call's budget for sampling, retry")
@@ -55,7 +59,8 @@ def capture_image(
             f"{topic} is {info.message_type}: `get_image` reads sensor_msgs/Image and "
             "CompressedImage. `sample_messages` reads any other type."
         )
-    wait_s = timeout_s if info.publisher_count > 0 else min(timeout_s, NO_PUBLISHER_WAIT_SEC)
+    left = timeout_s - (time.monotonic() - started)
+    wait_s = max(left if info.publisher_count else min(left, NO_PUBLISHER_WAIT_SEC), MIN_ECHO_SEC)
     qos = echo_qos_args(info)
     cmd = helper_command(
         backend.python,
