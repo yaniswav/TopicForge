@@ -1284,7 +1284,8 @@ Additive. `tools/list` grows by 467 bytes, to 97,315 (measured like `test_tool_l
   those participants are counted in `restarts_note`, which points to `restarts_by_node`.
 - `min_log_level` accepts any case and `warning`; the schema keeps the lower-case enum.
 - `param_diff_summary` names the `same` and `live_only` parameters, up to ten each:
-  `1 same (frame_id), 1 live_only (use_sim_time)`.
+  `1 same (frame_id), 1 live_only (use_sim_time)`. Since 0.11.0 a sentence follows when
+  `live_only` is not 0 (section 9.31).
 - A filtered `/rosout` read that received nothing says so in one note.
 - `inspect_tf` reads the URDF from the robot_state_publisher parameter when no node publishes
   `/robot_description` (section 9.15).
@@ -1795,6 +1796,7 @@ Additive (1.9), no new tool. `tools/list` goes from 102,979 to 103,252 bytes.
 - `get_node_info(params_file=...)`: when `live_only` is not 0, `param_diff_summary` ends with
   `: live_only means set on the node and absent from the file, not a difference`. In the v6
   evaluation an agent reported a `live_only` parameter as a gap.
+  The field is free text: a client that compares it exactly sees a new value.
 - `diagnose`: a restart loop reads `/<node> restarted at least N times in the last 300 s (N+1
   participants carried its name)`, a floor since the server sees only the lives after it joined,
   instead of `appeared with N+1 different participants`. The count itself was right: the v5

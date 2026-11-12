@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [0.11.0] - 2026-11-12
 
-Follow-ups of the 0.10.0 agent evaluation (v5) and of the OmniSim run. No new tool; everything is
+Follow-ups of the 0.10.0 agent evaluation (v5) and of the OmniSim run. No new tool; the schema changes are
 additive (`docs/CONTRACT.md` section 9.31). `tools/list` is 103,252 bytes (0.10.0: 102,979), under
 the 105,000 ceiling. Evaluation v6 is in `docs/EVAL.md`.
 
