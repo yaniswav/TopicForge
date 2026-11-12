@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="command that starts the server (default: this Python with -m topicforge)",
     )
     ap.add_argument("--mode", default="live", choices=("live", "mock", "auto"))
-    ap.add_argument("--dds-backend", default="cyclone", help="mock, cyclone, fast or auto")
+    ap.add_argument("--dds-backend", default="cyclone", help="mock, cyclone or auto")
     ap.add_argument("--env", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--calls-log", type=Path, default=None, help="append one JSON line per request")
     return ap

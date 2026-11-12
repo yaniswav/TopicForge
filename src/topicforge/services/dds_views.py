@@ -94,7 +94,11 @@ def restarts_from_events(
 
 
 def flag_own_events(events: list[ParticipantEvent]) -> list[ParticipantEvent]:
-    """Copies of `events` with `is_topicforge_cli` set when a node name is TopicForge's own."""
+    """Copies of `events` with `is_topicforge_cli` set for a `ros2` CLI or sampler-helper node.
+
+    Name-based: a user's own `ros2` command is flagged too, unlike `list_participants`, which
+    matches the pids TopicForge spawned. Either way it is tooling, not a robot node.
+    """
     return [
         e.model_copy(update={"is_topicforge_cli": True})
         if any(is_own_node(n) for n in e.node_names)

@@ -369,7 +369,7 @@ class ParticipantEvent(BaseModel):
     )
     is_topicforge_cli: bool = Field(
         default=False,
-        description="True when `node_names` show TopicForge's own `ros2` CLI or helper; not the robot.",
+        description="True when `node_names` show a `ros2` CLI or TopicForge helper node: tooling, not the robot.",
     )
 
 
