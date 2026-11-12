@@ -1774,3 +1774,17 @@ Additive (1.9). The slot reserved in section 9.21. Read-only annotations, open w
   size drop on Fast DDS, yet the first one still came within about 2 s in 9 calls of 9. Across
   a real network it may be worse: this was not measured.
 
+### 9.31 Evaluation v5 follow-ups (0.10.1)
+
+Additive (1.9), no new tool.
+
+- `participant_events`: each event gains `is_topicforge_cli` (default `false`), true when its
+  `node_names` hold a `/_ros2cli_<pid>` or `/_topicforge_sampler_<pid>` node, the same processes
+  `list_participants` flags. Name-based only: an event whose node names are unknown stays `false`.
+- `graph_diff`: `current` and `baseline` gain `taken_utc`, `taken_ns` as ISO 8601 UTC to the second.
+- `detect_qos_mismatches`: when `pairs_checked` is 0, `summary` ends with `No reader-writer pair
+  with QoS in scope: nothing was compared.`, so an empty scan cannot read as a clean one.
+- `analyze_bag.anomalies`: the line for topics silent together ends with `a recording pause or a
+  stall of the source (e.g. a simulator)` instead of `possibly a recording pause` (section 9.25).
+  A stall of the simulator was shown on the OmniSim bag: sim time advanced 0.096 s over a 2.13 s gap.
+- `list_nodes` and `get_node_info`: the `duplicate_count` description says that 1 means unique.

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `participant_events` marks TopicForge's own `ros2` CLI and sampling-helper participants with
+  `is_topicforge_cli` (`docs/CONTRACT.md` section 9.31).
+- `graph_diff` gives each snapshot a readable `taken_utc`.
+
+### Changed
+
+- `detect_qos_mismatches` says when no pair was compared, so an empty scan cannot read as clean.
+- `analyze_bag` no longer calls a group silence "possibly a recording pause": a stall of the
+  source, such as a simulator, gives the same gap.
+- `duplicate_count` says that 1 means unique.
+
 ## [0.10.0] - 2026-11-09
 
 The largest release so far. `get_image` is tool 18. `sample_messages` runs on a short-lived
