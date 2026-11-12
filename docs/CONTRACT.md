@@ -1782,6 +1782,8 @@ Additive (1.9), no new tool.
   `node_names` hold a `/_ros2cli_<pid>` or `/_topicforge_sampler_<pid>` node: tooling, not a robot
   node. Name-based only, so a user's own `ros2` command is flagged too (`list_participants` matches
   the pids TopicForge spawned); an event whose node names are unknown stays `false`.
+  The `ros2` daemon (`/_ros2cli_daemon_<domain>_<hash>`) stays `false`: one long-lived
+  participant, not the churn of short CLI calls.
 - `graph_diff`: `current` and `baseline` gain `taken_utc`, `taken_ns` as ISO 8601 UTC to the second.
 - `detect_qos_mismatches`: when `pairs_checked` is 0, `summary` ends with `No reader-writer pair
   with QoS in scope: nothing was compared.`, so an empty scan cannot read as a clean one.
