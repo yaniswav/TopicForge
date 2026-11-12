@@ -28,7 +28,9 @@ class GraphSnapshotRef(BaseModel):
     id: str = Field(description="`snap-N` or the bag path.")
     source: Literal["live", "bag"] = Field()
     taken_ns: int = Field()
-    taken_utc: str | None = Field(default=None, description="`taken_ns` as ISO 8601 UTC.")
+    taken_utc: str | None = Field(
+        default=None, description="`taken_ns` as ISO 8601 UTC (a bag: when read)."
+    )
     path: str | None = Field(default=None, description="`null` for live.")
     node_count: int | None = Field(default=None, description="`null` for a bag.")
     topic_count: int = Field(ge=0)

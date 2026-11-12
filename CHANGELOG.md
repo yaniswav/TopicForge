@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
-- `participant_events` marks TopicForge's own `ros2` CLI and sampling-helper participants with
-  `is_topicforge_cli` (`docs/CONTRACT.md` section 9.31).
+- `participant_events` marks `ros2` CLI and sampling-helper participants (tooling, not the robot)
+  with `is_topicforge_cli`. On events the match is by node name, so a user's own `ros2` command
+  is marked too (`docs/CONTRACT.md` section 9.31).
 - `graph_diff` gives each snapshot a readable `taken_utc`.
 
 ### Changed

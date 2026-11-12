@@ -1776,7 +1776,7 @@ Additive (1.9). The slot reserved in section 9.21. Read-only annotations, open w
 
 ### 9.31 Evaluation v5 follow-ups (0.11.0)
 
-Additive (1.9), no new tool.
+Additive (1.9), no new tool. `tools/list` goes from 102,979 to 103,252 bytes.
 
 - `participant_events`: each event gains `is_topicforge_cli` (default `false`), true when its
   `node_names` hold a `/_ros2cli_<pid>` or `/_topicforge_sampler_<pid>` node: tooling, not a robot
@@ -1784,7 +1784,8 @@ Additive (1.9), no new tool.
   the pids TopicForge spawned); an event whose node names are unknown stays `false`.
   The `ros2` daemon (`/_ros2cli_daemon_<domain>_<hash>`) stays `false`: one long-lived
   participant, not the churn of short CLI calls.
-- `graph_diff`: `current` and `baseline` gain `taken_utc`, `taken_ns` as ISO 8601 UTC to the second.
+- `graph_diff`: `current` and `baseline` gain `taken_utc`, `taken_ns` as ISO 8601 UTC to the second;
+  for a bag it is when the bag was read, not when it was recorded.
 - `detect_qos_mismatches`: when `pairs_checked` is 0, `summary` ends with `No reader-writer pair
   with QoS in scope: nothing was compared.`, so an empty scan cannot read as a clean one.
 - `analyze_bag.anomalies`: the line for topics silent together ends with `a recording pause or a

@@ -226,6 +226,14 @@ def test_the_calls_log_has_one_line_per_request_and_feeds_the_summary(tmp_path: 
     assert summary["sequence"] == ["graph_diff", "get_node_info"]
 
 
+def test_a_call_is_stamped_at_its_start_for_the_ground_truth(tmp_path: Path) -> None:
+    log = tmp_path / "calls.jsonl"
+    broker.log_call(log, {"tool": "diagnose", "args": {}}, {}, started=100.0)
+    entry = json.loads(log.read_text())
+    assert entry["t"] == 100.0 and entry["t_end"] > 100.0
+    assert scenarios.first_call_time(log.read_text().splitlines(), 50.0) == 100.0
+
+
 # ---- bench faults ------------------------------------------------------------------------
 
 
