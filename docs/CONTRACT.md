@@ -1792,6 +1792,9 @@ Additive (1.9), no new tool. `tools/list` goes from 102,979 to 103,252 bytes.
   stall of the source (e.g. a simulator)` instead of `possibly a recording pause` (section 9.25).
   A stall of the simulator was shown on the OmniSim bag: sim time advanced 0.096 s over a 2.13 s gap.
 - `list_nodes` and `get_node_info`: the `duplicate_count` description says that 1 means unique.
+- `get_node_info(params_file=...)`: when `live_only` is not 0, `param_diff_summary` ends with
+  `: live_only means set on the node and absent from the file, not a difference`. In the v6
+  evaluation an agent reported a `live_only` parameter as a gap.
 - `diagnose`: a restart loop reads `/<node> restarted at least N times in the last 300 s (N+1
   participants carried its name)`, a floor since the server sees only the lives after it joined,
   instead of `appeared with N+1 different participants`. The count itself was right: the v5
