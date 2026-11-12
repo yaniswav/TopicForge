@@ -1404,7 +1404,7 @@ def test_a_restart_loop_without_a_ros2_cli_suggests_no_rosout_command() -> None:
 def test_a_loop_still_going_says_its_count_is_as_of_the_sweep() -> None:
     # Eval shape: 7 lives when the check ran, 10 discoveries a sweep later (a restart every 6 s).
     going = _by(_restarting(7, 5, every_s=6).diagnose(), "dds", "critical")[0].text
-    assert "appeared with 7 different participants" in going
+    assert "restarted 6 times (7 participants carried its name)" in going
     assert "may differ on a later call" in going
     over = _by(_restarting(7, 400, every_s=6).diagnose(), "dds", "critical")[0].text
     assert "may differ on a later call" not in over

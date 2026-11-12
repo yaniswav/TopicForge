@@ -541,7 +541,8 @@ def _restart_findings(
                 "dds",
                 f"/{name}",
                 (
-                    f"/{name} appeared with {count} different participants: a restart loop."
+                    f"/{name} restarted {count - 1} times ({count} participants carried its name): "
+                    "a restart loop."
                     if loop
                     else f"/{name} restarted once (2 participants carried its name)."
                 )

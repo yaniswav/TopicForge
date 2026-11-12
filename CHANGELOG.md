@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `analyze_bag` no longer calls a group silence "possibly a recording pause": a stall of the
   source, such as a simulator, gives the same gap.
 - `duplicate_count` says that 1 means unique.
+- `diagnose` counts a restart loop in restarts, not in participants.
+- Agent evaluation: `calls.jsonl` stamps a call when it starts (`t`) and ends (`t_end`), so the
+  restart ground truth matches what `diagnose` saw.
 
 ## [0.10.0] - 2026-11-09
 

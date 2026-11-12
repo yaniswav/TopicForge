@@ -1788,3 +1788,6 @@ Additive (1.9), no new tool.
   stall of the source (e.g. a simulator)` instead of `possibly a recording pause` (section 9.25).
   A stall of the simulator was shown on the OmniSim bag: sim time advanced 0.096 s over a 2.13 s gap.
 - `list_nodes` and `get_node_info`: the `duplicate_count` description says that 1 means unique.
+- `diagnose`: a restart loop reads `/<node> restarted N times (N+1 participants carried its name)`
+  instead of `appeared with N+1 different participants`. The count itself was right: the v5
+  evaluation compared it with the restarts at the end of the call, not at its start.
