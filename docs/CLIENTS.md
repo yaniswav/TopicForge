@@ -6,7 +6,7 @@ TopicForge (ROS 2 / DDS) is a local, read-only MCP server that speaks stdio.
 Every client below launches it as a child process with the same command:
 
 ```
-uvx --from "topicforge==0.10.0" topicforge
+uvx --from "topicforge==0.11.0" topicforge
 ```
 
 To read raw `sensor_msgs/Image` topics with `get_image`, install Pillow too: replace the package
@@ -24,7 +24,7 @@ The registry name is `io.github.yaniswav/topicforge`. Where a client asks for a
 display name, use **TopicForge (ROS 2 / DDS)**: an unrelated SEO product is also
 called TopicForge in the MCP registries.
 
-The version pin (`==0.10.0`) is moved on every release together with the other
+The version pin (`==0.11.0`) is moved on every release together with the other
 version strings; a test keeps them in sync.
 
 ## Before you start
@@ -47,7 +47,7 @@ version strings; a test keeps them in sync.
   `"--from"` in the args. To build the binding yourself, install the Cyclone C library and
   run `pip install "topicforge[dds]"`. The `[dds]` and `[dds-cyclone]` extras still work
   as aliases, so older commands keep installing.
-- **pip alternative.** `pip install "topicforge==0.10.0"`, then use
+- **pip alternative.** `pip install "topicforge==0.11.0"`, then use
   `"command": "topicforge"` (or `"command": "python", "args": ["-m", "topicforge"]`)
   with no `args` for uvx. Use the absolute path of the binary if the client does
   not see your venv.
@@ -75,7 +75,7 @@ say where the file lives and what differs.
   "mcpServers": {
     "topicforge": {
       "command": "uvx",
-      "args": ["--from", "topicforge==0.10.0", "topicforge"],
+      "args": ["--from", "topicforge==0.11.0", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
@@ -98,7 +98,7 @@ claude plugin install topicforge@topicforge
 Or just the server:
 
 ```
-claude mcp add topicforge --env TOPICFORGE_MODE=auto --env TOPICFORGE_DDS_BACKEND=cyclone --env TOPICFORGE_DDS_DOMAIN_ID=0 -- uvx --from "topicforge==0.10.0" topicforge
+claude mcp add topicforge --env TOPICFORGE_MODE=auto --env TOPICFORGE_DDS_BACKEND=cyclone --env TOPICFORGE_DDS_DOMAIN_ID=0 -- uvx --from "topicforge==0.11.0" topicforge
 ```
 
 ## Claude Desktop
@@ -115,9 +115,9 @@ the common JSON shape above and restart the app completely. On Windows, if
 
 The one-click links in this page and in the README are https redirects, because GitHub and PyPI strip `cursor://` and `vscode:` links. Only the raw schemes are documented by Cursor and VS Code; the https forms (`cursor.com/install-mcp`, `vscode.dev/redirect/mcp/install`) were observed to redirect correctly on 2026-10-06 but are not in the vendors' docs (unverified, last checked 2026-10-06). The raw links are given as a fallback.
 
-One click: [Add TopicForge to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjEwLjAiLCJ0b3BpY2ZvcmdlIl0sImVudiI6eyJUT1BJQ0ZPUkdFX01PREUiOiJhdXRvIiwiVE9QSUNGT1JHRV9ERFNfQkFDS0VORCI6ImN5Y2xvbmUiLCJUT1BJQ0ZPUkdFX0REU19ET01BSU5fSUQiOiIwIn19)
+One click: [Add TopicForge to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjExLjAiLCJ0b3BpY2ZvcmdlIl0sImVudiI6eyJUT1BJQ0ZPUkdFX01PREUiOiJhdXRvIiwiVE9QSUNGT1JHRV9ERFNfQkFDS0VORCI6ImN5Y2xvbmUiLCJUT1BJQ0ZPUkdFX0REU19ET01BSU5fSUQiOiIwIn19)
 
-If that page does not open Cursor, use the raw deeplink: `cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjEwLjAiLCJ0b3BpY2ZvcmdlIl0sImVudiI6eyJUT1BJQ0ZPUkdFX01PREUiOiJhdXRvIiwiVE9QSUNGT1JHRV9ERFNfQkFDS0VORCI6ImN5Y2xvbmUiLCJUT1BJQ0ZPUkdFX0REU19ET01BSU5fSUQiOiIwIn19`
+If that page does not open Cursor, use the raw deeplink: `cursor://anysphere.cursor-deeplink/mcp/install?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjExLjAiLCJ0b3BpY2ZvcmdlIl0sImVudiI6eyJUT1BJQ0ZPUkdFX01PREUiOiJhdXRvIiwiVE9QSUNGT1JHRV9ERFNfQkFDS0VORCI6ImN5Y2xvbmUiLCJUT1BJQ0ZPUkdFX0REU19ET01BSU5fSUQiOiIwIn19`
 
 Or paste the common JSON shape into `~/.cursor/mcp.json` (all projects) or
 `.cursor/mcp.json` (one project).
@@ -128,9 +128,9 @@ The `plugin/` folder of this repository is also an [Agent Plugins](https://agent
 
 ## VS Code / GitHub Copilot
 
-One click: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.10.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)
+One click: [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.11.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D)
 
-Fallback, the raw URL handler: `vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.10.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D`
+Fallback, the raw URL handler: `vscode:mcp/install?%7B%22name%22%3A%22topicforge%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.11.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D`
 
 Or put this in `.vscode/mcp.json` (the key is `servers`, not `mcpServers`), or run
 "MCP: Add Server" from the Command Palette:
@@ -141,7 +141,7 @@ Or put this in `.vscode/mcp.json` (the key is `servers`, not `mcpServers`), or r
     "topicforge": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "topicforge==0.10.0", "topicforge"],
+      "args": ["--from", "topicforge==0.11.0", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
@@ -170,7 +170,7 @@ Servers", and paste the common JSON shape (the file is
 Project file `.roo/mcp.json` (takes precedence) or the global `mcp_settings.json`
 opened from the MCP view. Paste the common JSON shape. Roo's docs say Windows
 needs a `cmd /c` wrapper for `npx`; for `uvx`, try it directly first and fall back
-to `"command": "cmd", "args": ["/c", "uvx", "--from", "topicforge==0.10.0",
+to `"command": "cmd", "args": ["/c", "uvx", "--from", "topicforge==0.11.0",
 "topicforge"]` if it fails to start.
 
 ## Continue
@@ -187,7 +187,7 @@ mcpServers:
     command: uvx
     args:
       - "--from"
-      - "topicforge==0.10.0"
+      - "topicforge==0.11.0"
       - "topicforge"
     env:
       TOPICFORGE_MODE: auto
@@ -204,7 +204,7 @@ In `settings.json`, under `context_servers`:
   "context_servers": {
     "topicforge": {
       "command": "uvx",
-      "args": ["--from", "topicforge==0.10.0", "topicforge"],
+      "args": ["--from", "topicforge==0.11.0", "topicforge"],
       "env": {
         "TOPICFORGE_MODE": "auto",
         "TOPICFORGE_DDS_BACKEND": "cyclone",
@@ -230,7 +230,7 @@ run with the dds extra can exceed, so set it to 60 s:
 ```toml
 [mcp_servers.topicforge]
 command = "uvx"
-args = ["--from", "topicforge==0.10.0", "topicforge"]
+args = ["--from", "topicforge==0.11.0", "topicforge"]
 startup_timeout_sec = 60
 
 [mcp_servers.topicforge.env]
@@ -261,7 +261,7 @@ extensions:
     name: TopicForge (ROS 2 / DDS)
     type: stdio
     cmd: uvx
-    args: [--from, "topicforge==0.10.0", topicforge]
+    args: [--from, "topicforge==0.11.0", topicforge]
     enabled: true
     envs: { "TOPICFORGE_MODE": "auto", "TOPICFORGE_DDS_BACKEND": "cyclone", "TOPICFORGE_DDS_DOMAIN_ID": "0" }
     timeout: 300
@@ -370,7 +370,7 @@ when the question matches.
 
 ## Troubleshooting
 
-- Run the command by hand first: `uvx --from "topicforge==0.10.0" topicforge --version`.
+- Run the command by hand first: `uvx --from "topicforge==0.11.0" topicforge --version`.
 - Server starts but sees no DDS participants: check the domain id, and that the
   client machine is on the same network as the robot (DDS discovery uses
   multicast UDP). Ask the assistant to call `health_check`.

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-12
+
+Follow-ups of the 0.10.0 agent evaluation (v5) and of the OmniSim run. No new tool; everything is
+additive (`docs/CONTRACT.md` section 9.31). `tools/list` is 103,252 bytes (0.10.0: 102,979), under
+the 105,000 ceiling. Evaluation v6 is in `docs/EVAL.md`.
+
 ### Added
 
 - `participant_events` marks `ros2` CLI and sampling-helper participants (tooling, not the robot)
@@ -2108,7 +2114,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1
