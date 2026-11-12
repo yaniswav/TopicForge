@@ -1526,7 +1526,7 @@ Additive except where stated (1.9). `tools/list` goes from 101,117 to 101,504 by
     Time before the first message is not a gap. Commands, events, goals, latched topics, `/clock`,
     `/tf_static`, `/rosout`, `/parameter_events` and rosbag2 internals are not judged. Two or more
     series silent over the same span are one line: `K of N topics silent together for X s at t=a
-    (...), possibly a recording pause`;
+    (...), a recording pause or a stall of the source (e.g. a simulator)`;
   - `/tf <parent>-><child>: no message for ...` for an edge of 20 messages or more, with a stable
     rhythm (90th percentile within 2 x the median) that spans at least 80% of the `/tf` span, and a
     gap above max(10 x its median period, 0.5 s). Edges that appear for part of the recording

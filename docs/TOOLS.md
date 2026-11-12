@@ -179,7 +179,7 @@ ROS 2 graph only; on a DDS-only setup use `list_participants`. Describe one ROS 
 | `use_sim_time` | `boolean \| null` | no | Value of the node's `use_sim_time` parameter. `None` when unknown: see `use_sim_time_note`. |
 | `use_sim_time_note` | `string \| null` | no | Why `use_sim_time` is `None`. `None` when it is set. |
 | `lifecycle` | `bool` | no | True when `service_servers` has `<full_name>/get_state` (GetState). |
-| `duplicate_count` | `int` | yes | Nodes using this exact full name; above 1, the data above belongs to one of them. |
+| `duplicate_count` | `int` | yes | Nodes using this exact full name (1: unique); above 1, the data above belongs to one of them. |
 | `mode_effective` | `"mock" \| "live"` | yes | `live` or `mock` (fixtures). |
 | `note` | `string \| null` | no | One sentence of context, or `None`. |
 | `param_diff` | `array \| null` | no | File against node: differences only. |

@@ -482,7 +482,12 @@ def scan_endpoints(
     reports.sort(key=lambda r: r.severity != "incompatible")
     totals = (len(reports), len(matched), len(not_matched))
     return MismatchScan(
-        summary=scan_summary(reports, not_matched, len(matched)),
+        summary=scan_summary(reports, not_matched, len(matched))
+        + (
+            ""
+            if pairs_checked
+            else " No reader-writer pair with QoS in scope: nothing was compared."
+        ),
         reports=reports[:MAX_ITEMS],
         matched=matched[:MAX_ITEMS],
         not_matched=not_matched[:MAX_ITEMS],

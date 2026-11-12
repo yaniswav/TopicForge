@@ -222,6 +222,12 @@ def test_summary_cannot_be_read_as_all_clear_when_pairs_are_not_matched() -> Non
     assert "0 pairs will match" in scan.summary
 
 
+def test_summary_says_when_no_pair_was_compared() -> None:
+    scan = scan_endpoints([_ep("writer", [""], 2)])
+    assert scan.pairs_checked == 0
+    assert scan.summary is not None and "nothing was compared" in scan.summary
+
+
 def test_summary_of_a_clean_scan_and_of_the_mock(inspector: Inspector) -> None:
     clean = scan_endpoints([_ep("reader", [""], 1), _ep("writer", [""], 2)])
     assert (
