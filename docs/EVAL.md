@@ -581,7 +581,13 @@ is 2 calls (v5: 2, v4: 3, 0.9.0: 6, 0.8.0: 12); the sum is 19 (v5: 18).
   with a fresh agent, was correct in 2 calls: it listed the three live-only parameters under
   their `live_only` label, called two of them ROS defaults, and called none a fault. Its feedback
   made the same point about `param_diff_only`: the live-only entries are in the summary string
-  only, and it had to merge the two.
+  only, and it had to merge the two. After this run, `param_diff_summary` gained `: live_only
+  means set on the node and absent from the file, not a difference` (`c5df981`). Three more fresh
+  agents on that commit were correct, with no false alarm (2, 3 and 2 calls); all three quoted the
+  sentence as the reason they left the live-only parameters out. Their remaining feedback: null
+  `parameters` with `param_diff_only` looks like a failure, `inspect_tf` is long for this
+  question, and the `urdf_path` error could say that the default already reads
+  `/robot_description`.
 - **`restart_loop` count.** The agent's first call was `diagnose`, and it gave the count from that
   call: "at least 6 times (7 participants)". The flapper log has 6 restarts at the start of that
   call and 8 at its end (the call took 22.6 s). The v4 and v5 remark that the restart count stays
