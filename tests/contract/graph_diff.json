@@ -129,7 +129,7 @@
             "type": "integer"
           },
           "taken_utc": {
-            "description": "`taken_ns` as ISO 8601 UTC.",
+            "description": "`taken_ns` as ISO 8601 UTC (a bag: when read).",
             "type": [
               "string",
               "null"
