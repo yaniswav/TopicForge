@@ -367,6 +367,10 @@ class ParticipantEvent(BaseModel):
         default_factory=list,
         description="ROS node names of the participant, resolved when read; empty if unknown.",
     )
+    is_topicforge_cli: bool = Field(
+        default=False,
+        description="True when `node_names` show TopicForge's own `ros2` CLI or helper; not the robot.",
+    )
 
 
 class ParticipantEventListing(BaseModel):

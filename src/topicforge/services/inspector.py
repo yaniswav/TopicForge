@@ -61,6 +61,7 @@ from topicforge.services.dds_views import (
     compact_endpoints,
     domain_note,
     endpointless_note,
+    flag_own_events,
     join_notes,
     restarts_from_events,
     restarts_from_nodes,
@@ -393,7 +394,7 @@ class Inspector:
         seconds = DEFAULT_LOOKBACK_SECONDS if lookback_s is None else lookback_s
         _validate_lookback_s(seconds)
         self._await_dds()
-        events = self._adapter.participant_events(domain_id, seconds)
+        events = flag_own_events(self._adapter.participant_events(domain_id, seconds))
         restarts, restarts_note = restarts_from_events(events)
         if self._adapter.effective_mode == "live":
             events = with_event_ages(events, self._clock_ns())

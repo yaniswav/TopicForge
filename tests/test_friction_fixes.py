@@ -139,6 +139,23 @@ def test_participant_events_carry_restarts_and_ages() -> None:
     assert ages["nav0discovered"] == 110.0 and ages["nav0lost"] == 105.0
 
 
+def test_own_participants_are_flagged_in_events() -> None:
+    from topicforge.services.dds_views import flag_own_events
+
+    def ev(node: str) -> ParticipantEvent:
+        return ParticipantEvent(
+            guid=node,
+            event_type="discovered",
+            vendor="cyclone",
+            timestamp_ns=1,
+            domain_id=0,
+            node_names=[node],
+        )
+
+    out = flag_own_events([ev("/_topicforge_sampler_12"), ev("/_ros2cli_34"), ev("/planner")])
+    assert [e.is_topicforge_cli for e in out] == [True, True, False]
+
+
 def test_event_age_is_clamped_at_zero() -> None:
     inspector = Inspector(_RestartLoop(), clock_ns=lambda: 1 * NS)
     assert all(e.age_s == 0 for e in inspector.participant_events(0, 300).events)
