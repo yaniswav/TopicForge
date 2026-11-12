@@ -1,6 +1,6 @@
 # TopicForge plugin for Claude
 
-TopicForge is a read-only MCP server for ROS 2 and DDS. This plugin bundles the server with two short skills so Claude can inspect a robot stack and diagnose a DDS bus. It cannot publish, command a robot, or change QoS: the server has no write path.
+TopicForge is a read-only MCP server for ROS 2 and DDS. This plugin bundles the server with three short skills so Claude can inspect a robot stack and diagnose a DDS bus. It cannot publish, command a robot, or change QoS: the server has no write path.
 
 ## What is included
 
