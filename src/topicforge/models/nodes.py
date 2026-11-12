@@ -33,7 +33,7 @@ class NodeListItem(BaseModel):
     duplicate_count: int = Field(
         ge=1,
         description=(
-            "Nodes using this exact full name; above 1, name-based tools answer for one of them."
+            "Nodes using this exact full name (1: unique); above 1, name-based tools answer for one of them."
         ),
     )
     lifecycle: bool = Field(
@@ -187,7 +187,7 @@ class NodeInfo(BaseModel):
     duplicate_count: int = Field(
         ge=1,
         description=(
-            "Nodes using this exact full name; above 1, the data above belongs to one of them."
+            "Nodes using this exact full name (1: unique); above 1, the data above belongs to one of them."
         ),
     )
     mode_effective: Literal["mock", "live"] = Field(description=_MODE_EFFECTIVE_DESC)

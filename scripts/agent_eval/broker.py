@@ -96,19 +96,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="command that starts the server (default: this Python with -m topicforge)",
     )
     ap.add_argument("--mode", default="live", choices=("live", "mock", "auto"))
-    ap.add_argument("--dds-backend", default="cyclone", help="mock, cyclone, fast or auto")
+    ap.add_argument("--dds-backend", default="cyclone", help="mock, cyclone or auto")
     ap.add_argument("--env", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--calls-log", type=Path, default=None, help="append one JSON line per request")
     return ap
 
 
-def log_call(path: Path | None, req: Mapping[str, Any], answer: Any) -> None:
-    """Append one line about a request to `path` (no-op when `path` is None)."""
+def log_call(
+    path: Path | None, req: Mapping[str, Any], answer: Any, started: float | None = None
+) -> None:
+    """Append one line about a request to `path` (no-op when `path` is None).
+
+    `t` is when the request started (`started`, else now) and `t_end` when it was answered: a
+    ground truth counted at `t` matches what a long call such as `diagnose` saw.
+    """
     if path is None:
         return
     kind = "list" if req.get("list") else "prompt" if "prompt" in req else "tool"
+    now = time.time()
     entry = {
-        "t": round(time.time(), 3),
+        "t": round(now if started is None else started, 3),
+        "t_end": round(now, 3),
         "kind": kind,
         "tool": req.get("tool") or req.get("prompt"),
         "args": req.get("args") or {},
@@ -161,8 +169,9 @@ async def main(argv: Sequence[str] | None = None) -> None:
         async def handle(reader, writer):
             req = json.loads(await reader.readline())
             async with lock:
+                started = time.time()
                 out = await answer_request(session, req)
-            log_call(a.calls_log, req, out)
+            log_call(a.calls_log, req, out, started)
             writer.write((json.dumps(out, default=str) + "\n").encode())
             await writer.drain()
             writer.close()

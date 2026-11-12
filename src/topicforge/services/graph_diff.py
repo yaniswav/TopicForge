@@ -13,6 +13,7 @@ import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from typing import Literal
 
 from topicforge.adapters.base import AdapterError, MiddlewareAdapter
@@ -346,6 +347,9 @@ def _ref(snap: GraphSnapshot) -> GraphSnapshotRef:
         id=snap.id,
         source=snap.source,
         taken_ns=snap.taken_ns,
+        taken_utc=datetime.fromtimestamp(snap.taken_ns / 1e9, timezone.utc).isoformat(
+            "T", "seconds"
+        ),
         path=snap.path,
         node_count=None if snap.nodes is None else len(snap.nodes),
         topic_count=len(snap.topics),

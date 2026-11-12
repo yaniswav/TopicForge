@@ -510,3 +510,113 @@ The agents' feedback, in short:
 - `duplicate_count: 1` reads as one duplicate, `pairs_checked: 0` next to a clean result can read as
   checked, and `inspect_tf` is verbose.
 - `graph_diff` gives no readable time for a snapshot.
+
+## 0.11.0 campaign (v6)
+
+**Status: run on 2026-11-12** (branch `release/0.11.0`, commit `2f81f13`, ROS 2 Jazzy in WSL
+Ubuntu 24.04, cyclonedds pinned to 11.0.1 as in v5 (a fresh install resolved 11.1.0), same runner, scenarios and grading as the v5 campaign,
+one blind Sonnet agent per run, eighteen tools, every agent asked to answer in under 250 words).
+What changed since v5 and is visible here:
+- `diagnose` words a restart loop as "restarted at least N times in the last 300 s (N+1
+  participants carried its name)";
+- the broker stamps a call at its start (`t`) and its end (`t_end`), so `restarts_at_first_call`
+  is now counted at the start of the first call;
+- `participant_events` marks TopicForge's own participants with `is_topicforge_cli`;
+- `graph_diff` snapshots carry `taken_utc`.
+
+The QoS scan summary now says when zero pairs were compared; no run here reached that case
+(see Limits).
+
+### Results: `diagnose` alone
+
+| Scenario | Rank 1 (critical or warning) | Other critical or warning | Time |
+|---|---|---|---|
+| `healthy` | none | none | 19.4 s |
+| `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 26.3 s |
+| `tf_stale` | warning `tf` on `map->odom` | none | 19.3 s |
+| `qos_mismatch` | critical `dds` on `rt/scan_edge` | none | 21.8 s |
+| `restart_loop` | critical `dds` on `/path_planner` | none | 22.4 s |
+| `declared_drift` | warning `tf` on `arm_link` | none | 21.8 s |
+| `graph_v1_v2` | none | none | 20.8 s |
+
+No check was skipped, and the ranking matches v5. Differences from v5:
+- `restart_loop` has no `logs` warning in this run. The node still logs its ERROR line about every
+  9 s (flapper log), and the check listens to `/rosout` for 5 s, so a window can fall between two
+  lines (already seen in v4). The agent's own `diagnose` call in the same scenario got the warning.
+- The `restart_loop` finding said "at least 5 times (6 participants)". The flapper log has 6
+  starts before the call began, so 5 restarts: exact.
+- Two `info` findings beyond the `edge_laser` one: `healthy` reports a `/_ros2cli_*` participant
+  that left (most likely the runner's own `ros2 topic list`; a 2026-11-06 run of 0.10.0 had the
+  same one), and `restart_loop` reports `/path_planner` as unreadable (it was down at that
+  moment), so not judged.
+
+### Results: an agent with the eighteen tools, no prompt
+
+| Scenario | Grade | Tool calls (broker) | Sequence |
+|---|---|---|---|
+| `healthy` | correct, no false alarm (the `edge_laser` info reported as an item to confirm) | 3 | `diagnose`, `inspect_tf`, `list_nodes` |
+| `blocked_executor` | correct (alive and blocked, not crashed; no code fix proposed). Its `diagnose` named the node, so the finding was critical, not the sweep's warning | 2 | `diagnose(node=/bench_blocked)`, `get_node_info` |
+| `tf_stale` | correct (`map -> odom` stale, `/bench_robot` named as the only `/tf` publisher) | 6 | `inspect_tf`, `diagnose`, `sample_messages`, `inspect_tf`, `get_topic_info`, `list_nodes` |
+| `qos_mismatch` | correct (Reliability, both nodes, both fixes) | 2 | `detect_qos_mismatches`, `get_topic_info` |
+| `restart_loop` | correct (loop, cause "costmap not received", count 6; truth 6 at the start of the first call, 10 at stop) | 2 | `diagnose`, `participant_events` |
+| `declared_drift` | correct, one false alarm (`scan_period`) | 3 (1 error) | `get_node_info` with `params_file` and `param_diff_only`, `inspect_tf(urdf_path=/robot_description)` (error), `inspect_tf` |
+| `graph_v1_v2` | correct (the three changes, nothing else) | 1 | `graph_diff` |
+| `declared_drift`, second run | correct (the three differences; the live-only parameters listed as `live_only`, none called a fault) | 2 | `get_node_info` with `params_file` and `param_diff_only`, `inspect_tf` |
+
+Over the seven first runs, six correct answers and one false alarm; the median and sum below
+count those seven runs only. As in v5, the `edge_laser` frame that no transform reaches (four
+agents mention it) is graded as a real condition at info level, not a false alarm. The median
+is 2 calls (v5: 2, v4: 3, 0.9.0: 6, 0.8.0: 12); the sum is 19 (v5: 18).
+
+- **`declared_drift`, first run: a false alarm (v5: correct).** The agent named `max_range` (12.0 declared, 10.0
+  live), `extra_gain` (declared only) and `arm_link`, but it counted "3 differences for
+  `/bench_robot`" and said of the live-only parameters: "The first of these is the only one that
+  is probably a real gap" (`scan_period`). `TRUTH_ROS2.md` counts a difference on `scan_period`
+  as a false alarm. With `param_diff_only`, the live-only parameters are named only in
+  `param_diff_summary`, as a sentence; the agent's feedback asks for them as structured entries.
+  Its second call passed `urdf_path: "/robot_description"` and was refused ("must be a .urdf
+  file"). Nothing on this branch changes the `params_file` or `param_diff` output since 0.10.0
+  (`git diff v0.10.0..2f81f13 -- src`: only the `duplicate_count` description in
+  `models/nodes.py`), so this is agent variance on unchanged output. A second run of the scenario,
+  with a fresh agent, was correct in 2 calls: it listed the three live-only parameters under
+  their `live_only` label, called two of them ROS defaults, and called none a fault. Its feedback
+  made the same point about `param_diff_only`: the live-only entries are in the summary string
+  only, and it had to merge the two. After this run, `param_diff_summary` gained `: live_only
+  means set on the node and absent from the file, not a difference` (`c5df981`). Three more fresh
+  agents on that commit were correct, with no false alarm (2, 3 and 2 calls); all three quoted the
+  sentence as the reason they left the live-only parameters out. Their remaining feedback: null
+  `parameters` with `param_diff_only` looks like a failure, `inspect_tf` is long for this
+  question, and the `urdf_path` error could say that the default already reads
+  `/robot_description`.
+- **`restart_loop` count.** The agent's first call was `diagnose`, and it gave the count from that
+  call: "at least 6 times (7 participants)". The flapper log has 6 restarts at the start of that
+  call and 8 at its end (the call took 22.6 s). The v4 and v5 remark that the restart count stays
+  below the truth was a harness artifact, measured on 2026-11-12: the broker stamped each call at
+  its end, so the truth was read up to 22 s too late, and the finding counted participants
+  (lives), not restarts. Both are fixed here, and the count matches exactly.
+- **`tf_stale`.** The agent named `/bench_robot` from `get_topic_info` on `/tf` (v5: only as
+  probable), at the cost of 6 calls, one of them a 30-message `sample_messages` on `/tf` it found
+  too large.
+
+Limits of this comparison:
+- One run per scenario, so a difference of a call or two is noise, and one false alarm is one
+  answer, not a rate.
+- The agents ran `tf.py` from Windows through the port forwarding of WSL, as in v5. The
+  orchestrator checked that path once with `list --brief` before the `healthy` agent started;
+  it shows as one extra `list_calls`, not as a tool call.
+- `TOPICFORGE_DDS_DECODE` stayed off, and no scenario asks for `get_image` or `window_s`.
+- The QoS zero-pairs note was not exercised: no agent ran an unscoped QoS scan on a clean bus, and
+  the only QoS call (`qos_mismatch`) had a real pair to compare.
+
+The agents' feedback, in short:
+- `diagnose` answered `healthy`, `blocked_executor` and `restart_loop` in one call; "at least 6"
+  next to "7 participants" still asks the reader to do a subtraction.
+- `participant_events` is long, and its participant `name` is always `/`; the
+  `is_topicforge_cli` flag was seen and understood.
+- `duplicate_count: 1` on `get_node_info` reads as one duplicate (as in v5), and the parameter
+  timeout differs between `diagnose` (6 s) and `get_node_info` (8 s).
+- Nothing names the publisher of a TF edge or the node that gained a writer in `graph_diff`;
+  `inspect_tf` is long; static frames with `age_s` null and `last_stamp_ns` 0 look odd.
+- `graph_diff`'s `baseline: "previous"` is ambiguous when the call itself takes a snapshot, and
+  `taken_ns` next to `taken_utc` is redundant.
+- `inspect_tf`'s description should say that leaving out `urdf_path` reads `/robot_description`.

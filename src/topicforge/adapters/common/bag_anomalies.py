@@ -271,7 +271,7 @@ def _cluster_line(cluster: _Cluster, origin_ns: int, judged: int) -> str:
     return (
         f"{len(names)} of {judged} topics silent together for "
         f"{_span(cluster.end_ns - cluster.start_ns)} at {_t(cluster.start_ns, origin_ns)} "
-        f"({shown}), possibly a recording pause"
+        f"({shown}), a recording pause or a stall of the source (e.g. a simulator)"
     )
 
 
@@ -298,7 +298,7 @@ def _clock_lines(clock: Sequence[tuple[int, int]], origin_ns: int) -> list[str]:
         elif (
             usual
             and delta > max(CLOCK_JUMP_FACTOR * usual, CLOCK_JUMP_FLOOR_S * _NS)
-            # A recording pause also widens the step: only a step far above the usual
+            # A recording pause or a source stall also widens the step: only a step far above the usual
             # sim-to-record ratio is a jump.
             and (drec <= 0 or rtf is None or delta / drec > 5 * rtf)
         ):

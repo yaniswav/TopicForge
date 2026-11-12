@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from topicforge.adapters.common.ros_discovery import is_own_node
 from topicforge.models import (
     EndpointInfo,
     EndpointListing,
@@ -90,6 +91,20 @@ def restarts_from_events(
     """`restarts_by_name` for an event window: lives are GUIDs seen, departures `lost` events."""
     table, unnamed = _tally((e.name, e.guid, e.event_type == "lost") for e in events)
     return table, _unnamed_note(unnamed, "event(s) are")
+
+
+def flag_own_events(events: list[ParticipantEvent]) -> list[ParticipantEvent]:
+    """Copies of `events` with `is_topicforge_cli` set for a `ros2` CLI or sampler-helper node.
+
+    Name-based: a user's own `ros2` command is flagged too, unlike `list_participants`, which
+    matches the pids TopicForge spawned. Either way it is tooling, not a robot node.
+    """
+    return [
+        e.model_copy(update={"is_topicforge_cli": True})
+        if any(is_own_node(n) for n in e.node_names)
+        else e
+        for e in events
+    ]
 
 
 def with_event_ages(events: list[ParticipantEvent], now_ns: int) -> list[ParticipantEvent]:

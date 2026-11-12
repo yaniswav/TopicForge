@@ -24,7 +24,7 @@ Read `not_matched` before `reports`. Partition or type-name splits are checked f
 ## What TopicForge cannot see
 
 - Whether data actually flows. An empty `reports` does not prove the bus is healthy.
-- A writer that is alive but silent or hung. User-topic payloads are not decoded.
+- A writer that is alive but silent or hung. User-topic payloads are decoded only with `TOPICFORGE_DDS_DECODE=on` (off by default).
 - Other DDS domains. DDS Security: protected endpoints and data stay hidden.
 - Runtime behavior such as missed deadlines. Only declared QoS is visible.
 

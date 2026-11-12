@@ -1284,7 +1284,8 @@ Additive. `tools/list` grows by 467 bytes, to 97,315 (measured like `test_tool_l
   those participants are counted in `restarts_note`, which points to `restarts_by_node`.
 - `min_log_level` accepts any case and `warning`; the schema keeps the lower-case enum.
 - `param_diff_summary` names the `same` and `live_only` parameters, up to ten each:
-  `1 same (frame_id), 1 live_only (use_sim_time)`.
+  `1 same (frame_id), 1 live_only (use_sim_time)`. Since 0.11.0 a sentence follows when
+  `live_only` is not 0 (section 9.31).
 - A filtered `/rosout` read that received nothing says so in one note.
 - `inspect_tf` reads the URDF from the robot_state_publisher parameter when no node publishes
   `/robot_description` (section 9.15).
@@ -1526,7 +1527,7 @@ Additive except where stated (1.9). `tools/list` goes from 101,117 to 101,504 by
     Time before the first message is not a gap. Commands, events, goals, latched topics, `/clock`,
     `/tf_static`, `/rosout`, `/parameter_events` and rosbag2 internals are not judged. Two or more
     series silent over the same span are one line: `K of N topics silent together for X s at t=a
-    (...), possibly a recording pause`;
+    (...), a recording pause or a stall of the source (e.g. a simulator)`;
   - `/tf <parent>-><child>: no message for ...` for an edge of 20 messages or more, with a stable
     rhythm (90th percentile within 2 x the median) that spans at least 80% of the `/tf` span, and a
     gap above max(10 x its median period, 0.5 s). Edges that appear for part of the recording
@@ -1774,3 +1775,29 @@ Additive (1.9). The slot reserved in section 9.21. Read-only annotations, open w
   size drop on Fast DDS, yet the first one still came within about 2 s in 9 calls of 9. Across
   a real network it may be worse: this was not measured.
 
+### 9.31 Evaluation v5 follow-ups (0.11.0)
+
+Additive (1.9), no new tool. `tools/list` goes from 102,979 to 103,252 bytes.
+
+- `participant_events`: each event gains `is_topicforge_cli` (default `false`), true when its
+  `node_names` hold a `/_ros2cli_<pid>` or `/_topicforge_sampler_<pid>` node: tooling, not a robot
+  node. Name-based only, so a user's own `ros2` command is flagged too (`list_participants` matches
+  the pids TopicForge spawned); an event whose node names are unknown stays `false`.
+  The `ros2` daemon (`/_ros2cli_daemon_<domain>_<hash>`) stays `false`: one long-lived
+  participant, not the churn of short CLI calls.
+- `graph_diff`: `current` and `baseline` gain `taken_utc`, `taken_ns` as ISO 8601 UTC to the second;
+  for a bag it is when the bag was read, not when it was recorded.
+- `detect_qos_mismatches`: when `pairs_checked` is 0, `summary` ends with `No reader-writer pair
+  with QoS in scope: nothing was compared.`, so an empty scan cannot read as a clean one.
+- `analyze_bag.anomalies`: the line for topics silent together ends with `a recording pause or a
+  stall of the source (e.g. a simulator)` instead of `possibly a recording pause` (section 9.25).
+  A stall of the simulator was shown on the OmniSim bag: sim time advanced 0.096 s over a 2.13 s gap.
+- `list_nodes` and `get_node_info`: the `duplicate_count` description says that 1 means unique.
+- `get_node_info(params_file=...)`: when `live_only` is not 0, `param_diff_summary` ends with
+  `: live_only means set on the node and absent from the file, not a difference`. In the v6
+  evaluation an agent reported a `live_only` parameter as a gap.
+  The field is free text: a client that compares it exactly sees a new value.
+- `diagnose`: a restart loop reads `/<node> restarted at least N times in the last 300 s (N+1
+  participants carried its name)`, a floor since the server sees only the lives after it joined,
+  instead of `appeared with N+1 different participants`. The count itself was right: the v5
+  evaluation compared it with the restarts at the end of the call, not at its start.

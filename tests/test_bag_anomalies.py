@@ -149,7 +149,7 @@ def test_a_silence_shared_by_many_topics_is_one_stall(tmp_path: Path) -> None:
     analysis = _analyze(tmp_path, series)
     assert len(analysis.anomalies) == 1, analysis.anomalies
     assert "4 of 4 topics silent together for 3.00 s at t=10.00s" in analysis.anomalies[0]
-    assert "possibly a recording pause" in analysis.anomalies[0]
+    assert "a recording pause or a stall of the source" in analysis.anomalies[0]
 
 
 def test_a_header_stamp_that_goes_backward(tmp_path: Path) -> None:

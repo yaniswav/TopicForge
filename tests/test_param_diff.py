@@ -155,7 +155,10 @@ def test_different_and_declared_only_are_listed_and_the_rest_counted() -> None:
         ("extra_gain", "declared_only", 1.5, None),
         ("max_range", "different", 12.0, 10.0),
     ]
-    assert summary == "1 same (frame_id), 2 live_only (scan_period, use_sim_time)"
+    assert summary == (
+        "1 same (frame_id), 2 live_only (scan_period, use_sim_time): live_only means set on "
+        "the node and absent from the file, not a difference"
+    )
     assert note is None
 
 

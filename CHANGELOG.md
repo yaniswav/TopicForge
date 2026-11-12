@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-12
+
+Follow-ups of the 0.10.0 agent evaluation (v5) and of the OmniSim run. No new tool; the schema changes are
+additive (`docs/CONTRACT.md` section 9.31). `tools/list` is 103,252 bytes (0.10.0: 102,979), under
+the 105,000 ceiling. Evaluation v6 is in `docs/EVAL.md`.
+
+### Added
+
+- `participant_events` marks `ros2` CLI and sampling-helper participants (tooling, not the robot)
+  with `is_topicforge_cli`. On events the match is by node name, so a user's own `ros2` command
+  is marked too (`docs/CONTRACT.md` section 9.31).
+- `graph_diff` gives each snapshot a readable `taken_utc`.
+
+### Changed
+
+- `detect_qos_mismatches` says when no pair was compared, so an empty scan cannot read as clean.
+- `analyze_bag` no longer calls a group silence "possibly a recording pause": a stall of the
+  source, such as a simulator, gives the same gap.
+- `duplicate_count` says that 1 means unique.
+- `param_diff_summary` says that `live_only` parameters are not differences.
+- `diagnose` counts a restart loop in restarts, not in participants.
+- Agent evaluation: `calls.jsonl` stamps a call when it starts (`t`) and ends (`t_end`), so the
+  restart ground truth matches what `diagnose` saw.
+
 ## [0.10.0] - 2026-11-09
 
 The largest release so far. `get_image` is tool 18. `sample_messages` runs on a short-lived
@@ -2090,7 +2114,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/yaniswav/TopicForge/compare/v0.8.0...v0.8.1

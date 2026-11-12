@@ -26,7 +26,7 @@ When the question is "is anything wrong", call `diagnose` first: one ranked swee
 
 ## Bags
 
-- `analyze_bag` (`.mcap`, `.db3`, `rosbag2_*` directory): duration, message count, per-topic stats. `frequency_basis` says how the rate was computed (`topic_span` or `bag_duration`); a `latched` topic can have a null rate. Anomaly detection exists in mock mode only.
+- `analyze_bag` (`.mcap`, `.db3`, `rosbag2_*` directory): duration, message count, per-topic stats. `frequency_basis` says how the rate was computed (`topic_span` or `bag_duration`); a `latched` topic can have a null rate. `anomalies` lists gaps, clock steps and stamp problems from one bounded scan; empty means none found, not clean.
 - `peek_bag_samples` (also reads ROS 1 `.bag`) for decoded messages, with a `_decode_status` per sample. It needs the `rosbags` library; if missing, tell the user.
 
 More detail: `references/tool-notes.md`.

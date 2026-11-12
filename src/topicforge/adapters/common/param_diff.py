@@ -237,10 +237,13 @@ def summarize(comparison: ParamComparison) -> str:
     `live_only` parameters are on the node and absent from the file (the ROS 2 defaults
     such as `use_sim_time` among them); `same` agree with the file.
     """
-    return (
+    text = (
         f"{_named(comparison.same, 'same', comparison.same_names)}, "
         f"{_named(comparison.live_only, 'live_only', comparison.live_only_names)}"
     )
+    if comparison.live_only:
+        text += ": live_only means set on the node and absent from the file, not a difference"
+    return text
 
 
 def build_param_diff(

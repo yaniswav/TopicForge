@@ -18,7 +18,7 @@
         "additionalProperties": false,
         "properties": {
           "duplicate_count": {
-            "description": "Nodes using this exact full name; above 1, name-based tools answer for one of them.",
+            "description": "Nodes using this exact full name (1: unique); above 1, name-based tools answer for one of them.",
             "minimum": 1,
             "type": "integer"
           },

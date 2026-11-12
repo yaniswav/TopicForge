@@ -42,7 +42,7 @@ The server speaks MCP over stdio and waits for a client, so wire it into one. Fo
 
 Then ask it to list the topics. To try the bag tools on fixtures, set `TOPICFORGE_MODE` to `mock` and ask it to analyze `/tmp/demo.mcap`; in `auto` or `live` a bag path must exist. For Claude Code: `claude mcp add topicforge -- topicforge`. If the client cannot launch the server (WSL2 to Windows, a robot over an SSH tunnel), `topicforge --transport streamable-http --port 8765` serves `http://127.0.0.1:8765/mcp` on loopback (another `--host` needs a bearer token in `TOPICFORGE_HTTP_TOKEN`); see [`docs/CLIENTS.md`](docs/CLIENTS.md#local-http-transport).
 
-**Other MCP clients.** Ready-to-paste configs for Claude Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code, Continue, Zed, JetBrains, Codex, Gemini CLI, Goose and more are in [`docs/CLIENTS.md`](docs/CLIENTS.md). One-click: [Add to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjEwLjAiLCJ0b3BpY2ZvcmdlIl0sImVudiI6eyJUT1BJQ0ZPUkdFX01PREUiOiJhdXRvIiwiVE9QSUNGT1JHRV9ERFNfQkFDS0VORCI6ImN5Y2xvbmUiLCJUT1BJQ0ZPUkdFX0REU19ET01BSU5fSUQiOiIwIn19) | [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.10.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D).
+**Other MCP clients.** Ready-to-paste configs for Claude Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code, Continue, Zed, JetBrains, Codex, Gemini CLI, Goose and more are in [`docs/CLIENTS.md`](docs/CLIENTS.md). One-click: [Add to Cursor](https://cursor.com/install-mcp?name=topicforge&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJ0b3BpY2ZvcmdlPT0wLjExLjAiLCJ0b3BpY2ZvcmdlIl0sImVudiI6eyJUT1BJQ0ZPUkdFX01PREUiOiJhdXRvIiwiVE9QSUNGT1JHRV9ERFNfQkFDS0VORCI6ImN5Y2xvbmUiLCJUT1BJQ0ZPUkdFX0REU19ET01BSU5fSUQiOiIwIn19) | [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=topicforge&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22--from%22%2C%22topicforge%3D%3D0.11.0%22%2C%22topicforge%22%5D%2C%22env%22%3A%7B%22TOPICFORGE_MODE%22%3A%22auto%22%2C%22TOPICFORGE_DDS_BACKEND%22%3A%22cyclone%22%2C%22TOPICFORGE_DDS_DOMAIN_ID%22%3A%220%22%7D%7D).
 
 Setup for a real ROS2 environment (WSL2, Linux, Docker, native Windows) is in [`docs/TESTING.md`](docs/TESTING.md); recurring monitoring prompts and the privacy contract are in [`docs/TUTORIEL.md`](docs/TUTORIEL.md).
 
@@ -153,7 +153,7 @@ When on, each tool call emits one event with exactly six fields:
 | `tool_name`  | `"list_topics"` | One of the eighteen tools, never argument values             |
 | `latency_ms` | `12.34`         | Handler wall-clock duration, 2 decimals                     |
 | `mode`       | `"mock"`        | Mode of the adapter actually serving: `mock` or `live`      |
-| `version`    | `"0.10.0"`      | TopicForge server version                                   |
+| `version`    | `"0.11.0"`      | TopicForge server version                                   |
 | `session_id` | `"a1b2c3..."`   | Random UUID per process, never persisted                    |
 | `success`    | `true`          | Whether the handler returned or raised                      |
 

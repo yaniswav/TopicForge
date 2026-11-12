@@ -1,10 +1,10 @@
 # TopicForge plugin for Claude
 
-TopicForge is a read-only MCP server for ROS 2 and DDS. This plugin bundles the server with two short skills so Claude can inspect a robot stack and diagnose a DDS bus. It cannot publish, command a robot, or change QoS: the server has no write path.
+TopicForge is a read-only MCP server for ROS 2 and DDS. This plugin bundles the server with three short skills so Claude can inspect a robot stack and diagnose a DDS bus. It cannot publish, command a robot, or change QoS: the server has no write path.
 
 ## What is included
 
-- MCP server `topicforge`, started with `uvx` from the `topicforge` package on PyPI (version pinned to 0.10.0). It exposes eighteen read-only tools: `health_check`, `list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`, `list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, `peek_dds_samples`, `topic_metrics`, `inspect_tf`, `graph_diff`, `diagnose`, `get_image`. Pillow is installed next to it (`--with`), for raw camera images.
+- MCP server `topicforge`, started with `uvx` from the `topicforge` package on PyPI (version pinned to 0.11.0). It exposes eighteen read-only tools: `health_check`, `list_topics`, `get_topic_info`, `list_nodes`, `get_node_info`, `sample_messages`, `analyze_bag`, `peek_bag_samples`, `list_participants`, `list_endpoints`, `detect_qos_mismatches`, `participant_events`, `peek_dds_samples`, `topic_metrics`, `inspect_tf`, `graph_diff`, `diagnose`, `get_image`. Pillow is installed next to it (`--with`), for raw camera images.
 - Skill `diagnose-dds-bus`: what to call, and in which order, when nodes do not talk, a topic gets no data, or a node crashed or restarts.
 - Skill `inspect-ros2-robot`: listing topics, sampling messages and reading bags, including large arrays and simulation time.
 - Skill `diagnose-nav2`: the call order for a Nav2 stack that does not start, aborts goals or does not move the robot (lifecycle managers, bonds, goal status, TF, logs), and what TopicForge cannot see there.

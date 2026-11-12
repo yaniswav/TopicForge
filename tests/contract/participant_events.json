@@ -82,6 +82,10 @@
               "null"
             ]
           },
+          "is_topicforge_cli": {
+            "description": "True when `node_names` show a `ros2` CLI or TopicForge helper node: tooling, not the robot.",
+            "type": "boolean"
+          },
           "name": {
             "type": [
               "string",
