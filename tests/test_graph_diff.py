@@ -7,6 +7,7 @@ Live snapshots are built from a scripted adapter, so no ROS 2 is needed. The ben
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -232,6 +233,14 @@ def test_qos_is_not_compared_without_a_dds_backend(service: GraphDiffService) ->
     diff = service.diff("previous", None)
     assert not diff.current.has_qos
     assert "no DDS backend" in service.diff("previous", None).not_compared["qos"]
+
+
+def test_snapshot_time_is_also_given_in_utc(service: GraphDiffService) -> None:
+    ref = service.diff("previous", None).current
+    assert ref.taken_utc is not None and ref.taken_utc.endswith("+00:00")
+    assert ref.taken_utc[:-6] == time.strftime(
+        "%Y-%m-%dT%H:%M:%S", time.gmtime(ref.taken_ns // 10**9)
+    )
 
 
 def test_publisher_and_subscriber_count_change(
