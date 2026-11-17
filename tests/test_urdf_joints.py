@@ -240,7 +240,7 @@ def test_urdf_path_skips_the_robot_description_read(tmp_path: Path) -> None:
         ("a" + chr(0) + ".urdf", "null bytes"),
         ("robot.urdf.xacro", "xacro"),
         ("robot.xacro", "xacro"),
-        ("robot.yaml", ".urdf"),
+        ("robot.yaml", "leave it out to read the latched /robot_description"),
         (None, "non-empty"),
     ],
 )

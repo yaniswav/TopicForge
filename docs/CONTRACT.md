@@ -1814,4 +1814,9 @@ No schema change, no new tool; `tools/list` is unchanged. Free-text values only:
 - `graph_diff`: when there is a baseline, `note` starts with `Compared <baseline id> (baseline)
   with <current id>, stored by this call.`, so `previous` is never ambiguous.
 - `get_node_info` and `diagnose`: a parameter timeout reads `did not answer within N s (this
-  call's wait)`; `diagnose` waits 6 s per named node, `get_node_info` its own `timeout_s`.
+  call's wait)`, N being the wait actually granted. `diagnose` waits up to 6 s for the node passed
+  as `node` and 3 s (plus one retry) for the others, both capped by its remaining budget, and
+  carries the text in the finding's evidence; `get_node_info` waits up to `timeout_s`, which the
+  call budget can shorten.
+- `graph_diff.note` is now set on every call with a baseline, although its schema description
+  still says it may be `None` (left as is to keep `tools/list` unchanged).

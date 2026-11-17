@@ -488,6 +488,7 @@ def test_param_diff_only_keeps_the_comparison_and_empties_the_long_lists(tmp_pat
     assert info.publishers == info.subscribers == info.service_servers == []
     assert info.service_clients == info.action_servers == info.action_clients == []
     assert info.parameters is None and "param_diff_only" in (info.note or "")
+    assert "is not a failed read" in (info.note or "")
     assert info.full_name == "/lidar_driver"
 
 
