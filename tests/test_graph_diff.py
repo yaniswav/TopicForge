@@ -367,7 +367,8 @@ def test_previous_without_a_baseline_stores_a_snapshot_and_says_so(
     assert first.snapshot_id == "snap-1"
     assert first.note is not None and first.note.startswith("No baseline yet: snapshot snap-1")
     second = service.diff("previous", None)
-    assert second.baseline_id == "snap-1" and second.note is None
+    assert second.baseline_id == "snap-1"
+    assert second.note == "Compared snap-1 (baseline) with snap-2, stored by this call."
 
 
 def test_a_snapshot_id_is_a_baseline(fake: FakeAdapter, service: GraphDiffService) -> None:

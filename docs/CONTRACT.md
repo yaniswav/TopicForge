@@ -1801,3 +1801,17 @@ Additive (1.9), no new tool. `tools/list` goes from 102,979 to 103,252 bytes.
   participants carried its name)`, a floor since the server sees only the lives after it joined,
   instead of `appeared with N+1 different participants`. The count itself was right: the v5
   evaluation compared it with the restarts at the end of the call, not at its start.
+
+### 9.32 Evaluation v6 follow-ups (0.11.1)
+
+No schema change, no new tool; `tools/list` is unchanged. Free-text values only:
+
+- `inspect_tf`: a `urdf_path` that is not a `.urdf` file is refused with
+  `urdf_path must be a .urdf file on disk; leave it out to read the latched /robot_description
+  topic`. Two v6 agents passed `/robot_description` as a path.
+- `get_node_info(param_diff_only=true)`: the note says `parameters` is null on purpose and is not
+  a failed read.
+- `graph_diff`: when there is a baseline, `note` starts with `Compared <baseline id> (baseline)
+  with <current id>, stored by this call.`, so `previous` is never ambiguous.
+- `get_node_info` and `diagnose`: a parameter timeout reads `did not answer within N s (this
+  call's wait)`; `diagnose` waits 6 s per named node, `get_node_info` its own `timeout_s`.

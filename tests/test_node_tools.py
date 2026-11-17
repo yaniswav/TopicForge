@@ -162,7 +162,8 @@ def test_a_param_timeout_is_a_diagnosis_not_an_error(cli: FakeCli) -> None:
     info = _info(Ros2CliAdapter(), timeout_s=3)
     assert info.parameters is None and info.parameters_status == "timeout"
     assert info.parameters_note == (
-        "The node announced its parameter services but did not answer within 3 s: "
+        "The node announced its parameter services but did not answer within 3 s "
+        "(this call's wait): "
         "its executor is probably blocked."
     )
     assert info.use_sim_time is None

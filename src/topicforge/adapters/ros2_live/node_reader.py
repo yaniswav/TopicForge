@@ -159,7 +159,7 @@ def _read_parameters(
             None,
             (
                 "The node announced its parameter services but did not answer within "
-                f"{shown:g} s: its executor is probably blocked."
+                f"{shown:g} s (this call's wait): its executor is probably blocked."
             ),
             "timeout",
         )

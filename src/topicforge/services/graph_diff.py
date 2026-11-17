@@ -363,7 +363,7 @@ def _first_note(snapshot_id: str) -> str:
 
 
 def _notes(base: GraphSnapshot, cur: GraphSnapshot) -> str | None:
-    parts: list[str] = []
+    parts: list[str] = [f"Compared {base.id} (baseline) with {cur.id}, stored by this call."]
     if base.id == "snap-0":
         parts.append(
             "snap-0 is the mock robot before /imu_driver, /imu/data and a /scan QoS change."

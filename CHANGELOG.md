@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-17
+
+Wording follow-ups of the v6 agent evaluation. No schema change (`docs/CONTRACT.md` section 9.32).
+
+### Changed
+
+- A `urdf_path` that is not a `.urdf` file is refused with a hint that leaving it out reads
+  `/robot_description`.
+- `param_diff_only` says that the null `parameters` is on purpose.
+- `graph_diff` names the two snapshots it compared in `note`.
+- A parameter timeout says the wait was this call's own.
+
 ## [0.11.0] - 2026-11-12
 
 Follow-ups of the 0.10.0 agent evaluation (v5) and of the OmniSim run. No new tool; the schema changes are
@@ -2114,7 +2126,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/yaniswav/TopicForge/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yaniswav/TopicForge/compare/v0.8.1...v0.9.0
