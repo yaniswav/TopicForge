@@ -162,7 +162,8 @@ def test_a_param_timeout_is_a_diagnosis_not_an_error(cli: FakeCli) -> None:
     info = _info(Ros2CliAdapter(), timeout_s=3)
     assert info.parameters is None and info.parameters_status == "timeout"
     assert info.parameters_note == (
-        "The node announced its parameter services but did not answer within 3 s: "
+        "The node announced its parameter services but did not answer within 3 s "
+        "(this call's wait): "
         "its executor is probably blocked."
     )
     assert info.use_sim_time is None
@@ -487,6 +488,7 @@ def test_param_diff_only_keeps_the_comparison_and_empties_the_long_lists(tmp_pat
     assert info.publishers == info.subscribers == info.service_servers == []
     assert info.service_clients == info.action_servers == info.action_clients == []
     assert info.parameters is None and "param_diff_only" in (info.note or "")
+    assert "is not a failed read" in (info.note or "")
     assert info.full_name == "/lidar_driver"
 
 

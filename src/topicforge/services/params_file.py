@@ -60,7 +60,8 @@ def with_param_diff(info: NodeInfo, params_file: str) -> NodeInfo:
 
 
 _DIFF_ONLY_NOTE = (
-    "param_diff_only: interfaces and parameters are left out, only param_diff is returned."
+    "param_diff_only: interfaces and parameters are left out on purpose (a null `parameters` "
+    "is not a failed read); only param_diff is returned."
 )
 
 

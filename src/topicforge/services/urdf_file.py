@@ -32,7 +32,10 @@ def validate_urdf_path(path: object) -> str:
             "and pass the resulting .urdf"
         )
     if not clean.lower().endswith(".urdf"):
-        raise AdapterError("urdf_path must be a .urdf file")
+        raise AdapterError(
+            "urdf_path must be a .urdf file on disk; leave it out to read the latched "
+            "/robot_description topic"
+        )
     return clean
 
 

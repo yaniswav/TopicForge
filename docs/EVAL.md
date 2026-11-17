@@ -620,3 +620,121 @@ The agents' feedback, in short:
 - `graph_diff`'s `baseline: "previous"` is ambiguous when the call itself takes a snapshot, and
   `taken_ns` next to `taken_utc` is redundant.
 - `inspect_tf`'s description should say that leaving out `urdf_path` reads `/robot_description`.
+
+## 0.11.1 campaign (v7)
+
+**Status: run on 2026-11-17** (branch `release/0.11.1`, commit `16ced9e`, ROS 2 Jazzy in WSL
+Ubuntu 24.04, cyclonedds 11.0.1, same runner, scenarios, prompts and grading as the v6 campaign,
+one blind Sonnet agent per run, eighteen tools, every agent asked to answer in under 250 words).
+The `prompt.txt` files and agent workspaces are byte-identical to v6 (the wrapper line is not;
+see Limits). What changed since v6 and is visible
+here:
+- the `inspect_tf` refusal of a non-file `urdf_path` says that leaving it out reads the latched
+  `/robot_description` topic;
+- the `param_diff_only` note says that a null `parameters` is on purpose;
+- the `graph_diff` note opens with "Compared snap-A (baseline) with snap-B, stored by this call.";
+- the parameter timeout note says "(this call's wait)".
+
+### Results: `diagnose` alone
+
+| Scenario | Rank 1 (critical or warning) | Other critical or warning | Time |
+|---|---|---|---|
+| `healthy` | none | none | 18.8 s |
+| `blocked_executor` | warning `responsiveness` on `/bench_blocked` | none | 29.8 s |
+| `tf_stale` | warning `tf` on `map->odom` | none | 19.4 s |
+| `qos_mismatch` | critical `dds` on `rt/scan_edge` | none | 20.3 s |
+| `restart_loop` | critical `dds` on `/path_planner` | warning `logs` on `/path_planner` | 19.3 s |
+| `declared_drift` | warning `tf` on `arm_link` | none | 19.4 s |
+| `graph_v1_v2` | none | none | 20.5 s |
+
+No check was skipped, and the ranking matches v5 and v6 (the `restart_loop` logs warning, missing
+in v6, is back: the 5 s window caught an ERROR line). The `restart_loop` finding said "at least 5
+times (6 participants)"; the flapper log has 6 starts before the call began, so 5 restarts:
+exact. The `info` findings are the same as in v6 (`edge_laser` everywhere, `v2_laser` on
+`graph_v1_v2`, a departed `/_ros2cli_*` participant on `healthy`, `/path_planner` unreadable on
+`restart_loop`).
+
+### Results: an agent with the eighteen tools, no prompt
+
+| Scenario | Grade | Tool calls (broker) | Sequence |
+|---|---|---|---|
+| `healthy` | false alarm (see below): `edge_laser` presented as "One real problem" | 2 | `diagnose`, `inspect_tf` |
+| `blocked_executor` | correct (alive and blocked, not crashed; no code fix proposed, as in v6) | 2 | `diagnose`, `get_node_info` |
+| `tf_stale` | correct (`map -> odom` stale, `/bench_robot` named as the only `/tf` publisher) | 6 | `inspect_tf`, `diagnose`, `sample_messages`, `inspect_tf`, `list_nodes`, `get_topic_info` |
+| `qos_mismatch` | correct (Reliability, both nodes, both fixes) | 2 | `detect_qos_mismatches`, `get_topic_info` |
+| `restart_loop` | correct (loop, cause "costmap not received", count 6; truth 6 at the start of the first call, 10 at stop) | 1 | `diagnose` |
+| `declared_drift` | correct (`max_range`, `extra_gain`, `arm_link`; the live-only parameters named as not differences) | 3 (1 error) | `get_node_info` with `params_file` and `param_diff_only`, `inspect_tf(urdf_path=/robot_description)` (error), `inspect_tf` |
+| `graph_v1_v2` | correct (the three changes, nothing else) | 1 | `graph_diff` |
+| `healthy`, second run | false alarm: `edge_laser` presented as "one real problem", about 75% "a real defect" | 3 | `diagnose`, `inspect_tf`, `list_nodes` |
+| `healthy`, third run | false alarm: `edge_laser` presented as "the one real fault", about 75% | 2 | `diagnose`, `inspect_tf` |
+| `healthy`, control on v0.11.0, first run | false alarm: "The robot has one real problem" (`edge_laser`, "a real misconfiguration") | 3 | `diagnose`, `inspect_tf`, `list_nodes` |
+| `healthy`, control on v0.11.0, second run | false alarm: "mostly healthy. I found one real problem" (`edge_laser`, about 75%) | 3 | `diagnose`, `inspect_tf`, `list_nodes` |
+
+Over the seven first runs, six correct answers and one false alarm; the median and sum below
+count those seven runs only. The median is 2 calls (v6: 2, v5: 2, v4: 3, 0.9.0: 6, 0.8.0: 12);
+the sum is 17 (v6: 19, v5: 18).
+
+- **`healthy`: a false alarm in all three runs (v6: correct).** `diagnose` returned 0 critical and 0
+  warning, and its `edge_laser` finding is `info`, with text and severity identical to v6. The
+  agent opened with "One real problem: `/scan_edge` has no TF path. Everything else I checked
+  looks healthy.", gave it about 80% confidence, and asked for the finding to be raised to
+  warning; it never said the robot was fine to ship. v5 and v6 graded `edge_laser` as a real
+  condition at info level because their agents called it a low-severity item or an item to
+  confirm. `TRUTH_ROS2.md` counts "any finding presented as a fault" as a false alarm, and
+  `edge_laser` is not on its acceptable list, so this answer is graded a false alarm, the
+  conservative reading; `TRUTH_ROS2.md` is unchanged. The note that goes with the grade:
+  `edge_laser` really is absent from the bench's TF tree, so the agent reported a real condition,
+  but one that `diagnose` rates `info`, and it presented it as the one real problem. The
+  finding's text and severity are the same as in v6, and `git diff --stat v0.11.0..16ced9e --
+  src` touches only the version and the four wordings listed above, so the output did not
+  change. Two more fresh agents on the same scenario gave the same answer ("There is one real
+  problem", "the one real fault", both about 75%, both asking for a warning). Three runs out of
+  three is a pattern, not a single draw. In v6 the same finding was called "an item to confirm".
+  Every agent in v7 read the info-level `edge_laser` finding as the one fault on an otherwise
+  clean robot. The v6/v7 comparison of `healthy` is confounded by the new prompt wrapper line
+  (v6's was not kept). A control isolated the code: the same runner, `prompt.txt` and wrapper
+  line, with the server checked out at `v0.11.0` (`7c5cda0`, version 0.11.0 confirmed), gave two
+  more fresh agents the same answer, so 2 false alarms out of 2. The pattern is therefore not
+  caused by the 0.11.1 changes. It comes with the v7 setup (the wrapper line, or the agents of
+  the day), on code that is identical for this scenario.
+- **`declared_drift`: the `urdf_path` trip remains, and the agent now recovers from it at
+  once.** The agent made the same mistake as in v6 (`urdf_path: "/robot_description"`). The
+  refusal now says to leave the argument out to read the latched topic. The next call did that,
+  2 s later. The agent called it "a clear error" and asked for the same hint in the schema. The
+  `param_diff_only` note was understood ("The note explains this, but it is easy to misread at
+  first"), and the `live_only` sentence again kept the live-only parameters out of the
+  differences.
+- **`graph_v1_v2`.** The agent restated the new note ("compared `snap-1` (baseline ...) with the
+  `snap-2` that the call stored"). It used `taken_utc` to check the order and had no baseline
+  confusion.
+- **`blocked_executor`.** The two waits (3 s in the `diagnose` sweep, 8 s in `get_node_info`) are
+  now labelled as each call's own wait. The agent reported both correctly, but still called the
+  two values "mildly confusing".
+- **`restart_loop`** was answered by `diagnose` alone in one call, and the count matches exactly.
+  "At least 6 times" next to "7 participants" was again read as 7 starts and 6 restarts.
+
+Limits of this comparison:
+- One run per scenario, so a difference of a call or two is noise, and one false alarm is one
+  answer, not a rate.
+- The agents ran `tf.py` from Windows through the port forwarding of WSL, as in v5 and v6.
+- The prompt files are identical to v6, but v6 did not keep the line that wraps them (the working
+  folder and the 250-word limit), so v7's wrapper line is new wording with the same content. The
+  `healthy` control on `v0.11.0` above used the v7 wrapper too.
+- `blocked_executor` under `diagnose` alone took 29.8 s (v5 and v6: 26.3 s), and the agent's own
+  `diagnose` call took 27.4 s of its 30 s default budget. No timeout value changed in `src`
+  since v0.11.0 (only the note's wording), so this is read as host load, from one run.
+- `TOPICFORGE_DDS_DECODE` stayed off, and no scenario asks for `get_image` or `window_s`.
+
+The agents' feedback, in short:
+- On the `edge_laser` info, all five `healthy` agents (three on 0.11.1, two on the control) asked
+  for a warning ("Consider raising it to warning"). Three noted that `inspect_tf` does not report a frame that a topic uses but no
+  transform reaches; only `diagnose` does.
+- `tf_stale`: the first `inspect_tf` (default 5 s window) saw `map -> odom` fresh, as in v6, and
+  only a later 8 s call showed it stale. The agent asked for a hint that one capture can miss a
+  stall.
+- The `qos_mismatch` reports name the topic `rt/scan_edge` and repeat the tradeoff text in every
+  fix. `matched: []` reads as "nothing matched".
+- `get_node_info` carries many null `param_diff*` fields. `inspect_tf` is verbose, and static
+  frames show `age_s` null and `last_stamp_ns` 0.
+- `graph_diff` does not link the extra `/cmd_vel_out` writer to `/bench_v2`, and its `before`
+  and `after` values are strings.
