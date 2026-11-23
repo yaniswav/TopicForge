@@ -318,7 +318,7 @@ ROS 2 graph only. Rebuild the TF tree from the transforms on `/tf_static` (latch
 | `stale_after_s` | `float` | no | `2.0` | >= 0.1, <= 3600.0 | A frame is stale past this many seconds of stamp time, default 2. |
 | `source_frame` | `str \| null` | no | `null` | - | Frame name, e.g. `base_link`. Give `source_frame` and `target_frame` together to get the chain between them in `path`. |
 | `target_frame` | `str \| null` | no | `null` | - | See `source_frame`. |
-| `urdf_path` | `str \| null` | no | `null` | - | Server path of a `.urdf` (no xacro, 1 MiB max) used instead of /robot_description. |
+| `urdf_path` | `str \| null` | no | `null` | - | Server path of a `.urdf` file (no xacro, 1 MiB max) used instead of /robot_description; omit it to read that topic. |
 
 ### Output (top-level fields)
 
