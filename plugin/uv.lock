@@ -1177,7 +1177,7 @@ wheels = [
 
 [[package]]
 name = "topicforge"
-version = "0.11.1"
+version = "0.11.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclonedds", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or sys_platform == 'darwin'" },
@@ -1186,14 +1186,14 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rosbags" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/87/d6efe4566877b63d67c96c18cd009f3efe9f4d9dacb9658bb39c71639f5c/topicforge-0.11.1.tar.gz", hash = "sha256:27dc1459daf7b2c2bfbab42038900b1e8886420b430aa6a4e0f1c42a4368e16e", size = 843028, upload-time = "2026-11-17T09:32:17.267Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/f9/fee2ca8884294e83866894bb2ed55ec1fda99d258541e47da61e4b34b787/topicforge-0.11.2.tar.gz", hash = "sha256:a920e67c3b1f9883786e88340390eb82edcb1cda4d862eb14b24f00d11da4ec1", size = 844299, upload-time = "2026-11-23T12:23:54.546Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/a2/d4e3c3a1e0121d67287e3b414d36faabaf3be9175c3e4a4a9b2ac4305418/topicforge-0.11.1-py3-none-any.whl", hash = "sha256:b3d111d9566de51c653a101d68867ba845fbd438e33171b51b0b4f3b8c047c8d", size = 338944, upload-time = "2026-11-17T09:32:15.465Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/6c/e05016aaf84148cb380663918648a0eeeeb2e63a86ef21376c7aadb6f4b8/topicforge-0.11.2-py3-none-any.whl", hash = "sha256:7e284a56c54f15e00c4f3165c5dd2960e54ecf0998c303e86d99cb2d3b0f75d3", size = 338951, upload-time = "2026-11-23T12:23:52.823Z" },
 ]
 
 [[package]]
 name = "topicforge-claude-plugin"
-version = "0.11.1"
+version = "0.11.2"
 source = { virtual = "." }
 dependencies = [
     { name = "pillow" },
@@ -1203,7 +1203,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "pillow", specifier = "==12.3.0" },
-    { name = "topicforge", specifier = "==0.11.1" },
+    { name = "topicforge", specifier = "==0.11.2" },
 ]
 
 [[package]]
