@@ -25,7 +25,8 @@ NODE_TIMEOUT_PARAM_DESC = (
 PARAMS_FILE_PARAM_DESC = "Server path of a ROS 2 parameter `.yaml` (1 MiB max)."
 
 URDF_PATH_PARAM_DESC = (
-    "Server path of a `.urdf` (no xacro, 1 MiB max) used instead of /robot_description."
+    "Server path of a `.urdf` file (no xacro, 1 MiB max) used instead of /robot_description; "
+    "omit it to read that topic."
 )
 
 PARAM_DIFF_ONLY_PARAM_DESC = (

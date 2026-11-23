@@ -70,3 +70,12 @@ and the true restart count for `restart_loop`). `--variant diagnose` (0.9.0) run
 `inspect-ros2-robot` (or `--prompt diagnose-nav2`) to the instructions. `--print-only` shows the
 plan and the question without ROS 2. The Docker command, the procedure and the table of results
 are in `docs/EVAL.md`, "0.8.0 campaign (v2)"; the expected diagnoses are in `TRUTH_ROS2.md`.
+
+Since campaign v7 the agent (one fresh Sonnet agent per run) gets this line, then a blank line,
+then `prompt.txt` with each paragraph joined into one line (code lines kept), then ` Answer in under 250 words in total.` appended
+to its last line (`<work>` is the run's working folder as the agent sees it). Keep it identical
+between campaigns so their results compare:
+
+```
+Your working folder is <work> . Run every command there with `cd` into that folder first (Bash tool, python is on PATH). Do not read any repository or project file.
+```

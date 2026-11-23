@@ -738,3 +738,43 @@ The agents' feedback, in short:
   frames show `age_s` null and `last_stamp_ns` 0.
 - `graph_diff` does not link the extra `/cmd_vel_out` writer to `/bench_v2`, and its `before`
   and `after` values are strings.
+
+## 0.11.2 campaign (v8)
+
+Partial campaign on `release/0.11.2` (`167456a`), WSL Ubuntu-24.04 + Jazzy, Fast DDS, one blind
+Sonnet agent per run, eighteen tools, the wrapper line now kept in `scripts/agent_eval/README.md`
+(the same as v7). Only the two scenarios touched by 0.11.2 were run: `healthy` three times (the
+bench fix) and `declared_drift` once (the `urdf_path` hint). The other five were not rerun; no
+code they exercise changed (`git diff v0.11.1..167456a -- src` is one parameter description and
+the version).
+
+What changed: `/scan_edge` on the bench is stamped `base_laser`, so the `healthy` bench has the
+clean TF tree its truth describes; `inspect_tf.urdf_path` says to omit it to read
+`/robot_description`.
+
+### Results
+
+| Scenario | Grade | Tool calls (broker) | Sequence |
+|---|---|---|---|
+| `healthy`, `diagnose` alone | 0 critical, 0 warning, no `edge_laser` finding | - | 23.9 s |
+| `healthy`, run 1 | correct, no false alarm | 4 | `health_check`, `diagnose`, `inspect_tf`, `detect_qos_mismatches` |
+| `healthy`, run 2 | correct, no false alarm (about 80%) | 4 | same four tools |
+| `healthy`, run 3 | correct, no false alarm | 4 | same four tools |
+| `declared_drift` | correct (`max_range`, `extra_gain`, `arm_link`; the live-only parameters named as not differences) | 2 | `get_node_info` with `params_file` and `param_diff_only`, `inspect_tf` |
+
+- **`healthy`: 3 correct out of 3 (v7: 0 out of 3, and 0 out of 2 on the v0.11.0 control).** With
+  the bench frame fixed, every agent said the robot looks healthy and listed what it did not
+  check. This confirms that the v7 false alarms came from the bench, not from the code. The
+  `diagnose` finding for a topic frame with no transform is untouched; it has no scenario now.
+- **`declared_drift`: no `urdf_path` error (v6 and v7: one each).** The agent called `inspect_tf`
+  without `urdf_path` at once. 2 calls (v7: 3, one of them the error).
+
+Limits: one run of `declared_drift`, so the missing error is one answer, not a rate.
+
+The agents' feedback, in short (repeats from v7 not listed again):
+- `frames_not_in_urdf` (`map`, `odom`) and "11 topics have no subscriber" are expected but carry
+  no "normal" tag in the structured fields; `dds_security` "not_supported" next to
+  `ros_security_enabled` false could be read as a fault.
+- `/_topicforge_sampler_*` shows up in the QoS output without saying it is TopicForge's helper.
+- `param_diff_only` returns empty `publishers` next to the null `parameters`; `live_only` values
+  are only in a summary string.

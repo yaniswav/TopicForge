@@ -50,7 +50,7 @@
           }
         ],
         "default": null,
-        "description": "Server path of a `.urdf` (no xacro, 1 MiB max) used instead of /robot_description."
+        "description": "Server path of a `.urdf` file (no xacro, 1 MiB max) used instead of /robot_description; omit it to read that topic."
       },
       "window_s": {
         "default": 5.0,

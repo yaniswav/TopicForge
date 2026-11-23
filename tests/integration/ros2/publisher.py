@@ -227,7 +227,7 @@ class BenchRobot(Node):
         # No-return beams: lidar drivers publish `inf`, and `nan` for invalid ones.
         msg = LaserScan()
         msg.header.stamp = sim_time_msg(self._now())
-        msg.header.frame_id = "edge_laser"
+        msg.header.frame_id = model.SCAN_FRAME
         msg.ranges = [math.inf, math.nan, -math.inf, 1.5]
         self._edge_pub.publish(msg)
 
