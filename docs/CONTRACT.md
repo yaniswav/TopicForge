@@ -1820,3 +1820,12 @@ No schema change, no new tool; `tools/list` is unchanged. Free-text values only:
   call budget can shorten.
 - `graph_diff.note` is now set on every call with a baseline, although its schema description
   still says it may be `None` (left as is to keep `tools/list` unchanged).
+
+### 9.33 Evaluation v7 follow-ups (0.11.2)
+
+No schema change, no new tool. One parameter description changes, so `tools/list` grows from
+103,252 to 103,285 bytes:
+
+- `inspect_tf.urdf_path`: the description ends with `omit it to read that topic`
+  (`/robot_description`). Agents in v6 and v7 passed the topic name as a path and asked for the
+  hint in the schema, not only in the refusal.

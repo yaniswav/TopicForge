@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-23
+
+Follow-ups of the v7 agent evaluation. No schema change (`docs/CONTRACT.md` section 9.33).
+`tools/list` is 103,285 bytes.
+
+### Changed
+
+- The `urdf_path` description of `inspect_tf` says to leave it out to read `/robot_description`.
+
+### Fixed
+
+- Evaluation bench: `/scan_edge` was stamped with `edge_laser`, a frame no transform reaches,
+  while the `healthy` truth says the TF tree is clean. Agents took that `info` finding for the one
+  fault (v7, 5 of 5 runs). It now uses `base_laser`. The line that wraps the agent prompts is
+  kept in `scripts/agent_eval/README.md`.
+
 ## [0.11.1] - 2026-11-17
 
 Wording follow-ups of the v6 agent evaluation. No schema change (`docs/CONTRACT.md` section 9.32).
@@ -2126,7 +2142,8 @@ Initial MVP release of TopicForge: ROS Topic Inspector & Bag Analyzer MCP server
 - The write path (publishing, commanding robots) is intentionally out of scope for the MVP.
 - `analyze_bag` in live mode parses `ros2 bag info` text output; deeper anomaly detection remains mock-only for now.
 
-[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/yaniswav/TopicForge/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/yaniswav/TopicForge/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/yaniswav/TopicForge/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/yaniswav/TopicForge/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/yaniswav/TopicForge/compare/v0.9.0...v0.10.0
